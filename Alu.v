@@ -504,6 +504,74 @@ Section Cap.
   End DecodeCap.
 End Cap.
 
+Section Roots.
+  Local Open Scope guru_scope.
+
+  Definition ExecRootPerms : type CapPerms := (STRUCT_CONST {
+                                                   "U0" ::= false;
+                                                   "SE" ::= false;
+                                                   "US" ::= false;
+                                                   "EX" ::= true;
+                                                   "SR" ::= true;
+                                                   "MC" ::= true;
+                                                   "LD" ::= true;
+                                                   "SL" ::= false;
+                                                   "LM" ::= true;
+                                                   "SD" ::= false;
+                                                   "LG" ::= true;
+                                                   "GL" ::= true }).
+
+  Definition MemRootPerms : type CapPerms := (STRUCT_CONST {
+                                                  "U0" ::= false;
+                                                  "SE" ::= false;
+                                                  "US" ::= false;
+                                                  "EX" ::= false;
+                                                  "SR" ::= false;
+                                                  "MC" ::= true;
+                                                  "LD" ::= true;
+                                                  "SL" ::= true;
+                                                  "LM" ::= true;
+                                                  "SD" ::= true;
+                                                  "LG" ::= true;
+                                                  "GL" ::= true }).
+
+  Definition SealRootPerms : type CapPerms := (STRUCT_CONST {
+                                                   "U0" ::= true;
+                                                   "SE" ::= true;
+                                                   "US" ::= true;
+                                                   "EX" ::= false;
+                                                   "SR" ::= false;
+                                                   "MC" ::= false;
+                                                   "LD" ::= false;
+                                                   "SL" ::= false;
+                                                   "LM" ::= false;
+                                                   "SD" ::= false;
+                                                   "LG" ::= false;
+                                                   "GL" ::= true }).
+
+  Section Roots.
+    Variable perms: type CapPerms.
+    Definition createRootCap: type ECap :=
+      (STRUCT_CONST {
+           "R" ::= false ;
+           "perms" ::= perms ;
+           "oType" ::= Default (Bit _) ;
+           "E" ::= Zmod.of_Z _ Emax ;
+           "top" ::= Zmod.app (Zmod.zero: bits AddrSz) Zmod.one ;
+           "base" ::= Zmod.zero }).
+
+    Definition createRoot: type FullECapWithTag :=
+      (STRUCT_CONST {
+           "tag" ::= true;
+           "ecap" ::= createRootCap;
+           "addr" ::= Default Addr }).
+  End Roots.
+
+  Definition ExecRoot := createRoot ExecRootPerms.
+  Definition MemRoot := createRoot MemRootPerms.
+  Definition SealRoot := createRoot SealRootPerms.
+End Roots.
+
 Definition Csrs := STRUCT_TYPE { "mcycle" :: Bit DXlen ;
                                   "mtime" :: Bit DXlen ;
                                "minstret" :: Bit DXlen ;
@@ -1638,7 +1706,7 @@ Section Alu.
       LetE illegal <- Or [Not NotIllegal; And [#isCsr; Not #validCsr]; And [CSpecialRw; Not #validScr]; #wrongRegId];
 
       LetE capException <-
-        (* Note: Kor is correct because of disjointness of capSrException with rest *)
+        (* Note: Or is correct because of disjointness of capSrException with rest *)
         Or [ ITE0 #capSrException (exception $SrViolation) ;
              ITE (And [#load_store; Not #tag1]) (exception $TagViolation)
                (ITE (Or [And [#load_store; Not #cap1NotSealed];

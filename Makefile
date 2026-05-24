@@ -6,20 +6,20 @@ CHERIOT_ROOT = $(HOME)/work/Cheriot
 
 CURR_DIR = $(shell pwd)
 
-Switcher.v:
-	echo "From Stdlib Require Import List ZArith Zmod." > Switcher.v
-	echo "" >> Switcher.v
-	echo "Local Open Scope Z_scope." >> Switcher.v
-	echo "" >> Switcher.v
-	echo "Definition switcher: list (bits 8) := (" >> Switcher.v
+Binary.v:
+	echo "From Stdlib Require Import List ZArith Zmod." > Binary.v
+	echo "" >> Binary.v
+	echo "Local Open Scope Z_scope." >> Binary.v
+	echo "" >> Binary.v
+	echo "Definition switcher: list (bits 8) := (" >> Binary.v
 	echo $(CURR_DIR)
 	cd $(CHERIOT_ROOT)/cheriot-rtos/examples/02.hello_compartment && xmake config --sdk=$(CHERIOT_ROOT)/llvm-project/builds/cheriot-llvm && xmake && cd $(CURR_DIR)
-	$(CHERIOT_ROOT)/llvm-project/builds/cheriot-llvm/bin/llvm-objcopy -O binary -j .text $(CHERIOT_ROOT)/cheriot-rtos/examples/02.hello_compartment/build/.objs/cheriot.switcher/cheriot/cheriot/release/__/__/sdk/core/switcher/entry.S.o $(CURR_DIR)/tmp && cd $(CURR_DIR)
-	hexdump -e '1/1 "Zmod.of_Z _ 0x%02x " "::\n"' -v tmp >> Switcher.v
+	$(CHERIOT_ROOT)/llvm-project/builds/cheriot-llvm/bin/llvm-objcopy -O binary $(CHERIOT_ROOT)/cheriot-rtos/examples/02.hello_compartment/build/.objs/cheriot.switcher/cheriot/cheriot/release/__/__/sdk/core/switcher/entry.S.o $(CURR_DIR)/tmp && cd $(CURR_DIR)
+	hexdump -e '1/1 "Zmod.of_Z _ 0x%02x " "::\n"' -v tmp >> Binary.v
 	rm tmp
-	echo "nil)." >> Switcher.v
+	echo "nil)." >> Binary.v
 
-all: Makefile.coq.all Switcher.v
+all: Makefile.coq.all Binary.v
 	$(MAKE) -j -C ../Guru coq
 	$(MAKE) -f Makefile.coq.all
 
@@ -42,5 +42,5 @@ clean:: Makefile.coq.all
 	find . -type f -name '*.aux' -exec rm {} \;
 	rm -f Makefile.coq.all Makefile.coq.all.conf .Makefile.coq.all.d
 	rm -f .nia.cache .lia.cache
-	rm -f Switcher.v
+	rm -f Binary.v
 

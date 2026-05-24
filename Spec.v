@@ -19,11 +19,13 @@ Section Spec.
                                                                 (I: Is_true (length switcher =? switcherLength)).
   Definition MemWidthCap : Z := Z.of_nat MemWidth - LgNumBytesFullCapSz.
 
+  Variable tohostAddr: type Addr.
+
   Variable memInit: type (Array MemByteSz (Bit 8)).
   Variable tagsInit: type (Array MemFullCapSz Bool).
   Variable regsInit: type (Array NumRegs FullECapWithTag).
-  Variable csrsInit: type Csrs.
   Variable scrsInit: type Scrs.
+  Variable csrsInit: type Csrs.
   Variable interruptsInit: type Interrupts.
   Variable revokerEpochInit: type Data.
   Variable revokerKickInit: type Bool.
@@ -49,7 +51,6 @@ Section Spec.
 
   Local Open Scope string_scope.
   Local Open Scope guru_scope.
-
 
   Definition specRegs := [("mem", Build_Reg _ memInit);
                           ("tags", Build_Reg _ tagsInit);
@@ -231,6 +232,17 @@ Section Spec.
                                                                         (##aluOut`"multicycleOp"`"storeVal"`"tag")
                                                                         #ldTag];
 
+          IfE And [#StoreMem; Eq #memAddr (Const ty _ tohostAddr)]
+          ThenE (
+            IfE (Eq #stVal $1)
+            ThenE (
+              SysE [DispString ty "SUCCESS"%string];
+              RetE ConstDef )
+            ElseE (
+              SysE [DispString ty "FAILURE"%string];
+              RetE ConstDef );
+            RetE ConstDef );
+
           @RetE _ SpecProcessorState (STRUCT { "mem" ::= #newMem;
                                                "tags" ::= #newTags;
                                                "regs" ::= #newRegs;
@@ -396,3 +408,23 @@ Section Spec.
     ltac:(let x := simplifyAluExpr (evalLetExpr (stepExpr state)) in exact x).
    *)
 End Spec.
+
+Section PartialInitSpec.
+  Local Open Scope string_scope.
+  Local Open Scope guru_scope.
+
+  Variable MemWidth: nat.
+  Variable MemWidthGeLgBytesFullCapSz: MemWidth >= LgBytesFullCapSz.
+  Variable regsInit: type (Array NumRegs FullECapWithTag).
+
+  Variable regsInitPc:
+    readNatToFinType (Default FullECapWithTag) (readSameTuple regsInit) 0 = Default FullECapWithTag.
+
+  Definition scrsInit: type Scrs := STRUCT_CONST {
+                                        "mtcc" ::= ExecRoot;
+                                        "mtdc" ::= MemRoot;
+                                        "mscratchc" ::= SealRoot;
+                                        "mepcc" ::= ExecRoot }.
+
+  Definition partialInitSpec := spec MemWidthGeLgBytesFullCapSz (Default _) (Default _) (Default _) regsInit scrsInit.
+End PartialInitSpec.
