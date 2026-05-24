@@ -2,7 +2,7 @@ From Stdlib Require Import List ZArith Zmod.
 
 Local Open Scope Z_scope.
 
-Definition switcher: list (bits 8) := (
+Definition binary: list (bits 8) := (
 Zmod.of_Z _ 0x00 ::
 Zmod.of_Z _ 0x00 ::
 Zmod.of_Z _ 0x00 ::

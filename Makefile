@@ -11,10 +11,10 @@ Binary.v:
 	echo "" >> Binary.v
 	echo "Local Open Scope Z_scope." >> Binary.v
 	echo "" >> Binary.v
-	echo "Definition switcher: list (bits 8) := (" >> Binary.v
+	echo "Definition binary: list (bits 8) := (" >> Binary.v
 	echo $(CURR_DIR)
 	cd $(CHERIOT_ROOT)/cheriot-rtos/examples/02.hello_compartment && xmake config --sdk=$(CHERIOT_ROOT)/llvm-project/builds/cheriot-llvm && xmake && cd $(CURR_DIR)
-	$(CHERIOT_ROOT)/llvm-project/builds/cheriot-llvm/bin/llvm-objcopy -O binary $(CHERIOT_ROOT)/cheriot-rtos/examples/02.hello_compartment/build/.objs/cheriot.switcher/cheriot/cheriot/release/__/__/sdk/core/switcher/entry.S.o $(CURR_DIR)/tmp && cd $(CURR_DIR)
+	$(CHERIOT_ROOT)/llvm-project/builds/cheriot-llvm/bin/llvm-objcopy -O binary $(CHERIOT_ROOT)/cheriot-rtos/examples/02.hello_compartment/build/cheriot/cheriot/release/hello_compartment $(CURR_DIR)/tmp && cd $(CURR_DIR)
 	hexdump -e '1/1 "Zmod.of_Z _ 0x%02x " "::\n"' -v tmp >> Binary.v
 	rm tmp
 	echo "nil)." >> Binary.v

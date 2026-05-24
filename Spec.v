@@ -1,6 +1,6 @@
 From Stdlib Require Import String List ZArith Zmod Bool.
 Require Import Guru.Syntax Guru.Notations Guru.Semantics Guru.Library.
-Require Import Cheriot.Alu Cheriot.Switcher.
+Require Import Cheriot.Alu Cheriot.Binary.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -14,9 +14,9 @@ Section Spec.
   Variable MemWidthGeLgBytesFullCapSz: MemWidth >= LgBytesFullCapSz.
   Definition MemByteSz := Nat.pow 2 MemWidth.
   Definition MemFullCapSz := Nat.pow 2 (MemWidth - LgBytesFullCapSz).
-  Definition switcherLength := Eval compute in (length switcher).
-  Definition specInst: type (Array switcherLength (Bit 8)) := Build_SameTuple (tupleElems := switcher)
-                                                                (I: Is_true (length switcher =? switcherLength)).
+  Definition binaryLength := Eval compute in (length binary).
+  Definition specInst: type (Array binaryLength (Bit 8)) := Build_SameTuple (tupleElems := binary)
+                                                                (I: Is_true (length binary =? binaryLength)).
   Definition MemWidthCap : Z := Z.of_nat MemWidth - LgNumBytesFullCapSz.
 
   Variable tohostAddr: type Addr.
@@ -153,7 +153,7 @@ Section Spec.
       Notation specSimpl x := ltac:(specSimpl x) (only parsing).
 
       Definition stepExpr: LetExpr ty SpecProcessorState := specSimpl
-        ( LetE insts : Array switcherLength (Bit 8) <- Const ty _ specInst;
+        ( LetE insts : Array binaryLength (Bit 8) <- Const ty _ specInst;
           LetE mem <- ##state`"mem";
           LetE tags <- ##state`"tags";
           LetE regs <- ##state`"regs";

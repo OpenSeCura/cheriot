@@ -5,4 +5,4 @@ The Makefile expects [CHERIoT RTOS](https://github.com/CHERIoT-Platform/cheriot-
 Use this [link](https://github.com/CHERIoT-Platform/cheriot-rtos/blob/main/docs/GettingStarted.md#building-cheriot-llvm) to build LLVM.
 The object that is being initialized in the Binary file is some executable binary compiled for CHERIoT
 
-`${CHERIOT_ROOT}/cheriot-llvm/builds/cheriot-llvm/bin/llvm-objdump -d ${CHERIOT_ROOT}/cheriot-rtos/examples/02.hello_compartment/build/.objs/cheriot.switcher/cheriot/cheriot/release/__/__/sdk/core/switcher/entry.S.o`
+`${CHERIOT_ROOT}/cheriot-llvm/builds/cheriot-llvm/bin/llvm-objdump -d ${CHERIOT_ROOT}/cheriot-rtos/examples/02.hello_compartment/build/cheriot/cheriot/release/hello_compartment`
