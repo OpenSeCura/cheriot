@@ -27,3 +27,4 @@ Makefile.coq
 .*.swn
 .*.swo
 .*.swp
+Clut/Compile.hs
