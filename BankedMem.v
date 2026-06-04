@@ -1,4 +1,4 @@
-From Stdlib Require Import String List ZArith Zmod.
+From Stdlib Require Import String List ZArith Zmod Bool.
 Require Import Guru.Library Guru.Syntax Guru.Notations.
 
 Set Implicit Arguments.
@@ -13,42 +13,124 @@ Section BankedMem.
   Variable LgNum8Banks: Z. (* Lg of Number of 64-bit sized banks *)
   Variable LgEachSize: Z. (* Lg of Size of each bank *)
   Variable LgEachSizeGe0: LgEachSize >= 0.
-  Variable memLists: ModLists.
-  Variable port: FinType 2.
+  Variable port: FinType 2%nat.
 
   Local Definition LgNumBanks := 3 + LgNum8Banks. (* Lg of Number of 8-bit sized banks *)
   Local Definition Num8Banks := Z.to_nat (Z.shiftl 1 LgNum8Banks).
   Local Definition NumBanks := Z.to_nat (Z.shiftl 1 LgNumBanks).
   Local Definition EachSize := Z.to_nat (Z.shiftl 1 LgEachSize).
   Local Definition MemAddrSz := LgNumBanks + LgEachSize.
-  Local Definition memRepeat := ("memBank"%string, Build_MemU EachSize (Bit 8) 2).
-  Local Definition tagRepeat := ("tagBank"%string, Build_MemU EachSize Bool 2).
 
-  Variable memEq : memLists.(mmems) = repeat memRepeat NumBanks.
-  Variable tagEq : memLists.(mmemUs) = repeat tagRepeat Num8Banks.
-  Variable initTagReg : FinStruct memLists.(mregs).
-  Variable initTagRegKind : fieldK initTagReg = Bit (LgEachSize + 1).
+  Definition bankedMemIfc : Tree ModElem :=
+    Node "" [
+      Node "memBanks" (repeat (Leaf "memBank" (EMem (@Build_Mem EachSize (Bit 8) 2%nat None))) NumBanks);
+      Node "tagBanks" (repeat (Leaf "tagBank" (EMem (@Build_Mem EachSize Bool 2%nat None))) Num8Banks);
+      Leaf "initTagReg" (EReg (Build_Reg (Bit (LgEachSize + 1)) (Some (Default _))))
+    ].
 
-  Local Lemma NatZ_mul_1_r x: NatZ_mul x 1 = Z.of_nat x.
+  Definition cl := bankedMemIfc.
+
+  Definition leaf_list_path_mem (n: nat) (p: FinType n) :=
+    leaf_list_path_repeat (Leaf "memBank" (EMem (@Build_Mem EachSize (Bit 8) 2%nat None))) tt p.
+
+  Definition leaf_list_path_tag (n: nat) (p: FinType n) :=
+    leaf_list_path_repeat (Leaf "tagBank" (EMem (@Build_Mem EachSize Bool 2%nat None))) tt p.
+
+  Lemma leaf_list_path_mem_is_mem n (i: FinType n) :
+    Is_true (isMemElem (@getLeaf ModElem (Node "memBanks" (repeat (Leaf "memBank" (EMem (@Build_Mem EachSize (Bit 8) 2%nat None))) n)) (leaf_list_path_mem i))).
   Proof.
-    induction x; simpl; auto.
-    subst; Lia.lia.
+    unfold leaf_list_path_mem.
+    rewrite getLeaf_repeat.
+    simpl.
+    exact I.
   Qed.
 
-  Local Open Scope Z.
-  Local Lemma num8BanksMinusPlus: Z.of_nat Num8Banks - size Bool + size Bool = size (Array Num8Banks Bool).
+  Lemma leaf_list_path_tag_is_mem n (i: FinType n) :
+    Is_true (isMemElem (@getLeaf ModElem (Node "tagBanks" (repeat (Leaf "tagBank" (EMem (@Build_Mem EachSize Bool 2%nat None))) n)) (leaf_list_path_tag i))).
   Proof.
-    unfold size at 3.
-    rewrite NatZ_mul_1_r.
-    Lia.lia.
+    unfold leaf_list_path_tag.
+    rewrite getLeaf_repeat.
+    simpl.
+    exact I.
   Qed.
-      
-  Local Lemma portCast: forall memIdx: FinStruct memLists.(mmems), FinType 2 -> FinType (fieldK memIdx).(memUPort).
+
+  Definition initTagRegPath : RegPath bankedMemIfc := getRegPathTree cl ".initTagReg".
+
+  Definition memBankPath (i: FinType NumBanks) : MemPath bankedMemIfc.
   Proof.
-    rewrite memEq.
-    intros.
-    rewrite (fieldK_repeat memIdx); auto.
+    refine (Build_MemPath bankedMemIfc (inl (leaf_list_path_mem i)) _).
+    exact (leaf_list_path_mem_is_mem i).
+  Defined.
+
+  Definition tagBankPath (i: FinType Num8Banks) : MemPath bankedMemIfc.
+  Proof.
+    refine (Build_MemPath bankedMemIfc (inr (inl (leaf_list_path_tag i))) _).
+    exact (leaf_list_path_tag_is_mem i).
+  Defined.
+
+  Lemma memBankEq n (i: FinType n) :
+    @getMemFromPathUnsafe (Node "memBanks" (repeat (Leaf "memBank" (EMem (@Build_Mem EachSize (Bit 8) 2%nat None))) n)) (leaf_list_path_mem i) =
+    {| memSize := EachSize; memKind := Bit 8; memPort := 2; memInit := None |}.
+  Proof.
+    unfold leaf_list_path_mem, getMemFromPathUnsafe.
+    rewrite getLeaf_repeat.
+    reflexivity.
   Qed.
+
+  Lemma tagBankEq n (i: FinType n) :
+    @getMemFromPathUnsafe (Node "tagBanks" (repeat (Leaf "tagBank" (EMem (@Build_Mem EachSize Bool 2%nat None))) n)) (leaf_list_path_tag i) =
+    {| memSize := EachSize; memKind := Bool; memPort := 2; memInit := None |}.
+  Proof.
+    unfold leaf_list_path_tag, getMemFromPathUnsafe.
+    rewrite getLeaf_repeat.
+    reflexivity.
+  Qed.
+
+  Definition memPortCast (i: FinType NumBanks) (p: FinType 2%nat) : FinType (memPort (getMemFromPath (memBankPath i))) :=
+    match eq_sym (f_equal memPort (memBankEq i)) in _ = Y return FinType Y with
+    | eq_refl => p
+    end.
+
+  Definition tagPortCast (i: FinType Num8Banks) (p: FinType 2%nat) : FinType (memPort (getMemFromPath (tagBankPath i))) :=
+    match eq_sym (f_equal memPort (tagBankEq i)) in _ = Y return FinType Y with
+    | eq_refl => p
+    end.
+
+  Definition memSizeCast (i: FinType NumBanks) {ty} (e: Expr ty (Bit (Z.log2_up (Z.of_nat EachSize)))) :
+    Expr ty (Bit (Z.log2_up (Z.of_nat (memSize (getMemFromPath (memBankPath i)))))) :=
+    match eq_sym (f_equal memSize (memBankEq i)) in _ = Y return Expr ty (Bit (Z.log2_up (Z.of_nat Y))) with
+    | eq_refl => e
+    end.
+
+  Definition tagSizeCast (i: FinType Num8Banks) {ty} (e: Expr ty (Bit (Z.log2_up (Z.of_nat EachSize)))) :
+    Expr ty (Bit (Z.log2_up (Z.of_nat (memSize (getMemFromPath (tagBankPath i)))))) :=
+    match eq_sym (f_equal memSize (tagBankEq i)) in _ = Y return Expr ty (Bit (Z.log2_up (Z.of_nat Y))) with
+    | eq_refl => e
+    end.
+
+  Definition memKindCast (i: FinType NumBanks) {ty} (e: Expr ty (Bit 8)) :
+    Expr ty (memKind (getMemFromPath (memBankPath i))) :=
+    match eq_sym (f_equal memKind (memBankEq i)) in _ = Y return Expr ty Y with
+    | eq_refl => e
+    end.
+
+  Definition memKindCastInv (i: FinType NumBanks) {ty} (e: Expr ty (memKind (getMemFromPath (memBankPath i)))) :
+    Expr ty (Bit 8) :=
+    match f_equal memKind (memBankEq i) in _ = Y return Expr ty Y with
+    | eq_refl => e
+    end.
+
+  Definition tagKindCast (i: FinType Num8Banks) {ty} (e: Expr ty Bool) :
+    Expr ty (memKind (getMemFromPath (tagBankPath i))) :=
+    match eq_sym (f_equal memKind (tagBankEq i)) in _ = Y return Expr ty Y with
+    | eq_refl => e
+    end.
+
+  Definition tagKindCastInv (i: FinType Num8Banks) {ty} (e: Expr ty (memKind (getMemFromPath (tagBankPath i)))) :
+    Expr ty Bool :=
+    match f_equal memKind (tagBankEq i) in _ = Y return Expr ty Y with
+    | eq_refl => e
+    end.
 
   Local Lemma LgEachSizeRoundTrip: LgEachSize = Z.log2_up (Z.of_nat EachSize).
   Proof.
@@ -60,68 +142,11 @@ Section BankedMem.
       Lia.lia.
   Qed.
 
-
-  Local Lemma lineIdxCast: forall memIdx: FinStruct memLists.(mmems),
-      LgEachSize = Z.log2_up (Z.of_nat (fieldK memIdx).(memUSize)).
-  Proof.
-    rewrite memEq.
-    intros.
-    rewrite (fieldK_repeat memIdx); auto.
-    simpl.
-    apply LgEachSizeRoundTrip.
-  Qed.
-
-  Local Lemma valCast: forall memIdx: FinStruct memLists.(mmems), Bit 8 = (fieldK memIdx).(memUKind).
-  Proof.
-    rewrite memEq.
-    intros.
-    rewrite (fieldK_repeat memIdx); auto.
-  Qed.
-
-  Local Lemma len_mmems_NumBanks: length memLists.(mmems) = NumBanks.
-  Proof.
-    rewrite memEq.
-    rewrite repeat_length.
-    reflexivity.
-  Qed.
-
-  Local Lemma portCastTag: forall memIdx: FinStruct memLists.(mmemUs),
-      FinType 2 -> FinType (fieldK memIdx).(memUPort).
-  Proof.
-    rewrite tagEq.
-    intros.
-    rewrite (fieldK_repeat memIdx); auto.
-  Qed.
-
-  Local Lemma lineIdxCastTag: forall memIdx: FinStruct memLists.(mmemUs),
-      LgEachSize = Z.log2_up (Z.of_nat (fieldK memIdx).(memUSize)).
-  Proof.
-    rewrite tagEq.
-    intros.
-    rewrite (fieldK_repeat memIdx); auto.
-    simpl.
-    apply LgEachSizeRoundTrip.
-  Qed.
-
-  Local Lemma valCastTag: forall memIdx: FinStruct memLists.(mmemUs), Bool = (fieldK memIdx).(memUKind).
-  Proof.
-    rewrite tagEq.
-    intros.
-    rewrite (fieldK_repeat memIdx); auto.
-  Qed.
-
-  Local Lemma len_mmems_NumBanks_tag: length memLists.(mmemUs) = Num8Banks.
-  Proof.
-    rewrite tagEq.
-    rewrite repeat_length.
-    reflexivity.
-  Qed.
-
   Section Ty.
     Variable ty: Kind -> Type.
     Variable addr: Expr ty (Bit MemAddrSz).
     Variable memSz: Expr ty (Bit LgNumBanks).
-    Variable writeVals: Expr ty (Array (length memLists.(mmems)) (Bit 8)).
+    Variable writeVals: Expr ty (Array NumBanks (Bit 8)).
     Variable isCap: Expr ty Bool.
     Variable tagVal: Expr ty Bool.
 
@@ -130,110 +155,99 @@ Section BankedMem.
     Local Definition shamt := TruncLsb LgEachSize LgNumBanks addr.
     Local Definition lineIdx := TruncMsb LgEachSize LgNumBanks addr.
 
-    Local Definition add1: Expr ty (Array (length memLists.(mmems)) Bool) :=
-      FromBit (Array (length (mmems memLists)) Bool) (Not (Sll (ConstBit (InvDefault _)) shamt)).
+    Local Definition add1: Expr ty (Array NumBanks Bool) :=
+      FromBit (Array NumBanks Bool) (Not (Sll (ConstBit (InvDefault _)) shamt)).
 
-    Local Definition castLineIdx (memIdx: FinStruct memLists.(mmems)):
-      Expr ty (Bit (Z.log2_up (Z.of_nat (memUSize (fieldK (ls:= memLists.(mmems)) memIdx))))) :=
-      (Add [castBits (lineIdxCast memIdx) lineIdx;
+    Local Definition castLineIdx (memIdx: FinType NumBanks):
+      Expr ty (Bit (Z.log2_up (Z.of_nat EachSize))) :=
+      (Add [castBits LgEachSizeRoundTrip lineIdx;
             ITE0 (ReadArrayConst add1 memIdx)
-              (ConstT (Bit (Z.log2_up (Z.of_nat (memUSize (fieldK (ls:=memLists.(mmems)) memIdx)))))
-                 (Zmod.of_Z _ 1))]).
+              (ConstT (Bit (Z.log2_up (Z.of_nat EachSize))) (Zmod.of_Z _ 1))]).
 
-    Local Definition isWrites: Expr ty (Array (length memLists.(mmems)) Bool) :=
-      FromBit (Array (length memLists.(mmems)) Bool)
+    Local Definition isWrites: Expr ty (Array NumBanks Bool) :=
+      FromBit (Array NumBanks Bool)
         (rotateLeft (Not (Sll (ConstBit (InvDefault _)) memSz)) shamt).
 
-    Local Definition rotWriteVals: Expr ty (Array (length memLists.(mmems)) (Bit 8)) :=
+    Local Definition rotWriteVals: Expr ty (Array NumBanks (Bit 8)) :=
       ArrayRotl 8 writeVals shamt.
 
-    Local Definition doLoadRpNoRot : Action ty memLists (Array (length memLists.(mmems)) (Bit 8)) :=
+    Local Definition doLoadRpNoRot : Action ty cl (Array NumBanks (Bit 8)) :=
       fold_right (fun memIdx acc =>
-                    ReadRpMem (modLists := memLists) "readMemRp" memIdx (portCast memIdx port)
+                    ReadRpMem "readMemRp" (memBankPath memIdx) (memPortCast memIdx port)
                       (fun val =>
-                         (LetA rest: Array (length memLists.(mmems)) (Bit 8) <- acc;
-                          Return (UpdateArrayConst #rest memIdx (castBitsKind2 (valCast memIdx) #val)))))
-        (Return ConstDef) (genFinType (length memLists.(mmems))).
+                         (LetA rest: Array NumBanks (Bit 8) <- acc;
+                          Return (UpdateArrayConst #rest memIdx (memKindCastInv #val)))))
+        (Return ConstDef) (genFinType NumBanks).
 
     Local Definition shamtTag := TruncMsb LgNum8Banks 3 shamt.
 
-    Local Definition castLineIdxTag (tagIdx: FinStruct memLists.(mmemUs)):
-      Expr ty (Bit (Z.log2_up (Z.of_nat (memUSize (fieldK (ls:=memLists.(mmemUs)) tagIdx))))) :=
-      castBits (lineIdxCastTag tagIdx) lineIdx.
+    Local Definition castLineIdxTag (tagIdx: FinType Num8Banks):
+      Expr ty (Bit (Z.log2_up (Z.of_nat EachSize))) :=
+      castBits LgEachSizeRoundTrip lineIdx.
 
-    Local Definition tagBankCap: Expr ty (Array (length memLists.(mmemUs)) Bool) :=
-      FromBit (Array (length memLists.(mmemUs)) Bool)
-        (Sll (ITE0 isCap (ConstT (Bit (NatZ_mul (length memLists.(mmemUs)) 1)) Zmod.one)) shamtTag).
+    Local Definition tagBankCap: Expr ty (Array Num8Banks Bool) :=
+      FromBit (Array Num8Banks Bool)
+        (Sll (ITE0 isCap (ConstT (Bit (NatZ_mul Num8Banks 1)) Zmod.one)) shamtTag).
 
-    Local Definition tagBank: Expr ty (Array (length memLists.(mmemUs)) Bool) :=
-      FromBit (Array (length memLists.(mmemUs)) Bool)
-        (Sll (ConstT (Bit (NatZ_mul (length memLists.(mmemUs)) 1)) Zmod.one) shamtTag).
+    Local Definition tagBank: Expr ty (Array Num8Banks Bool) :=
+      FromBit (Array Num8Banks Bool)
+        (Sll (ConstT (Bit (NatZ_mul Num8Banks 1)) Zmod.one) shamtTag).
 
-    Definition doLoadRq : Action ty memLists (Bit 0) :=
+    Definition doLoadRq : Action ty cl (Bit 0) :=
       fold_right (fun memIdx acc =>
-                    ReadRqMem (modLists := memLists) memIdx (castLineIdx memIdx) (portCast memIdx port) acc)
-        (Return ConstDef) (genFinType (length (mmems memLists))).
+                    ReadRqMem (memBankPath memIdx) (memSizeCast memIdx (castLineIdx memIdx)) (memPortCast memIdx port) acc)
+        (Return ConstDef) (genFinType NumBanks).
 
-    Definition doWrite : Action ty memLists (Bit 0) :=
+    Definition doWrite : Action ty cl (Bit 0) :=
       fold_right (fun memIdx acc =>
                     If (ReadArrayConst isWrites memIdx) Then (
-                        WriteMem (modLists := memLists) memIdx (castLineIdx memIdx)
-                          (castBitsKind1 (valCast memIdx) (ReadArrayConst rotWriteVals memIdx))
+                        WriteMem (memBankPath memIdx) (memSizeCast memIdx (castLineIdx memIdx))
+                          (memKindCast memIdx (ReadArrayConst rotWriteVals memIdx))
                           (Return (ConstDefK (Bit 0))));
                   acc)
-        (Return ConstDef) (genFinType (length (mmems memLists))).
+        (Return ConstDef) (genFinType NumBanks).
 
-    Definition doLoadRp : Action ty memLists (Array (length memLists.(mmems)) (Bit 8)) :=
-      (LetA noRotLoadRp : Array (length memLists.(mmems)) (Bit 8) <- doLoadRpNoRot;
+    Definition doLoadRp : Action ty cl (Array NumBanks (Bit 8)) :=
+      (LetA noRotLoadRp : Array NumBanks (Bit 8) <- doLoadRpNoRot;
        Return (ArrayRotr 8 #noRotLoadRp shamt)).
 
-    Definition doLoadRqTag : Action ty memLists (Bit 0) :=
+    Definition doLoadRqTag : Action ty cl (Bit 0) :=
       fold_right (fun tagIdx acc =>
-                    ReadRqMemU (modLists := memLists) tagIdx (castLineIdxTag tagIdx) (portCastTag tagIdx port) acc)
-        (Return ConstDef) (genFinType (length (mmemUs memLists))).
+                    ReadRqMem (tagBankPath tagIdx) (tagSizeCast tagIdx (castLineIdxTag tagIdx)) (tagPortCast tagIdx port) acc)
+        (Return ConstDef) (genFinType Num8Banks).
 
-    Definition doWriteTag : Action ty memLists (Bit 0) :=
+    Definition doWriteTag : Action ty cl (Bit 0) :=
       fold_right (fun tagIdx acc =>
                     (If (ReadArrayConst tagBankCap tagIdx) Then (
-                         WriteMemU (modLists := memLists) tagIdx (castLineIdxTag tagIdx)
-                           (match valCastTag tagIdx in _ = Y return Expr ty Y with
-                            | eq_refl => tagVal
-                            end)
+                         WriteMem (tagBankPath tagIdx) (tagSizeCast tagIdx (castLineIdxTag tagIdx))
+                           (tagKindCast tagIdx tagVal)
                            (Return (ConstDefK (Bit 0))));
                      acc))
-        (Return ConstDef) (genFinType (length (mmemUs memLists))).
+        (Return ConstDef) (genFinType Num8Banks).
 
-    Definition doLoadRpTag : Action ty memLists Bool :=
+    Definition doLoadRpTag : Action ty cl Bool :=
       fold_right
         (fun tagIdx acc =>
-           ReadRpMemU (modLists := memLists) "readTagRp" tagIdx (portCastTag tagIdx port)
+           ReadRpMem "readTagRp" (tagBankPath tagIdx) (tagPortCast tagIdx port)
              (fun val =>
                 (LetA rest : Bool <- acc;
                  Return
-                   (Or [And [ReadArrayConst tagBank tagIdx;
-                             match eq_sym (valCastTag tagIdx) in _ = Y return Expr ty Y with
-                             | eq_refl => #val
-                             end]; #rest]))))
-        (Return ConstDef) (genFinType (length (mmemUs memLists))).
+                   (Or [And [ReadArrayConst tagBank tagIdx; tagKindCastInv #val]; #rest]))))
+        (Return ConstDef) (genFinType Num8Banks).
 
-    Definition initTags : Action ty memLists (Bit 0) :=
-      (ReadReg "initTagRegVal" initTagReg
+    Definition initTags : Action ty cl (Bit 0) :=
+      (ReadReg "initTagRegVal" initTagRegPath
          (fun initTagRegVal =>
-            (let castInitTagRegVal: Expr ty (Bit (LgEachSize + 1)) :=
-               match initTagRegKind in _ = Y return Expr ty Y with
-               | eq_refl => #initTagRegVal
-               end in
-             Let isDone : Bool <- FromBit Bool (TruncMsb 1 LgEachSize castInitTagRegVal);
-             Let lineIdx : Bit LgEachSize <- TruncLsb 1 LgEachSize castInitTagRegVal;
+            (Let isDone : Bool <- FromBit Bool (TruncMsb 1 LgEachSize #initTagRegVal);
+             Let lineIdx : Bit LgEachSize <- TruncLsb 1 LgEachSize #initTagRegVal;
              LetIf dummy <- If (Not #isDone) Then (
                  fold_right (fun tagIdx acc =>
-                               WriteMemU (modLists := memLists) tagIdx (castBits (lineIdxCastTag tagIdx) #lineIdx)
-                                 ConstDef acc)
-                   (WriteReg initTagReg
-                      (match eq_sym initTagRegKind in _ = Z return Expr ty Z with
-                       | eq_refl => Add [castInitTagRegVal; $1]
-                       end) (Return ConstDef))
-                   (genFinType (length (mmemUs memLists))));
+                               WriteMem (tagBankPath tagIdx)
+                                 (tagSizeCast tagIdx (castBits LgEachSizeRoundTrip #lineIdx))
+                                 (tagKindCast tagIdx ConstDef) acc)
+                   (WriteReg initTagRegPath
+                      (Add [#initTagRegVal; $1]) (Return ConstDef))
+                   (genFinType Num8Banks));
              Return #dummy))).
   End Ty.
 End BankedMem.

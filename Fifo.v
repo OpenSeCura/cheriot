@@ -10,16 +10,16 @@ Import ListNotations.
 Section ExprToRegAction.
   Variable ty: Kind -> Type.
   Variable k: Kind.
-  Variable modLists: ModLists.
-  Variable stateReg: FinStruct (mregs modLists).
-  Variable stateRegKind: fieldK stateReg = k.
+  Variable t: Tree ModElem.
+  Variable stateReg: RegPath t.
+  Variable stateRegKind: regKind (getRegFromPath stateReg) = k.
   
   Local Open Scope guru_scope.
 
   Section ActionOfExpr.
     Variable k2: Kind.
     Variable expr: Expr ty k -> Expr ty k2 -> Expr ty k.
-    Definition actionOfExpr (e: Expr ty k2) : Action ty modLists (Bit 0) :=
+    Definition actionOfExpr (e: Expr ty k2) : Action ty t (Bit 0) :=
       ReadReg "state" stateReg
         (fun state => WriteReg stateReg (match eq_sym stateRegKind in _ = Y return Expr ty Y with
                                          | eq_refl => expr (match stateRegKind in _ = Y return Expr ty Y with
@@ -30,7 +30,7 @@ Section ExprToRegAction.
 
   Section ActionOfUpdExpr.
     Variable expr: Expr ty k -> Expr ty k.
-    Definition actionOfUpdExpr : Action ty modLists (Bit 0) :=
+    Definition actionOfUpdExpr : Action ty t (Bit 0) :=
       ReadReg "state" stateReg
         (fun state => WriteReg stateReg (match eq_sym stateRegKind in _ = Y return Expr ty Y with
                                          | eq_refl => expr (match stateRegKind in _ = Y return Expr ty Y with
@@ -42,7 +42,7 @@ Section ExprToRegAction.
   Section ReadExpr.
     Variable k2: Kind.
     Variable expr: Expr ty k -> Expr ty k2.
-    Definition readExpr : Action ty modLists k2 :=
+    Definition readExpr : Action ty t k2 :=
       ReadReg "state" stateReg
         (fun state => Return (expr (match stateRegKind in _ = Y return Expr ty Y with
                                     | eq_refl => #state
@@ -80,14 +80,14 @@ Section Fifo.
     End Expr.
 
     Section Action.
-      Variable modLists: ModLists.
-      Variable stateReg: FinStruct (mregs modLists).
-      Variable stateRegKind: fieldK stateReg = FifoState.
+      Variable t: Tree ModElem.
+      Variable stateReg: RegPath t.
+      Variable stateRegKind: regKind (getRegFromPath stateReg) = FifoState.
 
-      Definition isFullAction: Action ty modLists Bool := readExpr stateRegKind isFullExpr.
-      Definition isEmptyAction: Action ty modLists Bool := readExpr stateRegKind isEmptyExpr.
-      Definition enqAction: Expr ty k -> Action ty modLists (Bit 0) := actionOfExpr stateRegKind enqExpr.
-      Definition deqAction: Action ty modLists (Bit 0) := actionOfUpdExpr stateRegKind deqExpr.
+      Definition isFullAction: Action ty t Bool := readExpr stateRegKind isFullExpr.
+      Definition isEmptyAction: Action ty t Bool := readExpr stateRegKind isEmptyExpr.
+      Definition enqAction: Expr ty k -> Action ty t (Bit 0) := actionOfExpr stateRegKind enqExpr.
+      Definition deqAction: Action ty t (Bit 0) := actionOfUpdExpr stateRegKind deqExpr.
     End Action.
   End Ty.
 End Fifo.

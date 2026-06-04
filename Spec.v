@@ -52,17 +52,22 @@ Section Spec.
   Local Open Scope string_scope.
   Local Open Scope guru_scope.
 
-  Definition specRegs := [("mem", Build_Reg _ memInit);
-                          ("tags", Build_Reg _ tagsInit);
-                          ("regs", Build_Reg _ regsInit);
-                          ("csrs", Build_Reg _ csrsInit);
-                          ("scrs", Build_Reg _ scrsInit);
-                          ("interrupts", Build_Reg _ interruptsInit);
-                          ("revokerEpoch", Build_Reg _ revokerEpochInit);
-                          ("revokerKick", Build_Reg _ revokerKickInit);
-                          ("revokerStart", Build_Reg _ revokerStartInit);
-                          ("revokerEnd", Build_Reg _ revokerEndInit);
-                          ("revokeAddr", Build_Reg _ revokeAddrInit)].
+  Definition specTree : Tree ModElem :=
+    Node "" [
+      Leaf "mem" (EReg {| regKind := Array MemByteSz (Bit 8); regInit := Some memInit |});
+      Leaf "tags" (EReg {| regKind := Array MemFullCapSz Bool; regInit := Some tagsInit |});
+      Leaf "regs" (EReg {| regKind := Array NumRegs FullECapWithTag; regInit := Some regsInit |});
+      Leaf "csrs" (EReg {| regKind := Csrs; regInit := Some csrsInit |});
+      Leaf "scrs" (EReg {| regKind := Scrs; regInit := Some scrsInit |});
+      Leaf "interrupts" (EReg {| regKind := Interrupts; regInit := Some interruptsInit |});
+      Leaf "revokerEpoch" (EReg {| regKind := Data; regInit := Some revokerEpochInit |});
+      Leaf "revokerKick" (EReg {| regKind := Bool; regInit := Some revokerKickInit |});
+      Leaf "revokerStart" (EReg {| regKind := Bit MemWidthCap; regInit := Some revokerStartInit |});
+      Leaf "revokerEnd" (EReg {| regKind := Bit MemWidthCap; regInit := Some revokerEndInit |});
+      Leaf "revokeAddr" (EReg {| regKind := Bit MemWidthCap; regInit := Some revokeAddrInit |});
+      Leaf "pcOut" (ESend Addr);
+      Leaf "interrupts_in" (ERecv Interrupts)
+    ].
 
   Definition SpecRevokerAccessState := STRUCT_TYPE {
                                            "revokerEpoch" :: Data;
@@ -71,23 +76,14 @@ Section Spec.
                                            "revokerEnd" :: Bit MemWidthCap }.
 
   Definition SpecProcessorState := STRUCT_TYPE {
-                                       "mem" :: Array MemByteSz (Bit 8);
-                                       "tags" :: Array MemFullCapSz Bool;
-                                       "regs" :: Array NumRegs FullECapWithTag;
-                                       "csrs" :: Csrs;
-                                       "scrs" :: Scrs;
-                                       "interrupts" :: Interrupts;
-                                       "revokerAccess" :: SpecRevokerAccessState }.
-
-  Definition specDecl: ModDecl := {|modRegs := specRegs;
-                                    modMems := nil;
-                                    modRegUs := nil;
-                                    modMemUs := nil;
-                                    modSends := [("pcOut", Addr)];
-                                    modRecvs := [("interrupts", Interrupts)]|}.
+                                        "mem" :: Array MemByteSz (Bit 8);
+                                        "tags" :: Array MemFullCapSz Bool;
+                                        "regs" :: Array NumRegs FullECapWithTag;
+                                        "csrs" :: Csrs;
+                                        "scrs" :: Scrs;
+                                        "interrupts" :: Interrupts;
+                                        "revokerAccess" :: SpecRevokerAccessState }.
   Local Close Scope string_scope.
-
-  Definition specLists := getModLists specDecl.
 
   Section Ty.
     Variable ty: Kind -> Type.
@@ -252,23 +248,24 @@ Section Spec.
                                                "revokerAccess" ::= #newRevoker })).
     End LetExpr.
 
-    Definition interrupts: Action ty (getModLists specDecl) (Bit 0) :=
-      ( Get interrupts <- "interrupts" in specLists;
-        RegRead specInterrupts <- "interrupts" in specLists;
-        RegWrite "interrupts" in specLists <- Or [#interrupts; #specInterrupts];
+    Definition interrupts: Action ty specTree (Bit 0) :=
+      ( Get interrupts <- ".interrupts_in" in specTree;
+        RegRead specInterrupts <- ".interrupts" in specTree;
+        RegWrite ".interrupts" in specTree <- Or [#interrupts; #specInterrupts];
         Retv ).
 
-    Definition step: Action ty (getModLists specDecl) (Bit 0) :=
-      ( RegRead mem <- "mem" in specLists;
-        RegRead tags <- "tags" in specLists;
-        RegRead regs <- "regs" in specLists;
-        RegRead csrs <- "csrs" in specLists;
-        RegRead scrs <- "scrs" in specLists;
-        RegRead interrupts <- "interrupts" in specLists;
-        RegRead revokerEpoch <- "revokerEpoch" in specLists;
-        RegRead revokerKick <- "revokerKick" in specLists;
-        RegRead revokerStart <- "revokerStart" in specLists;
-        RegRead revokerEnd <- "revokerEnd" in specLists;
+    Definition step: Action ty specTree (Bit 0) :=
+      ( RegRead mem <- ".mem" in specTree;
+        RegRead tags <- ".tags" in specTree;
+        RegRead regs <- ".regs" in specTree;
+        RegRead csrs <- ".csrs" in specTree;
+        RegRead scrs <- ".scrs" in specTree;
+        RegRead interrupts <- ".interrupts" in specTree;
+        RegRead revokerEpoch <- ".revokerEpoch" in specTree;
+        RegRead revokerKick <- ".revokerKick" in specTree;
+        RegRead revokerStart <- ".revokerStart" in specTree;
+        RegRead revokerEnd <- ".revokerEnd" in specTree;
+        RegRead revokeAddr <- ".revokeAddr" in specTree;
 
         Let revoker : SpecRevokerAccessState <- STRUCT { "revokerEpoch" ::= #revokerEpoch;
                                                          "revokerKick" ::= #revokerKick;
@@ -283,18 +280,18 @@ Section Spec.
                                                       "revokerAccess" ::= #revoker };
         LetL updRegs : SpecProcessorState <- stepExpr fullState;
 
-        Put "pcOut" in specLists <- #regs $[0]`"addr";
+        Put ".pcOut" in specTree <- #regs $[0]`"addr";
 
-        RegWrite "mem" in specLists <- #updRegs`"mem";
-        RegWrite "tags" in specLists <- ##updRegs`"tags";
-        RegWrite "regs" in specLists <- ##updRegs`"regs";
-        RegWrite "csrs" in specLists <- ##updRegs`"csrs";
-        RegWrite "scrs" in specLists <- ##updRegs`"scrs";
-        RegWrite "interrupts" in specLists <- ##updRegs`"interrupts";
-        RegWrite "revokerEpoch" in specLists <- ##updRegs`"revokerAccess"`"revokerEpoch";
-        RegWrite "revokerKick" in specLists <- ##updRegs`"revokerAccess"`"revokerKick";
-        RegWrite "revokerStart" in specLists <- ##updRegs`"revokerAccess"`"revokerStart";
-        RegWrite "revokerEnd" in specLists <- ##updRegs`"revokerAccess"`"revokerEnd";
+        RegWrite ".mem" in specTree <- #updRegs`"mem";
+        RegWrite ".tags" in specTree <- ##updRegs`"tags";
+        RegWrite ".regs" in specTree <- ##updRegs`"regs";
+        RegWrite ".csrs" in specTree <- ##updRegs`"csrs";
+        RegWrite ".scrs" in specTree <- ##updRegs`"scrs";
+        RegWrite ".interrupts" in specTree <- ##updRegs`"interrupts";
+        RegWrite ".revokerEpoch" in specTree <- ##updRegs`"revokerAccess"`"revokerEpoch";
+        RegWrite ".revokerKick" in specTree <- ##updRegs`"revokerAccess"`"revokerKick";
+        RegWrite ".revokerStart" in specTree <- ##updRegs`"revokerAccess"`"revokerStart";
+        RegWrite ".revokerEnd" in specTree <- ##updRegs`"revokerAccess"`"revokerEnd";
         Retv ).
 
     Definition RevokerUpdState := STRUCT_TYPE {
@@ -343,14 +340,14 @@ Section Spec.
         ).
     End LetExpr.
 
-    Definition revoker: Action ty (getModLists specDecl) (Bit 0) :=
-      ( RegRead mem <- "mem" in specLists;
-        RegRead tags <- "tags" in specLists;
-        RegRead revokerEpoch <- "revokerEpoch" in specLists;
-        RegRead revokerKick <- "revokerKick" in specLists;
-        RegRead revokerStart <- "revokerStart" in specLists;
-        RegRead revokerEnd <- "revokerEnd" in specLists;
-        RegRead revokeAddr <- "revokeAddr" in specLists;
+    Definition revoker: Action ty specTree (Bit 0) :=
+      ( RegRead mem <- ".mem" in specTree;
+        RegRead tags <- ".tags" in specTree;
+        RegRead revokerEpoch <- ".revokerEpoch" in specTree;
+        RegRead revokerKick <- ".revokerKick" in specTree;
+        RegRead revokerStart <- ".revokerStart" in specTree;
+        RegRead revokerEnd <- ".revokerEnd" in specTree;
+        RegRead revokeAddr <- ".revokeAddr" in specTree;
 
         Let revokerUpdState: RevokerUpdState <- STRUCT { "tags" ::= #tags;
                                                          "revokerEpoch" ::= #revokerEpoch;
@@ -359,40 +356,34 @@ Section Spec.
 
         LetL newRevokerUpdState <- revokerExpr mem revokerStart revokerEnd revokerUpdState;
 
-        RegWrite "tags" in specLists <- #newRevokerUpdState`"tags";
-        RegWrite "revokerEpoch" in specLists <- ##newRevokerUpdState`"revokerEpoch";
-        RegWrite "revokerKick" in specLists <- ##newRevokerUpdState`"revokerKick";
-        RegWrite "revokeAddr" in specLists <- ##newRevokerUpdState`"revokeAddr";
+        RegWrite ".tags" in specTree <- #newRevokerUpdState`"tags";
+        RegWrite ".revokerEpoch" in specTree <- ##newRevokerUpdState`"revokerEpoch";
+        RegWrite ".revokerKick" in specTree <- ##newRevokerUpdState`"revokerKick";
+        RegWrite ".revokeAddr" in specTree <- ##newRevokerUpdState`"revokeAddr";
         Retv ).
   End Ty.
 
-  Definition spec: Mod := {|modDecl := specDecl;
-                            modActions := fun ty => [step ty; interrupts ty; revoker ty]|}.
+  Definition spec: Mod specTree :=
+    fun ty => [step ty; interrupts ty; revoker ty].
 
-  Definition RegsInvariant: FuncState (mregs specLists) -> Prop.
+  Definition SpecInvariant (s: TreeState ModElemState specTree) : Prop.
   Admitted.
 
-  Definition SpecInvariant (s: ModStateModDecl specDecl) : Prop :=
-    RegsInvariant (stateRegs s) /\
-      (stateMems s = tt) /\
-      (stateRegUs s = tt) /\
-      (stateMemUs s = tt).
-
-  Theorem specInvariantPreserved: forall old new puts gets,
+  Theorem specInvariantPreserved: forall old new,
       SpecInvariant old ->
-      SemAction (step type) old new puts gets Zmod.zero ->
+      SemAction (step type) old new Zmod.zero ->
       SpecInvariant new.
   Admitted.
 
-  Theorem interruptsInvariantPreserved: forall old new puts gets,
+  Theorem interruptsInvariantPreserved: forall old new,
       SpecInvariant old ->
-      SemAction (interrupts type) old new puts gets Zmod.zero ->
+      SemAction (interrupts type) old new Zmod.zero ->
       SpecInvariant new.
   Admitted.
 
-  Theorem revokerInvariantPreserved: forall old new puts gets,
+  Theorem revokerInvariantPreserved: forall old new,
       SpecInvariant old ->
-      SemAction (revoker type) old new puts gets Zmod.zero ->
+      SemAction (revoker type) old new Zmod.zero ->
       SpecInvariant new.
   Admitted.
 

@@ -1,6 +1,6 @@
 From Stdlib Require Import String List ZArith Zmod.
 Require Import Guru.Library Guru.Syntax Guru.Notations.
-Require Import Cheriot.Alu Cheriot.BankedMem Cheriot.Spec.
+Require Import Cheriot.Alu Cheriot.Spec.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -24,16 +24,18 @@ Section Pipeline.
                              "pcCap" :: ECap ;
                              "elems" :: Array NumIssue FetchOutElem }.
 
-  Definition allRegs :=
-    [ ("predPcVal", Build_Reg Addr (Default _));
-      ("predPcCap", Build_Reg ECap (Default _));
-      ("predPcTag", Build_Reg Bool (Default _));
-      ("waits", Build_Reg (Array NumRegs Bool) (Default _));
-      ("regs", Build_Reg (Array NumRegs FullECapWithTag) (Default _));
-      ("csrs", Build_Reg Csrs (Default _));
-      ("scrs", Build_Reg Scrs (STRUCT_CONST { "mtcc" ::= ExecRoot;
-                                              "mtdc" ::= MemRoot;
-                                              "mscratchc" ::= SealRoot;
-                                              "mepcc" ::= ExecRoot}));
-      ("interruptsReg", Build_Reg Interrupts (Default _))].
+  Definition allRegs : Tree ModElem :=
+    Node "" [
+      Leaf "predPcVal" (EReg (Build_Reg Addr (Some (Default _))));
+      Leaf "predPcCap" (EReg (Build_Reg ECap (Some (Default _))));
+      Leaf "predPcTag" (EReg (Build_Reg Bool (Some (Default _))));
+      Leaf "waits" (EReg (Build_Reg (Array NumRegs Bool) (Some (Default _))));
+      Leaf "regs" (EReg (Build_Reg (Array NumRegs FullECapWithTag) (Some (Default _))));
+      Leaf "csrs" (EReg (Build_Reg Csrs (Some (Default _))));
+      Leaf "scrs" (EReg (Build_Reg Scrs (Some (STRUCT_CONST { "mtcc" ::= ExecRoot;
+                                                              "mtdc" ::= MemRoot;
+                                                              "mscratchc" ::= SealRoot;
+                                                              "mepcc" ::= ExecRoot}))));
+      Leaf "interruptsReg" (EReg (Build_Reg Interrupts (Some (Default _))))
+    ].
 End Pipeline.
