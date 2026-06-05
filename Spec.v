@@ -148,7 +148,7 @@ Section Spec.
 
       Notation specSimpl x := ltac:(specSimpl x) (only parsing).
 
-      Definition stepExpr: LetExpr ty SpecProcessorState := specSimpl
+      Definition cpuActionExpr: LetExpr ty SpecProcessorState := specSimpl
         ( LetE insts : Array binaryLength (Bit 8) <- Const ty _ specInst;
           LetE mem <- ##state`"mem";
           LetE tags <- ##state`"tags";
@@ -254,7 +254,7 @@ Section Spec.
         RegWrite ".interrupts" in specTree <- Or [#interrupts; #specInterrupts];
         Retv ).
 
-    Definition step: Action ty specTree (Bit 0) :=
+    Definition cpuAction: Action ty specTree (Bit 0) :=
       ( RegRead mem <- ".mem" in specTree;
         RegRead tags <- ".tags" in specTree;
         RegRead regs <- ".regs" in specTree;
@@ -278,7 +278,7 @@ Section Spec.
                                                       "scrs" ::= #scrs;
                                                       "interrupts" ::= #interrupts;
                                                       "revokerAccess" ::= #revoker };
-        LetL updRegs : SpecProcessorState <- stepExpr fullState;
+        LetL updRegs : SpecProcessorState <- cpuActionExpr fullState;
 
         Put ".pcOut" in specTree <- #regs $[0]`"addr";
 
@@ -364,14 +364,14 @@ Section Spec.
   End Ty.
 
   Definition spec: Mod specTree :=
-    fun ty => [step ty; interrupts ty; revoker ty].
+    fun ty => [cpuAction ty; interrupts ty; revoker ty].
 
   Definition SpecInvariant (s: TreeState ElemState specTree) : Prop.
   Admitted.
 
   Theorem specInvariantPreserved: forall old new,
       SpecInvariant old ->
-      SemAction (step type) old new Zmod.zero ->
+      SemAction (cpuAction type) old new Zmod.zero ->
       SpecInvariant new.
   Admitted.
 
@@ -395,8 +395,8 @@ Section Spec.
           x.
 
   (*
-  Definition evalStepExpr (state: Expr type AllSpecState): type AllSpecState :=
-    ltac:(let x := simplifyAluExpr (evalLetExpr (stepExpr state)) in exact x).
+  Definition evalCpuActionExpr (state: Expr type AllSpecState): type AllSpecState :=
+    ltac:(let x := simplifyAluExpr (evalLetExpr (cpuActionExpr state)) in exact x).
    *)
 End Spec.
 
