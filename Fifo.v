@@ -10,7 +10,7 @@ Import ListNotations.
 Section ExprToRegAction.
   Variable ty: Kind -> Type.
   Variable k: Kind.
-  Variable t: Tree ModElem.
+  Variable t: Tree Elem.
   Variable stateReg: RegPath t.
   Variable stateRegKind: regKind (getRegFromPath stateReg) = k.
   
@@ -80,7 +80,7 @@ Section Fifo.
     End Expr.
 
     Section Action.
-      Variable t: Tree ModElem.
+      Variable t: Tree Elem.
       Variable stateReg: RegPath t.
       Variable stateRegKind: regKind (getRegFromPath stateReg) = FifoState.
 

@@ -24,7 +24,7 @@ Section Pipeline.
                              "pcCap" :: ECap ;
                              "elems" :: Array NumIssue FetchOutElem }.
 
-  Definition allRegs : Tree ModElem :=
+  Definition allRegs : Tree Elem :=
     Node "" [
       Leaf "predPcVal" (EReg (Build_Reg Addr (Some (Default _))));
       Leaf "predPcCap" (EReg (Build_Reg ECap (Some (Default _))));

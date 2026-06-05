@@ -52,7 +52,7 @@ Section Spec.
   Local Open Scope string_scope.
   Local Open Scope guru_scope.
 
-  Definition specTree : Tree ModElem :=
+  Definition specTree : Tree Elem :=
     Node "" [
       Leaf "mem" (EReg {| regKind := Array MemByteSz (Bit 8); regInit := Some memInit |});
       Leaf "tags" (EReg {| regKind := Array MemFullCapSz Bool; regInit := Some tagsInit |});
@@ -366,7 +366,7 @@ Section Spec.
   Definition spec: Mod specTree :=
     fun ty => [step ty; interrupts ty; revoker ty].
 
-  Definition SpecInvariant (s: TreeState ModElemState specTree) : Prop.
+  Definition SpecInvariant (s: TreeState ElemState specTree) : Prop.
   Admitted.
 
   Theorem specInvariantPreserved: forall old new,

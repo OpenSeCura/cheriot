@@ -64,7 +64,7 @@ Section Clut.
   Definition LeftOverCommandSize := Eval compute in (size (Option Command) - Xlen).
   Definition RespToProcSize := Eval compute in size (Option (Bit (LgClutSz + 1))).
 
-  Definition clutIfc : Tree ModElem :=
+  Definition clutIfc : Tree Elem :=
     Node "" [
       (* Keeps track if entry is used *)
       Leaf "valids" (EReg {| regKind := Array (Z.to_nat ClutSz) Bool; regInit := Some (Default _) |});

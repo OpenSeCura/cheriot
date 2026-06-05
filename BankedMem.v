@@ -21,7 +21,7 @@ Section BankedMem.
   Local Definition EachSize := Z.to_nat (Z.shiftl 1 LgEachSize).
   Local Definition MemAddrSz := LgNumBanks + LgEachSize.
 
-  Definition bankedMemIfc : Tree ModElem :=
+  Definition bankedMemIfc : Tree Elem :=
     Node "" [
       Node "memBanks" (repeat (Leaf "memBank" (EMem (@Build_Mem EachSize (Bit 8) 2%nat None))) NumBanks);
       Node "tagBanks" (repeat (Leaf "tagBank" (EMem (@Build_Mem EachSize Bool 2%nat None))) Num8Banks);
@@ -37,7 +37,7 @@ Section BankedMem.
     leaf_list_path_repeat (Leaf "tagBank" (EMem (@Build_Mem EachSize Bool 2%nat None))) tt p.
 
   Lemma leaf_list_path_mem_is_mem n (i: FinType n) :
-    Is_true (isMemElem (@getLeaf ModElem (Node "memBanks" (repeat (Leaf "memBank" (EMem (@Build_Mem EachSize (Bit 8) 2%nat None))) n)) (leaf_list_path_mem i))).
+    Is_true (isMemElem (@getLeaf Elem (Node "memBanks" (repeat (Leaf "memBank" (EMem (@Build_Mem EachSize (Bit 8) 2%nat None))) n)) (leaf_list_path_mem i))).
   Proof.
     unfold leaf_list_path_mem.
     rewrite getLeaf_repeat.
@@ -46,7 +46,7 @@ Section BankedMem.
   Qed.
 
   Lemma leaf_list_path_tag_is_mem n (i: FinType n) :
-    Is_true (isMemElem (@getLeaf ModElem (Node "tagBanks" (repeat (Leaf "tagBank" (EMem (@Build_Mem EachSize Bool 2%nat None))) n)) (leaf_list_path_tag i))).
+    Is_true (isMemElem (@getLeaf Elem (Node "tagBanks" (repeat (Leaf "tagBank" (EMem (@Build_Mem EachSize Bool 2%nat None))) n)) (leaf_list_path_tag i))).
   Proof.
     unfold leaf_list_path_tag.
     rewrite getLeaf_repeat.
