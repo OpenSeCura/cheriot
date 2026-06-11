@@ -79,7 +79,6 @@ Section Spec.
       Leaf "revokerStart" (EReg {| regKind := Bit MemWidthCap; regInit := Some revokerStartInit |});
       Leaf "revokerEnd" (EReg {| regKind := Bit MemWidthCap; regInit := Some revokerEndInit |});
       Leaf "revokeAddr" (EReg {| regKind := Bit MemWidthCap; regInit := Some revokeAddrInit |});
-      Leaf "pcOut" (ESend Addr);
       Leaf "interrupts_in" (ERecv Interrupts)
     ].
 
@@ -151,11 +150,11 @@ Section Spec.
 
   #[projections(primitive)]
   Record MemIfc {ty: Kind -> Type} := {
-    mem_readBytes: Expr ty Addr -> Expr ty (Bit MemSz) -> Expr ty (Array (Z.to_nat DXlenBytes) (Bit 8));
-    mem_readTag: forall {m}, Expr ty (Bit m) -> Expr ty Bool;
-    mem_readRevBit: Expr ty (Bit (AddrSz + 1)) -> Expr ty Bool;
-    mem_writeBytes: Expr ty Addr -> Expr ty (Array (Z.to_nat DXlenBytes) (Bit 8)) -> Expr ty (Bit MemSz) -> Action ty mem_t (Bit 0);
-    mem_writeTag: forall {m}, Expr ty (Bit m) -> Expr ty Bool -> Action ty mem_t (Bit 0)
+    mem_readBytes: ty Addr -> ty (Bit MemSz) -> Expr ty (Array (Z.to_nat DXlenBytes) (Bit 8));
+    mem_readTag: forall {m}, ty (Bit m) -> Expr ty Bool;
+    mem_readRevBit: ty (Bit (AddrSz + 1)) -> Expr ty Bool;
+    mem_writeBytes: ty Addr -> ty (Array (Z.to_nat DXlenBytes) (Bit 8)) -> ty (Bit MemSz) -> Action ty mem_t (Bit 0);
+    mem_writeTag: forall {m}, ty (Bit m) -> ty Bool -> Action ty mem_t (Bit 0)
   }.
 
     Definition interrupts: Action ty specTree (Bit 0) :=
@@ -228,7 +227,7 @@ Section Spec.
         Let revokerOffset: Bit (Z.log2_up RevokerSize) <- getRevokerOffset memAddr;
         Let revokerData: Data <- readRevoker revokerOffset revoker;
 
-        Let bytes: Array (Z.to_nat DXlenBytes) (Bit 8) <- memIfc.(mem_readBytes) #memAddr #memSz;
+        Let bytes: Array (Z.to_nat DXlenBytes) (Bit 8) <- memIfc.(mem_readBytes) memAddr memSz;
         Let fullCap: FullCap <- FromBit FullCap (@castBits ty (size (Array (Z.to_nat DXlenBytes) (Bit 8))) 64 size_bytes_eq (ToBit #bytes));
         Let ldCap: Cap <- #fullCap`"cap";
         Let ldVal: Array (Z.to_nat XlenBytes) (Bit 8) <- FromBit (Array (Z.to_nat XlenBytes) (Bit 8)) (@castBits ty 32 (size (Array (Z.to_nat XlenBytes) (Bit 8))) (eq_sym size_xlen_bytes_eq) (ITE #isRevoker #revokerData #fullCap`"addr"));
@@ -237,10 +236,10 @@ Section Spec.
         Let ldECapFinal: ECap <- ITE #isCap #ldECap ConstDef;
         Let memTagAddr: Bit (AddrSz - MemSz) <- TruncMsb _ MemSz #memAddr;
 
-        Let ldTag: Bool <- memIfc.(mem_readTag) #memTagAddr;
+        Let ldTag: Bool <- memIfc.(mem_readTag) memTagAddr;
 
         Let ldBase: Bit (AddrSz + 1) <- #ldECap`"base";
-        Let revBit: Bool <- memIfc.(mem_readRevBit) #ldBase;
+        Let revBit: Bool <- memIfc.(mem_readRevBit) ldBase;
 
         Let ldTagFinal: Bool <- ITE #isCap (And [#ldTag; Not #revBit]) ConstDef;
         Let ldFinal: FullECapWithTag <- STRUCT { "tag" ::= #ldTagFinal;
@@ -266,11 +265,12 @@ Section Spec.
                                   (writeRevoker revokerOffset stVal revoker)
                                   #revoker;
 
+        Let stTag: Bool <- ##aluOut`"multicycleOp"`"storeVal"`"tag";
         LetIf _ <- If #StoreMem
         Then (
-          Act liftAction np_mem (memIfc.(mem_writeBytes) #memAddr #stBytes #memSz);
+          Act liftAction np_mem (memIfc.(mem_writeBytes) memAddr stBytes memSz);
           LetIf _ <- If #isCap
-          Then (Act liftAction np_mem (memIfc.(mem_writeTag) #memTagAddr (##aluOut`"multicycleOp"`"storeVal"`"tag")); Retv)
+          Then (Act liftAction np_mem (memIfc.(mem_writeTag) memTagAddr stTag); Retv)
           Else (Retv);
           Retv
         ) Else (Retv);
@@ -284,8 +284,6 @@ Section Spec.
             System [DispString ty "FAILURE"%string] Retv );
           Retv )
         Else (Retv);
-
-        Put ".pcOut" in specTree <- (@ReadArrayConst ty NumRegs FullECapWithTag #aluOutRegs (@Build_FinType NumRegs 0 I))`"addr";
 
         RegWrite ".regs" in specTree <- #newRegs;
         RegWrite ".csrs" in specTree <- #aluOut`"csrs";
@@ -309,16 +307,18 @@ Section Spec.
         RegRead revokerEnd <- ".revokerEnd" in specTree;
         RegRead revokeAddr <- ".revokeAddr" in specTree;
 
-        Let ldTag: Bool <- memIfc.(mem_readTag) #revokeAddr;
-        Let bytes: Array (Z.to_nat DXlenBytes) (Bit 8) <- memIfc.(mem_readBytes) (@castBits ty _ 32 revoker_addr_size_eq (ZeroExtendTo 32 {< #revokeAddr, Const ty (Bit MemSz) (bits.of_Z _ 0) >})) (Const ty (Bit MemSz) (bits.of_Z _ 0));
+        Let ldTag: Bool <- memIfc.(mem_readTag) revokeAddr;
+        Let rvkAddr : Addr <- @castBits ty _ 32 revoker_addr_size_eq (ZeroExtendTo 32 {< #revokeAddr, Const ty (Bit MemSz) (bits.of_Z _ 0) >});
+        Let rvkSz : Bit MemSz <- Const ty (Bit MemSz) (bits.of_Z _ 0);
+        Let bytes: Array (Z.to_nat DXlenBytes) (Bit 8) <- memIfc.(mem_readBytes) rvkAddr rvkSz;
         Let fullCap: FullCap <- FromBit FullCap (@castBits ty (size (Array (Z.to_nat DXlenBytes) (Bit 8))) 64 size_bytes_eq (ToBit #bytes));
         Let ldCap: Cap <- #fullCap`"cap";
         Let ldVal: Addr <- #fullCap`"addr";
         LetL ldECap: ECap <- decodeCap ldCap ldVal;
         Let ldBase <- #ldECap`"base";
-        Let revBit: Bool <- memIfc.(mem_readRevBit) #ldBase;
+        Let revBit: Bool <- memIfc.(mem_readRevBit) ldBase;
         Let ldTagFinal <- And [#ldTag; Not #revBit];
-        Act liftAction np_mem (memIfc.(mem_writeTag) #revokeAddr #ldTagFinal);
+        Act liftAction np_mem (memIfc.(mem_writeTag) revokeAddr ldTagFinal);
 
         Let workStart <- And [Eq #revokeAddr #revokerEnd; #revokerKick];
         Let doWork <- Slt #revokeAddr #revokerEnd;
