@@ -1,4 +1,4 @@
-CHERIOT_ROOT = $(HOME)/work/Cheriot
+CHERIOT_ROOT = $(HOME)/work/cheriot
 
 .PHONY: all force
 
