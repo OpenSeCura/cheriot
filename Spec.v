@@ -88,11 +88,12 @@ Section Spec.
                                            "revokerStart" :: Bit MemWidthCap;
                                            "revokerEnd" :: Bit MemWidthCap }.
 
-  Definition SpecProcessorState := STRUCT_TYPE {                                        "regs" :: Array NumRegs FullECapWithTag;
-                                        "csrs" :: Csrs;
-                                        "scrs" :: Scrs;
-                                        "interrupts" :: Interrupts;
-                                        "revokerAccess" :: SpecRevokerAccessState }.
+  Definition SpecProcessorState := STRUCT_TYPE {
+                                       "regs" :: Array NumRegs FullECapWithTag;
+                                       "csrs" :: Csrs;
+                                       "scrs" :: Scrs;
+                                       "interrupts" :: Interrupts;
+                                       "revokerAccess" :: SpecRevokerAccessState }.
   Local Close Scope string_scope.
 
   Section Ty.
@@ -202,9 +203,9 @@ Section Spec.
         Let insts : Array binaryLength (Bit 8) <- Const ty _ specInst;
         Let pcc : FullECapWithTag <- #regs $[ 0 ];
         Let pcVal : Addr <- #pcc`"addr";
-        Let BoundsException : Bool <- And [Slt (ZeroExtend 1 #pcVal) (##pcc`"ecap"`"top")];
+        Let BoundsException : Bool <- And [Slt (ZeroExtend 1 #pcVal) (##pcc`"ecap"`"top"); Sge (ZeroExtend 1 #pcVal) (##pcc`"ecap"`"base")];
         Let pcAluOut: PcAluOut <- STRUCT { "pcVal" ::= #pcVal;
-                                            "BoundsException" ::= #BoundsException };
+                                           "BoundsException" ::= #BoundsException };
         Let inst: Inst <- ToBit (slice #insts #pcVal (Z.to_nat InstSz/8));
         LetL decodeOut: DecodeOut <- decode inst;
 
@@ -269,9 +270,9 @@ Section Spec.
         LetIf _ <- If #StoreMem
         Then (
           Act liftAction np_mem (memIfc.(mem_writeBytes) memAddr stBytes memSz);
-          LetIf _ <- If #isCap
-          Then (Act liftAction np_mem (memIfc.(mem_writeTag) memTagAddr stTag); Retv)
-          Else (Retv);
+          If #isCap
+            Then (Act liftAction np_mem (memIfc.(mem_writeTag) memTagAddr stTag); Retv)
+            Else Retv;
           Retv
         ) Else (Retv);
 
