@@ -23,87 +23,72 @@ Set Asymmetric Patterns.
 
 Import ListNotations.
 
-Section ExprToRegAction.
-  Variable ty: Kind -> Type.
-  Variable k: Kind.
-  Variable t: Tree Elem.
-  Variable stateReg: RegPath t.
-  Variable stateRegKind: regKind (getRegFromPath stateReg) = k.
-  
-  Local Open Scope guru_scope.
-
-  Section ActionOfExpr.
-    Variable k2: Kind.
-    Variable expr: Expr ty k -> Expr ty k2 -> Expr ty k.
-    Definition actionOfExpr (e: Expr ty k2) : Action ty t (Bit 0) :=
-      ReadReg "state" stateReg
-        (fun state => WriteReg stateReg (match eq_sym stateRegKind in _ = Y return Expr ty Y with
-                                         | eq_refl => expr (match stateRegKind in _ = Y return Expr ty Y with
-                                                            | eq_refl => #state
-                                                            end) e
-                                         end) (Return ConstDef)).
-  End ActionOfExpr.
-
-  Section ActionOfUpdExpr.
-    Variable expr: Expr ty k -> Expr ty k.
-    Definition actionOfUpdExpr : Action ty t (Bit 0) :=
-      ReadReg "state" stateReg
-        (fun state => WriteReg stateReg (match eq_sym stateRegKind in _ = Y return Expr ty Y with
-                                         | eq_refl => expr (match stateRegKind in _ = Y return Expr ty Y with
-                                                            | eq_refl => #state
-                                                            end)
-                                         end) (Return ConstDef)).
-  End ActionOfUpdExpr.
-
-  Section ReadExpr.
-    Variable k2: Kind.
-    Variable expr: Expr ty k -> Expr ty k2.
-    Definition readExpr : Action ty t k2 :=
-      ReadReg "state" stateReg
-        (fun state => Return (expr (match stateRegKind in _ = Y return Expr ty Y with
-                                    | eq_refl => #state
-                                    end))).
-  End ReadExpr.
-End ExprToRegAction.
-
 Section Fifo.
   Variable capacity: nat.
   Variable k: Kind.
 
+  Local Open Scope string.
   Local Open Scope guru_scope.
 
-  Definition FifoState := STRUCT_TYPE {
-                              "elems" :: Array capacity k;
-                              "size" :: Bit (Z.log2_up (Z.of_nat capacity)) }.
+  Definition fifoTree : Tree Elem :=
+    Node ""
+      [ Leaf "elems" (EReg (Build_Reg (Array capacity k) None));
+        Leaf "size" (EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat capacity))) (Some (Default _))));
+        Leaf "deq_idx" (EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat capacity))) (Some (Default _))))].
 
   Section Ty.
     Variable ty: Kind -> Type.
 
-    Section Expr.
-      Variable state: Expr ty FifoState.
+    Definition ModuloAdd (a b: ty (Bit (Z.log2_up (Z.of_nat capacity)))) :
+      LetExpr ty (Bit (Z.log2_up (Z.of_nat capacity))) :=
+      if Z.eqb (Z.pow 2 (Z.log2_up (Z.of_nat capacity))) (Z.of_nat capacity)
+      then RetE (Add [#a; #b])
+      else (
+          LetE extendedSum <- Add [ZeroExtend 1 #a; ZeroExtend 1 #b];
+          RetE (TruncLsb 1 _ (Sub #extendedSum
+                                (ITE (Slt #extendedSum $(Z.of_nat capacity)) $0 $(Z.of_nat capacity))))).
 
-      Definition isFullExpr : Expr ty Bool := Eq state`"size" $(Z.of_nat capacity).
-      Definition isEmptyExpr : Expr ty Bool := Eq state`"size" $0.
-      Definition enqExpr (v: Expr ty k): Expr ty FifoState :=
-        ITE isFullExpr
-          state
-          (STRUCT { "elems" ::= state`"elems" @[ Add [state`"size"; $1] <- v];
-                    "size" ::= Add [state`"size"; $1] }).
-      Definition deqExpr: Expr ty FifoState :=
-        ITE isEmptyExpr
-          state
-          (state `{"size" <- Sub state`"size" $1}).
-    End Expr.
+    Definition isFullAction : Action ty fifoTree Bool :=
+      ( RegRead sz <- ".size" in fifoTree;
+        Return (Eq #sz $(Z.of_nat capacity)) ).
 
-    Section Action.
-      Variable t: Tree Elem.
-      Variable stateReg: RegPath t.
-      Variable stateRegKind: regKind (getRegFromPath stateReg) = FifoState.
+    Definition isEmptyAction : Action ty fifoTree Bool :=
+      ( RegRead sz <- ".size" in fifoTree;
+        Return (Eq #sz $0) ).
 
-      Definition isFullAction: Action ty t Bool := readExpr stateRegKind isFullExpr.
-      Definition isEmptyAction: Action ty t Bool := readExpr stateRegKind isEmptyExpr.
-      Definition enqAction: Expr ty k -> Action ty t (Bit 0) := actionOfExpr stateRegKind enqExpr.
-      Definition deqAction: Action ty t (Bit 0) := actionOfUpdExpr stateRegKind deqExpr.
-    End Action.
+    Definition enqAction (val: ty k) : Action ty fifoTree (Bit 0) :=
+      ( LetA isFull <- isFullAction;
+        If (Not #isFull)
+        Then (
+          RegRead elems <- ".elems" in fifoTree;
+          RegRead size <- ".size" in fifoTree;
+          RegRead deq_idx <- ".deq_idx" in fifoTree;
+          LetL enq_idx <- ModuloAdd deq_idx size;
+          RegWrite ".elems" in fifoTree <- (#elems @[ #enq_idx <- #val ]);
+          RegWrite ".size" in fifoTree <- Add [#size; $1];
+          Retv
+        );
+        Retv ).
+
+    Definition deqAction : Action ty fifoTree (Bit 0) :=
+      ( RegRead size <- ".size" in fifoTree;
+        Let isEmpty <- Eq #size $0;
+        If (Not #isEmpty)
+        Then (
+          RegRead deq_idx <- ".deq_idx" in fifoTree;
+          Let one <- $1;
+          LetL new_deq_idx <- ModuloAdd deq_idx one;
+          RegWrite ".deq_idx" in fifoTree <- #new_deq_idx;
+          RegWrite ".size" in fifoTree <- Sub #size $1;
+          Retv
+        );
+        Retv ).
+
+    Definition firstAction : Action ty fifoTree (Option k) :=
+      ( RegRead elems <- ".elems" in fifoTree;
+        RegRead size <- ".size" in fifoTree;
+        RegRead deq_idx <- ".deq_idx" in fifoTree;
+        Let isEmpty <- Eq #size $0;
+        Return ((STRUCT { "data" ::= (#elems @[ #deq_idx ]); "valid" ::= Not #isEmpty }): Expr ty (Option k))).
   End Ty.
 End Fifo.
