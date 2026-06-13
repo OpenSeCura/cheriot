@@ -89,6 +89,6 @@ Section Fifo.
         RegRead size <- ".size" in fifoTree;
         RegRead deq_idx <- ".deq_idx" in fifoTree;
         Let isEmpty <- Eq #size $0;
-        Return ((STRUCT { "data" ::= (#elems @[ #deq_idx ]); "valid" ::= Not #isEmpty }): Expr ty (Option k))).
+        Return (ITE #isEmpty (mkNone ty) (mkSome (#elems @[ #deq_idx ]))) ).
   End Ty.
 End Fifo.

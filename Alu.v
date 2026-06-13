@@ -1488,8 +1488,7 @@ Section Alu.
     ITE (FromBit Bool (TruncMsb 1 n #e)) (Const _ (Bit n) (Zmod.of_Z _ (-1))) (TruncLsb 1 n #e).
 
   Local Definition exception (x: Expr ty (Bit CapExceptSz)) : Expr ty (Option (Bit CapExceptSz)) :=
-    STRUCT { "data" ::= x ;
-             "valid" ::= ConstTBool true }.
+    mkSome x.
 
   Local Definition regIdxWrong (idx: ty (Bit RegFixedIdSz)) :=
     isNotZero (TruncMsb (RegFixedIdSz - RegIdSz) RegIdSz #idx).
@@ -1742,8 +1741,8 @@ Section Alu.
                         (ITE0 (And [#load_store; Not #boundsRes])
                            (exception $BoundsViolation) )))) ];
 
-      LetE capExceptionVal <- #capException`"data";
-      LetE isCapException <- #capException`"valid";
+      LetE capExceptionVal <- getData #capException;
+      LetE isCapException <- isValid #capException;
       LetE capExceptionSrc <- ITE0 (Not #capSrException) rs1IdxFixed;
 
       LetE isException <- Or [Not #pcTag; BoundsException;
