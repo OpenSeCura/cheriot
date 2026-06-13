@@ -192,6 +192,7 @@ Section Fields.
   Definition c0 := 0.
   Definition ra := 1.
   Definition sp := 2.
+  Definition c3 := 3.
 
   Definition imm := extractFieldFromInst immField.
   Definition branchOffset := structSimplCbn
@@ -203,7 +204,7 @@ Section Fields.
                             ({< extractFieldFromInst (31,  1),
                                 extractFieldFromInst (12,  8),
                                 extractFieldFromInst (20,  1),
-                                extractFieldFromInst (21, 10), Const ty (Bit 1) Zmod.one >}).
+                                extractFieldFromInst (21, 10), Const ty (Bit 1) Zmod.zero >}).
   Definition auiLuiOffset := extractFieldFromInst auiLuiField.
 
   Definition isCompressed := Eval cbv -[Zmod.of_Z] in (isAllOnes (TruncLsb (InstSz - 2) 2 #inst)).
@@ -906,7 +907,7 @@ Section Decode.
 
       LetE auiLuiOffsetInst: Bit Imm20Sz <- auiLuiOffset inst;
 
-      LetE rs1Idx: Bit RegFixedIdSz <- rs1Fixed inst;
+      LetE rs1Idx: Bit RegFixedIdSz <- ITE #AuiCgp $c3 (rs1Fixed inst);
       LetE rs2Idx: Bit RegFixedIdSz <- rs2Fixed inst;
       LetE rdIdx: Bit RegFixedIdSz <- rdFixed inst;
 
@@ -1498,7 +1499,7 @@ Section Alu.
       LetE rs1Idx: Bit RegIdSz <- TruncLsb (RegFixedIdSz - RegIdSz) RegIdSz rs1IdxFixed;
       LetE rs2Idx: Bit RegIdSz <- TruncLsb (RegFixedIdSz - RegIdSz) RegIdSz rs2IdxFixed;
       LetE immVal: Bit Imm12Sz <- TruncLsb (DecImmSz - Imm12Sz) Imm12Sz decImm;
-      LetE fullImmXlen <- ITE ImmExtRight ({< decImm, Const _ (Bit 11) (Zmod.of_Z _ (-1)) >})
+      LetE fullImmXlen <- ITE ImmExtRight ({< decImm, ConstDefK (Bit 11) >})
         (SignExtendTo Xlen decImm);
       LetE fullImmSXlen <- SignExtend 1 #fullImmXlen;
   
