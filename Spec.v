@@ -249,14 +249,10 @@ End PartialInitSpec.
 
 Section Uncore.
   Variable RevokerStartAddrAligned: Z.
-  Definition RevokerNumRegs : Z := 4.
-  Definition RevokerSizeBytes : Z := XlenBytes * RevokerNumRegs.
+  Definition RevokerNumRegs : nat := 4.
+  Definition RevokerSizeBytes : Z := XlenBytes * Z.of_nat RevokerNumRegs.
   Definition RevokerAlignBits : Z := Z.log2_up RevokerSizeBytes.
 
-  Variable revokerEpochInit: type Data.
-  Variable revokerKickInit: type Bool.
-  Variable revokerStartInit: type (Bit (AddrSz - LgNumBytesFullCapSz)).
-  Variable revokerEndInit: type (Bit (AddrSz - LgNumBytesFullCapSz)).
   Variable revokeAddrInit: type (Bit (AddrSz - LgNumBytesFullCapSz)).
 
   Local Open Scope string_scope.
@@ -264,14 +260,20 @@ Section Uncore.
 
   Variable mem_t: Tree Elem.
 
+  Definition RevokerState : Kind := Struct [
+    ("start", Bit (AddrSz - LgNumBytesFullCapSz));
+    ("end", Bit (AddrSz - LgNumBytesFullCapSz));
+    ("epoch", Data);
+    ("kick", Bool)
+  ].
+
+  Variable revokerStateInit: type RevokerState.
+
   Definition uncoreTree : Tree Elem :=
     Node "" [
       Node "mem" [mem_t];
       Node "revoker" [
-        Leaf "revokerEpoch" (EReg {| regKind := Data; regInit := Some revokerEpochInit |});
-        Leaf "revokerKick" (EReg {| regKind := Bool; regInit := Some revokerKickInit |});
-        Leaf "revokerStart" (EReg {| regKind := Bit (AddrSz - LgNumBytesFullCapSz); regInit := Some revokerStartInit |});
-        Leaf "revokerEnd" (EReg {| regKind := Bit (AddrSz - LgNumBytesFullCapSz); regInit := Some revokerEndInit |});
+        Leaf "revokerState" (EReg {| regKind := RevokerState; regInit := Some revokerStateInit |});
         Leaf "revokeAddr" (EReg {| regKind := Bit (AddrSz - LgNumBytesFullCapSz); regInit := Some revokeAddrInit |})
       ]
     ].
@@ -288,28 +290,35 @@ Section Uncore.
     Variable ty: Kind -> Type.
     Variable rawMemIfc: @MemIfc mem_t ty.
 
+    Definition decodeRevokerState (s: Expr ty RevokerState) : Expr ty (Array RevokerNumRegs (Bit 32)) :=
+      ARRAY [ {< s`"start", Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >};
+              {< s`"end", Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >};
+              s`"epoch";
+              {< Const ty (Bit (Xlen - 1)) Zmod.zero, ToBit (s`"kick") >} ].
+
+    Definition encodeRevokerState (arr: Expr ty (Array RevokerNumRegs Data)) : Expr ty RevokerState :=
+      STRUCT {
+        "start" ::= TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz (arr $[0]);
+        "end" ::= TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz (arr $[1]);
+        "epoch" ::= arr $[2];
+        "kick" ::= FromBit Bool (TruncLsb (Xlen - 1) 1 (arr $[3]))
+      }.
+
     Definition isRevokerAddr (a: Expr ty Addr) :=
       And [Sge a $RevokerStartAddr; Sle a $RevokerEndAddr].
-
-    Definition getRevokerOffset (a: ty Addr): Expr ty (Bit 2) :=
-      TruncMsb (Z.log2_up RevokerNumRegs) (Z.log2_up XlenBytes)
-        (TruncLsb (AddrSz - RevokerAlignBits) RevokerAlignBits #a).
 
     Definition uncoreMemIfc : @MemIfc uncoreTree ty := {|
       mem_readBits := fun addr =>
         ( Let isRevoker: Bool <- isRevokerAddr #addr;
-          Let offset: Bit 2 <- getRevokerOffset addr;
           LetIf retVal : Bit DXlen <- If #isRevoker
           Then (
-            RegRead revokerEpoch <- ".revoker.revokerEpoch" in uncoreTree;
-            RegRead revokerStart <- ".revoker.revokerStart" in uncoreTree;
-            RegRead revokerEnd <- ".revoker.revokerEnd" in uncoreTree;
-            Let revokerVal: Data <-
-              (Or [ITE0 (Eq #offset $0) ##revokerEpoch;
-                   ITE0 (Eq #offset $1) (Const ty Data (bits.of_Z _ 0));
-                   ITE0 (Eq #offset $2) {< ##revokerStart, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >};
-                   ITE0 (Eq #offset $3) {< ##revokerEnd, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >}]);
-            Return (ZeroExtendTo DXlen #revokerVal)
+            RegRead revokerState <- ".revoker.revokerState" in uncoreTree;
+            Let oldArray : Bit (NatZ_mul (Z.to_nat XlenBytes * RevokerNumRegs) 8) <-
+                             ToBit (decodeRevokerState #revokerState);
+            Let bytesArr <- FromBit (Array (Z.to_nat XlenBytes * RevokerNumRegs) (Bit 8)) #oldArray;
+            Let byteOffset <- TruncLsb (AddrSz - RevokerAlignBits) RevokerAlignBits #addr;
+            Let readSlice <- slice #bytesArr #byteOffset (Z.to_nat DXlenBytes);
+            Return (ToBit #readSlice)
           ) Else (liftAction uncore_np_mem (rawMemIfc.(mem_readBits) addr));
           Return #retVal );
       mem_readTag := fun addr =>
@@ -318,44 +327,19 @@ Section Uncore.
         liftAction uncore_np_mem (rawMemIfc.(mem_readRevBit) addr);
       mem_readInst := fun addr =>
         liftAction uncore_np_mem (rawMemIfc.(mem_readInst) addr);
-      mem_writeBits := fun addr val sz =>
-        ( Let isRevoker: Bool <- isRevokerAddr #addr;
-          Let offset: Bit 2 <- getRevokerOffset addr;
-          Let alignedAddr <- TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz #addr;
+      mem_writeBits := fun addr val sz => (
+          Let isRevoker: Bool <- isRevokerAddr #addr;
           If #isRevoker
           Then (
-            (* TODO: update only upto sz bytes; keep the rest of the value same as what we had earlier *)
-            If (Eq #offset $0)
-            Then (
-              RegRead oldEpoch <- ".revoker.revokerEpoch" in uncoreTree;
-              Let newEpoch : Data <- TruncLsb Xlen Xlen #val;
-              Let updatedEpoch : Data <- updateWordByByteSz #sz #oldEpoch #newEpoch;
-              RegWrite ".revoker.revokerEpoch" in uncoreTree <- #updatedEpoch;
-              Retv
-            );
-            If (Eq #offset $1)
-            Then (
-              RegWrite ".revoker.revokerKick" in uncoreTree <- (Const ty Bool true);
-              Retv
-            );
-            If (Eq #offset $2)
-            Then (
-              RegRead oldStart <- ".revoker.revokerStart" in uncoreTree;
-              Let oldAddr : Addr <- {< #oldStart, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >};
-              Let newAddr : Addr <- TruncLsb Xlen Xlen #val;
-              Let updatedAddr : Addr <- updateWordByByteSz #sz #oldAddr #newAddr;
-              RegWrite ".revoker.revokerStart" in uncoreTree <- TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz #updatedAddr;
-              Retv
-            );
-            If (Eq #offset $3)
-            Then (
-              RegRead oldEnd <- ".revoker.revokerEnd" in uncoreTree;
-              Let oldAddr : Addr <- {< #oldEnd, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >};
-              Let newAddr : Addr <- TruncLsb Xlen Xlen #val;
-              Let updatedAddr : Addr <- updateWordByByteSz #sz #oldAddr #newAddr;
-              RegWrite ".revoker.revokerEnd" in uncoreTree <- TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz #updatedAddr;
-              Retv
-            );
+            RegRead revokerState <- ".revoker.revokerState" in uncoreTree;
+            Let oldArray : Bit (NatZ_mul (Z.to_nat XlenBytes * RevokerNumRegs) 8) <-
+                             ToBit (decodeRevokerState #revokerState);
+            Let bytesArr <- FromBit (Array (Z.to_nat XlenBytes * RevokerNumRegs) (Bit 8)) #oldArray;
+            Let byteOffset <- TruncLsb (AddrSz - RevokerAlignBits) RevokerAlignBits #addr;
+            Let newValBytes <- FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) #val;
+            LetL updatedBytesArr <- updSlice #bytesArr #byteOffset #newValBytes #sz;
+            Let updatedState <- encodeRevokerState (FromBit (Array RevokerNumRegs Data) (ToBit #updatedBytesArr));
+            RegWrite ".revoker.revokerState" in uncoreTree <- #updatedState;
             Retv
           ) Else (liftAction uncore_np_mem (rawMemIfc.(mem_writeBits) addr val sz));
           Retv );
