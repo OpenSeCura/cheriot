@@ -67,25 +67,7 @@ Section Spec.
   Section Ty.
     Variable ty: Kind -> Type.
 
-    Definition updateArrayBySz (m: Z)
-      (shamt: Expr ty (Bit m))
-      (k: Kind)
-      (n: nat)
-      (oldVal newVal: Expr ty (Array n k))
-      : Expr ty (Array n k) :=
-      ArrayBuilder (fun i => ITE (ReadArrayConst (Not (invMask n shamt)) i)
-                               (ReadArrayConst newVal i)
-                               (ReadArrayConst oldVal i)).
-
-    Definition updateBitsByChunkSz (n: nat) (sz: Z) (m: Z)
-      (shamt: Expr ty (Bit m))
-      (oldVal newVal: Expr ty (Bit (NatZ_mul n sz)))
-      : Expr ty (Bit (NatZ_mul n sz)) :=
-      ToBit (updateArrayBySz shamt
-               (FromBit (Array n (Bit sz)) oldVal)
-               (FromBit (Array n (Bit sz)) newVal)).
-
-    Definition updateWordByByteSz := updateBitsByChunkSz (n := Z.to_nat XlenBytes) (sz := 8).
+    Definition updateWordByByteSz := @updateBitsByChunkSz ty (Z.to_nat XlenBytes) 8.
 
     Variable memIfc: @MemIfc mem_t ty.
 
@@ -349,11 +331,12 @@ Section Uncore.
 
     (* TODO: Check with Wes about this design *)
     Definition revoker: Action ty uncoreTree (Bit 0) :=
-      ( RegRead revokerEpoch <- ".revoker.revokerEpoch" in uncoreTree;
-        RegRead revokerKick <- ".revoker.revokerKick" in uncoreTree;
-        RegRead revokerStart <- ".revoker.revokerStart" in uncoreTree;
-        RegRead revokerEnd <- ".revoker.revokerEnd" in uncoreTree;
+      ( RegRead revokerState <- ".revoker.revokerState" in uncoreTree;
         RegRead revokeAddr <- ".revoker.revokeAddr" in uncoreTree;
+        LetL revokerStart : Bit (AddrSz - LgNumBytesFullCapSz) <- RetE (#revokerState`"start");
+        LetL revokerEnd : Bit (AddrSz - LgNumBytesFullCapSz) <- RetE (#revokerState`"end");
+        LetL revokerEpoch : Data <- RetE (#revokerState`"epoch");
+        LetL revokerKick : Bool <- RetE (#revokerState`"kick");
 
         Let waiting <- Sge #revokeAddr #revokerEnd;
 
@@ -375,8 +358,13 @@ Section Uncore.
         Else (
           If (#revokerKick)
             Then (
-              RegWrite ".revoker.revokerEpoch" in uncoreTree <- Add [#revokerEpoch; $1];
-              RegWrite ".revoker.revokerKick" in uncoreTree <- ConstDef;
+              LetL updatedState <- RetE (STRUCT {
+                "start" ::= #revokerStart;
+                "end" ::= #revokerEnd;
+                "epoch" ::= Add [#revokerEpoch; $1];
+                "kick" ::= Const ty Bool false
+              });
+              RegWrite ".revoker.revokerState" in uncoreTree <- #updatedState;
               RegWrite ".revoker.revokeAddr" in uncoreTree <- #revokerStart;
               Retv );
           Retv);
