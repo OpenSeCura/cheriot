@@ -272,31 +272,31 @@ Section Uncore.
     Variable ty: Kind -> Type.
     Variable rawMemIfc: @MemIfc mem_t ty.
 
-    Definition decodeRevokerState (s: Expr ty RevokerState) : Expr ty (Array RevokerNumRegs (Bit 32)) :=
-      ARRAY [ {< s`"start", Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >};
-              {< s`"end", Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >};
-              s`"epoch";
-              {< Const ty (Bit (Xlen - 1)) Zmod.zero, ToBit (s`"kick") >} ].
+    Definition decodeRevokerState (s: ty RevokerState) : Expr ty (Array RevokerNumRegs (Bit 32)) :=
+      ARRAY [ {< ##s`"start", Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >};
+              {< ##s`"end", Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >};
+              ##s`"epoch";
+              {< Const ty (Bit (Xlen - 1)) Zmod.zero, ToBit (##s`"kick") >} ].
 
-    Definition encodeRevokerState (arr: Expr ty (Array RevokerNumRegs Data)) : Expr ty RevokerState :=
+    Definition encodeRevokerState (arr: ty (Array RevokerNumRegs Data)) : Expr ty RevokerState :=
       STRUCT {
-        "start" ::= TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz (arr $[0]);
-        "end" ::= TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz (arr $[1]);
-        "epoch" ::= arr $[2];
-        "kick" ::= FromBit Bool (TruncLsb (Xlen - 1) 1 (arr $[3]))
+        "start" ::= TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz (##arr $[0]);
+        "end" ::= TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz (#arr $[1]);
+        "epoch" ::= #arr $[2];
+        "kick" ::= FromBit Bool (TruncLsb (Xlen - 1) 1 (#arr $[3]))
       }.
 
-    Definition isRevokerAddr (a: Expr ty Addr) :=
-      And [Sge a $RevokerStartAddr; Sle a $RevokerEndAddr].
+    Definition isRevokerAddr (a: ty Addr) :=
+      And [Sge #a $RevokerStartAddr; Sle #a $RevokerEndAddr].
 
     Definition uncoreMemIfc : @MemIfc uncoreTree ty := {|
       mem_readBits := fun addr =>
-        ( Let isRevoker: Bool <- isRevokerAddr #addr;
+        ( Let isRevoker: Bool <- isRevokerAddr addr;
           LetIf retVal : Bit DXlen <- If #isRevoker
           Then (
             RegRead revokerState <- ".revoker.revokerState" in uncoreTree;
             Let oldArray : Bit (NatZ_mul (Z.to_nat XlenBytes * RevokerNumRegs) 8) <-
-                             ToBit (decodeRevokerState #revokerState);
+                             ToBit (decodeRevokerState revokerState);
             Let bytesArr <- FromBit (Array (Z.to_nat XlenBytes * RevokerNumRegs) (Bit 8)) #oldArray;
             Let byteOffset <- TruncLsb (AddrSz - RevokerAlignBits) RevokerAlignBits #addr;
             Let readSlice <- slice #bytesArr #byteOffset (Z.to_nat DXlenBytes);
@@ -310,17 +310,18 @@ Section Uncore.
       mem_readInst := fun addr =>
         liftAction uncore_np_mem (rawMemIfc.(mem_readInst) addr);
       mem_writeBits := fun addr val sz => (
-          Let isRevoker: Bool <- isRevokerAddr #addr;
+          Let isRevoker: Bool <- isRevokerAddr addr;
           If #isRevoker
           Then (
             RegRead revokerState <- ".revoker.revokerState" in uncoreTree;
             Let oldArray : Bit (NatZ_mul (Z.to_nat XlenBytes * RevokerNumRegs) 8) <-
-                             ToBit (decodeRevokerState #revokerState);
+                             ToBit (decodeRevokerState revokerState);
             Let bytesArr <- FromBit (Array (Z.to_nat XlenBytes * RevokerNumRegs) (Bit 8)) #oldArray;
             Let byteOffset <- TruncLsb (AddrSz - RevokerAlignBits) RevokerAlignBits #addr;
             Let newValBytes <- FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) #val;
             LetL updatedBytesArr <- updSlice #bytesArr #byteOffset #newValBytes #sz;
-            Let updatedState <- encodeRevokerState (FromBit (Array RevokerNumRegs Data) (ToBit #updatedBytesArr));
+            Let updatedWordArr <- FromBit (Array RevokerNumRegs Data) (ToBit #updatedBytesArr);
+            Let updatedState <- encodeRevokerState updatedWordArr;
             RegWrite ".revoker.revokerState" in uncoreTree <- #updatedState;
             Retv
           ) Else (liftAction uncore_np_mem (rawMemIfc.(mem_writeBits) addr val sz));
