@@ -175,15 +175,6 @@ Section Spec.
       exact x''.
     Notation specSimpl x := ltac:(specSimpl x) (only parsing).
 
-    Lemma size_bytes_eq : size (Array (Z.to_nat DXlenBytes) (Bit 8)) = 64%Z.
-    Proof. compute. reflexivity. Qed.
-
-    Lemma size_xlen_bytes_eq : size (Array (Z.to_nat XlenBytes) (Bit 8)) = 32%Z.
-    Proof. compute. reflexivity. Qed.
-
-    Lemma size_st_bytes_eq : DXlen = size (Array (Z.to_nat DXlenBytes) (Bit 8)).
-    Proof. compute. reflexivity. Qed.
-
     Definition cpuAction: Action ty specTree (Bit 0) :=
       ( RegRead regs <- ".regs" in specTree;
         RegRead csrs <- ".csrs" in specTree;
@@ -229,9 +220,10 @@ Section Spec.
         Let revokerData: Data <- readRevoker revokerOffset revoker;
 
         Let bytes: Array (Z.to_nat DXlenBytes) (Bit 8) <- memIfc.(mem_readBytes) memAddr memSz;
-        Let fullCap: FullCap <- FromBit FullCap (@castBits ty (size (Array (Z.to_nat DXlenBytes) (Bit 8))) 64 size_bytes_eq (ToBit #bytes));
+        Let fullCap: FullCap <- FromBit FullCap (ToBit (k := Array _ _) #bytes);
         Let ldCap: Cap <- #fullCap`"cap";
-        Let ldVal: Array (Z.to_nat XlenBytes) (Bit 8) <- FromBit (Array (Z.to_nat XlenBytes) (Bit 8)) (@castBits ty 32 (size (Array (Z.to_nat XlenBytes) (Bit 8))) (eq_sym size_xlen_bytes_eq) (ITE #isRevoker #revokerData #fullCap`"addr"));
+        Let ldVal: Array (Z.to_nat XlenBytes) (Bit 8) <- FromBit (Array (Z.to_nat XlenBytes) (Bit 8))
+                                                           (ITE #isRevoker #revokerData #fullCap`"addr");
         Let ldValFinal <- ToBit (ITE #ldUn (ArrayZeroExtend #memSz #ldVal) (ArraySignExtend #memSz #ldVal));
         LetL ldECap: ECap <- decodeCap ldCap ldValFinal;
         Let ldECapFinal: ECap <- ITE #isCap #ldECap ConstDef;
@@ -244,8 +236,8 @@ Section Spec.
 
         Let ldTagFinal: Bool <- ITE #isCap (And [#ldTag; Not #revBit]) ConstDef;
         Let ldFinal: FullECapWithTag <- STRUCT { "tag" ::= #ldTagFinal;
-                                                  "ecap" ::= #ldECapFinal;
-                                                  "addr" ::= #ldValFinal };
+                                                 "ecap" ::= #ldECapFinal;
+                                                 "addr" ::= #ldValFinal };
 
         Let ldRegIdx <- ##aluOut`"multicycleOp"`"loadRegIdx";
         Let aluOutRegs: Array NumRegs FullECapWithTag <- eq_rect _ (fun k => Expr ty k) (##aluOut`"regs") _ eq_refl;
@@ -253,13 +245,12 @@ Section Spec.
                                                           @[ #ldRegIdx <- ITE (##aluOut`"multicycleOp"`"Load")
                                                                             #ldFinal
                                                                             (#aluOutRegs@[#ldRegIdx])];
-
         Let stECap: ECap <- ##aluOut`"multicycleOp"`"storeVal"`"ecap";
 
         Let stVal <- ##aluOut`"multicycleOp"`"storeVal"`"addr";
         LetL stCap: Cap <- encodeCap stECap;
         Let stBits: Bit DXlen <- {< ToBit #stCap, #stVal >};
-        Let stBytes: Array (Z.to_nat DXlenBytes) (Bit 8) <- FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) (@castBits ty DXlen (size (Array (Z.to_nat DXlenBytes) (Bit 8))) size_st_bytes_eq #stBits);
+        Let stBytes: Array (Z.to_nat DXlenBytes) (Bit 8) <- FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) #stBits;
         Let Store: Bool <- ##aluOut`"multicycleOp"`"Store";
         Let StoreMem: Bool <- And [#Store; Not #isRevoker];
         Let newRevoker <- ITE (And [#Store; #isRevoker])
@@ -312,7 +303,7 @@ Section Spec.
         Let rvkAddr : Addr <- @castBits ty _ 32 revoker_addr_size_eq (ZeroExtendTo 32 {< #revokeAddr, Const ty (Bit MemSz) (bits.of_Z _ 0) >});
         Let rvkSz : Bit MemSz <- Const ty (Bit MemSz) (bits.of_Z _ 0);
         Let bytes: Array (Z.to_nat DXlenBytes) (Bit 8) <- memIfc.(mem_readBytes) rvkAddr rvkSz;
-        Let fullCap: FullCap <- FromBit FullCap (@castBits ty (size (Array (Z.to_nat DXlenBytes) (Bit 8))) 64 size_bytes_eq (ToBit #bytes));
+        Let fullCap: FullCap <- FromBit FullCap (ToBit (k := Array _ _) #bytes);
         Let ldCap: Cap <- #fullCap`"cap";
         Let ldVal: Addr <- #fullCap`"addr";
         LetL ldECap: ECap <- decodeCap ldCap ldVal;

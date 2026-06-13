@@ -30,7 +30,7 @@ Definition Addr := Bit Xlen.
 Definition NumChannels := 4%nat.
 
 Definition PhyAddrSz := 22. (* 2-MB physical memory *)
-Definition PseudoAddrSz := 25.  (* AXI address width size *)
+Definition PseudoAddrSz := 25.  (* AXI address width kindSize *)
 Definition LgClutSz := Eval compute in (PseudoAddrSz - PhyAddrSz). (* Log of number of entries in the Clut *)
 
 Definition PhyAddr := Bit PhyAddrSz.
@@ -55,7 +55,7 @@ Section Clut.
                            "size" :: PhyAddr ;
                            "isWrite" :: Bool }.
 
-  Goal (size ClutEntry >= LgClutSz).
+  Goal (kindSize ClutEntry >= LgClutSz).
   Proof.
     cbv.
     discriminate.
@@ -77,8 +77,8 @@ Section Clut.
                               "value"   :: Bit Xlen;
                               "isWrite" :: Bool }.
 
-  Definition LeftOverCommandSize := Eval compute in (size (Option Command) - Xlen).
-  Definition RespToProcSize := Eval compute in size (Option (Bit (LgClutSz + 1))).
+  Definition LeftOverCommandSize := Eval compute in (kindSize (Option Command) - Xlen).
+  Definition RespToProcSize := Eval compute in kindSize (Option (Bit (LgClutSz + 1))).
 
   Definition clutIfc : Tree Elem :=
     Node "" [
@@ -138,7 +138,7 @@ Section Clut.
       Let freeIndex: ClutIdx <- TruncLsb 1 LgClutSz #optFreeIndex;
       Let freeIndexValid: Bool <- Not (FromBit Bool (TruncMsb 1 LgClutSz #optFreeIndex));
 
-      Let rmIndex: ClutIdx <- TruncLsb (size ClutEntry - LgClutSz) LgClutSz (ToBit (#optCommand`"data"`"clutEntry"));
+      Let rmIndex: ClutIdx <- TruncLsb (kindSize ClutEntry - LgClutSz) LgClutSz (ToBit (#optCommand`"data"`"clutEntry"));
 
       LetIf dummy <- If (And [#optCommand`"valid"; Not (#optResp`"valid")]) Then (
           RegWrite ".procCommand1" in cl <- ConstDef;
@@ -266,4 +266,4 @@ Definition clut: Mod clutIfc :=
 Definition compiledMod := compile clut.
 
 Set Extraction Output Directory "./Clut".
-Extraction "Compile" size genFinType finNum updList compiledMod.
+Extraction "Compile" kindSize Z.log2_up genFinType finNum updList compiledMod.

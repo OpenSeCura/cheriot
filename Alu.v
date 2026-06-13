@@ -151,7 +151,7 @@ Definition MemSzSz := Eval compute in Z.log2_up MemSz.
 Definition FullCap := STRUCT_TYPE { "cap" :: Cap;
                                     "addr" :: Addr }.
 
-Definition FullCapSz := Eval compute in (size FullCap).
+Definition FullCapSz := Eval compute in (kindSize FullCap).
 Definition NumBytesFullCapSz := Eval compute in (FullCapSz/8).
 Definition LgNumBytesFullCapSz := Eval compute in Z.log2_up NumBytesFullCapSz.
 
@@ -1612,7 +1612,7 @@ Section Alu.
                                                               ITE0 CSetEqual #cSetEqual;
                                                               ITE0 CTestSubset #cTestSubset]));
 
-      LetE cAndPermMask <- TruncLsb (Xlen - size CapPerms) (size CapPerms) #val2;
+      LetE cAndPermMask <- TruncLsb (Xlen - kindSize CapPerms) (kindSize CapPerms) #val2;
       LetE cAndPermMaskCap <- FromBit CapPerms #cAndPermMask;
       LetE cAndPermCapPerms_init <- And [#cap1Perms; #cAndPermMaskCap];
       LetE cAndPermCapPerms <- fixPerms cAndPermCapPerms_init;
