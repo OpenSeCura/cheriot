@@ -1254,7 +1254,7 @@ Section Decode.
       LetE Load: Bool <- Eq #f3`[2:1] $1;
       LetE Store: Bool <- Eq #f3`[2:1] $3;
 
-      LetE memSz: Bit MemSzSz <- ({< Const _ (Bit 1) Zmod.zero, (#f3`[0:0])>});
+      LetE memSz: Bit MemSzSz <- ({< Const _ (Bit 1) (InvDefault _), (#f3`[0:0])>});
 
       LetE Add: Bool <- And [Eq #f3 $4; isNotZero #rs2Idx; isNotZero (#inst`[11:7])];
       LetE CJalr: Bool <- And [Eq #f3 $4; isZero #rs2Idx; isNotZero (#inst`[11:7])];
