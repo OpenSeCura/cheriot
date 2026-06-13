@@ -357,18 +357,30 @@ Section Uncore.
           RegWrite ".revoker.revokeAddr" in uncoreTree <- Add [#revokeAddr; $1];
           Retv)
         Else (
-          If (#revokerKick)
+          Let isOddEpoch <- FromBit Bool (TruncLsb (Xlen-1) 1 #revokerEpoch);
+          If (#isOddEpoch)
+          Then (
+            RegWrite ".revoker.revokerState" in uncoreTree <-
+                                                  (STRUCT {
+                                                       "start" ::= #revokerStart;
+                                                       "end" ::= #revokerEnd;
+                                                       "epoch" ::= Add [#revokerEpoch; $1];
+                                                       "kick" ::= #revokerKick }: Expr ty RevokerState );
+            Retv)
+          Else (
+            If (#revokerKick)
             Then (
               LetL updatedState <- RetE (STRUCT {
                 "start" ::= #revokerStart;
                 "end" ::= #revokerEnd;
-                "epoch" ::= Add [#revokerEpoch; $1];
+                "epoch" ::= {< TruncMsb (Xlen-1) 1 #revokerEpoch, Const ty (Bit 1) Zmod.one >};
                 "kick" ::= Const ty Bool false
               });
               RegWrite ".revoker.revokerState" in uncoreTree <- #updatedState;
               RegWrite ".revoker.revokeAddr" in uncoreTree <- #revokerStart;
               Retv );
-          Retv);
+            Retv);
+          Retv );
         Retv ).
   End Ty.
 End Uncore.
