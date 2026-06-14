@@ -109,7 +109,16 @@ Section Spec.
         Then (
           Act memIfc.(mem_writeBits) memAddr stBits memSz;
           If #isCap
-          Then (Act memIfc.(mem_writeTag) memTagAddr stTag; Retv);
+          Then (Act memIfc.(mem_writeTag) memTagAddr stTag; Retv)
+          Else (
+            Let isAligned : Bool <- isZero (TruncLsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz #memAddr);
+            Let memTagAddrPlusOne : Bit (AddrSz - MemSz) <- Add [#memTagAddr; $1];
+            Let clearTag : Bool <- Const ty Bool false;
+            Act memIfc.(mem_writeTag) memTagAddr clearTag;
+            If (Not #isAligned)
+              Then (memIfc.(mem_writeTag) memTagAddrPlusOne clearTag);
+            Retv
+          );
           If (Eq #memAddr (Const ty _ tohostAddr))
           Then (
             If (Eq #stVal $1)
