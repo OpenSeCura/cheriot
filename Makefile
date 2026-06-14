@@ -18,9 +18,9 @@ Binary.v:
 	BASE_ADDR=$$(python3 -c "import struct; f=open('$(CHERIOT_ROOT)/cheriot-rtos/examples/02.hello_compartment/build/cheriot/cheriot/release/hello_compartment', 'rb'); elf=f.read(); phoff, phnum = struct.unpack_from('<II', elf, 28)[0], struct.unpack_from('<H', elf, 44)[0]; print(hex(min(struct.unpack_from('<I', elf, phoff + i*32 + 8)[0] for i in range(phnum) if struct.unpack_from('<I', elf, phoff + i*32)[0] == 1)))"); \
 	echo "Definition MemStartAddr : Z := $$BASE_ADDR." >> Binary.v
 	echo "" >> Binary.v
-	echo "Definition binary: list (bits 8) := (" >> Binary.v
+	echo "Definition binary: list Z := (" >> Binary.v
 	$(CHERIOT_ROOT)/llvm-project/builds/cheriot-llvm/bin/llvm-objcopy -O binary $(CHERIOT_ROOT)/cheriot-rtos/examples/02.hello_compartment/build/cheriot/cheriot/release/hello_compartment $(CURR_DIR)/tmp && cd $(CURR_DIR)
-	hexdump -e '1/1 "Zmod.of_Z _ 0x%02x " "::\n"' -v tmp >> Binary.v
+	hexdump -e '1/1 "0x%02x " "::\n"' -v tmp >> Binary.v
 	rm tmp
 	echo "nil)." >> Binary.v
 
