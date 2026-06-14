@@ -215,29 +215,6 @@ Section Spec.
           x.
 End Spec.
 
-Section PartialInitSpec.
-  Local Open Scope string_scope.
-  Local Open Scope guru_scope.
-
-  Variable MemWidth: nat.
-  Variable MemWidthGeLgBytesFullCapSz: MemWidth >= Z.to_nat LgNumBytesFullCapSz.
-  Variable regsInit: type (Array NumRegs FullECapWithTag).
-
-  Variable regsInitPc:
-    readNatToFinType (Default FullECapWithTag) (readSameTuple regsInit) 0 = Default FullECapWithTag.
-
-  Definition scrsInit: type Scrs := STRUCT_CONST {
-                                        "mtcc" ::= ExecRoot;
-                                        "mtdc" ::= MemRoot;
-                                        "mscratchc" ::= SealRoot;
-                                        "mepcc" ::= ExecRoot }.
-
-  Variable mem_t: Tree Elem.
-  Definition partialInitSpec (memIfc : forall ty, @MemIfc mem_t ty) :=
-    spec (mem_t:=mem_t) (Default _) regsInit scrsInit
-         (Default _) (Default _) memIfc.
-End PartialInitSpec.
-
 Section Uncore.
   Variable RevokerStartAddrAligned: Z.
   Definition RevokerNumRegs : nat := 4.
@@ -393,3 +370,26 @@ Section Uncore.
         Retv ).
   End Ty.
 End Uncore.
+
+Section PartialInitSpec.
+  Local Open Scope string_scope.
+  Local Open Scope guru_scope.
+
+  Variable MemWidth: nat.
+  Variable MemWidthGeLgBytesFullCapSz: MemWidth >= Z.to_nat LgNumBytesFullCapSz.
+  Variable regsInit: type (Array NumRegs FullECapWithTag).
+
+  Variable regsInitPc:
+    readNatToFinType (Default FullECapWithTag) (readSameTuple regsInit) 0 = Default FullECapWithTag.
+
+  Definition scrsInit: type Scrs := STRUCT_CONST {
+                                        "mtcc" ::= ExecRoot;
+                                        "mtdc" ::= MemRoot;
+                                        "mscratchc" ::= SealRoot;
+                                        "mepcc" ::= ExecRoot }.
+
+  Variable mem_t: Tree Elem.
+  Definition partialInitSpec (memIfc : forall ty, @MemIfc mem_t ty) :=
+    spec (mem_t:=mem_t) (Default _) regsInit scrsInit
+         (Default _) (Default _) memIfc.
+End PartialInitSpec.
