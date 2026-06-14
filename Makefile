@@ -7,15 +7,15 @@ CHERIOT_ROOT = $(HOME)/work/cheriot
 CURR_DIR = $(shell pwd)
 
 Binary.v:
-	echo $(CURR_DIR)
+	@echo $(CURR_DIR)
 	cd $(CHERIOT_ROOT)/cheriot-rtos/examples/02.hello_compartment && xmake config --sdk=$(CHERIOT_ROOT)/llvm-project/builds/cheriot-llvm && xmake && cd $(CURR_DIR)
 	echo "From Stdlib Require Import List ZArith Zmod." > Binary.v
 	echo "" >> Binary.v
 	echo "Local Open Scope Z_scope." >> Binary.v
 	echo "" >> Binary.v
-	@ENTRY_POINT=$$(python3 -c "import struct; f=open('$(CHERIOT_ROOT)/cheriot-rtos/examples/02.hello_compartment/build/cheriot/cheriot/release/hello_compartment', 'rb'); f.seek(24); print(hex(struct.unpack('<I', f.read(4))[0]))"); \
+	ENTRY_POINT=$$(python3 -c "import struct; f=open('$(CHERIOT_ROOT)/cheriot-rtos/examples/02.hello_compartment/build/cheriot/cheriot/release/hello_compartment', 'rb'); f.seek(24); print(hex(struct.unpack('<I', f.read(4))[0]))"); \
 	echo "Definition PcAddrInit : Z := $$ENTRY_POINT." >> Binary.v
-	@BASE_ADDR=$$(python3 -c "import struct; f=open('$(CHERIOT_ROOT)/cheriot-rtos/examples/02.hello_compartment/build/cheriot/cheriot/release/hello_compartment', 'rb'); elf=f.read(); phoff, phnum = struct.unpack_from('<II', elf, 28)[0], struct.unpack_from('<H', elf, 44)[0]; print(hex(min(struct.unpack_from('<I', elf, phoff + i*32 + 8)[0] for i in range(phnum) if struct.unpack_from('<I', elf, phoff + i*32)[0] == 1)))"); \
+	BASE_ADDR=$$(python3 -c "import struct; f=open('$(CHERIOT_ROOT)/cheriot-rtos/examples/02.hello_compartment/build/cheriot/cheriot/release/hello_compartment', 'rb'); elf=f.read(); phoff, phnum = struct.unpack_from('<II', elf, 28)[0], struct.unpack_from('<H', elf, 44)[0]; print(hex(min(struct.unpack_from('<I', elf, phoff + i*32 + 8)[0] for i in range(phnum) if struct.unpack_from('<I', elf, phoff + i*32)[0] == 1)))"); \
 	echo "Definition MemStartAddr : Z := $$BASE_ADDR." >> Binary.v
 	echo "" >> Binary.v
 	echo "Definition binary: list (bits 8) := (" >> Binary.v
