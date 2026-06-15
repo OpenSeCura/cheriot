@@ -380,21 +380,33 @@ End Uncore.
 
 Definition fixedBinary : list (bits 8) := map (fun v => bits.of_Z 8 v) binary.
 
+Record MemConfig := {
+  memStartAddr : Z;
+  memSize : nat;
+  memBoundProof : (memStartAddr + Z.of_nat memSize < Z.shiftl 1 Xlen)%Z
+}.
+
+Record RevConfig := {
+  heapStartAddr : Z;
+  numRevBits : nat;
+  revLgGranularity : Z;
+  revBoundProof : (heapStartAddr + Z.of_nat numRevBits * 2^revLgGranularity < Z.shiftl 1 Xlen)%Z
+}.
+
 Section Memories.
   Local Open Scope string_scope.
   Local Open Scope guru_scope.
 
-  Variable memStartAddr : Z.
-  Variable memSize: nat.
+  Variable config : MemConfig.
 
   Section Mem.
-    Variable lgMemSize_ge_binary : Is_true (length binary <=? memSize)%nat.
+    Variable lgMemSize_ge_binary : Is_true (length binary <=? config.(memSize))%nat.
 
     Definition paddedBinary :=
-      (fixedBinary ++ List.repeat (bits.of_Z 8 0) (memSize - length binary))%list.
+      (fixedBinary ++ List.repeat (bits.of_Z 8 0) (config.(memSize) - length binary))%list.
 
     Lemma paddedBinary_length :
-      length paddedBinary = memSize.
+      length paddedBinary = config.(memSize).
     Proof.
       unfold paddedBinary, fixedBinary.
       rewrite length_app.
@@ -406,7 +418,7 @@ Section Memories.
     Qed.
 
     Definition mem : Tree Elem :=
-      Leaf "mem" (EReg {|regKind := Array memSize (Bit 8);
+      Leaf "mem" (EReg {|regKind := Array config.(memSize) (Bit 8);
                               regInit := Some (Build_SameTuple (tupleElems := paddedBinary)
                                                  (Is_true_Nat_eq_implies paddedBinary_length)) |}).
 
@@ -414,42 +426,36 @@ Section Memories.
       Variable ty : Kind -> Type.
 
       Definition readBytes (addr: Expr ty Addr) : Action ty mem (Bit DXlen) :=
-        Let is_valid <- Sge addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
+        Let is_valid <- Sge addr (Const ty Addr (bits.of_Z Xlen config.(memStartAddr)));
         LetIf retVal : Bit DXlen <- If #is_valid
         Then (
-          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
+          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(memStartAddr)));
           RegRead mem <- "mem" in mem;
           Return (ToBit (slice #mem #offset (Z.to_nat DXlenBytes)))
-        ) Else (
-          Return (Const ty (Bit DXlen) Zmod.zero
-        ));
+        );
         Return #retVal.
 
       Definition readInst (addr: Expr ty Addr) : Action ty mem Inst :=
-        Let is_valid <- Sge addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
+        Let is_valid <- Sge addr (Const ty Addr (bits.of_Z Xlen config.(memStartAddr)));
         LetIf retVal : Inst <- If #is_valid
         Then (
-          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
+          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(memStartAddr)));
           RegRead mem <- "mem" in mem;
           Return (ToBit (slice #mem #offset (Z.to_nat (InstSz/8))))
-        ) Else (
-          Return (Const ty Inst Zmod.zero
-        ));
+        );
         Return #retVal.
 
       Definition writeBytes (addr: Expr ty Addr) (data: Expr ty (Bit DXlen)) (sz: Expr ty (Bit MemSzSz)) :
         Action ty mem (Bit 0) :=
-        Let is_valid <- Sge addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
+        Let is_valid <- Sge addr (Const ty Addr (bits.of_Z Xlen config.(memStartAddr)));
         If #is_valid
         Then (
-          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
+          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(memStartAddr)));
           Let num_bytes: Bit (MemSz + 1) <- Sll $1 sz;
           RegRead memVal <- "mem" in mem;
           LetA updatedMem <-
             toAction mem (updSlice #memVal #offset (FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) data) #num_bytes);
           RegWrite "mem" in mem <- #updatedMem;
-          Retv
-        ) Else (
           Retv
         );
         Retv.
@@ -457,8 +463,8 @@ Section Memories.
   End Mem.
 
   Section Tags.
-    Definition tagsStartAddr := Z.shiftr (memStartAddr + NumBytesFullCapSz - 1) LgNumBytesFullCapSz.
-    Definition tagsEndAddr := Z.shiftr (memStartAddr + Z.of_nat memSize) LgNumBytesFullCapSz.
+    Definition tagsStartAddr := Z.shiftr (config.(memStartAddr) + NumBytesFullCapSz - 1) LgNumBytesFullCapSz.
+    Definition tagsEndAddr := Z.shiftr (config.(memStartAddr) + Z.of_nat config.(memSize)) LgNumBytesFullCapSz.
     Definition tagsSize: nat := Z.to_nat (tagsEndAddr - tagsStartAddr).
     Definition TagWidth: Z := AddrSz - LgNumBytesFullCapSz.
 
@@ -477,8 +483,6 @@ Section Memories.
           Let offset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) addr;
           RegRead tagsVal <- "tags" in tags;
           Return (#tagsVal@[#offset])
-        ) Else (
-          Return (Const ty Bool false)
         );
         Return #retVal.
 
@@ -490,13 +494,57 @@ Section Memories.
           RegRead tagsVal <- "tags" in tags;
           RegWrite "tags" in tags <- #tagsVal@[#offset <- tag];
           Retv
-        ) Else (
-          Retv
         );
         Retv.
     End Ty.
   End Tags.
 End Memories.
+
+Section RevBits.
+  Local Open Scope string_scope.
+  Local Open Scope guru_scope.
+
+  Variable config : RevConfig.
+
+  Local Notation revBitGranularity := (2 ^ config.(revLgGranularity))%Z.
+  Local Notation revBitsWidth := ((AddrSz + 1) - config.(revLgGranularity))%Z.
+
+  Definition revMem : Tree Elem :=
+    Leaf "revBits" (EReg {| regKind := Array config.(numRevBits) Bool;
+                           regInit := Some (Build_SameTuple (tupleElems := List.repeat false config.(numRevBits))
+                                              (Is_true_Nat_eq_implies (repeat_length false config.(numRevBits)))) |}).
+
+  Section Ty.
+    Variable ty : Kind -> Type.
+
+    Definition readRevBit (addr: Expr ty (Bit (AddrSz + 1))) : Action ty revMem Bool :=
+      Let is_valid <- Sge addr (Const ty (Bit _) (bits.of_Z _ config.(heapStartAddr)));
+      LetIf retVal : Bool <- If #is_valid
+      Then (
+        Let byteOffset <- Sub addr (Const ty (Bit _) (bits.of_Z _ config.(heapStartAddr)));
+        Let castByteOffset <- castBits (ltac:(lia):
+                                  ((AddrSz + 1) = config.(revLgGranularity) + revBitsWidth)%Z) #byteOffset;
+        Let offset <- TruncMsb revBitsWidth config.(revLgGranularity) #castByteOffset;
+        RegRead revVal <- "revBits" in revMem;
+        Return (#revVal@[#offset])
+      );
+      Return #retVal.
+
+    Definition writeRevBit (addr: Expr ty (Bit (AddrSz + 1))) (val: Expr ty Bool) : Action ty revMem (Bit 0) :=
+      Let is_valid <- Sge addr (Const ty (Bit _) (bits.of_Z _ config.(heapStartAddr)));
+      If #is_valid
+      Then (
+        Let byteOffset <- Sub addr (Const ty (Bit _) (bits.of_Z _ config.(heapStartAddr)));
+        Let castByteOffset <- castBits (ltac:(lia):
+                                  ((AddrSz + 1) = config.(revLgGranularity) + revBitsWidth)%Z) #byteOffset;
+        Let offset <- TruncMsb revBitsWidth config.(revLgGranularity) #castByteOffset;
+        RegRead revVal <- "revBits" in revMem;
+        RegWrite "revBits" in revMem <- #revVal@[#offset <- val];
+        Retv
+      );
+      Retv.
+  End Ty.
+End RevBits.
 
 Section PartialInitSpec.
   Local Open Scope string_scope.
