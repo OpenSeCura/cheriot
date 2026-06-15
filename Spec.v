@@ -14,7 +14,7 @@
  * limitations under the License.
  *)
 
-From Stdlib Require Import String List ZArith Zmod Bool.
+From Stdlib Require Import String List ZArith Zmod Bool Psatz.
 Require Import Guru.Syntax Guru.Notations Guru.Semantics Guru.Library Guru.Composition.
 Require Import Cheriot.Alu Cheriot.Binary.
 
@@ -27,11 +27,11 @@ Import ListNotations.
 #[projections(primitive)]
 Record MemIfc {mem_t: Tree Elem} {ty: Kind -> Type} := {
   mem_readBits: ty Addr -> Action ty mem_t (Bit DXlen);
-  mem_readTag: ty (Bit (AddrSz - MemSz)) -> Action ty mem_t Bool;
+  mem_readTag: ty (Bit (AddrSz - LgNumBytesFullCapSz)) -> Action ty mem_t Bool;
   mem_readRevBit: ty (Bit (AddrSz + 1)) -> Action ty mem_t Bool;
   mem_readInst: ty Addr -> Action ty mem_t Inst;
   mem_writeBits: ty Addr -> ty (Bit DXlen) -> ty (Bit MemSzSz) -> Action ty mem_t (Bit 0);
-  mem_writeTag: ty (Bit (AddrSz - MemSz)) -> ty Bool -> Action ty mem_t (Bit 0)
+  mem_writeTag: ty (Bit (AddrSz - LgNumBytesFullCapSz)) -> ty Bool -> Action ty mem_t (Bit 0)
 }.
 
 Section Spec.
@@ -84,7 +84,7 @@ Section Spec.
         Let ldVal: Addr <- #fullCap`"addr";
         LetL ldECap: ECap <- decodeCap ldCap ldVal;
         Let ldECapFinal: ECap <- ITE #isCap #ldECap ConstDef;
-        Let memTagAddr: Bit (AddrSz - MemSz) <- TruncMsb _ MemSz #memAddr;
+        Let memTagAddr: Bit (AddrSz - LgNumBytesFullCapSz) <- TruncMsb _ LgNumBytesFullCapSz #memAddr;
 
         LetA ldTag: Bool <- memIfc.(mem_readTag) memTagAddr;
 
@@ -103,7 +103,7 @@ Section Spec.
       ( Let isCap : Bool <- isAllOnes #memSz;
         LetL stCap: Cap <- encodeCap stECap;
         Let stBits: Bit DXlen <- {< ToBit #stCap, #stVal >};
-        Let memTagAddr: Bit (AddrSz - MemSz) <- TruncMsb _ MemSz #memAddr;
+        Let memTagAddr: Bit (AddrSz - LgNumBytesFullCapSz) <- TruncMsb _ LgNumBytesFullCapSz #memAddr;
         
         If #Store
         Then (
@@ -112,7 +112,7 @@ Section Spec.
           Then (Act memIfc.(mem_writeTag) memTagAddr stTag; Retv)
           Else (
             Let isAligned : Bool <- isZero (TruncLsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz #memAddr);
-            Let memTagAddrPlusOne : Bit (AddrSz - MemSz) <- Add [#memTagAddr; $1];
+            Let memTagAddrPlusOne <- Add [#memTagAddr; $1];
             Let clearTag : Bool <- Const ty Bool false;
             Act memIfc.(mem_writeTag) memTagAddr clearTag;
             If (Not #isAligned)
@@ -158,7 +158,7 @@ Section Spec.
         Let memAddr: Addr <- ##aluOut`"multicycleOp"`"memAddr";
         Let memSz: Bit MemSzSz <- ##aluOut`"multicycleOp"`"memSz";
         Let ldUn: Bool <- ##aluOut`"multicycleOp"`"LoadUnsigned";
-        Let memTagAddr: Bit (AddrSz - MemSz) <- TruncMsb _ MemSz #memAddr;
+        Let memTagAddr: Bit (AddrSz - LgNumBytesFullCapSz) <- TruncMsb _ LgNumBytesFullCapSz #memAddr;
 
         LetA ldFinal: FullECapWithTag <- liftAction np_mem (memLoad memAddr memSz ldUn);
 
@@ -215,8 +215,17 @@ Section Spec.
           x.
 End Spec.
 
+Definition getMemOffset {ty: Kind -> Type} (startAddr: Z) (size: Z) n (addr: Expr ty (Bit n)) :
+  Expr ty (Bit (Z.log2_up size)) :=
+  (let castAddr := castBits (ltac:(lia): (n = Z.log2_up size + (n - Z.log2_up size))%Z) addr in
+   if Z.eqb (startAddr mod (2 ^ Z.log2_up size)) 0
+   then
+     TruncLsb (n - Z.log2_up size) (Z.log2_up size) castAddr
+   else
+     TruncLsb (n - Z.log2_up size) (Z.log2_up size) (Sub castAddr $startAddr))%guru.
+
 Section Uncore.
-  Variable RevokerStartAddrAligned: Z.
+  Variable RevokerStartAddr: Z.
   Definition RevokerNumRegs : nat := 4.
   Definition RevokerSizeBytes : Z := XlenBytes * Z.of_nat RevokerNumRegs.
   Definition RevokerAlignBits : Z := Z.log2_up RevokerSizeBytes.
@@ -248,11 +257,8 @@ Section Uncore.
 
   Definition uncore_np_mem: NodePath uncoreTree mem_t := ltac:(solveNodePath uncoreTree ".mem"%string mem_t).
 
-  Definition RevokerStartAddr : Z :=
-    Z.shiftl RevokerStartAddrAligned RevokerAlignBits.
-
   Definition RevokerEndAddr : Z :=
-    Z.lor RevokerStartAddr (RevokerSizeBytes-1).
+    RevokerStartAddr + RevokerSizeBytes - 1.
 
   Section Ty.
     Variable ty: Kind -> Type.
@@ -284,7 +290,7 @@ Section Uncore.
             Let oldArray : Bit (NatZ_mul (Z.to_nat XlenBytes * RevokerNumRegs) 8) <-
                              ToBit (decodeRevokerState revokerState);
             Let bytesArr <- FromBit (Array (Z.to_nat XlenBytes * RevokerNumRegs) (Bit 8)) #oldArray;
-            Let byteOffset <- TruncLsb (AddrSz - RevokerAlignBits) RevokerAlignBits #addr;
+            Let byteOffset <- getMemOffset RevokerStartAddr RevokerSizeBytes #addr;
             Let readSlice <- slice #bytesArr #byteOffset (Z.to_nat DXlenBytes);
             Return (ToBit #readSlice)
           ) Else (liftAction uncore_np_mem (rawMemIfc.(mem_readBits) addr));
@@ -303,7 +309,7 @@ Section Uncore.
             Let oldArray : Bit (NatZ_mul (Z.to_nat XlenBytes * RevokerNumRegs) 8) <-
                              ToBit (decodeRevokerState revokerState);
             Let bytesArr <- FromBit (Array (Z.to_nat XlenBytes * RevokerNumRegs) (Bit 8)) #oldArray;
-            Let byteOffset <- TruncLsb (AddrSz - RevokerAlignBits) RevokerAlignBits #addr;
+            Let byteOffset <- getMemOffset RevokerStartAddr RevokerSizeBytes #addr;
             Let newValBytes <- FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) #val;
             LetL updatedBytesArr <- updSlice #bytesArr #byteOffset #newValBytes #sz;
             Let updatedWordArr <- FromBit (Array RevokerNumRegs Data) (ToBit #updatedBytesArr);
@@ -312,6 +318,7 @@ Section Uncore.
             Retv
           ) Else (liftAction uncore_np_mem (rawMemIfc.(mem_writeBits) addr val sz));
           Retv );
+
       mem_writeTag := fun addr tag =>
         liftAction uncore_np_mem (rawMemIfc.(mem_writeTag) addr tag)
     |}.
@@ -370,6 +377,91 @@ Section Uncore.
         Retv ).
   End Ty.
 End Uncore.
+
+Definition fixedBinary : list (bits 8) := map (fun v => bits.of_Z 8 v) binary.
+
+Section Memories.
+  Local Open Scope string_scope.
+  Local Open Scope guru_scope.
+
+  Variable memStartAddr : Z.
+  Variable memSize: nat.
+
+  Section Mem.
+    Variable lgMemSize_ge_binary : Is_true (length binary <=? memSize)%nat.
+
+    Definition paddedBinary :=
+      (fixedBinary ++ List.repeat (bits.of_Z 8 0) (memSize - length binary))%list.
+
+    Lemma paddedBinary_length :
+      length paddedBinary = memSize.
+    Proof.
+      unfold paddedBinary, fixedBinary.
+      rewrite length_app.
+      rewrite repeat_length.
+      rewrite length_map.
+      apply Is_true_eq_true in lgMemSize_ge_binary.
+      rewrite Nat.leb_le in lgMemSize_ge_binary.
+      lia.
+    Qed.
+
+    Definition mem : Tree Elem :=
+      Leaf "mem" (EReg {|regKind := Array memSize (Bit 8);
+                              regInit := Some (Build_SameTuple (tupleElems := paddedBinary)
+                                                 (Is_true_Nat_eq_implies paddedBinary_length)) |}).
+
+    Section Ty.
+      Variable ty : Kind -> Type.
+
+      Definition readBytes (addr: Expr ty Addr) : Action ty mem (Bit DXlen) :=
+        Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
+        RegRead mem <- "mem" in mem;
+        Return (ToBit (slice #mem #offset (Z.to_nat DXlenBytes))).
+
+      Definition readInst (addr: Expr ty Addr) : Action ty mem Inst :=
+        Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
+        RegRead mem <- "mem" in mem;
+        Return (ToBit (slice #mem #offset (Z.to_nat (InstSz/8)))).
+
+      Definition writeBytes (addr: Expr ty Addr) (data: Expr ty (Bit DXlen)) (sz: Expr ty (Bit MemSzSz)) :
+        Action ty mem (Bit 0) :=
+        Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
+        Let num_bytes: Bit (MemSz + 1) <- Sll $1 sz;
+        RegRead memVal <- "mem" in mem;
+        LetA updatedMem <-
+          toAction mem (updSlice #memVal #offset (FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) data) #num_bytes);
+        RegWrite "mem" in mem <- #updatedMem;
+        Retv.
+    End Ty.
+  End Mem.
+
+  Section Tags.
+    Definition tagsStartAddr := Z.shiftr (memStartAddr + NumBytesFullCapSz - 1) LgNumBytesFullCapSz.
+    Definition tagsEndAddr := Z.shiftr (memStartAddr + Z.of_nat memSize) LgNumBytesFullCapSz.
+    Definition tagsSize: nat := Z.to_nat (tagsEndAddr - tagsStartAddr).
+    Definition TagWidth: Z := AddrSz - LgNumBytesFullCapSz.
+
+    Definition tags : Tree Elem :=
+      Leaf "tags" (EReg {|regKind := Array tagsSize Bool;
+                          regInit := Some (Build_SameTuple (tupleElems := List.repeat false tagsSize)
+                                             (Is_true_Nat_eq_implies (repeat_length false tagsSize))) |}).
+
+    Section Ty.
+      Variable ty : Kind -> Type.
+
+      Definition readTag (addr: Expr ty (Bit TagWidth)) : Action ty tags Bool :=
+        Let offset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) addr;
+        RegRead tagsVal <- "tags" in tags;
+        Return (#tagsVal@[#offset]).
+
+      Definition writeTag (addr: Expr ty (Bit TagWidth)) (tag: Expr ty Bool) : Action ty tags (Bit 0) :=
+        Let offset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) addr;
+        RegRead tagsVal <- "tags" in tags;
+        RegWrite "tags" in tags <- #tagsVal@[#offset <- tag];
+        Retv.
+    End Ty.
+  End Tags.
+End Memories.
 
 Section PartialInitSpec.
   Local Open Scope string_scope.
