@@ -414,23 +414,44 @@ Section Memories.
       Variable ty : Kind -> Type.
 
       Definition readBytes (addr: Expr ty Addr) : Action ty mem (Bit DXlen) :=
-        Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
-        RegRead mem <- "mem" in mem;
-        Return (ToBit (slice #mem #offset (Z.to_nat DXlenBytes))).
+        Let is_valid <- Sge addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
+        LetIf retVal : Bit DXlen <- If #is_valid
+        Then (
+          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
+          RegRead mem <- "mem" in mem;
+          Return (ToBit (slice #mem #offset (Z.to_nat DXlenBytes)))
+        ) Else (
+          Return (Const ty (Bit DXlen) Zmod.zero
+        ));
+        Return #retVal.
 
       Definition readInst (addr: Expr ty Addr) : Action ty mem Inst :=
-        Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
-        RegRead mem <- "mem" in mem;
-        Return (ToBit (slice #mem #offset (Z.to_nat (InstSz/8)))).
+        Let is_valid <- Sge addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
+        LetIf retVal : Inst <- If #is_valid
+        Then (
+          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
+          RegRead mem <- "mem" in mem;
+          Return (ToBit (slice #mem #offset (Z.to_nat (InstSz/8))))
+        ) Else (
+          Return (Const ty Inst Zmod.zero
+        ));
+        Return #retVal.
 
       Definition writeBytes (addr: Expr ty Addr) (data: Expr ty (Bit DXlen)) (sz: Expr ty (Bit MemSzSz)) :
         Action ty mem (Bit 0) :=
-        Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
-        Let num_bytes: Bit (MemSz + 1) <- Sll $1 sz;
-        RegRead memVal <- "mem" in mem;
-        LetA updatedMem <-
-          toAction mem (updSlice #memVal #offset (FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) data) #num_bytes);
-        RegWrite "mem" in mem <- #updatedMem;
+        Let is_valid <- Sge addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
+        If #is_valid
+        Then (
+          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen memStartAddr));
+          Let num_bytes: Bit (MemSz + 1) <- Sll $1 sz;
+          RegRead memVal <- "mem" in mem;
+          LetA updatedMem <-
+            toAction mem (updSlice #memVal #offset (FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) data) #num_bytes);
+          RegWrite "mem" in mem <- #updatedMem;
+          Retv
+        ) Else (
+          Retv
+        );
         Retv.
     End Ty.
   End Mem.
@@ -450,14 +471,28 @@ Section Memories.
       Variable ty : Kind -> Type.
 
       Definition readTag (addr: Expr ty (Bit TagWidth)) : Action ty tags Bool :=
-        Let offset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) addr;
-        RegRead tagsVal <- "tags" in tags;
-        Return (#tagsVal@[#offset]).
+        Let is_valid <- Sge addr (Const ty (Bit TagWidth) (bits.of_Z TagWidth tagsStartAddr));
+        LetIf retVal : Bool <- If #is_valid
+        Then (
+          Let offset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) addr;
+          RegRead tagsVal <- "tags" in tags;
+          Return (#tagsVal@[#offset])
+        ) Else (
+          Return (Const ty Bool false)
+        );
+        Return #retVal.
 
       Definition writeTag (addr: Expr ty (Bit TagWidth)) (tag: Expr ty Bool) : Action ty tags (Bit 0) :=
-        Let offset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) addr;
-        RegRead tagsVal <- "tags" in tags;
-        RegWrite "tags" in tags <- #tagsVal@[#offset <- tag];
+        Let is_valid <- Sge addr (Const ty (Bit TagWidth) (bits.of_Z TagWidth tagsStartAddr));
+        If #is_valid
+        Then (
+          Let offset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) addr;
+          RegRead tagsVal <- "tags" in tags;
+          RegWrite "tags" in tags <- #tagsVal@[#offset <- tag];
+          Retv
+        ) Else (
+          Retv
+        );
         Retv.
     End Ty.
   End Tags.
