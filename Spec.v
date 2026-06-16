@@ -252,16 +252,17 @@ Section Uncore.
 
   Variable mem_t: Tree Elem.
 
-  Definition uncoreTree : Tree Elem :=
+  Definition uncore : Tree Elem :=
     Node "uncore" [
       Node "mem" [mem_t];
       Node "revoker" [
         Leaf "revokerState" (EReg {| regKind := RevokerState; regInit := Some config.(revokerStateInit) |});
-        Leaf "revokeAddr" (EReg {| regKind := Bit (AddrSz - LgNumBytesFullCapSz); regInit := Some config.(revokeAddrInit) |})
+        Leaf "revokeAddr" (EReg {|regKind := Bit (AddrSz - LgNumBytesFullCapSz);
+                                  regInit := Some config.(revokeAddrInit) |})
       ]
     ].
 
-  Definition uncore_np_mem: NodePath uncoreTree mem_t := ltac:(solveNodePath uncoreTree "uncore.mem"%string mem_t).
+  Definition uncore_np_mem: NodePath uncore mem_t := ltac:(solveNodePath uncore "uncore.mem"%string mem_t).
 
   Definition revokerEndAddr : Z :=
     config.(revokerStartAddr) + RevokerSizeBytes - 1.
@@ -287,12 +288,12 @@ Section Uncore.
     Definition isRevokerAddr (a: ty Addr) :=
       And [Sge #a $(config.(revokerStartAddr)); Sle #a $revokerEndAddr].
 
-    Definition uncoreMemIfc : @MemIfc uncoreTree ty := {|
+    Definition uncoreIfc : @MemIfc uncore ty := {|
       mem_readBytes := fun addr =>
         ( Let is_valid <- isRevokerAddr addr;
           LetIf retVal : Bit DXlen <- If #is_valid
           Then (
-            RegRead revokerState <- "uncore.revoker.revokerState" in uncoreTree;
+            RegRead revokerState <- "uncore.revoker.revokerState" in uncore;
             Let oldArray : Bit (NatZ_mul (Z.to_nat XlenBytes * RevokerNumRegs) 8) <-
                              ToBit (decodeRevokerState revokerState);
             Let bytesArr <- FromBit (Array (Z.to_nat XlenBytes * RevokerNumRegs) (Bit 8)) #oldArray;
@@ -311,7 +312,7 @@ Section Uncore.
           Let is_valid <- isRevokerAddr addr;
           If #is_valid
           Then (
-            RegRead revokerState <- "uncore.revoker.revokerState" in uncoreTree;
+            RegRead revokerState <- "uncore.revoker.revokerState" in uncore;
             Let oldArray : Bit (NatZ_mul (Z.to_nat XlenBytes * RevokerNumRegs) 8) <-
                              ToBit (decodeRevokerState revokerState);
             Let bytesArr <- FromBit (Array (Z.to_nat XlenBytes * RevokerNumRegs) (Bit 8)) #oldArray;
@@ -320,7 +321,7 @@ Section Uncore.
             LetL updatedBytesArr <- updSlice #bytesArr #byteOffset #newValBytes #sz;
             Let updatedWordArr <- FromBit (Array RevokerNumRegs Data) (ToBit #updatedBytesArr);
             Let updatedState <- encodeRevokerState updatedWordArr;
-            RegWrite "uncore.revoker.revokerState" in uncoreTree <- #updatedState;
+            RegWrite "uncore.revoker.revokerState" in uncore <- #updatedState;
             Retv
           ) Else (liftAction uncore_np_mem (rawMemIfc.(mem_writeBytes) addr val sz));
           Retv );
@@ -330,9 +331,9 @@ Section Uncore.
     |}.
 
     (* TODO: Check with Wes about this design *)
-    Definition revoker: Action ty uncoreTree (Bit 0) :=
-      ( RegRead revokerState <- "uncore.revoker.revokerState" in uncoreTree;
-        RegRead revokeAddr <- "uncore.revoker.revokeAddr" in uncoreTree;
+    Definition revoker: Action ty uncore (Bit 0) :=
+      ( RegRead revokerState <- "uncore.revoker.revokerState" in uncore;
+        RegRead revokeAddr <- "uncore.revoker.revokeAddr" in uncore;
         LetL revokerStart : Bit (AddrSz - LgNumBytesFullCapSz) <- RetE (#revokerState`"start");
         LetL revokerEnd : Bit (AddrSz - LgNumBytesFullCapSz) <- RetE (#revokerState`"end");
         LetL revokerEpoch : Data <- RetE (#revokerState`"epoch");
@@ -353,13 +354,13 @@ Section Uncore.
           LetA revBit: Bool <- liftAction uncore_np_mem (rawMemIfc.(mem_readRevBit) ldBase);
           Let ldTagFinal <- And [#ldTag; Not #revBit];
           Act (liftAction uncore_np_mem (rawMemIfc.(mem_writeTag) revokeAddr ldTagFinal));
-          RegWrite "uncore.revoker.revokeAddr" in uncoreTree <- Add [#revokeAddr; $1];
+          RegWrite "uncore.revoker.revokeAddr" in uncore <- Add [#revokeAddr; $1];
           Retv)
         Else (
           Let isOddEpoch <- FromBit Bool (TruncLsb (Xlen-1) 1 #revokerEpoch);
           If (#isOddEpoch)
           Then (
-            RegWrite "uncore.revoker.revokerState" in uncoreTree <-
+            RegWrite "uncore.revoker.revokerState" in uncore <-
                                                         (STRUCT {
                                                              "start" ::= #revokerStart;
                                                              "end" ::= #revokerEnd;
@@ -375,8 +376,8 @@ Section Uncore.
                 "epoch" ::= {< TruncMsb (Xlen-1) 1 #revokerEpoch, Const ty (Bit 1) Zmod.one >};
                 "kick" ::= Const ty Bool false
               });
-              RegWrite "uncore.revoker.revokerState" in uncoreTree <- #updatedState;
-              RegWrite "uncore.revoker.revokeAddr" in uncoreTree <- #revokerStart;
+              RegWrite "uncore.revoker.revokerState" in uncore <- #updatedState;
+              RegWrite "uncore.revoker.revokeAddr" in uncore <- #revokerStart;
               Retv );
             Retv);
           Retv );
@@ -386,38 +387,38 @@ End Uncore.
 
 Definition fixedBinary : list (bits 8) := map (fun v => bits.of_Z 8 v) binary.
 
-Record MemConfig := {
-  memStartAddr : Z;
-  memSize : nat;
-  memBoundProof : (memStartAddr + Z.of_nat memSize < Z.shiftl 1 Xlen)%Z
+Record MainMemConfig := {
+  mainMemStartAddr : Z;
+  mainMemSize : nat;
+  mainMemBoundProof : (mainMemStartAddr + Z.of_nat mainMemSize < Z.shiftl 1 Xlen)%Z
 }.
 
 Section Memories.
   Local Open Scope string_scope.
   Local Open Scope guru_scope.
 
-  Variable config : MemConfig.
+  Variable config : MainMemConfig.
 
   Section MainMem.
-    Variable lgMemSize_ge_binary : Is_true (length binary <=? config.(memSize))%nat.
+    Variable lgMainMemSize_ge_binary : Is_true (length binary <=? config.(mainMemSize))%nat.
 
     Definition paddedBinary :=
-      (fixedBinary ++ List.repeat (bits.of_Z 8 0) (config.(memSize) - length binary))%list.
+      (fixedBinary ++ List.repeat (bits.of_Z 8 0) (config.(mainMemSize) - length binary))%list.
 
     Lemma paddedBinary_length :
-      length paddedBinary = config.(memSize).
+      length paddedBinary = config.(mainMemSize).
     Proof.
       unfold paddedBinary, fixedBinary.
       rewrite length_app.
       rewrite repeat_length.
       rewrite length_map.
-      apply Is_true_eq_true in lgMemSize_ge_binary.
-      rewrite Nat.leb_le in lgMemSize_ge_binary.
+      apply Is_true_eq_true in lgMainMemSize_ge_binary.
+      rewrite Nat.leb_le in lgMainMemSize_ge_binary.
       lia.
     Qed.
 
     Definition mainMem : Tree Elem :=
-      Leaf "mainMem" (EReg {|regKind := Array config.(memSize) (Bit 8);
+      Leaf "mainMem" (EReg {|regKind := Array config.(mainMemSize) (Bit 8);
                                regInit := Some (Build_SameTuple (tupleElems := paddedBinary)
                                                   (Is_true_Nat_eq_implies paddedBinary_length)) |}).
 
@@ -425,13 +426,13 @@ Section Memories.
       Variable ty : Kind -> Type.
 
       Definition isMemAddr (a: Expr ty Addr) : Expr ty Bool :=
-        Sge a (Const ty Addr (bits.of_Z Xlen config.(memStartAddr))).
+        Sge a (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr))).
 
       Definition readBytes (addr: Expr ty Addr) : Action ty mainMem (Bit DXlen) :=
         Let is_valid <- isMemAddr addr;
         LetIf retVal : Bit DXlen <- If #is_valid
         Then (
-          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(memStartAddr)));
+          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr)));
           RegRead mainMemVal <- "mainMem" in mainMem;
           Return (ToBit (slice #mainMemVal #offset (Z.to_nat DXlenBytes)))
         );
@@ -441,7 +442,7 @@ Section Memories.
         Let is_valid <- isMemAddr addr;
         LetIf retVal : Inst <- If #is_valid
         Then (
-          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(memStartAddr)));
+          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr)));
           RegRead mainMemVal <- "mainMem" in mainMem;
           Return (ToBit (slice #mainMemVal #offset (Z.to_nat (InstSz/8))))
         );
@@ -452,11 +453,12 @@ Section Memories.
         Let is_valid <- isMemAddr addr;
         If #is_valid
         Then (
-          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(memStartAddr)));
+          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr)));
           Let num_bytes: Bit (MemSz + 1) <- Sll $1 sz;
           RegRead mainMemVal <- "mainMem" in mainMem;
           LetA updatedMem <-
-            toAction mainMem (updSlice #mainMemVal #offset (FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) data) #num_bytes);
+            toAction mainMem (updSlice #mainMemVal #offset
+                                (FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) data) #num_bytes);
           RegWrite "mainMem" in mainMem <- #updatedMem;
           Retv
         );
@@ -465,8 +467,9 @@ Section Memories.
   End MainMem.
 
   Section Tags.
-    Definition tagsStartAddr := Z.shiftr (config.(memStartAddr) + NumBytesFullCapSz - 1) LgNumBytesFullCapSz.
-    Definition tagsEndAddr := Z.shiftr (config.(memStartAddr) + Z.of_nat config.(memSize)) LgNumBytesFullCapSz.
+    Definition tagsStartAddr := Z.shiftr (config.(mainMemStartAddr) + NumBytesFullCapSz - 1) LgNumBytesFullCapSz.
+    Definition tagsEndAddr := Z.shiftr (config.(mainMemStartAddr) + Z.of_nat config.(mainMemSize))
+                                LgNumBytesFullCapSz.
     Definition tagsSize: nat := Z.to_nat (tagsEndAddr - tagsStartAddr).
     Definition TagWidth: Z := AddrSz - LgNumBytesFullCapSz.
 
@@ -505,7 +508,7 @@ Section Memories.
   End Tags.
 End Memories.
 
-Record RevConfig := {
+Record RevBitsConfig := {
   revStartAddr : Z;
   revSizeBytes : nat;
   revBoundProof : (revStartAddr + Z.of_nat revSizeBytes < Z.shiftl 1 Xlen)%Z;
@@ -518,25 +521,26 @@ Section RevBits.
   Local Open Scope string_scope.
   Local Open Scope guru_scope.
 
-  Variable config : RevConfig.
+  Variable config : RevBitsConfig.
   Variable mem_t: Tree Elem.
 
   Local Notation revBitGranularity := (2 ^ config.(lgRevGranularity))%Z.
   Local Notation revBitsWidth := ((AddrSz + 1) - config.(lgRevGranularity))%Z.
 
-  Definition revMemTree : Tree Elem :=
+  Definition revBitsAndMainMem : Tree Elem :=
     Node "uncoreL2" [
-        Leaf "revBits" (EReg {|regKind := Array (Z.to_nat (NatZ_mul config.(revSizeBytes) 8)) Bool;
-                               regInit :=
-                                 Some (Build_SameTuple
-                                         (tupleElems := repeat false (Z.to_nat (NatZ_mul config.(revSizeBytes) 8)))
-                                         (Is_true_Nat_eq_implies
-                                            (repeat_length false (Z.to_nat (NatZ_mul config.(revSizeBytes) 8))))) |});
-      Node "mem" [mem_t]
-    ].
+        Leaf "revBits" (EReg
+                          {|regKind := Array (Z.to_nat (NatZ_mul config.(revSizeBytes) 8)) Bool;
+                            regInit :=
+                              Some (Build_SameTuple
+                                      (tupleElems := repeat false (Z.to_nat (NatZ_mul config.(revSizeBytes) 8)))
+                                      (Is_true_Nat_eq_implies
+                                         (repeat_length false (Z.to_nat (NatZ_mul config.(revSizeBytes) 8))))) |});
+        Node "mem" [mem_t]
+      ].
 
   Local Lemma revBits_to_bytes_proof :
-    kindSize (regKind (getRegFromPath (getRegPathTree revMemTree "uncoreL2.revBits"))) =
+    kindSize (regKind (getRegFromPath (getRegPathTree revBitsAndMainMem "uncoreL2.revBits"))) =
     kindSize (Array config.(revSizeBytes) (Bit 8)).
   Proof.
     simpl. rewrite NatZ_mul_n_1, NatZ_mul_mult, Z2Nat.id; [reflexivity | induction config.(revSizeBytes); simpl; lia].
@@ -544,7 +548,7 @@ Section RevBits.
 
   Local Lemma bytes_to_revBits_proof :
     kindSize (Array config.(revSizeBytes) (Bit 8)) =
-    kindSize (regKind (getRegFromPath (getRegPathTree revMemTree "uncoreL2.revBits"))).
+    kindSize (regKind (getRegFromPath (getRegPathTree revBitsAndMainMem "uncoreL2.revBits"))).
   Proof.
     symmetry; apply revBits_to_bytes_proof.
   Qed.
@@ -563,7 +567,7 @@ Section RevBits.
     Definition isHeapAddr (a: Expr ty (Bit (AddrSz + 1))) : Expr ty Bool :=
       Sge a (Const ty (Bit _) (bits.of_Z _ config.(heapStartAddr))).
 
-    Definition readRevBit (addr: Expr ty (Bit (AddrSz + 1))) : Action ty revMemTree Bool :=
+    Definition readRevBit (addr: Expr ty (Bit (AddrSz + 1))) : Action ty revBitsAndMainMem Bool :=
       Let is_valid <- isHeapAddr addr;
       LetIf retVal : Bool <- If #is_valid
       Then (
@@ -571,12 +575,13 @@ Section RevBits.
         Let castByteOffset <- castBits (ltac:(lia):
                                   ((AddrSz + 1) = config.(lgRevGranularity) + revBitsWidth)%Z) #byteOffset;
         Let offset <- TruncMsb revBitsWidth config.(lgRevGranularity) #castByteOffset;
-        RegRead revVal <- "uncoreL2.revBits" in revMemTree;
+        RegRead revVal <- "uncoreL2.revBits" in revBitsAndMainMem;
         Return (#revVal@[#offset])
       );
       Return #retVal.
 
-    Definition writeRevBit (addr: Expr ty (Bit (AddrSz + 1))) (val: Expr ty Bool) : Action ty revMemTree (Bit 0) :=
+    Definition writeRevBit (addr: Expr ty (Bit (AddrSz + 1))) (val: Expr ty Bool) :
+      Action ty revBitsAndMainMem (Bit 0) :=
       Let is_valid <- isHeapAddr addr;
       If #is_valid
       Then (
@@ -584,38 +589,38 @@ Section RevBits.
         Let castByteOffset <- castBits (ltac:(lia):
                                   ((AddrSz + 1) = config.(lgRevGranularity) + revBitsWidth)%Z) #byteOffset;
         Let offset <- TruncMsb revBitsWidth config.(lgRevGranularity) #castByteOffset;
-        RegRead revVal <- "uncoreL2.revBits" in revMemTree;
-        RegWrite "uncoreL2.revBits" in revMemTree <- #revVal@[#offset <- val];
+        RegRead revVal <- "uncoreL2.revBits" in revBitsAndMainMem;
+        RegWrite "uncoreL2.revBits" in revBitsAndMainMem <- #revVal@[#offset <- val];
         Retv
       );
       Retv.
 
-    Definition np_revMemTree_mem : NodePath revMemTree mem_t := 
-      ltac:(solveNodePath revMemTree "uncoreL2.mem"%string mem_t).
+    Definition np_revBitsAndMainMem_mem : NodePath revBitsAndMainMem mem_t := 
+      ltac:(solveNodePath revBitsAndMainMem "uncoreL2.mem"%string mem_t).
 
-    Definition readRevBytes (addr: ty Addr) : Action ty revMemTree (Bit DXlen) :=
+    Definition readRevBytes (addr: ty Addr) : Action ty revBitsAndMainMem (Bit DXlen) :=
       ( Let is_valid <- isRevBitsAddr addr;
         LetIf retVal : Bit DXlen <- If #is_valid
         Then (
           Let byteOffset <- Sub #addr (Const ty Addr (bits.of_Z Xlen config.(revStartAddr)));
-          RegRead revVal <- "uncoreL2.revBits" in revMemTree;
+          RegRead revVal <- "uncoreL2.revBits" in revBitsAndMainMem;
           Let flatBits <- ToBit #revVal;
           Let castFlatBits <- castBits revBits_to_bytes_proof #flatBits;
           Let bytesArr <- FromBit (Array config.(revSizeBytes) (Bit 8)) #castFlatBits;
           Return (ToBit (slice #bytesArr #byteOffset (Z.to_nat DXlenBytes)))
         ) Else (
-          liftAction np_revMemTree_mem (rawMemIfc.(mem_readBytes) addr)
+          liftAction np_revBitsAndMainMem_mem (rawMemIfc.(mem_readBytes) addr)
         );
         Return #retVal ).
 
     Definition writeRevBytes (addr: ty Addr) (data: ty (Bit DXlen)) (sz: ty (Bit MemSzSz)) :
-      Action ty revMemTree (Bit 0) :=
+      Action ty revBitsAndMainMem (Bit 0) :=
       ( Let is_valid <- isRevBitsAddr addr;
         If #is_valid
         Then (
           Let byteOffset <- Sub #addr (Const ty Addr (bits.of_Z Xlen config.(revStartAddr)));
           Let num_bytes: Bit (Z.log2_up (LgNumBytesFullCapSz + 1)) <- Sll $1 #sz;
-          RegRead revVal <- "uncoreL2.revBits" in revMemTree;
+          RegRead revVal <- "uncoreL2.revBits" in revBitsAndMainMem;
           Let flatBits <- ToBit #revVal;
           Let castFlatBits <- castBits revBits_to_bytes_proof #flatBits;
           Let bytesArr <- FromBit (Array config.(revSizeBytes) (Bit 8)) #castFlatBits;
@@ -624,28 +629,28 @@ Section RevBits.
           Let updFlatBits <- ToBit #updBytesArr;
           Let castUpdFlatBits <- castBits bytes_to_revBits_proof #updFlatBits;
           Let updRevBits <- FromBit (Array (Z.to_nat (NatZ_mul config.(revSizeBytes) 8)) Bool) #castUpdFlatBits;
-          RegWrite "uncoreL2.revBits" in revMemTree <- #updRevBits;
+          RegWrite "uncoreL2.revBits" in revBitsAndMainMem <- #updRevBits;
           Retv
         ) Else (
-          liftAction np_revMemTree_mem (rawMemIfc.(mem_writeBytes) addr data sz)
+          liftAction np_revBitsAndMainMem_mem (rawMemIfc.(mem_writeBytes) addr data sz)
         );
         Retv ).
 
-    Definition revMemIfc : @MemIfc revMemTree ty := {|
+    Definition revBitsAndMainMemIfc : @MemIfc revBitsAndMainMem ty := {|
       mem_readBytes := readRevBytes;
-      mem_readTag := fun addr => liftAction np_revMemTree_mem (rawMemIfc.(mem_readTag) addr);
+      mem_readTag := fun addr => liftAction np_revBitsAndMainMem_mem (rawMemIfc.(mem_readTag) addr);
       mem_readRevBit := fun addr => readRevBit #addr;
-      mem_readInst := fun addr => liftAction np_revMemTree_mem (rawMemIfc.(mem_readInst) addr);
+      mem_readInst := fun addr => liftAction np_revBitsAndMainMem_mem (rawMemIfc.(mem_readInst) addr);
       mem_writeBytes := writeRevBytes;
-      mem_writeTag := fun addr val => liftAction np_revMemTree_mem (rawMemIfc.(mem_writeTag) addr val)
+      mem_writeTag := fun addr val => liftAction np_revBitsAndMainMem_mem (rawMemIfc.(mem_writeTag) addr val)
     |}.
   End Ty.
 End RevBits.
 
 Section AllMem.
-  Variable memConfig : MemConfig.
-  Variable lgMemSize_ge_binary : Is_true (length binary <=? memConfig.(memSize))%nat.
-  Variable revConfig : RevConfig.
+  Variable mainMemConfig : MainMemConfig.
+  Variable lgMainMemSize_ge_binary : Is_true (length binary <=? mainMemConfig.(mainMemSize))%nat.
+  Variable revBitsConfig : RevBitsConfig.
   Variable revokerConfig : RevokerConfig.
 
   Local Open Scope string_scope.
@@ -653,33 +658,33 @@ Section AllMem.
 
   Definition mainMemState : Tree Elem :=
     Node "mainMemState" [
-      mainMem lgMemSize_ge_binary;
-      tags memConfig
+      mainMem lgMainMemSize_ge_binary;
+      tags mainMemConfig
     ].
 
   Definition revBitsAndMainMemState : Tree Elem :=
-    revMemTree revConfig mainMemState.
+    revBitsAndMainMem revBitsConfig mainMemState.
 
   Definition uncoreState : Tree Elem :=
-    uncoreTree revokerConfig revBitsAndMainMemState.
+    uncore revokerConfig revBitsAndMainMemState.
 
   Section Ty.
     Variable ty : Kind -> Type.
 
-    Definition mainMemAndTagIfc : @MemIfc mainMemState ty := {|
-      mem_readBytes := fun addr => liftAction (ltac:(solveNodePath mainMemState "mainMemState.mainMem"%string (mainMem lgMemSize_ge_binary))) (readBytes lgMemSize_ge_binary #addr);
-      mem_readTag := fun addr => liftAction (ltac:(solveNodePath mainMemState "mainMemState.tags"%string (tags memConfig))) (readTag memConfig #addr);
+    Definition mainMemAndTagInst : @MemIfc mainMemState ty := {|
+      mem_readBytes := fun addr => liftAction (ltac:(solveNodePath mainMemState "mainMemState.mainMem"%string (mainMem lgMainMemSize_ge_binary))) (readBytes lgMainMemSize_ge_binary #addr);
+      mem_readTag := fun addr => liftAction (ltac:(solveNodePath mainMemState "mainMemState.tags"%string (tags mainMemConfig))) (readTag mainMemConfig #addr);
       mem_readRevBit := fun addr => Return (Const ty Bool false);
-      mem_readInst := fun addr => liftAction (ltac:(solveNodePath mainMemState "mainMemState.mainMem"%string (mainMem lgMemSize_ge_binary))) (readInst lgMemSize_ge_binary #addr);
-      mem_writeBytes := fun addr val sz => liftAction (ltac:(solveNodePath mainMemState "mainMemState.mainMem"%string (mainMem lgMemSize_ge_binary))) (writeBytes lgMemSize_ge_binary #addr #val #sz);
-      mem_writeTag := fun addr val => liftAction (ltac:(solveNodePath mainMemState "mainMemState.tags"%string (tags memConfig))) (writeTag memConfig #addr #val)
+      mem_readInst := fun addr => liftAction (ltac:(solveNodePath mainMemState "mainMemState.mainMem"%string (mainMem lgMainMemSize_ge_binary))) (readInst lgMainMemSize_ge_binary #addr);
+      mem_writeBytes := fun addr val sz => liftAction (ltac:(solveNodePath mainMemState "mainMemState.mainMem"%string (mainMem lgMainMemSize_ge_binary))) (writeBytes lgMainMemSize_ge_binary #addr #val #sz);
+      mem_writeTag := fun addr val => liftAction (ltac:(solveNodePath mainMemState "mainMemState.tags"%string (tags mainMemConfig))) (writeTag mainMemConfig #addr #val)
     |}.
 
-    Definition revBitsAndMainMemIfc : @MemIfc revBitsAndMainMemState ty :=
-      revMemIfc revConfig mainMemAndTagIfc.
+    Definition revBitsAndMainMemInst : @MemIfc revBitsAndMainMemState ty :=
+      revBitsAndMainMemIfc revBitsConfig mainMemAndTagInst.
 
-    Definition uncoreIfc : @MemIfc uncoreState ty :=
-      uncoreMemIfc revokerConfig revBitsAndMainMemIfc.
+    Definition uncoreInst : @MemIfc uncoreState ty :=
+      uncoreIfc revokerConfig revBitsAndMainMemInst.
   End Ty.
 End AllMem.
 
