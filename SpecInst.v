@@ -1,25 +1,29 @@
 From Stdlib Require Import List String ZArith Zmod.
-From Guru Require Import Library Syntax Notations.
+From Guru Require Import Library Syntax Notations Compiler Extraction.
 From Cheriot Require Import Alu Spec Binary.
 
 Local Open Scope Z_scope.
 Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
+Definition MainMemSize : Z := 256 * 2^10.
+Definition LgRevGranularity := 3.
+Definition RevSizeBytes := Z.to_nat (MainMemSize / (8 * 2^LgRevGranularity)).
+
 (* Configurations *)
 Definition mainMemConfigVal : MainMemConfig := {|
   mainMemStartAddr := MemStartAddr;
-  mainMemSize := 262144; (* 256 KiB *)
+  mainMemSize := Z.to_nat MainMemSize;
   mainMemBoundProof := I;
   lgMainMemSize_ge_binary := I
 |}.
 
 Definition revBitsConfigVal : RevBitsConfig := {|
   revStartAddr := 0x00001000;
-  revSizeBytes := 4096; (* covers 256 KiB *)
+  revSizeBytes := RevSizeBytes;
   revBoundProof := I;
   heapStartAddr := MemStartAddr;
-  lgRevGranularity := 3; (* for 64 bytes *)
+  lgRevGranularity := LgRevGranularity;
   heapBoundProof := I
 |}.
 
@@ -70,3 +74,8 @@ Definition specInstTree :=
 
 Definition specInst : Mod specInstTree :=
   spec uncoreInstVal regsInitVal scrsInitVal csrsInitVal interruptsInitVal tohostAddrVal.
+
+From Guru Require Import Extraction Compiler.
+Definition compiledMod := compile specInst.
+Set Extraction Output Directory ".".
+Extraction "Compile" kindSize Z.log2_up compiledMod.

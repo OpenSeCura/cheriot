@@ -1,3 +1,2 @@
 -Q . Cheriot -Q ../Guru Guru
 .
--arg "-output-dir ../Guru/PrettyPrinter"

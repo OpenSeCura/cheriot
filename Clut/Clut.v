@@ -266,4 +266,4 @@ Definition clut: Mod clutIfc :=
 Definition compiledMod := compile clut.
 
 Set Extraction Output Directory "./Clut".
-Extraction "Compile" kindSize Z.log2_up genFinType finNum updList compiledMod.
+Extraction "Compile" kindSize Z.log2_up compiledMod.

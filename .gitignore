@@ -28,3 +28,6 @@ Makefile.coq
 .*.swo
 .*.swp
 Clut/Compile.hs
+Compile.hs
+Main
+Main.sv
