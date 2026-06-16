@@ -36,6 +36,7 @@ Record MemIfc {mem_t: Tree Elem} {ty: Kind -> Type} := {
 
 Section Spec.
   Variable mem_t: Tree Elem.
+  Variable memIfc : forall ty, @MemIfc mem_t ty.
   Variable regsInit: type (Array NumRegs FullECapWithTag).
   Variable scrsInit: type Scrs.
   Variable csrsInit: type Csrs.
@@ -62,7 +63,7 @@ Section Spec.
   Section Ty.
     Variable ty: Kind -> Type.
 
-    Variable memIfc: @MemIfc mem_t ty.
+    Local Notation memIfcTy := (memIfc ty).
 
     Definition updateWordByByteSz := @updateBitsByChunkSz ty (Z.to_nat XlenBytes) 8.
 
@@ -70,7 +71,7 @@ Section Spec.
       : Action ty mem_t FullECapWithTag :=
       ( Let isCap : Bool <- isAllOnes #memSz;
         Let memSzBytes : Bit MemSz <- Sll $1 #memSz;
-        LetA readBits: Bit DXlen <- memIfc.(mem_readBytes) memAddr;
+        LetA readBits: Bit DXlen <- memIfcTy.(mem_readBytes) memAddr;
         Let readBytes: Array (Z.to_nat DXlenBytes) (Bit 8) <- FromBit _ #readBits;
         Let readBitsFixed <- ToBit (ITE #ldUn (ArrayZeroExtend #memSzBytes #readBytes)
                                       (ArraySignExtend #memSzBytes #readBytes));
@@ -81,10 +82,10 @@ Section Spec.
         Let ldECapFinal: ECap <- ITE #isCap #ldECap ConstDef;
         Let memTagAddr: Bit (AddrSz - LgNumBytesFullCapSz) <- TruncMsb _ LgNumBytesFullCapSz #memAddr;
 
-        LetA ldTag: Bool <- memIfc.(mem_readTag) memTagAddr;
+        LetA ldTag: Bool <- memIfcTy.(mem_readTag) memTagAddr;
 
         Let ldBase: Bit (AddrSz + 1) <- #ldECap`"base";
-        LetA revBit: Bool <- memIfc.(mem_readRevBit) ldBase;
+        LetA revBit: Bool <- memIfcTy.(mem_readRevBit) ldBase;
 
         Let ldTagFinal: Bool <- ITE #isCap (And [#ldTag; Not #revBit]) ConstDef;
         Return ((STRUCT { "tag" ::= #ldTagFinal;
@@ -102,16 +103,16 @@ Section Spec.
         
         If #Store
         Then (
-          Act memIfc.(mem_writeBytes) memAddr stBits memSz;
+          Act memIfcTy.(mem_writeBytes) memAddr stBits memSz;
           If #isCap
-          Then (Act memIfc.(mem_writeTag) memTagAddr stTag; Retv)
+          Then (Act memIfcTy.(mem_writeTag) memTagAddr stTag; Retv)
           Else (
             Let isAligned : Bool <- isZero (TruncLsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz #memAddr);
             Let memTagAddrPlusOne <- Add [#memTagAddr; $1];
             Let clearTag : Bool <- Const ty Bool false;
-            Act memIfc.(mem_writeTag) memTagAddr clearTag;
+            Act memIfcTy.(mem_writeTag) memTagAddr clearTag;
             If (Not #isAligned)
-              Then (memIfc.(mem_writeTag) memTagAddrPlusOne clearTag);
+              Then (memIfcTy.(mem_writeTag) memTagAddrPlusOne clearTag);
             Retv
           );
           If (Eq #memAddr (Const ty _ tohostAddr))
@@ -137,7 +138,7 @@ Section Spec.
                                             Slt (ZeroExtend 1 #pcVal) (##pcc`"ecap"`"top")];
         Let pcAluOut: PcAluOut <- STRUCT { "pcVal" ::= #pcVal;
                                            "BoundsException" ::= #BoundsException };
-        LetA inst: Inst <- liftAction np_mem (memIfc.(mem_readInst) pcVal);
+        LetA inst: Inst <- liftAction np_mem (memIfcTy.(mem_readInst) pcVal);
         LetL decodeOut: DecodeOut <- decode inst;
 
         Let aluIn: AluIn <- STRUCT { "pcAluOut" ::= #pcAluOut;
@@ -184,15 +185,15 @@ Section Spec.
         Retv ).
   End Ty.
 
-  Definition spec (memIfc : forall ty, @MemIfc mem_t ty) : Mod specTree :=
-    fun ty => [cpuAction (memIfc ty); interrupts ty].
+  Definition spec : Mod specTree :=
+    fun ty => [cpuAction ty; interrupts ty].
 
   Definition SpecInvariant (s: TreeState ElemState specTree) : Prop.
   Admitted.
 
-  Theorem specInvariantPreserved: forall (memIfc : @MemIfc mem_t type) old new,
+  Theorem specInvariantPreserved: forall old new,
       SpecInvariant old ->
-      SemAction (cpuAction memIfc) old new Zmod.zero ->
+      SemAction (cpuAction type) old new Zmod.zero ->
       SpecInvariant new.
   Admitted.
 
