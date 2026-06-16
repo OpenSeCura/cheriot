@@ -668,16 +668,22 @@ Section AllMem.
   Definition uncoreState : Tree Elem :=
     uncore revokerConfig revBitsAndMainMemState.
 
+  Definition mainMemPath : NodePath mainMemState (mainMem lgMainMemSize_ge_binary) :=
+    ltac:(solveNodePath mainMemState "mainMemState.mainMem"%string (mainMem lgMainMemSize_ge_binary)).
+
+  Definition tagsPath : NodePath mainMemState (tags mainMemConfig) :=
+    ltac:(solveNodePath mainMemState "mainMemState.tags"%string (tags mainMemConfig)).
+
   Section Ty.
     Variable ty : Kind -> Type.
 
     Definition mainMemAndTagInst : @MemIfc mainMemState ty := {|
-      mem_readBytes := fun addr => liftAction (ltac:(solveNodePath mainMemState "mainMemState.mainMem"%string (mainMem lgMainMemSize_ge_binary))) (readBytes lgMainMemSize_ge_binary #addr);
-      mem_readTag := fun addr => liftAction (ltac:(solveNodePath mainMemState "mainMemState.tags"%string (tags mainMemConfig))) (readTag mainMemConfig #addr);
+      mem_readBytes := fun addr => liftAction mainMemPath (readBytes lgMainMemSize_ge_binary #addr);
+      mem_readTag := fun addr => liftAction tagsPath (readTag mainMemConfig #addr);
       mem_readRevBit := fun addr => Return (Const ty Bool false);
-      mem_readInst := fun addr => liftAction (ltac:(solveNodePath mainMemState "mainMemState.mainMem"%string (mainMem lgMainMemSize_ge_binary))) (readInst lgMainMemSize_ge_binary #addr);
-      mem_writeBytes := fun addr val sz => liftAction (ltac:(solveNodePath mainMemState "mainMemState.mainMem"%string (mainMem lgMainMemSize_ge_binary))) (writeBytes lgMainMemSize_ge_binary #addr #val #sz);
-      mem_writeTag := fun addr val => liftAction (ltac:(solveNodePath mainMemState "mainMemState.tags"%string (tags mainMemConfig))) (writeTag mainMemConfig #addr #val)
+      mem_readInst := fun addr => liftAction mainMemPath (readInst lgMainMemSize_ge_binary #addr);
+      mem_writeBytes := fun addr val sz => liftAction mainMemPath (writeBytes lgMainMemSize_ge_binary #addr #val #sz);
+      mem_writeTag := fun addr val => liftAction tagsPath (writeTag mainMemConfig #addr #val)
     |}.
 
     Definition revBitsAndMainMemInst : @MemIfc revBitsAndMainMemState ty :=
