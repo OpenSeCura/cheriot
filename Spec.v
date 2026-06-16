@@ -228,7 +228,7 @@ Definition getMemOffset {ty: Kind -> Type} (startAddr: Z) (size: Z) n (addr: Exp
      TruncLsb (n - Z.log2_up size) (Z.log2_up size) (Sub castAddr $startAddr))%guru.
 
 Section Uncore.
-  Variable RevokerStartAddr: Z.
+  Variable revokerStartAddr: Z.
   Definition RevokerNumRegs : nat := 4.
   Definition RevokerSizeBytes : Z := XlenBytes * Z.of_nat RevokerNumRegs.
   Definition RevokerAlignBits : Z := Z.log2_up RevokerSizeBytes.
@@ -260,8 +260,8 @@ Section Uncore.
 
   Definition uncore_np_mem: NodePath uncoreTree mem_t := ltac:(solveNodePath uncoreTree "uncore.mem"%string mem_t).
 
-  Definition RevokerEndAddr : Z :=
-    RevokerStartAddr + RevokerSizeBytes - 1.
+  Definition revokerEndAddr : Z :=
+    revokerStartAddr + RevokerSizeBytes - 1.
 
   Section Ty.
     Variable ty: Kind -> Type.
@@ -282,7 +282,7 @@ Section Uncore.
       }.
 
     Definition isRevokerAddr (a: ty Addr) :=
-      And [Sge #a $RevokerStartAddr; Sle #a $RevokerEndAddr].
+      And [Sge #a $revokerStartAddr; Sle #a $revokerEndAddr].
 
     Definition uncoreMemIfc : @MemIfc uncoreTree ty := {|
       mem_readBits := fun addr =>
@@ -293,7 +293,7 @@ Section Uncore.
             Let oldArray : Bit (NatZ_mul (Z.to_nat XlenBytes * RevokerNumRegs) 8) <-
                              ToBit (decodeRevokerState revokerState);
             Let bytesArr <- FromBit (Array (Z.to_nat XlenBytes * RevokerNumRegs) (Bit 8)) #oldArray;
-            Let byteOffset <- getMemOffset RevokerStartAddr RevokerSizeBytes #addr;
+            Let byteOffset <- getMemOffset revokerStartAddr RevokerSizeBytes #addr;
             Let readSlice <- slice #bytesArr #byteOffset (Z.to_nat DXlenBytes);
             Return (ToBit #readSlice)
           ) Else (liftAction uncore_np_mem (rawMemIfc.(mem_readBits) addr));
@@ -312,7 +312,7 @@ Section Uncore.
             Let oldArray : Bit (NatZ_mul (Z.to_nat XlenBytes * RevokerNumRegs) 8) <-
                              ToBit (decodeRevokerState revokerState);
             Let bytesArr <- FromBit (Array (Z.to_nat XlenBytes * RevokerNumRegs) (Bit 8)) #oldArray;
-            Let byteOffset <- getMemOffset RevokerStartAddr RevokerSizeBytes #addr;
+            Let byteOffset <- getMemOffset revokerStartAddr RevokerSizeBytes #addr;
             Let newValBytes <- FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) #val;
             LetL updatedBytesArr <- updSlice #bytesArr #byteOffset #newValBytes #sz;
             Let updatedWordArr <- FromBit (Array RevokerNumRegs Data) (ToBit #updatedBytesArr);
