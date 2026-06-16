@@ -4,6 +4,7 @@ Local Open Scope Z_scope.
 
 Definition PcAddrInit : Z := 0x80000000.
 Definition MemStartAddr : Z := 0x80000000.
+Definition tohostAddr : Z := 0x80006748.
 
 Definition binary: list Z := (
 0x5b ::
