@@ -267,7 +267,7 @@ Section Uncore.
     Variable ty: Kind -> Type.
     Variable rawMemIfc: @MemIfc mem_t ty.
 
-    Definition decodeRevokerState (s: ty RevokerState) : Expr ty (Array RevokerNumRegs (Bit 32)) :=
+    Definition decodeRevokerState (s: ty RevokerState) : Expr ty (Array RevokerNumRegs Data) :=
       ARRAY [ {< ##s`"start", Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >};
               {< ##s`"end", Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >};
               ##s`"epoch";
