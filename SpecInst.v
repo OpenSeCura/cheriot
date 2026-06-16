@@ -53,7 +53,7 @@ Definition pccInitVal : type FullECapWithTag :=
   }.
 
 Definition regsInitVal : type (Array NumRegs FullECapWithTag) :=
-  Build_SameTuple (tupleElems := pccInitVal :: List.repeat (Default FullECapWithTag) (NumRegs - 1))
+  Build_SameTuple (tupleElems := pccInitVal :: List.repeat (getDefault FullECapWithTag) (NumRegs - 1))
     (Is_true_Nat_eq_implies eq_refl).
 
 Definition scrsInitVal : type Scrs :=
@@ -64,8 +64,8 @@ Definition scrsInitVal : type Scrs :=
     "mepcc" ::= ExecRoot
   }.
 
-Definition csrsInitVal : type Csrs := Default _.
-Definition interruptsInitVal : type Interrupts := Default _.
+Definition csrsInitVal : type Csrs := getDefault _.
+Definition interruptsInitVal : type Interrupts := getDefault _.
 Definition tohostAddrVal : type Addr := bits.of_Z Xlen tohostAddr.
 
 (* The fully instantiated Spec *)

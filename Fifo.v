@@ -33,8 +33,8 @@ Section Fifo.
   Definition fifoTree : Tree Elem :=
     Node ""
       [ Leaf "elems" (EReg (Build_Reg (Array capacity k) None));
-        Leaf "size" (EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat capacity))) (Some (Default _))));
-        Leaf "deq_idx" (EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat capacity))) (Some (Default _))))].
+        Leaf "size" (EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat capacity))) (Some (getDefault _))));
+        Leaf "deq_idx" (EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat capacity))) (Some (getDefault _))))].
 
   Section Ty.
     Variable ty: Kind -> Type.

@@ -42,16 +42,16 @@ Section Pipeline.
 
   Definition allRegs : Tree Elem :=
     Node "" [
-      Leaf "predPcVal" (EReg (Build_Reg Addr (Some (Default _))));
-      Leaf "predPcCap" (EReg (Build_Reg ECap (Some (Default _))));
-      Leaf "predPcTag" (EReg (Build_Reg Bool (Some (Default _))));
-      Leaf "waits" (EReg (Build_Reg (Array NumRegs Bool) (Some (Default _))));
-      Leaf "regs" (EReg (Build_Reg (Array NumRegs FullECapWithTag) (Some (Default _))));
-      Leaf "csrs" (EReg (Build_Reg Csrs (Some (Default _))));
+      Leaf "predPcVal" (EReg (Build_Reg Addr (Some (getDefault _))));
+      Leaf "predPcCap" (EReg (Build_Reg ECap (Some (getDefault _))));
+      Leaf "predPcTag" (EReg (Build_Reg Bool (Some (getDefault _))));
+      Leaf "waits" (EReg (Build_Reg (Array NumRegs Bool) (Some (getDefault _))));
+      Leaf "regs" (EReg (Build_Reg (Array NumRegs FullECapWithTag) (Some (getDefault _))));
+      Leaf "csrs" (EReg (Build_Reg Csrs (Some (getDefault _))));
       Leaf "scrs" (EReg (Build_Reg Scrs (Some (STRUCT_CONST { "mtcc" ::= ExecRoot;
                                                               "mtdc" ::= MemRoot;
                                                               "mscratchc" ::= SealRoot;
                                                               "mepcc" ::= ExecRoot}))));
-      Leaf "interruptsReg" (EReg (Build_Reg Interrupts (Some (Default _))))
+      Leaf "interruptsReg" (EReg (Build_Reg Interrupts (Some (getDefault _))))
     ].
 End Pipeline.

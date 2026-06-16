@@ -83,14 +83,14 @@ Section Clut.
   Definition clutIfc : Tree Elem :=
     Node "" [
       (* Keeps track if entry is used *)
-      Leaf "valids" (EReg {| regKind := Array (Z.to_nat ClutSz) Bool; regInit := Some (Default _) |});
+      Leaf "valids" (EReg {| regKind := Array (Z.to_nat ClutSz) Bool; regInit := Some (getDefault _) |});
       (* Keeps track of outstanding transactions *)
-      Leaf "busys" (EReg {| regKind := Array (Z.to_nat ClutSz) Bool; regInit := Some (Default _) |});
+      Leaf "busys" (EReg {| regKind := Array (Z.to_nat ClutSz) Bool; regInit := Some (getDefault _) |});
       (* Command from processor split into two registers *)
-      Leaf "procCommand1" (EReg {| regKind := Bit Xlen; regInit := Some (Default _) |});
-      Leaf "procCommand2" (EReg {| regKind := Bit LeftOverCommandSize; regInit := Some (Default _) |});
+      Leaf "procCommand1" (EReg {| regKind := Bit Xlen; regInit := Some (getDefault _) |});
+      Leaf "procCommand2" (EReg {| regKind := Bit LeftOverCommandSize; regInit := Some (getDefault _) |});
       (* Response to processor *)
-      Leaf "respToProc" (EReg {| regKind := Option (Bit (LgClutSz + 1)); regInit := Some (Default _) |});
+      Leaf "respToProc" (EReg {| regKind := Option (Bit (LgClutSz + 1)); regInit := Some (getDefault _) |});
       (* All the entries *)
       Leaf "entries" (EReg {| regKind := Array (Z.to_nat ClutSz) ClutEntry; regInit := None |});
       (* Response to processor send *)

@@ -41,7 +41,7 @@ Section BankedMem.
     Node "" [
       Node "memBanks" (repeat (Leaf "memBank" (EMem (@Build_Mem EachSize (Bit 8) 2%nat None))) NumBanks);
       Node "tagBanks" (repeat (Leaf "tagBank" (EMem (@Build_Mem EachSize Bool 2%nat None))) Num8Banks);
-      Leaf "initTagReg" (EReg (Build_Reg (Bit (LgEachSize + 1)) (Some (Default _))))
+      Leaf "initTagReg" (EReg (Build_Reg (Bit (LgEachSize + 1)) (Some (getDefault _))))
     ].
 
   Definition cl := bankedMemIfc.

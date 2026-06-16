@@ -144,7 +144,7 @@ Section Spec.
         Let aluIn: AluIn <- STRUCT { "pcAluOut" ::= #pcAluOut;
                                      "decodeOut" ::= #decodeOut;
                                      "regs" ::= #regs;
-                                     "waits" ::= Const ty (Array NumRegs Bool) (Default _);
+                                     "waits" ::= Const ty (Array NumRegs Bool) (getDefault _);
                                      "csrs" ::= #csrs;
                                      "scrs" ::= #scrs;
                                      "interrupts" ::= #interrupts };

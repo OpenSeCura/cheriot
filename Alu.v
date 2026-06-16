@@ -572,7 +572,7 @@ Section Roots.
       (STRUCT_CONST {
            "R" ::= false ;
            "perms" ::= perms ;
-           "oType" ::= Default (Bit _) ;
+           "oType" ::= getDefault (Bit _) ;
            "E" ::= Zmod.of_Z _ Emax ;
            "top" ::= Zmod.app (Zmod.zero: bits AddrSz) Zmod.one ;
            "base" ::= Zmod.zero }).
@@ -581,7 +581,7 @@ Section Roots.
       (STRUCT_CONST {
            "tag" ::= true;
            "ecap" ::= createRootCap;
-           "addr" ::= Default Addr }).
+           "addr" ::= getDefault Addr }).
   End Roots.
 
   Definition ExecRoot := createRoot ExecRootPerms.
