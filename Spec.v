@@ -236,9 +236,9 @@ Definition RevokerState : Kind := Struct [
 
 Record RevokerConfig := {
   revokerStartAddr : Z;
-  revokeAddrInit : type (Bit (AddrSz - LgNumBytesFullCapSz));
+  revokerBoundProof : (revokerStartAddr + XlenBytes * 4 < Z.shiftl 1 Xlen)%Z;
   revokerStateInit : type RevokerState;
-  revokerBoundProof : (revokerStartAddr + XlenBytes * 4 < Z.shiftl 1 Xlen)%Z
+  revokeAddrInit : type (Bit (AddrSz - LgNumBytesFullCapSz))
 }.
 
 Section Uncore.
@@ -390,7 +390,8 @@ Definition fixedBinary : list (bits 8) := map (fun v => bits.of_Z 8 v) binary.
 Record MainMemConfig := {
   mainMemStartAddr : Z;
   mainMemSize : nat;
-  mainMemBoundProof : (mainMemStartAddr + Z.of_nat mainMemSize < Z.shiftl 1 Xlen)%Z
+  mainMemBoundProof : (mainMemStartAddr + Z.of_nat mainMemSize < Z.shiftl 1 Xlen)%Z;
+  lgMainMemSize_ge_binary : Is_true (length binary <=? mainMemSize)%nat
 }.
 
 Section Memories.
@@ -399,72 +400,69 @@ Section Memories.
 
   Variable config : MainMemConfig.
 
-  Section MainMem.
-    Variable lgMainMemSize_ge_binary : Is_true (length binary <=? config.(mainMemSize))%nat.
+  Definition paddedBinary :=
+    (fixedBinary ++ List.repeat (bits.of_Z 8 0) (config.(mainMemSize) - length binary))%list.
 
-    Definition paddedBinary :=
-      (fixedBinary ++ List.repeat (bits.of_Z 8 0) (config.(mainMemSize) - length binary))%list.
+  Lemma paddedBinary_length :
+    length paddedBinary = config.(mainMemSize).
+  Proof.
+    unfold paddedBinary, fixedBinary.
+    rewrite length_app.
+    rewrite repeat_length.
+    rewrite length_map.
+    pose proof config.(lgMainMemSize_ge_binary) as H.
+    apply Is_true_eq_true in H.
+    rewrite Nat.leb_le in H.
+    lia.
+  Qed.
 
-    Lemma paddedBinary_length :
-      length paddedBinary = config.(mainMemSize).
-    Proof.
-      unfold paddedBinary, fixedBinary.
-      rewrite length_app.
-      rewrite repeat_length.
-      rewrite length_map.
-      apply Is_true_eq_true in lgMainMemSize_ge_binary.
-      rewrite Nat.leb_le in lgMainMemSize_ge_binary.
-      lia.
-    Qed.
+  Definition mainMem : Tree Elem :=
+    Leaf "mainMem" (EReg {|regKind := Array config.(mainMemSize) (Bit 8);
+                             regInit := Some (Build_SameTuple (tupleElems := paddedBinary)
+                                                (Is_true_Nat_eq_implies paddedBinary_length)) |}).
 
-    Definition mainMem : Tree Elem :=
-      Leaf "mainMem" (EReg {|regKind := Array config.(mainMemSize) (Bit 8);
-                               regInit := Some (Build_SameTuple (tupleElems := paddedBinary)
-                                                  (Is_true_Nat_eq_implies paddedBinary_length)) |}).
+  Section Ty.
+    Variable ty : Kind -> Type.
 
-    Section Ty.
-      Variable ty : Kind -> Type.
+    Definition isMemAddr (a: Expr ty Addr) : Expr ty Bool :=
+      Sge a (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr))).
 
-      Definition isMemAddr (a: Expr ty Addr) : Expr ty Bool :=
-        Sge a (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr))).
+    Definition readBytes (addr: Expr ty Addr) : Action ty mainMem (Bit DXlen) :=
+      Let is_valid <- isMemAddr addr;
+      LetIf retVal : Bit DXlen <- If #is_valid
+      Then (
+        Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr)));
+        RegRead mainMemVal <- "mainMem" in mainMem;
+        Return (ToBit (slice #mainMemVal #offset (Z.to_nat DXlenBytes)))
+      );
+      Return #retVal.
 
-      Definition readBytes (addr: Expr ty Addr) : Action ty mainMem (Bit DXlen) :=
-        Let is_valid <- isMemAddr addr;
-        LetIf retVal : Bit DXlen <- If #is_valid
-        Then (
-          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr)));
-          RegRead mainMemVal <- "mainMem" in mainMem;
-          Return (ToBit (slice #mainMemVal #offset (Z.to_nat DXlenBytes)))
-        );
-        Return #retVal.
+    Definition readInst (addr: Expr ty Addr) : Action ty mainMem Inst :=
+      Let is_valid <- isMemAddr addr;
+      LetIf retVal : Inst <- If #is_valid
+      Then (
+        Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr)));
+        RegRead mainMemVal <- "mainMem" in mainMem;
+        Return (ToBit (slice #mainMemVal #offset (Z.to_nat (InstSz/8))))
+      );
+      Return #retVal.
 
-      Definition readInst (addr: Expr ty Addr) : Action ty mainMem Inst :=
-        Let is_valid <- isMemAddr addr;
-        LetIf retVal : Inst <- If #is_valid
-        Then (
-          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr)));
-          RegRead mainMemVal <- "mainMem" in mainMem;
-          Return (ToBit (slice #mainMemVal #offset (Z.to_nat (InstSz/8))))
-        );
-        Return #retVal.
-
-      Definition writeBytes (addr: Expr ty Addr) (data: Expr ty (Bit DXlen)) (sz: Expr ty (Bit MemSzSz)) :
-        Action ty mainMem (Bit 0) :=
-        Let is_valid <- isMemAddr addr;
-        If #is_valid
-        Then (
-          Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr)));
-          Let num_bytes: Bit (MemSz + 1) <- Sll $1 sz;
-          RegRead mainMemVal <- "mainMem" in mainMem;
-          LetA updatedMem <-
-            toAction mainMem (updSlice #mainMemVal #offset
-                                (FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) data) #num_bytes);
-          RegWrite "mainMem" in mainMem <- #updatedMem;
-          Retv
-        );
-        Retv.
-    End Ty.
-  End MainMem.
+    Definition writeBytes (addr: Expr ty Addr) (data: Expr ty (Bit DXlen)) (sz: Expr ty (Bit MemSzSz)) :
+      Action ty mainMem (Bit 0) :=
+      Let is_valid <- isMemAddr addr;
+      If #is_valid
+      Then (
+        Let offset <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr)));
+        Let num_bytes: Bit (MemSz + 1) <- Sll $1 sz;
+        RegRead mainMemVal <- "mainMem" in mainMem;
+        LetA updatedMem <-
+          toAction mainMem (updSlice #mainMemVal #offset
+                              (FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) data) #num_bytes);
+        RegWrite "mainMem" in mainMem <- #updatedMem;
+        Retv
+      );
+      Retv.
+  End Ty.
 
   Section Tags.
     Definition tagsStartAddr := Z.shiftr (config.(mainMemStartAddr) + NumBytesFullCapSz - 1) LgNumBytesFullCapSz.
@@ -649,7 +647,6 @@ End RevBits.
 
 Section AllMem.
   Variable mainMemConfig : MainMemConfig.
-  Variable lgMainMemSize_ge_binary : Is_true (length binary <=? mainMemConfig.(mainMemSize))%nat.
   Variable revBitsConfig : RevBitsConfig.
   Variable revokerConfig : RevokerConfig.
 
@@ -658,7 +655,7 @@ Section AllMem.
 
   Definition mainMemState : Tree Elem :=
     Node "mainMemState" [
-      mainMem lgMainMemSize_ge_binary;
+      mainMem mainMemConfig;
       tags mainMemConfig
     ].
 
@@ -668,8 +665,8 @@ Section AllMem.
   Definition uncoreState : Tree Elem :=
     uncore revokerConfig revBitsAndMainMemState.
 
-  Definition mainMemPath : NodePath mainMemState (mainMem lgMainMemSize_ge_binary) :=
-    ltac:(solveNodePath mainMemState "mainMemState.mainMem"%string (mainMem lgMainMemSize_ge_binary)).
+  Definition mainMemPath : NodePath mainMemState (mainMem mainMemConfig) :=
+    ltac:(solveNodePath mainMemState "mainMemState.mainMem"%string (mainMem mainMemConfig)).
 
   Definition tagsPath : NodePath mainMemState (tags mainMemConfig) :=
     ltac:(solveNodePath mainMemState "mainMemState.tags"%string (tags mainMemConfig)).
@@ -678,11 +675,11 @@ Section AllMem.
     Variable ty : Kind -> Type.
 
     Definition mainMemAndTagInst : @MemIfc mainMemState ty := {|
-      mem_readBytes := fun addr => liftAction mainMemPath (readBytes lgMainMemSize_ge_binary #addr);
+      mem_readBytes := fun addr => liftAction mainMemPath (readBytes mainMemConfig #addr);
       mem_readTag := fun addr => liftAction tagsPath (readTag mainMemConfig #addr);
       mem_readRevBit := fun addr => Return (Const ty Bool false);
-      mem_readInst := fun addr => liftAction mainMemPath (readInst lgMainMemSize_ge_binary #addr);
-      mem_writeBytes := fun addr val sz => liftAction mainMemPath (writeBytes lgMainMemSize_ge_binary #addr #val #sz);
+      mem_readInst := fun addr => liftAction mainMemPath (readInst mainMemConfig #addr);
+      mem_writeBytes := fun addr val sz => liftAction mainMemPath (writeBytes mainMemConfig #addr #val #sz);
       mem_writeTag := fun addr val => liftAction tagsPath (writeTag mainMemConfig #addr #val)
     |}.
 
