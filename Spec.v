@@ -227,41 +227,44 @@ Definition getMemOffset {ty: Kind -> Type} (startAddr: Z) (size: Z) n (addr: Exp
    else
      TruncLsb (n - Z.log2_up size) (Z.log2_up size) (Sub castAddr $startAddr))%guru.
 
+Definition RevokerState : Kind := Struct [
+  ("start", Bit (AddrSz - LgNumBytesFullCapSz));
+  ("end", Bit (AddrSz - LgNumBytesFullCapSz));
+  ("epoch", Data);
+  ("kick", Bool)
+].
+
+Record RevokerConfig := {
+  revokerStartAddr : Z;
+  revokeAddrInit : type (Bit (AddrSz - LgNumBytesFullCapSz));
+  revokerStateInit : type RevokerState;
+  revokerBoundProof : (revokerStartAddr + XlenBytes * 4 < Z.shiftl 1 Xlen)%Z
+}.
+
 Section Uncore.
-  Variable revokerStartAddr: Z.
+  Variable config : RevokerConfig.
   Definition RevokerNumRegs : nat := 4.
   Definition RevokerSizeBytes : Z := XlenBytes * Z.of_nat RevokerNumRegs.
   Definition RevokerAlignBits : Z := Z.log2_up RevokerSizeBytes.
-
-  Variable revokeAddrInit: type (Bit (AddrSz - LgNumBytesFullCapSz)).
 
   Local Open Scope string_scope.
   Local Open Scope guru_scope.
 
   Variable mem_t: Tree Elem.
 
-  Definition RevokerState : Kind := Struct [
-    ("start", Bit (AddrSz - LgNumBytesFullCapSz));
-    ("end", Bit (AddrSz - LgNumBytesFullCapSz));
-    ("epoch", Data);
-    ("kick", Bool)
-  ].
-
-  Variable revokerStateInit: type RevokerState.
-
   Definition uncoreTree : Tree Elem :=
     Node "uncore" [
       Node "mem" [mem_t];
       Node "revoker" [
-        Leaf "revokerState" (EReg {| regKind := RevokerState; regInit := Some revokerStateInit |});
-        Leaf "revokeAddr" (EReg {| regKind := Bit (AddrSz - LgNumBytesFullCapSz); regInit := Some revokeAddrInit |})
+        Leaf "revokerState" (EReg {| regKind := RevokerState; regInit := Some config.(revokerStateInit) |});
+        Leaf "revokeAddr" (EReg {| regKind := Bit (AddrSz - LgNumBytesFullCapSz); regInit := Some config.(revokeAddrInit) |})
       ]
     ].
 
   Definition uncore_np_mem: NodePath uncoreTree mem_t := ltac:(solveNodePath uncoreTree "uncore.mem"%string mem_t).
 
   Definition revokerEndAddr : Z :=
-    revokerStartAddr + RevokerSizeBytes - 1.
+    config.(revokerStartAddr) + RevokerSizeBytes - 1.
 
   Section Ty.
     Variable ty: Kind -> Type.
@@ -282,7 +285,7 @@ Section Uncore.
       }.
 
     Definition isRevokerAddr (a: ty Addr) :=
-      And [Sge #a $revokerStartAddr; Sle #a $revokerEndAddr].
+      And [Sge #a $(config.(revokerStartAddr)); Sle #a $revokerEndAddr].
 
     Definition uncoreMemIfc : @MemIfc uncoreTree ty := {|
       mem_readBytes := fun addr =>
@@ -293,7 +296,7 @@ Section Uncore.
             Let oldArray : Bit (NatZ_mul (Z.to_nat XlenBytes * RevokerNumRegs) 8) <-
                              ToBit (decodeRevokerState revokerState);
             Let bytesArr <- FromBit (Array (Z.to_nat XlenBytes * RevokerNumRegs) (Bit 8)) #oldArray;
-            Let byteOffset <- getMemOffset revokerStartAddr RevokerSizeBytes #addr;
+            Let byteOffset <- getMemOffset config.(revokerStartAddr) RevokerSizeBytes #addr;
             Let readSlice <- slice #bytesArr #byteOffset (Z.to_nat DXlenBytes);
             Return (ToBit #readSlice)
           ) Else (liftAction uncore_np_mem (rawMemIfc.(mem_readBytes) addr));
@@ -312,7 +315,7 @@ Section Uncore.
             Let oldArray : Bit (NatZ_mul (Z.to_nat XlenBytes * RevokerNumRegs) 8) <-
                              ToBit (decodeRevokerState revokerState);
             Let bytesArr <- FromBit (Array (Z.to_nat XlenBytes * RevokerNumRegs) (Bit 8)) #oldArray;
-            Let byteOffset <- getMemOffset revokerStartAddr RevokerSizeBytes #addr;
+            Let byteOffset <- getMemOffset config.(revokerStartAddr) RevokerSizeBytes #addr;
             Let newValBytes <- FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) #val;
             LetL updatedBytesArr <- updSlice #bytesArr #byteOffset #newValBytes #sz;
             Let updatedWordArr <- FromBit (Array RevokerNumRegs Data) (ToBit #updatedBytesArr);
@@ -643,9 +646,7 @@ Section AllMem.
   Variable memConfig : MemConfig.
   Variable lgMemSize_ge_binary : Is_true (length binary <=? memConfig.(memSize))%nat.
   Variable revConfig : RevConfig.
-  Variable revokerStartAddr : Z.
-  Variable revokeAddrInit : type (Bit (AddrSz - LgNumBytesFullCapSz)).
-  Variable revokerStateInit : type RevokerState.
+  Variable revokerConfig : RevokerConfig.
 
   Local Open Scope string_scope.
   Local Open Scope guru_scope.
@@ -660,7 +661,7 @@ Section AllMem.
     revMemTree revConfig mainMemState.
 
   Definition uncoreState : Tree Elem :=
-    uncoreTree revokeAddrInit revBitsAndMainMemState revokerStateInit.
+    uncoreTree revokerConfig revBitsAndMainMemState.
 
   Section Ty.
     Variable ty : Kind -> Type.
@@ -678,7 +679,7 @@ Section AllMem.
       revMemIfc revConfig mainMemAndTagIfc.
 
     Definition uncoreIfc : @MemIfc uncoreState ty :=
-      uncoreMemIfc revokerStartAddr revokeAddrInit revokerStateInit revBitsAndMainMemIfc.
+      uncoreMemIfc revokerConfig revBitsAndMainMemIfc.
   End Ty.
 End AllMem.
 
