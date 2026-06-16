@@ -10,22 +10,22 @@ Local Open Scope guru_scope.
 Definition mainMemConfigVal : MainMemConfig := {|
   mainMemStartAddr := MemStartAddr;
   mainMemSize := 262144; (* 256 KiB *)
-  mainMemBoundProof := ltac:(vm_compute; reflexivity);
+  mainMemBoundProof := I;
   lgMainMemSize_ge_binary := I
 |}.
 
 Definition revBitsConfigVal : RevBitsConfig := {|
   revStartAddr := 0x00001000;
   revSizeBytes := 4096; (* covers 256 KiB *)
-  revBoundProof := ltac:(vm_compute; reflexivity);
+  revBoundProof := I;
   heapStartAddr := MemStartAddr;
   lgRevGranularity := 3; (* for 64 bytes *)
-  heapBoundProof := ltac:(vm_compute; reflexivity)
+  heapBoundProof := I
 |}.
 
 Definition revokerConfigVal : RevokerConfig := {|
   revokerStartAddr := 0x00002000;
-  revokerBoundProof := ltac:(vm_compute; reflexivity);
+  revokerBoundProof := I;
   revokerStateInit := STRUCT_CONST {
     "start" ::= (bits.of_Z (AddrSz - LgNumBytesFullCapSz) 0);
     "end" ::= (bits.of_Z (AddrSz - LgNumBytesFullCapSz) 0);

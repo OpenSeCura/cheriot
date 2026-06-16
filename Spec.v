@@ -232,7 +232,7 @@ Definition RevokerState : Kind := Struct [
 
 Record RevokerConfig := {
   revokerStartAddr : Z;
-  revokerBoundProof : (revokerStartAddr + XlenBytes * 4 < Z.shiftl 1 Xlen)%Z;
+  revokerBoundProof : Is_true (revokerStartAddr + XlenBytes * 4 <? Z.shiftl 1 Xlen)%Z;
   revokerStateInit : type RevokerState;
   revokeAddrInit : type (Bit (AddrSz - LgNumBytesFullCapSz))
 }.
@@ -386,7 +386,7 @@ Definition fixedBinary : list (bits 8) := map (fun v => bits.of_Z 8 v) binary.
 Record MainMemConfig := {
   mainMemStartAddr : Z;
   mainMemSize : nat;
-  mainMemBoundProof : (mainMemStartAddr + Z.of_nat mainMemSize < Z.shiftl 1 Xlen)%Z;
+  mainMemBoundProof : Is_true (mainMemStartAddr + Z.of_nat mainMemSize <? Z.shiftl 1 Xlen)%Z;
   lgMainMemSize_ge_binary : Is_true (length binary <=? mainMemSize)%nat
 }.
 
@@ -505,10 +505,10 @@ End Memories.
 Record RevBitsConfig := {
   revStartAddr : Z;
   revSizeBytes : nat;
-  revBoundProof : (revStartAddr + Z.of_nat revSizeBytes < Z.shiftl 1 Xlen)%Z;
+  revBoundProof : Is_true (revStartAddr + Z.of_nat revSizeBytes <? Z.shiftl 1 Xlen)%Z;
   heapStartAddr : Z;
   lgRevGranularity : Z;
-  heapBoundProof : (heapStartAddr + NatZ_mul revSizeBytes 8 * 2^lgRevGranularity < Z.shiftl 1 Xlen)%Z
+  heapBoundProof : Is_true (heapStartAddr + NatZ_mul revSizeBytes 8 * 2^lgRevGranularity <? Z.shiftl 1 Xlen)%Z
 }.
 
 Section RevBits.
