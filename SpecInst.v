@@ -78,4 +78,4 @@ Definition specInst : Mod specInstTree :=
 From Guru Require Import Extraction Compiler.
 Definition compiledMod := compile specInst.
 Set Extraction Output Directory ".".
-Extraction "Compile" kindSize Z.log2_up compiledMod.
+Extraction "Compile" kindSize Z.log2_up getDefault isEq compiledMod.
