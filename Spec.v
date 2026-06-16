@@ -35,20 +35,15 @@ Record MemIfc {mem_t: Tree Elem} {ty: Kind -> Type} := {
 }.
 
 Section Spec.
-  Variable MemWidth: nat.
-  Variable MemWidthGeLgBytesFullCapSz: MemWidth >= Z.to_nat LgNumBytesFullCapSz.
-
-  Variable tohostAddr: type Addr.
-
+  Variable mem_t: Tree Elem.
   Variable regsInit: type (Array NumRegs FullECapWithTag).
   Variable scrsInit: type Scrs.
   Variable csrsInit: type Csrs.
   Variable interruptsInit: type Interrupts.
+  Variable tohostAddr: type Addr.
 
   Local Open Scope string_scope.
   Local Open Scope guru_scope.
-
-  Variable mem_t: Tree Elem.
 
   Definition specTree : Tree Elem :=
     Node "" [
@@ -67,9 +62,9 @@ Section Spec.
   Section Ty.
     Variable ty: Kind -> Type.
 
-    Definition updateWordByByteSz := @updateBitsByChunkSz ty (Z.to_nat XlenBytes) 8.
-
     Variable memIfc: @MemIfc mem_t ty.
+
+    Definition updateWordByByteSz := @updateBitsByChunkSz ty (Z.to_nat XlenBytes) 8.
 
     Definition memLoad (memAddr: ty Addr) (memSz: ty (Bit MemSzSz)) (ldUn: ty Bool)
       : Action ty mem_t FullECapWithTag :=
@@ -690,26 +685,3 @@ Section AllMem.
       uncoreIfc revokerConfig revBitsAndMainMemInst.
   End Ty.
 End AllMem.
-
-Section PartialInitSpec.
-  Local Open Scope string_scope.
-  Local Open Scope guru_scope.
-
-  Variable MemWidth: nat.
-  Variable MemWidthGeLgBytesFullCapSz: MemWidth >= Z.to_nat LgNumBytesFullCapSz.
-  Variable regsInit: type (Array NumRegs FullECapWithTag).
-
-  Variable regsInitPc:
-    readNatToFinType (Default FullECapWithTag) (readSameTuple regsInit) 0 = Default FullECapWithTag.
-
-  Definition scrsInit: type Scrs := STRUCT_CONST {
-                                        "mtcc" ::= ExecRoot;
-                                        "mtdc" ::= MemRoot;
-                                        "mscratchc" ::= SealRoot;
-                                        "mepcc" ::= ExecRoot }.
-
-  Variable mem_t: Tree Elem.
-  Definition partialInitSpec (memIfc : forall ty, @MemIfc mem_t ty) :=
-    spec (mem_t:=mem_t) (Default _) regsInit scrsInit
-         (Default _) (Default _) memIfc.
-End PartialInitSpec.
