@@ -31,7 +31,8 @@ Record MemIfc {mem_t: Tree Elem} {ty: Kind -> Type} := {
   mem_readRevBit: ty (Bit (AddrSz + 1)) -> Action ty mem_t Bool;
   mem_readInst: ty Addr -> Action ty mem_t Inst;
   mem_writeBytes: ty Addr -> ty (Bit DXlen) -> ty (Bit MemSzSz) -> Action ty mem_t (Bit 0);
-  mem_writeTag: ty (Bit (AddrSz - LgNumBytesFullCapSz)) -> ty Bool -> Action ty mem_t (Bit 0)
+  mem_writeTag: ty (Bit (AddrSz - LgNumBytesFullCapSz)) -> ty Bool -> Action ty mem_t (Bit 0);
+  mem_actions: list (Action ty mem_t (Bit 0))
 }.
 
 Section Spec.
@@ -186,7 +187,7 @@ Section Spec.
   End Ty.
 
   Definition spec : Mod specTree :=
-    fun ty => [cpuAction ty; interrupts ty].
+    fun ty => cpuAction ty :: interrupts ty :: map (liftAction np_mem (k := Bit 0)) (mem_actions (memIfc ty)).
 
   Definition SpecInvariant (s: TreeState ElemState specTree) : Prop.
   Admitted.
@@ -284,48 +285,6 @@ Section Uncore.
     Definition isRevokerAddr (a: ty Addr) :=
       And [Sge #a $(config.(revokerStartAddr)); Sle #a $revokerEndAddr].
 
-    Definition uncoreIfc : @MemIfc uncore ty := {|
-      mem_readBytes := fun addr =>
-        ( Let is_valid <- isRevokerAddr addr;
-          LetIf retVal : Bit DXlen <- If #is_valid
-          Then (
-            RegRead revokerState <- "uncore.revoker.revokerState" in uncore;
-            Let oldArray : Bit (NatZ_mul (Z.to_nat XlenBytes * RevokerNumRegs) 8) <-
-                             ToBit (decodeRevokerState revokerState);
-            Let bytesArr <- FromBit (Array (Z.to_nat XlenBytes * RevokerNumRegs) (Bit 8)) #oldArray;
-            Let byteOffset <- getMemOffset config.(revokerStartAddr) RevokerSizeBytes #addr;
-            Let readSlice <- slice #bytesArr #byteOffset (Z.to_nat DXlenBytes);
-            Return (ToBit #readSlice)
-          ) Else (liftAction uncore_np_mem (rawMemIfc.(mem_readBytes) addr));
-          Return #retVal );
-      mem_readTag := fun addr =>
-        liftAction uncore_np_mem (rawMemIfc.(mem_readTag) addr);
-      mem_readRevBit := fun addr =>
-        liftAction uncore_np_mem (rawMemIfc.(mem_readRevBit) addr);
-      mem_readInst := fun addr =>
-        liftAction uncore_np_mem (rawMemIfc.(mem_readInst) addr);
-      mem_writeBytes := fun addr val sz => (
-          Let is_valid <- isRevokerAddr addr;
-          If #is_valid
-          Then (
-            RegRead revokerState <- "uncore.revoker.revokerState" in uncore;
-            Let oldArray : Bit (NatZ_mul (Z.to_nat XlenBytes * RevokerNumRegs) 8) <-
-                             ToBit (decodeRevokerState revokerState);
-            Let bytesArr <- FromBit (Array (Z.to_nat XlenBytes * RevokerNumRegs) (Bit 8)) #oldArray;
-            Let byteOffset <- getMemOffset config.(revokerStartAddr) RevokerSizeBytes #addr;
-            Let newValBytes <- FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) #val;
-            LetL updatedBytesArr <- updSlice #bytesArr #byteOffset #newValBytes #sz;
-            Let updatedWordArr <- FromBit (Array RevokerNumRegs Data) (ToBit #updatedBytesArr);
-            Let updatedState <- encodeRevokerState updatedWordArr;
-            RegWrite "uncore.revoker.revokerState" in uncore <- #updatedState;
-            Retv
-          ) Else (liftAction uncore_np_mem (rawMemIfc.(mem_writeBytes) addr val sz));
-          Retv );
-
-      mem_writeTag := fun addr tag =>
-        liftAction uncore_np_mem (rawMemIfc.(mem_writeTag) addr tag)
-    |}.
-
     (* TODO: Check with Wes about this design *)
     Definition revoker: Action ty uncore (Bit 0) :=
       ( RegRead revokerState <- "uncore.revoker.revokerState" in uncore;
@@ -378,6 +337,49 @@ Section Uncore.
             Retv);
           Retv );
         Retv ).
+
+    Definition uncoreIfc : @MemIfc uncore ty := {|
+      mem_readBytes := fun addr =>
+        ( Let is_valid <- isRevokerAddr addr;
+          LetIf retVal : Bit DXlen <- If #is_valid
+          Then (
+            RegRead revokerState <- "uncore.revoker.revokerState" in uncore;
+            Let oldArray : Bit (NatZ_mul (Z.to_nat XlenBytes * RevokerNumRegs) 8) <-
+                             ToBit (decodeRevokerState revokerState);
+            Let bytesArr <- FromBit (Array (Z.to_nat XlenBytes * RevokerNumRegs) (Bit 8)) #oldArray;
+            Let byteOffset <- getMemOffset config.(revokerStartAddr) RevokerSizeBytes #addr;
+            Let readSlice <- slice #bytesArr #byteOffset (Z.to_nat DXlenBytes);
+            Return (ToBit #readSlice)
+          ) Else (liftAction uncore_np_mem (rawMemIfc.(mem_readBytes) addr));
+          Return #retVal );
+      mem_readTag := fun addr =>
+        liftAction uncore_np_mem (rawMemIfc.(mem_readTag) addr);
+      mem_readRevBit := fun addr =>
+        liftAction uncore_np_mem (rawMemIfc.(mem_readRevBit) addr);
+      mem_readInst := fun addr =>
+        liftAction uncore_np_mem (rawMemIfc.(mem_readInst) addr);
+      mem_writeBytes := fun addr val sz => (
+          Let is_valid <- isRevokerAddr addr;
+          If #is_valid
+          Then (
+            RegRead revokerState <- "uncore.revoker.revokerState" in uncore;
+            Let oldArray : Bit (NatZ_mul (Z.to_nat XlenBytes * RevokerNumRegs) 8) <-
+                             ToBit (decodeRevokerState revokerState);
+            Let bytesArr <- FromBit (Array (Z.to_nat XlenBytes * RevokerNumRegs) (Bit 8)) #oldArray;
+            Let byteOffset <- getMemOffset config.(revokerStartAddr) RevokerSizeBytes #addr;
+            Let newValBytes <- FromBit (Array (Z.to_nat DXlenBytes) (Bit 8)) #val;
+            LetL updatedBytesArr <- updSlice #bytesArr #byteOffset #newValBytes #sz;
+            Let updatedWordArr <- FromBit (Array RevokerNumRegs Data) (ToBit #updatedBytesArr);
+            Let updatedState <- encodeRevokerState updatedWordArr;
+            RegWrite "uncore.revoker.revokerState" in uncore <- #updatedState;
+            Retv
+          ) Else (liftAction uncore_np_mem (rawMemIfc.(mem_writeBytes) addr val sz));
+          Retv );
+      mem_writeTag := fun addr tag =>
+                        liftAction uncore_np_mem (rawMemIfc.(mem_writeTag) addr tag);
+      mem_actions := [revoker]
+    |}.
+
   End Ty.
 End Uncore.
 
@@ -636,7 +638,8 @@ Section RevBits.
       mem_readRevBit := fun addr => readRevBit #addr;
       mem_readInst := fun addr => liftAction np_revBitsAndMainMem_mem (rawMemIfc.(mem_readInst) addr);
       mem_writeBytes := writeRevBytes;
-      mem_writeTag := fun addr val => liftAction np_revBitsAndMainMem_mem (rawMemIfc.(mem_writeTag) addr val)
+      mem_writeTag := fun addr val => liftAction np_revBitsAndMainMem_mem (rawMemIfc.(mem_writeTag) addr val);
+      mem_actions := []
     |}.
   End Ty.
 End RevBits.
@@ -676,7 +679,8 @@ Section AllMem.
       mem_readRevBit := fun addr => Return (Const ty Bool false);
       mem_readInst := fun addr => liftAction mainMemPath (readInst mainMemConfig #addr);
       mem_writeBytes := fun addr val sz => liftAction mainMemPath (writeBytes mainMemConfig #addr #val #sz);
-      mem_writeTag := fun addr val => liftAction tagsPath (writeTag mainMemConfig #addr #val)
+      mem_writeTag := fun addr val => liftAction tagsPath (writeTag mainMemConfig #addr #val);
+      mem_actions := []
     |}.
 
     Definition revBitsAndMainMemInst : @MemIfc revBitsAndMainMemState ty :=
