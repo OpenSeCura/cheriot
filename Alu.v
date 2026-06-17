@@ -424,8 +424,8 @@ Section Cap.
     (* TODO check when length = 2^32-1 and base = 2^32-1 *)
     Definition calculateBounds : LetExpr ty Bounds := structSimplCbn
       ( LetE lenTrunc : Bit (AddrSz + 1 - CapBSz) <- TruncMsb (AddrSz + 1 - CapBSz) CapBSz #length;
-        LetE e: Bit ExpSz <- Add [$(AddrSz + 2 - CapBSz);
-                                  Not (countLeadingZerosArray (mkBoolArray (AddrSz + 1 - CapBSz) #lenTrunc) _)];
+        LETE clz: Bit ExpSz <- countLeadingZerosArray (mkBoolArray (AddrSz + 1 - CapBSz) #lenTrunc) _;
+        LetE e: Bit ExpSz <- Add [$(AddrSz + 2 - CapBSz); Not #clz];
         (* e is such that
              if length <  2^CapBSz, then e = 0
              if length >= 2^CapBSz, then 2^e > (length/2^CapBSz) >= 2^(e-1)
@@ -457,7 +457,7 @@ Section Cap.
         LetE isESaturated: Bool <- Sgt #efUnsat $(AddrSz + 1 - CapBSz);
         LetE e_normal: Bit ExpSz <- ITE #isESaturated $(AddrSz + 1 - CapBSz) #efUnsat;
 
-        LetE e_b: Bit ExpSz <- countTrailingZerosArray (mkBoolArray (AddrSz + 1) #base) _;
+        LETE e_b: Bit ExpSz <- countTrailingZerosArray (mkBoolArray (AddrSz + 1) #base) _;
         LetE pick_b: Bool <- Slt #e_b #e;
         LetE e_roundDown: Bit ExpSz <- ITE #pick_b #e_b #e;
         LetE m_roundDown: Bit CapBSz <- ITE #pick_b (Const ty _ (InvDefault _)) (TruncLsb 1 CapBSz #d);

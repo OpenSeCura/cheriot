@@ -134,7 +134,7 @@ Section Clut.
       Let optCommand : Option Command <- FromBit (Option Command) {< #procCommand2, #procCommand1 >};
 
       (* Find an empty slot in freeIndex. Highest bit of freeIndex is 1 if no empty slot is found *)
-      Let optFreeIndex: Bit (LgClutSz + 1) <- countTrailingZerosArray (Not #valids) (LgClutSz + 1);
+      LetL optFreeIndex: Bit (LgClutSz + 1) <- countTrailingZerosArray (Not #valids) (LgClutSz + 1);
       Let freeIndex: ClutIdx <- TruncLsb 1 LgClutSz #optFreeIndex;
       Let freeIndexValid: Bool <- Not (FromBit Bool (TruncMsb 1 LgClutSz #optFreeIndex));
 
