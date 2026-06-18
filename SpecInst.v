@@ -32,7 +32,7 @@ Definition revokerConfigVal : RevokerConfig := {|
   revokerBoundProof := I;
   revokerStateInit := STRUCT_CONST {
     "start" ::= (bits.of_Z (AddrSz - LgNumBytesFullCapSz) 0);
-    "end" ::= (bits.of_Z (AddrSz - LgNumBytesFullCapSz) 0);
+    "endAddr" ::= (bits.of_Z (AddrSz - LgNumBytesFullCapSz) 0);
     "epoch" ::= (bits.of_Z Xlen 0);
     "kick" ::= false
   };

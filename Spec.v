@@ -226,7 +226,7 @@ Definition getMemOffset {ty: Kind -> Type} (startAddr: Z) (size: Z) n (addr: Exp
 
 Definition RevokerState : Kind := Struct [
   ("start", Bit (AddrSz - LgNumBytesFullCapSz));
-  ("end", Bit (AddrSz - LgNumBytesFullCapSz));
+  ("endAddr", Bit (AddrSz - LgNumBytesFullCapSz));
   ("epoch", Data);
   ("kick", Bool)
 ].
@@ -270,14 +270,14 @@ Section Uncore.
 
     Definition decodeRevokerState (s: ty RevokerState) : Expr ty (Array RevokerNumRegs Data) :=
       ARRAY [ {< ##s`"start", Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >};
-              {< ##s`"end", Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >};
+              {< ##s`"endAddr", Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >};
               ##s`"epoch";
               {< Const ty (Bit (Xlen - 1)) Zmod.zero, ToBit (##s`"kick") >} ].
 
     Definition encodeRevokerState (arr: ty (Array RevokerNumRegs Data)) : Expr ty RevokerState :=
       STRUCT {
         "start" ::= TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz (##arr $[0]);
-        "end" ::= TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz (#arr $[1]);
+        "endAddr" ::= TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz (#arr $[1]);
         "epoch" ::= #arr $[2];
         "kick" ::= FromBit Bool (TruncLsb (Xlen - 1) 1 (#arr $[3]))
       }.
@@ -290,7 +290,7 @@ Section Uncore.
       ( RegRead revokerState <- "uncore.revoker.revokerState" in uncore;
         RegRead revokeAddr <- "uncore.revoker.revokeAddr" in uncore;
         LetL revokerStart : Bit (AddrSz - LgNumBytesFullCapSz) <- RetE (#revokerState`"start");
-        LetL revokerEnd : Bit (AddrSz - LgNumBytesFullCapSz) <- RetE (#revokerState`"end");
+        LetL revokerEnd : Bit (AddrSz - LgNumBytesFullCapSz) <- RetE (#revokerState`"endAddr");
         LetL revokerEpoch : Data <- RetE (#revokerState`"epoch");
         LetL revokerKick : Bool <- RetE (#revokerState`"kick");
 
@@ -318,7 +318,7 @@ Section Uncore.
             RegWrite "uncore.revoker.revokerState" in uncore <-
                                                         (STRUCT {
                                                              "start" ::= #revokerStart;
-                                                             "end" ::= #revokerEnd;
+                                                             "endAddr" ::= #revokerEnd;
                                                              "epoch" ::= Add [#revokerEpoch; $1];
                                                              "kick" ::= #revokerKick }: Expr ty RevokerState );
             Retv)
@@ -327,7 +327,7 @@ Section Uncore.
             Then (
               LetL updatedState <- RetE (STRUCT {
                 "start" ::= #revokerStart;
-                "end" ::= #revokerEnd;
+                "endAddr" ::= #revokerEnd;
                 "epoch" ::= {< TruncMsb (Xlen-1) 1 #revokerEpoch, Const ty (Bit 1) Zmod.one >};
                 "kick" ::= Const ty Bool false
               });
