@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Bool.
-Require Import Guru.Library Guru.Syntax Guru.Notations Guru.Compiler.
+Require Import Guru.Library Guru.Syntax Guru.Notations.
 
 Import ListNotations.
 
@@ -263,8 +263,13 @@ Definition clut: Mod clutIfc :=
               map (dmaCheckAccess ty) (genFinType NumChannels) ++
               map (finishRead ty) (genFinType NumChannels).
 
-Definition compiledMod := compile clut.
-
-Require Import Guru.Extraction.
+From Guru Require Import Extraction.
 Set Extraction Output Directory "./Clut".
+
+From Guru Require Import Compiler.
+Definition compiledMod := compile clut.
 Extraction "Compile" kindSize Z.log2_up getDefault isEq compiledMod.
+
+From Guru Require Import Simulator.
+Definition main : IO unit := evalModCyclesIO clutIfc 10 clut.
+Extraction "Simulate" main.

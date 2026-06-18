@@ -75,10 +75,9 @@ Definition specInstTree :=
 Definition specInst : Mod specInstTree :=
   spec uncoreInstVal regsInitVal scrsInitVal csrsInitVal interruptsInitVal tohostAddrVal.
 
-From Guru Require Import Simulator Extraction.
-
-Definition main : IO unit :=
-  evalModCyclesIO specInstTree 100 specInst.
-
+From Guru Require Import Extraction.
 Set Extraction Output Directory ".".
+
+From Guru Require Import Simulator.
+Definition main : IO unit := evalModCyclesIO specInstTree 100 specInst.
 Extraction "Simulate" main.

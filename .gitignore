@@ -1,35 +1,30 @@
-*.cache
-Lib/.*.aux
-Lib/*.v.d
-Lib/*.glob
-Lib/*.vo
-Lib/*.vok
-Lib/*.vos
-Lib/*.hi
-Lib/*.o
+# Coq build artifacts
 *.aux
+.*.aux
 *.v.d
 *.glob
 *.vo
 *.vok
 *.vos
-*.hi
-*.o
-Makefile.coq.*
+*.cache
+.*.cache
 Makefile.coq
+Makefile.coq.*
 .Makefile.coq.*
 .coqdeps.d
+
+# Haskell build artifacts
+*.hi
+*.o
+
+# Editor backup files
 *~
-.*.swk
-.*.swl
-.*.swm
-.*.swn
-.*.swo
-.*.swp
-Clut/Compile.hs
+.*.sw?
+
+# Generated RTL & Simulation files
 Compile.hs
 Rtl
-Rtl.sv
+*.sv
 obj_dir
 Simulate.hs
 Simulate
