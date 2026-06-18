@@ -31,3 +31,4 @@ Clut/Compile.hs
 Compile.hs
 Main
 Main.sv
+obj_dir

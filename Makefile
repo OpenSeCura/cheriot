@@ -1,6 +1,6 @@
 CHERIOT_ROOT = $(HOME)/work/cheriot
 
-.PHONY: all force
+.PHONY: all verilog force
 
 .DEFAULT_GOAL = all
 
@@ -32,6 +32,9 @@ coq: Makefile.coq.all Binary.v
 
 all: coq
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Clut/"
+
+verilog: coq
+	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" verilog
 
 Makefile.coq.all: force
 	$(COQBIN)rocq makefile -f _CoqProject -o Makefile.coq.all

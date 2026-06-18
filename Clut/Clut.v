@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Bool.
-Require Import Guru.Library Guru.Syntax Guru.Notations Guru.Compiler Guru.Extraction.
+Require Import Guru.Library Guru.Syntax Guru.Notations Guru.Compiler.
 
 Import ListNotations.
 
@@ -265,5 +265,6 @@ Definition clut: Mod clutIfc :=
 
 Definition compiledMod := compile clut.
 
+Require Import Guru.Extraction.
 Set Extraction Output Directory "./Clut".
 Extraction "Compile" kindSize Z.log2_up getDefault isEq compiledMod.

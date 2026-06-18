@@ -1,5 +1,5 @@
 From Stdlib Require Import List String ZArith Zmod.
-From Guru Require Import Library Syntax Notations Compiler Extraction.
+From Guru Require Import Library Syntax Notations Compiler.
 From Cheriot Require Import Alu Spec Binary.
 
 Local Open Scope Z_scope.
@@ -74,8 +74,3 @@ Definition specInstTree :=
 
 Definition specInst : Mod specInstTree :=
   spec uncoreInstVal regsInitVal scrsInitVal csrsInitVal interruptsInitVal tohostAddrVal.
-
-From Guru Require Import Extraction Compiler.
-Definition compiledMod := compile specInst.
-Set Extraction Output Directory ".".
-Extraction "Compile" kindSize Z.log2_up getDefault isEq compiledMod.
