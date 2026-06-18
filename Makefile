@@ -1,6 +1,6 @@
 CHERIOT_ROOT = $(HOME)/work/cheriot
 
-.PHONY: all verilog force
+.PHONY: all rtl rtlsim sim force
 
 .DEFAULT_GOAL = all
 
@@ -33,8 +33,11 @@ coq: Makefile.coq.all Binary.v
 all: coq
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Clut/"
 
-verilog: coq
-	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" verilog
+rtl: coq
+	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" rtl
+
+rtlsim: coq
+	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" rtlsim
 
 sim: coq
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/" sim

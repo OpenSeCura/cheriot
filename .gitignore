@@ -13,7 +13,6 @@ Lib/*.o
 *.vo
 *.vok
 *.vos
-PrettyPrinter/Compile.hs
 *.hi
 *.o
 Makefile.coq.*
@@ -29,8 +28,8 @@ Makefile.coq
 .*.swp
 Clut/Compile.hs
 Compile.hs
-Main
-Main.sv
+Rtl
+Rtl.sv
 obj_dir
 Simulate.hs
 Simulate
