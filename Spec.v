@@ -120,9 +120,9 @@ Section Spec.
           Then (
             If (Eq #stVal $1)
             Then (
-              System [DispString ty "SUCCESS"%string] Retv )
+              System [DispString ty "SUCCESS\n"%string; Finish ty] Retv )
             Else (
-              System [DispString ty "FAILURE"%string] Retv );
+              System [DispString ty "FAILURE\n"%string; Finish ty] Retv );
             Retv );
           Retv );
         Retv).
@@ -177,6 +177,10 @@ Section Spec.
         RegWrite ".csrs" in specTree <- #aluOut`"csrs";
         RegWrite ".scrs" in specTree <- ##aluOut`"scrs";
         RegWrite ".interrupts" in specTree <- ##aluOut`"interrupts";
+
+        Sys [DispString ty "pc: "%string; DispHex #pcVal; DispString ty " inst: "%string; DispHex #inst;
+             DispString ty "\n"%string];
+
         Retv ).
 
       Definition interrupts: Action ty specTree (Bit 0) :=

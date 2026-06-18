@@ -79,5 +79,5 @@ From Guru Require Import Extraction.
 Set Extraction Output Directory ".".
 
 From Guru Require Import Simulator.
-Definition main : IO unit := evalModCyclesIO specInstTree 100 specInst.
+Definition main : IO unit := evalModCyclesIO specInstTree 20000 specInst.
 Extraction "Simulate" main.
