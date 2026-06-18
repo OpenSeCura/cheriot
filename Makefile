@@ -36,6 +36,9 @@ all: coq
 verilog: coq
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" verilog
 
+sim: coq
+	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/" sim
+
 Makefile.coq.all: force
 	$(COQBIN)rocq makefile -f _CoqProject -o Makefile.coq.all
 

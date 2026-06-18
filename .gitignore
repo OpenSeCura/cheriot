@@ -32,3 +32,5 @@ Compile.hs
 Main
 Main.sv
 obj_dir
+Simulate.hs
+Simulate
