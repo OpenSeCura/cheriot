@@ -5,7 +5,7 @@ CHERIOT_ROOT = $(HOME)/work/cheriot
 .DEFAULT_GOAL = all
 
 CURR_DIR = $(shell pwd)
-BINARY ?= $(CHERIOT_ROOT)/cheriot-rtos/examples/02.hello_compartment/build/cheriot/cheriot/release/hello_compartment
+BINARY ?= $(CURR_DIR)/../basic-riscv-tests-cheriot/binaries/simple.elf
 
 Binary.v: force
 	@echo $(CURR_DIR)
