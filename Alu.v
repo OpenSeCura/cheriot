@@ -1003,13 +1003,13 @@ Section Decode.
                   "CsrImm" ::= #CsrImm })).
 
   Definition decodeCompQ0: LetExpr ty DecodeOut := structSimplCbn
-    ( LetE rdIdx: Bit RegFixedIdSz <- ZeroExtendTo RegFixedIdSz (#inst`[4:2]);
-      LetE rs2Idx: Bit RegFixedIdSz <- ZeroExtendTo RegFixedIdSz (#inst`[4:2]);
+    ( LetE rdIdx: Bit RegFixedIdSz <- ({< Const _ (Bit 2) (bits.of_Z 2 1), #inst`[4:2] >});
+      LetE rs2Idx: Bit RegFixedIdSz <- ({< Const _ (Bit 2) (bits.of_Z 2 1), #inst`[4:2] >});
       LetE f3: Bit 3 <- #inst`[15:13];
       LetE CIncAddrImm: Bool <- isZero #f3;
       LetE rs1Idx: Bit RegFixedIdSz <- ITE #CIncAddrImm
                                          $sp
-                                         (ZeroExtendTo RegFixedIdSz (#inst`[9:7]));
+                                         ({< Const _ (Bit 2) (bits.of_Z 2 1), #inst`[9:7] >});
       LetE memSz: Bit 2 <- #f3`[1:0];
       LetE Store: Bool <- FromBit Bool (#f3`[2:2]);
       LetE Load: Bool <- Not (Or [#Store; #CIncAddrImm]);
@@ -1103,12 +1103,12 @@ Section Decode.
   Definition decodeCompQ1: LetExpr ty DecodeOut := structSimplCbn
     ( LetE f3: Bit 3 <- #inst`[15:13];
       LetE rs1Idx: Bit RegFixedIdSz <- ITE (FromBit Bool (#f3`[2:2]))
-                                         (ZeroExtendTo RegFixedIdSz (#inst`[9:7]))
+                                         ({< Const _ (Bit 2) (bits.of_Z 2 1), #inst`[9:7] >})
                                          (ITE (Eq #f3`[1:0] $2) $c0 (#inst`[11:7]));
       LetE rdIdx: Bit RegFixedIdSz <- ITE (FromBit Bool (#f3`[2:2]))
-                                         (ITE (Eq #f3`[1:0] $1) $c0 (ZeroExtendTo RegFixedIdSz (#inst`[9:7])))
+                                         (ITE (Eq #f3`[1:0] $1) $c0 ({< Const _ (Bit 2) (bits.of_Z 2 1), #inst`[9:7] >}))
                                          (#inst`[11:7]);
-      LetE rs2Idx: Bit RegFixedIdSz <- ITE (isNotZero (#f3`[1:0])) $0 (ZeroExtendTo RegFixedIdSz (#inst`[4:2]));
+      LetE rs2Idx: Bit RegFixedIdSz <- ITE (isNotZero (#f3`[1:0])) $0 ({< Const _ (Bit 2) (bits.of_Z 2 1), #inst`[4:2] >});
 
       LetE AddI: Bool <- Or [isZero #f3; Eq #f3 $2];
       LetE CJal: Bool <- Eq (#f3`[1:0]) $1;
