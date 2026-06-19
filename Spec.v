@@ -135,8 +135,8 @@ Section Spec.
 
         Let pcc : FullECapWithTag <- #regs $[ 0 ];
         Let pcVal : Addr <- #pcc`"addr";
-        Let BoundsException : Bool <- And [ Sge (ZeroExtend 1 #pcVal) (##pcc`"ecap"`"base");
-                                            Slt (ZeroExtend 1 #pcVal) (##pcc`"ecap"`"top")];
+        Let BoundsException : Bool <- Not (And [ Sge (ZeroExtend 1 #pcVal) (##pcc`"ecap"`"base");
+                                                 Slt (ZeroExtend 1 #pcVal) (##pcc`"ecap"`"top")]);
         Let pcAluOut: PcAluOut <- STRUCT { "pcVal" ::= #pcVal;
                                            "BoundsException" ::= #BoundsException };
         LetA inst: Inst <- liftAction np_mem (memIfcTy.(mem_readInst) pcVal);

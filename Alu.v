@@ -1651,7 +1651,7 @@ Section Alu.
            (ITE (Eq #rs1Idx $ra) (isBackwardSentry cap1OType) #notSealedOrInheriting)
            (ITE (Eq #rdIdx $ra) (Or [#cap1NotSealed; isForwardSentry cap1OType]) #notSealedOrInheriting));
 
-      LetE linkAddr <- Add [pcVal; if HasComp then ITE Compressed $(InstSz/8) $(CompInstSz/8) else $(InstSz/8)];
+      LetE linkAddr <- Add [pcVal; if HasComp then ITE Compressed $(CompInstSz/8) $(InstSz/8) else $(InstSz/8)];
 
       LetE saturatedMax_input <- Or [ITE0 CGetBase #cap1Base; ITE0 CGetTop #cap1Top; ITE0 CGetLen #adderResFull;
                                    ITE0 Crrl (##newBounds`"length") ];
