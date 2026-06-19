@@ -722,13 +722,13 @@ Definition AluOut := STRUCT_TYPE { "regs" :: Array NumRegs FullECapWithTag ;
                                    "scrs" :: Scrs ;
                                    "interrupts" :: Interrupts ;
                                    "multicycleOp" :: MulticycleOp ;
-                                   "exception" :: Bool ; (* Note: For Branch Predictor *)
-                                   "MRet" :: Bool ; (* Note: For Branch Predictor *)
-                                   "Branch" :: Bool ; (* Note: For Branch Predictor *)
-                                   "CJal" :: Bool ; (* Note: For Branch Predictor *)
-                                   "CJalr" :: Bool ; (* Note: For Branch Predictor *)
-                                   "pcNotLinkAddrTagVal" :: Bool ;
-                                   "pcNotLinkAddrCap" :: Bool ;
+                                   "exception" :: Bool ; (* Note: Just for Branch Predictor *)
+                                   "MRet" :: Bool ; (* Note: Just for Branch Predictor *)
+                                   "Branch" :: Bool ; (* Note: Just for Branch Predictor *)
+                                   "CJal" :: Bool ; (* Note: Just for Branch Predictor *)
+                                   "CJalr" :: Bool ; (* Note: Just for Branch Predictor *)
+                                   "pccIsNotLinkAddrTagVal" :: Bool ; (* Note: Just for Branch Predictor *)
+                                   "pccIsNotLinkAddrCap" :: Bool ; (* Note: Just for Branch Predictor *)
                                    "stall" :: Bool ;
                                    "FenceI" :: Bool }.
 
@@ -1929,8 +1929,8 @@ Section Alu.
                                 And [ReadReg2; #wait2];
                                 And [#isException; isNotZero waits]] ;
 
-      LetE pcNotLinkAddrTagVal : Bool <- Or [#isException; MRet; And [Branch; #branchTaken]; CJal; CJalr];
-      LetE pcNotLinkAddrCap : Bool <- Or [#isException; MRet; CJalr];
+      LetE pccIsNotLinkAddrTagVal : Bool <- Or [#isException; MRet; And [Branch; #branchTaken]; CJal; CJalr];
+      LetE pccIsNotLinkAddrCap : Bool <- Or [#isException; MRet; CJalr];
 
       LetE newPcTag : Bool <- ITE #isException
                                 (mtcc`"tag")
@@ -1982,8 +1982,8 @@ Section Alu.
                                "Branch" ::= And [Branch; Not #isException] ;
                                "CJal" ::= And [CJal; Not #isException] ;
                                "CJalr" ::= And [CJalr; Not #isException] ;
-                               "pcNotLinkAddrTagVal" ::= #pcNotLinkAddrTagVal ;
-                               "pcNotLinkAddrCap" ::= #pcNotLinkAddrCap ;
+                               "pccIsNotLinkAddrTagVal" ::= #pccIsNotLinkAddrTagVal ;
+                               "pccIsNotLinkAddrCap" ::= #pccIsNotLinkAddrCap ;
                                "stall" ::= #stall ;
                                "FenceI" ::= And [FenceI; Not #isException] })).
 End Alu.
