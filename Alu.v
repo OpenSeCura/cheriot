@@ -819,7 +819,7 @@ Section Decode.
       LetE CsrImm: Bool <- And [#isSys; FromBit Bool (#f3`[2:2])];
 
       LetE cheriot: Bool <- Eq #op (ConstBit (bits.of_Z 5 22));
-      LetE cheriotNonImm: Bool <- Eq #cheriot (isZero #f3);
+      LetE cheriotNonImm: Bool <- And [#cheriot; isZero #f3];
       LetE cheriot1Src: Bool <- And [#cheriotNonImm; Eq #f7 (ConstBit (bits.of_Z 7 0x7f))];
 
       LetE CGetPerm: Bool <- And [#cheriot1Src; Eq #rs2Idx $0];
@@ -1533,15 +1533,18 @@ Section Alu.
       LetE cap1NotSealed <- isNotSealed cap1OType;
       LetE cap2NotSealed <- isNotSealed cap2OType;
 
-      LetE Src1Pc <- Or [CJal; AuiPcc];
-      LetE src1 <- ITE #Src1Pc pcVal #val1;
+      LetE Src1PcForAdder <- AuiPcc;
+      LetE Src1PcForResAdder <- Or [CJal; Branch];
+      LetE Src1Pc <- Or [CJal; Branch; AuiPcc];
+      LetE src1ForAdder <- ITE #Src1PcForAdder pcVal #val1;
+      LetE src1ForResAdder <- ITE #Src1PcForResAdder pcVal #val1;
 
       LetE src2Full <- ITE ImmForData
                          #fullImmSXlen
                          (ITE ZeroExtendSrc2 (ZeroExtend 1 #val2) (SignExtend 1 #val2));
       LetE adderSrc1 <- caseDefault [(CGetLen, #cap1Top);
                                      (CSetAddr, $0)]
-                          (ITE ZeroExtendSrc1 (ZeroExtend 1 #src1) (SignExtend 1 #src1));
+                          (ITE ZeroExtendSrc1 (ZeroExtend 1 #src1ForAdder) (SignExtend 1 #src1ForAdder));
       LetE adderSrc2 <- ITE CGetLen #cap1Base #src2Full;
       LetE adderSrc2Fixed <- ITE InvSrc2 (Not #adderSrc2) #adderSrc2;
       LetE carryExt  <- ZeroExtend Xlen (ToBit InvSrc2);
@@ -1559,7 +1562,7 @@ Section Alu.
       LetE slRes <- Sll #val1 #shiftAmt;
       LetE srRes <- TruncLsb 1 Xlen (Sra #adderSrc1 #shiftAmt);
 
-      LetE resAddrValFullTemp <- Add [ZeroExtend 1 #src1; ITE0 ImmForAddr #fullImmSXlen];
+      LetE resAddrValFullTemp <- Add [ZeroExtend 1 #src1ForResAdder; ITE0 ImmForAddr #fullImmSXlen];
       LetE resAddrValFull <- {< TruncMsb Xlen 1 #resAddrValFullTemp,
           ITE CJalr (ConstBit Zmod.zero) (TruncLsb Xlen 1 #resAddrValFullTemp) >};
       LetE resAddrVal <- TruncLsb 1 Xlen #resAddrValFull;

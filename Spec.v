@@ -118,11 +118,11 @@ Section Spec.
           );
           If (Eq #memAddr (Const ty _ tohostAddr))
           Then (
-            If (isZero #stVal)
+            If (Eq #stVal $1)
             Then (
               System [DispString ty "SUCCESS\n"%string; Finish ty] Retv )
             Else (
-              System [DispString ty "FAILURE\n"%string; Finish ty] Retv );
+              System [DispString ty "FAILURE "%string; DispDecimal #stVal; DispString ty "\n"; Finish ty] Retv );
             Retv );
           Retv );
         Retv).
