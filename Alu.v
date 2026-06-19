@@ -1658,33 +1658,6 @@ Section Alu.
                                    ITE0 Crrl (##newBounds`"length") ];
       LetE saturated <- saturatedMax saturatedMax_input;
 
-      LetE resVal <- Or [ ITE0 AddOp #adderRes; ITE0 Lui #fullImmXlen;
-                          ITE0 XorOp #xorRes; ITE0 OrOp #orRes; ITE0 AndOp #andRes;
-                          ITE0 Sl #slRes; ITE0 Sr #srRes;
-                          ITE0 CGetPerm (ZeroExtendTo Xlen (ToBit #cap1Perms));
-                          ITE0 CGetType (ZeroExtendTo Xlen #cap1OType);
-                          ITE0 CGetHigh (ToBit #encodedCap);
-                          ITE0 #cjal_cjalr #linkAddr;
-                          ITE0 Cram (TruncLsb 1 Xlen (##newBounds`"cram"));
-                          #saturated;
-                          #zeroExtendBoolRes];
-
-      LetE resTag <- And [#tag1; Or [And [CAndPerm; #cAndPermTagNew];
-                                     CMove;
-                                     And [CChangeAddr; #cChangeAddrTagNew];
-                                     And [CSeal; #cSealTagNew];
-                                     ITE0 SetBounds (Or [Not SetBoundsExact; ##newBounds`"exact"]);
-                                     And [CUnseal; #cUnsealTagNew];
-                                     #cjal_cjalr ]];
-
-      LetE resCap <- Or [ ITE0 CAndPerm #cAndPermCap;
-                          ITE0 (Or [CClearTag; CMove; CChangeAddr]) (ITE Src1Pc #pcCap #cap1);
-                          ITE0 CSetHigh #cSetHighCap;
-                          ITE0 SetBounds #cSetBoundsCap;
-                          ITE0 #cjal_cjalr #cJalJalrCap;
-                          ITE0 CSeal #cSealCap;
-                          ITE0 CUnseal #cUnsealCap ];
-
       LetE isCsr <- Or [CsrRw; CsrSet; CsrClear];
 
       LetE validCsr <- Or [Eq #immVal (GetCsrIdx Mcycle);
@@ -1899,6 +1872,42 @@ Section Alu.
                                       "mtdc" ::= #newMtdc ;
                                       "mscratchc" ::= #newMscratchc ;
                                       "mepcc" ::= #newMepcc };
+
+      LetE scrCurr : FullECapWithTag <- Or [ ITE0 (Eq rs2IdxFixed $Mtcc) mtcc;
+                                             ITE0 (Eq rs2IdxFixed $Mtdc) mtdc;
+                                             ITE0 (Eq rs2IdxFixed $Mscratchc) mscratch;
+                                             ITE0 (Eq rs2IdxFixed $Mepcc) mepcc ];
+
+      LetE resVal <- Or [ ITE0 AddOp #adderRes; ITE0 Lui #fullImmXlen;
+                          ITE0 XorOp #xorRes; ITE0 OrOp #orRes; ITE0 AndOp #andRes;
+                          ITE0 Sl #slRes; ITE0 Sr #srRes;
+                          ITE0 CGetPerm (ZeroExtendTo Xlen (ToBit #cap1Perms));
+                          ITE0 CGetType (ZeroExtendTo Xlen #cap1OType);
+                          ITE0 CGetHigh (ToBit #encodedCap);
+                          ITE0 #cjal_cjalr #linkAddr;
+                          ITE0 Cram (TruncLsb 1 Xlen (##newBounds`"cram"));
+                          ITE0 #isCsr #csrCurr;
+                          ITE0 CSpecialRw (#scrCurr`"addr");
+                          #saturated;
+                          #zeroExtendBoolRes];
+
+      LetE resTag <- Or [ ITE0 CSpecialRw (#scrCurr`"tag");
+                          And [#tag1; Or [And [CAndPerm; #cAndPermTagNew];
+                                         CMove;
+                                         And [CChangeAddr; #cChangeAddrTagNew];
+                                         And [CSeal; #cSealTagNew];
+                                         ITE0 SetBounds (Or [Not SetBoundsExact; ##newBounds`"exact"]);
+                                         And [CUnseal; #cUnsealTagNew];
+                                         #cjal_cjalr ]] ];
+
+      LetE resCap <- Or [ ITE0 CAndPerm #cAndPermCap;
+                          ITE0 (Or [CClearTag; CMove; CChangeAddr]) (ITE Src1Pc #pcCap #cap1);
+                          ITE0 CSetHigh #cSetHighCap;
+                          ITE0 SetBounds #cSetBoundsCap;
+                          ITE0 #cjal_cjalr #cJalJalrCap;
+                          ITE0 CSeal #cSealCap;
+                          ITE0 CUnseal #cUnsealCap;
+                          ITE0 CSpecialRw (#scrCurr`"ecap") ];
 
       LetE res : FullECapWithTag <- STRUCT { "tag" ::= #resTag;
                                              "ecap" ::= #resCap;

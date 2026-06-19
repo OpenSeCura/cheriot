@@ -118,7 +118,7 @@ Section Spec.
           );
           If (Eq #memAddr (Const ty _ tohostAddr))
           Then (
-            If (Eq #stVal $1)
+            If (isZero #stVal)
             Then (
               System [DispString ty "SUCCESS\n"%string; Finish ty] Retv )
             Else (
