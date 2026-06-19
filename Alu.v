@@ -899,7 +899,7 @@ Section Decode.
       LetE ReadReg1: Bool <- Or [#AuiCgp; #CJalr; #Branch; #Load; #Store; #immediate; #nonImmediate;
                                  #isCsr; #cheriot];
 
-      LetE ReadReg2: Bool <- Or [#Branch; #Store; #immediate;
+      LetE ReadReg2: Bool <- Or [#Branch; #Store; #nonImmediate;
                                  And [#cheriotNonImm; Not (Or [Eq #f7 (ConstBit (bits.of_Z 7 0x7f)); Eq #f7 $1])]];
 
       LetE WriteReg: Bool <- Or [#Lui; #AuiAll; #CJal; #CJalr; #Load; #immediate; #nonImmediate;
