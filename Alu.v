@@ -373,8 +373,10 @@ Section Cap.
     Variable ECorrected: ty (Bit ExpSz).
 
     Definition getRepresentableLimit := structSimplCbn (
-      Add [#base; {< (Sll (Const _ (Bit (AddrSz + 1 - CapMSz)) Zmod.one) #ECorrected),
-            Const _ (Bit CapMSz) Zmod.zero >}]).
+      ITE (Eq #ECorrected $Emax)
+        (Const _ (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) (2^AddrSz)))
+        (Add [#base; {< (Sll (Const _ (Bit (AddrSz + 1 - CapMSz)) Zmod.one) #ECorrected),
+              Const _ (Bit CapMSz) Zmod.zero >}])).
   End Representable.
 
   Section BaseLength.
@@ -637,6 +639,7 @@ Definition DecodeOut :=
                                   
                                   
         "ZeroExtendSrc1" :: Bool ;
+        "ZeroExtendSrc2" :: Bool ;
                                   
                 "Branch" :: Bool ;
               "BranchLt" :: Bool ;
@@ -877,6 +880,7 @@ Section Decode.
       LetE SetBounds: Bool <- Or [#CSetBounds; #CSetBoundsExact; #CSetBoundsImm; #CSetBoundsRoundDown];
       LetE SetBoundsExact: Bool <- #CSetBoundsExact;
       LetE BoundsRoundDown: Bool <- #CSetBoundsRoundDown;
+      LetE ZeroExtendSrc2: Bool <- Or [#SetBounds; #CSetAddr; #Src2Zero];
 
       LetE CChangeAddr: Bool <- Or [#CIncAddr; #CIncAddrImm; #CSetAddr; #AuiPcc];
       
@@ -947,6 +951,7 @@ Section Decode.
                  "InvSrc2" ::= #InvSrc2 ;
                 "Src2Zero" ::= #Src2Zero ;
           "ZeroExtendSrc1" ::= #ZeroExtendSrc1 ;
+          "ZeroExtendSrc2" ::= #ZeroExtendSrc2 ;
                   "Branch" ::= #Branch ;
                 "BranchLt" ::= #BranchLt ;
                "BranchNeg" ::= #BranchNeg ;
@@ -1044,6 +1049,7 @@ Section Decode.
                  "InvSrc2" ::= ConstTBool false ;
                 "Src2Zero" ::= ConstTBool false ;
           "ZeroExtendSrc1" ::= #CIncAddrImm ;
+          "ZeroExtendSrc2" ::= ConstTBool false ;
                   "Branch" ::= ConstTBool false ;
                 "BranchLt" ::= ConstTBool false ;
                "BranchNeg" ::= ConstTBool false ;
@@ -1185,6 +1191,7 @@ Section Decode.
                  "InvSrc2" ::= #SubOp ;
                 "Src2Zero" ::= ConstTBool false ;
           "ZeroExtendSrc1" ::= Or [#CIncAddrImm; #SrlI] ;
+          "ZeroExtendSrc2" ::= ConstTBool false ;
                   "Branch" ::= #Branch ;
                 "BranchLt" ::= ConstTBool false ;
                "BranchNeg" ::= #BranchNeg ;
@@ -1298,6 +1305,7 @@ Section Decode.
                           "InvSrc2" ::= ConstTBool false ;
                          "Src2Zero" ::= ConstTBool false ;
                    "ZeroExtendSrc1" ::= ConstTBool false ;
+                   "ZeroExtendSrc2" ::= ConstTBool false ;
                            "Branch" ::= ConstTBool false ;
                          "BranchLt" ::= ConstTBool false ;
                         "BranchNeg" ::= ConstTBool false ;
@@ -1432,6 +1440,7 @@ Section Alu.
   Local Notation            InvSrc2 := (decodeOut`"InvSrc2" : Expr ty Bool ) (only parsing).
   Local Notation           Src2Zero := (decodeOut`"Src2Zero" : Expr ty Bool ) (only parsing).
   Local Notation     ZeroExtendSrc1 := (decodeOut`"ZeroExtendSrc1" : Expr ty Bool ) (only parsing).
+  Local Notation     ZeroExtendSrc2 := (decodeOut`"ZeroExtendSrc2" : Expr ty Bool ) (only parsing).
   Local Notation             Branch := (decodeOut`"Branch" : Expr ty Bool ) (only parsing).
   Local Notation           BranchLt := (decodeOut`"BranchLt" : Expr ty Bool ) (only parsing).
   Local Notation          BranchNeg := (decodeOut`"BranchNeg" : Expr ty Bool ) (only parsing).
@@ -1535,7 +1544,7 @@ Section Alu.
 
       LetE src2Full <- ITE ImmForData
                          #fullImmSXlen
-                         (SignExtend 1 (ITE0 (Not Src2Zero) #val2));
+                         (ITE ZeroExtendSrc2 (ZeroExtend 1 #val2) (SignExtend 1 #val2));
       LetE adderSrc1 <- caseDefault [(CGetLen, #cap1Top);
                                      (CSetAddr, $0)]
                           (ITE ZeroExtendSrc1 (ZeroExtend 1 #src1) (SignExtend 1 #src1));
