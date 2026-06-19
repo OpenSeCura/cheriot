@@ -178,7 +178,7 @@ Section Spec.
         RegWrite ".scrs" in specTree <- ##aluOut`"scrs";
         RegWrite ".interrupts" in specTree <- ##aluOut`"interrupts";
 
-        Sys [DispString ty "pc: "%string; DispHex #pcVal; DispString ty " inst: "%string; DispHex #inst;
+        Sys [DispString ty "pc: "%string; DispHex0 #pcVal; DispString ty " inst: "%string; DispHex0 #inst;
              DispString ty "\n"%string];
 
         Retv ).
