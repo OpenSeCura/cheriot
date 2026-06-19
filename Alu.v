@@ -1158,7 +1158,8 @@ Section Decode.
       LetE ReadReg2: Bool <- And [Eq #f3 $4; Eq #inst`[11:10] $3];
       LetE WriteReg: Bool <- Not #Branch;
       
-      LetE NotIllegal: Bool <- And [Eq #f3 $4; Not (FromBit Bool (#inst`[12:12]))];
+      LetE NotIllegal: Bool <- Or [#AddI; #CJal; #CIncAddrImm; #Lui; #Branch;
+                                   And [Eq #f3 $4; Not (FromBit Bool (#inst`[12:12]))]];
 
       @RetE _ DecodeOut
         (STRUCT { "rs1Idx" ::= #rs1Idx ;
@@ -1181,14 +1182,14 @@ Section Decode.
                   "Src1Pc" ::= Or [#CJal; #Branch] ;
                  "InvSrc2" ::= #SubOp ;
                 "Src2Zero" ::= ConstTBool false ;
-          "ZeroExtendSrc1" ::= #CIncAddrImm ;
+          "ZeroExtendSrc1" ::= Or [#CIncAddrImm; #SrlI] ;
                   "Branch" ::= #Branch ;
                 "BranchLt" ::= ConstTBool false ;
                "BranchNeg" ::= #BranchNeg ;
                      "Slt" ::= ConstTBool false ;
                      "Add" ::= Or [#AddI; #CIncAddrImm; #SubOp] ;
                      "Xor" ::= #XorOp ;
-                      "Or" ::= ConstTBool false ;
+                      "Or" ::= #OrOp ;
                      "And" ::= #AndOp ;
                       "Sl" ::= ConstTBool false ;
                       "Sr" ::= Or [#SrlI; #SraI] ;
@@ -1222,7 +1223,7 @@ Section Decode.
                     "CJal" ::= #CJal ;
                    "CJalr" ::= ConstTBool false ;
                   "AuiAll" ::= ConstTBool false ;
-                     "Lui" ::= ConstTBool false ;
+                     "Lui" ::= #Lui ;
        
               "CSpecialRw" ::= ConstTBool false ;
                     "MRet" ::= ConstTBool false ;
@@ -1342,7 +1343,7 @@ Section Decode.
                            "EBreak" ::= #EBreak ;
                            "FenceI" ::= ConstTBool false ;
                             "Fence" ::= ConstTBool false ;
-                       "NotIllegal" ::= ConstTBool false ;
+                       "NotIllegal" ::= Or [#SllI; #Load; #Store; #Add; #CJalr; #EBreak] ;
               
                             "CsrRw" ::= ConstTBool false ;
                            "CsrSet" ::= ConstTBool false ;
