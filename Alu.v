@@ -657,6 +657,7 @@ Definition DecodeOut :=
         "SetBoundsExact" :: Bool ;
        "BoundsRoundDown" :: Bool ;
    
+              "CSetAddr" :: Bool ;
            "CChangeAddr" :: Bool ;
                 "AuiPcc" :: Bool ;
               "CGetBase" :: Bool ;
@@ -859,12 +860,12 @@ Section Decode.
 
       LetE Src1Pc: Bool <- Or [#CJal; #Branch; #AuiPcc];
       LetE InvSrc2: Bool <- Or [#SltI; #SltuI; #SltOp; #SltuOp; #SubOp; #CSub; #CGetLen];
-      LetE Src2Zero: Bool <- Or [#CSetAddr; #CGetAddr; #CSetHigh; #CAndPerm; #CClearTag;
+      LetE Src2Zero: Bool <- Or [#CGetAddr; #CSetHigh; #CAndPerm; #CClearTag;
                                  #CMove; #CSeal; #CUnseal; #CSetBounds; #CSetBoundsExact;
                                  #CSetBoundsRoundDown; #CSetBoundsImm];
 
       LetE ZeroExtendSrc1: Bool <- Or [#SltuI; #SrlI; #SltuOp; #SrlOp; #BranchUnsigned; #AuiPcc;
-                                       #CIncAddr; #CIncAddrImm; #CSetAddr];
+                                       #CIncAddr; #CIncAddrImm];
       LetE SltAll: Bool <- Or [#SltI; #SltuI; #SltOp; #SltuOp];
       LetE AddAll: Bool <- Or [#AddI; #AddOp; #SubOp; #CIncAddr; #CIncAddrImm; #CSetAddr; #CSub];
       LetE XorAll: Bool <- Or [#XorI; #XorOp];
@@ -962,7 +963,7 @@ Section Decode.
                "SetBounds" ::= #SetBounds ;
           "SetBoundsExact" ::= #SetBoundsExact ;
          "BoundsRoundDown" ::= #BoundsRoundDown ;
-        
+                "CSetAddr" ::= #CSetAddr;
              "CChangeAddr" ::= #CChangeAddr ;
                   "AuiPcc" ::= #AuiPcc ;
                 "CGetBase" ::= #CGetBase ;
@@ -1060,6 +1061,7 @@ Section Decode.
           "SetBoundsExact" ::= ConstTBool false ;
          "BoundsRoundDown" ::= ConstTBool false ;
        
+                "CSetAddr" ::= ConstTBool false ;
              "CChangeAddr" ::= #CIncAddrImm ;
                   "AuiPcc" ::= ConstTBool false ;
                 "CGetBase" ::= ConstTBool false ;
@@ -1200,6 +1202,7 @@ Section Decode.
           "SetBoundsExact" ::= ConstTBool false ;
          "BoundsRoundDown" ::= ConstTBool false ;
        
+                "CSetAddr" ::= ConstTBool false ;
              "CChangeAddr" ::= #CIncAddrImm ;
                   "AuiPcc" ::= ConstTBool false ;
                 "CGetBase" ::= ConstTBool false ;
@@ -1312,6 +1315,7 @@ Section Decode.
                    "SetBoundsExact" ::= ConstTBool false ;
                   "BoundsRoundDown" ::= ConstTBool false ;
               
+                         "CSetAddr" ::= ConstTBool false ;
                       "CChangeAddr" ::= ConstTBool false ;
                            "AuiPcc" ::= ConstTBool false ;
                          "CGetBase" ::= ConstTBool false ;
@@ -1445,6 +1449,7 @@ Section Alu.
   Local Notation     SetBoundsExact := (decodeOut`"SetBoundsExact" : Expr ty Bool ) (only parsing).
   Local Notation    BoundsRoundDown := (decodeOut`"BoundsRoundDown" : Expr ty Bool ) (only parsing).
 
+  Local Notation           CSetAddr := (decodeOut`"CSetAddr" : Expr ty Bool ) (only parsing).
   Local Notation        CChangeAddr := (decodeOut`"CChangeAddr" : Expr ty Bool ) (only parsing).
   Local Notation             AuiPcc := (decodeOut`"AuiPcc" : Expr ty Bool ) (only parsing).
   Local Notation           CGetBase := (decodeOut`"CGetBase" : Expr ty Bool ) (only parsing).
@@ -1531,7 +1536,8 @@ Section Alu.
       LetE src2Full <- ITE ImmForData
                          #fullImmSXlen
                          (SignExtend 1 (ITE0 (Not Src2Zero) #val2));
-      LetE adderSrc1 <- ITE CGetLen #cap1Top
+      LetE adderSrc1 <- caseDefault [(CGetLen, #cap1Top);
+                                     (CSetAddr, $0)]
                           (ITE ZeroExtendSrc1 (ZeroExtend 1 #src1) (SignExtend 1 #src1));
       LetE adderSrc2 <- ITE CGetLen #cap1Base #src2Full;
       LetE adderSrc2Fixed <- ITE InvSrc2 (Not #adderSrc2) #adderSrc2;
