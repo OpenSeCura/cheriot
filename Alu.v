@@ -633,7 +633,6 @@ Definition DecodeOut :=
  
             "MultiCycle" :: Bool ;
  
-                "Src1Pc" :: Bool ;
                "InvSrc2" :: Bool ;
               "Src2Zero" :: Bool ;
                                   
@@ -861,8 +860,7 @@ Section Decode.
 
       LetE MultiCycle: Bool <- #Load;
 
-      LetE Src1Pc: Bool <- Or [#CJal; #Branch; #AuiPcc];
-      LetE InvSrc2: Bool <- Or [#SltI; #SltuI; #SltOp; #SltuOp; #SubOp; #CSub; #CGetLen];
+      LetE InvSrc2: Bool <- Or [#SltI; #SltuI; #SltOp; #SltuOp; #SubOp; #CSub; #CGetLen; #Branch];
       LetE Src2Zero: Bool <- Or [#CGetAddr; #CSetHigh; #CAndPerm; #CClearTag;
                                  #CMove; #CSeal; #CUnseal; #CSetBounds; #CSetBoundsExact;
                                  #CSetBoundsRoundDown; #CSetBoundsImm];
@@ -880,7 +878,7 @@ Section Decode.
       LetE SetBounds: Bool <- Or [#CSetBounds; #CSetBoundsExact; #CSetBoundsImm; #CSetBoundsRoundDown];
       LetE SetBoundsExact: Bool <- #CSetBoundsExact;
       LetE BoundsRoundDown: Bool <- #CSetBoundsRoundDown;
-      LetE ZeroExtendSrc2: Bool <- Or [#SetBounds; #CSetAddr; #Src2Zero];
+      LetE ZeroExtendSrc2: Bool <- Or [#SetBounds; #CSetAddr; #Src2Zero; #BranchUnsigned];
 
       LetE CChangeAddr: Bool <- Or [#CIncAddr; #CIncAddrImm; #CSetAddr; #AuiPcc];
       
@@ -947,7 +945,6 @@ Section Decode.
         
               "MultiCycle" ::= #MultiCycle ;
         
-                  "Src1Pc" ::= #Src1Pc ;
                  "InvSrc2" ::= #InvSrc2 ;
                 "Src2Zero" ::= #Src2Zero ;
           "ZeroExtendSrc1" ::= #ZeroExtendSrc1 ;
@@ -1045,7 +1042,6 @@ Section Decode.
        
               "MultiCycle" ::= #Load ;
        
-                  "Src1Pc" ::= ConstTBool false ;
                  "InvSrc2" ::= ConstTBool false ;
                 "Src2Zero" ::= ConstTBool false ;
           "ZeroExtendSrc1" ::= #CIncAddrImm ;
@@ -1187,8 +1183,7 @@ Section Decode.
        
               "MultiCycle" ::= ConstTBool false ;
        
-                  "Src1Pc" ::= Or [#CJal; #Branch] ;
-                 "InvSrc2" ::= #SubOp ;
+                 "InvSrc2" ::= Or [#SubOp; #Branch] ;
                 "Src2Zero" ::= ConstTBool false ;
           "ZeroExtendSrc1" ::= Or [#CIncAddrImm; #SrlI] ;
           "ZeroExtendSrc2" ::= ConstTBool false ;
@@ -1301,7 +1296,6 @@ Section Decode.
             
                        "MultiCycle" ::= ConstTBool false ;
             
-                           "Src1Pc" ::= ConstTBool false ;
                           "InvSrc2" ::= ConstTBool false ;
                          "Src2Zero" ::= ConstTBool false ;
                    "ZeroExtendSrc1" ::= ConstTBool false ;
@@ -1436,7 +1430,6 @@ Section Alu.
 
   Local Notation         MultiCycle := (decodeOut`"MultiCycle" : Expr ty Bool ) (only parsing).
   
-  Local Notation             Src1Pc := (decodeOut`"Src1Pc" : Expr ty Bool ) (only parsing).
   Local Notation            InvSrc2 := (decodeOut`"InvSrc2" : Expr ty Bool ) (only parsing).
   Local Notation           Src2Zero := (decodeOut`"Src2Zero" : Expr ty Bool ) (only parsing).
   Local Notation     ZeroExtendSrc1 := (decodeOut`"ZeroExtendSrc1" : Expr ty Bool ) (only parsing).
@@ -1540,7 +1533,8 @@ Section Alu.
       LetE cap1NotSealed <- isNotSealed cap1OType;
       LetE cap2NotSealed <- isNotSealed cap2OType;
 
-      LetE src1 <- ITE Src1Pc pcVal #val1;
+      LetE Src1Pc <- Or [CJal; AuiPcc];
+      LetE src1 <- ITE #Src1Pc pcVal #val1;
 
       LetE src2Full <- ITE ImmForData
                          #fullImmSXlen
@@ -1579,7 +1573,7 @@ Section Alu.
 
       LetE change_addr <- Or [#branch_jump_load_store; CChangeAddr];
 
-      LetE baseCheckBase <- caseDefault [(Src1Pc, #pcCap`"base"); (#seal_unseal, #cap2Base)] #cap1Base;
+      LetE baseCheckBase <- caseDefault [(#Src1Pc, #pcCap`"base"); (#seal_unseal, #cap2Base)] #cap1Base;
       LetE baseCheckAddr <- caseDefault [(CSeal, ZeroExtend 1 #val2);
                                          (CUnseal, ZeroExtend (1 + Xlen - CapOTypeSz) ##cap1OType);
                                          (#branch_jump_load_store, #resAddrValFull);
@@ -1588,8 +1582,8 @@ Section Alu.
       LetE baseCheck <- And [Sle #baseCheckBase #baseCheckAddr;
                           Or [Not #change_addr; Not (FromBit Bool (TruncMsb 1 Xlen #baseCheckAddr))]];
 
-      LetE final_base <- ITE Src1Pc (##pcCap`"base") #cap1Base;
-      LetE final_E <- ITE Src1Pc (##pcCap`"E") (##cap1`"E");
+      LetE final_base <- ITE #Src1Pc (##pcCap`"base") #cap1Base;
+      LetE final_E <- ITE #Src1Pc (##pcCap`"E") (##cap1`"E");
       LetE final_ECorrected <- get_ECorrected_from_E final_E;
 
       LetE representableLimit <- getRepresentableLimit final_base final_ECorrected;
@@ -1639,7 +1633,7 @@ Section Alu.
       LetE val2AsCap: Cap <- FromBit Cap #val2;
       LETE cSetHighCap <- decodeCap val2AsCap val1;
 
-      LetE cChangeAddrTagNew <- And [Or [Src1Pc; #cap1NotSealed]; #boundsRes];
+      LetE cChangeAddrTagNew <- And [Or [#Src1Pc; #cap1NotSealed]; #boundsRes];
 
       LetE cSealCap <- #cap1 `{ "oType" <- TruncLsb (AddrSz - CapOTypeSz) CapOTypeSz #val2};
       LetE cap1Perms_EX <- ##cap1Perms`"EX";
@@ -1916,7 +1910,7 @@ Section Alu.
                                          #cjal_cjalr ]] ];
 
       LetE resCap <- Or [ ITE0 CAndPerm #cAndPermCap;
-                          ITE0 (Or [CClearTag; CMove; CChangeAddr]) (ITE Src1Pc #pcCap #cap1);
+                          ITE0 (Or [CClearTag; CMove; CChangeAddr]) (ITE #Src1Pc #pcCap #cap1);
                           ITE0 CSetHigh #cSetHighCap;
                           ITE0 SetBounds #cSetBoundsCap;
                           ITE0 #cjal_cjalr #cJalJalrCap;
