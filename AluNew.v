@@ -1084,7 +1084,7 @@ Section ExecutionUnits.
                     "snd" ::= e }) : Expr ty (Pair (Bit sm) (Bit ExpSz))))
         (sm in scope Z_scope, m in scope guru_scope, only parsing).
 
-    Definition BoundsCal : LetExpr ty Bounds :=
+    Definition BoundsCalc : LetExpr ty Bounds :=
       ( LetE lenTrunc : Bit (AddrSz + 1 - CapBSz) <- TruncMsb (AddrSz + 1 - CapBSz) CapBSz #length;
         LETE clz: Bit ExpSz <- countLeadingZerosArray (mkBoolArray (AddrSz + 1 - CapBSz) #lenTrunc) _;
         LetE e_init: Bit ExpSz <- Add [$(AddrSz + 2 - CapBSz); Not #clz];
