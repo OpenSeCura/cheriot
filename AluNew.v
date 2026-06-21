@@ -68,8 +68,7 @@ comparators and specialized capability blocks:
   7. TopBoundsCheck  : Dedicated lookahead comparator verifying pointer <= top.
   8. BaseBoundsCheck : Dedicated lookahead comparator verifying pointer >= base.
   9. BoundsCalc      : Self-contained compression engine for CSetBounds, CRAM, CRRL.
-  10. CapPermMask    : Dedicated 12-gate local bitwise unit for CAndPerm masking.
-  11. OTypeComparator: Dedicated parallel equality comparator for unsealing authorization.
+  10. CapPermMask    : Dedicated local bitwise unit for CAndPerm masking and legalization.
 
 ===============================================================================
 2. PHYSICAL HARDWARE RESOURCE INVENTORY & SIGNAL INTERFACE
@@ -389,32 +388,6 @@ Purpose: 12 local parallel AND gates handling `CAndPerm`.
     * Group 15 (CAndPerm): Bitwise AND result newPerm writes to destination
       capability register cd.perms.
 
--------------------------------------------------------------------------------
-RESOURCE 11: OTypeComparator (Dedicated Object Type Equality Comparator)
--------------------------------------------------------------------------------
-Purpose: Dedicated parallel equality comparator verifying object type matching (`cs1.otype == cs2.addr`).
-
-  [Inputs]
-    * otype_OTypeComparator   : Bit 32 (Candidate capability object type `cs1.otype`)
-    * addr_OTypeComparator    : Bit 32 (Authorizing sealing capability address `cs2.addr`)
-
-  [Outputs]
-    * otypeEqual_OTypeComparator: Bool (True if `otype == addr`)
-
-  [Input Mapping]
-    * Group 17 (CUnseal): Candidate capability cs1.otype drives otype; sealing
-      capability cs2.addr drives addr.
-
-  [Output Mapping]
-    * Group 17 (CUnseal): Polarity signal otypeEqual gates unsealing authorization.
-
-  [Additional Comments]
-    * Decoupled Equality Rationale: Unlike standard 32-bit arithmetic equality (which
-      is evaluated on `MainAdder` via subtraction difference `res32 == 0`), object
-      type verification during unsealing executes combinationally in parallel with
-      `TopBoundsCheck` and `BaseBoundsCheck`. Allocating a dedicated shallow XOR-tree
-      equality comparator (~30 gates) avoids stealing `MainAdder` during sealing loops.
-
 ===============================================================================
 3. RV32I & CHERIoT INSTRUCTION ROUTING MAP (EXHAUSTIVE & STRICTLY RESOURCE-ISOLATED)
 ===============================================================================
@@ -573,11 +546,11 @@ GROUP 14: CAPABILITY DIRECT ADDRESS SUBSTITUTION (RESOURCE: DIRECT BUS + TopBoun
 GROUP 15: CAPABILITY BITWISE PERMISSION MASKING (RESOURCE: CapPermMask)
 -------------------------------------------------------------------------------
 * CAndPerm cd, cs1, rs2
-    Input Preproc: authPerm_CapPermMask = cs1.perms; maskVal = rs2[11:0].
+    Input Preproc: tag = cs1.tag; cap = cs1.ecap; maskVal = rs2[11:0].
     Output Route :
-      - cd.ecap = cs1.ecap with perms updated to newPerm_CapPermMask.
+      - cd.ecap = res_CapPermMask.ecap.
       - cd.addr = cs1.addr.
-      - cd.tag  = cs1.tag (preserve tag).
+      - cd.tag  = res_CapPermMask.tag.
 
 -------------------------------------------------------------------------------
 GROUP 16: CAPABILITY TAG CLEARING (RESOURCE: DIRECT BUS)
@@ -1073,16 +1046,6 @@ Section ExecutionUnits.
           - If e_b >= e_init: base is aligned to 2^e_init. We set e = e_init and m = d <= length / 2^e_init.
             By Step 1 of the previous proof, d >= 2^(CapBSz - 1), so MSB is strictly 1. (QED)
      *)
-    Local Notation shift_m_e sm m e :=
-             (* If m: Bit (CapBSz + 1) >= 2^CapBSz *)
-      (ITE (FromBit Bool (TruncMsb 1 sm m))
-                              (* (m/2 + m mod 2) * 2^(e+1); just remove the second bit actually! *)
-         ((STRUCT { "fst" ::= Add [TruncMsb sm 1 m; ZeroExtendTo sm (TruncLsb sm 1 m)];
-                    "snd" ::= Add [e; $1] }) : Expr ty (Pair (Bit sm) (Bit ExpSz)))
-                              (* m * 2^e *)
-         ((STRUCT { "fst" ::= TruncLsb 1 sm m;
-                    "snd" ::= e }) : Expr ty (Pair (Bit sm) (Bit ExpSz))))
-        (sm in scope Z_scope, m in scope guru_scope, only parsing).
 
     Definition BoundsCalc : LetExpr ty Bounds :=
       ( LetE lenTrunc : Bit (AddrSz + 1 - CapBSz) <- TruncMsb (AddrSz + 1 - CapBSz) CapBSz #length;
@@ -1131,4 +1094,18 @@ Section ExecutionUnits.
                             "length" ::= #outLen;
                             "exact" ::= Or [isNotZero #base_mod_e; isNotZero #length_mod_e] })).
   End BoundsCalc.
+
+  Definition CAndPerm (cap : ty FullECapWithTag) (rs2 : ty Data) : LetExpr ty FullECapWithTag :=
+    LetE maskBits : Bit (kindSize CapPerms) <- TruncLsb (Xlen - kindSize CapPerms) (kindSize CapPerms) #rs2 ;
+    LetE maskVal : CapPerms <- FromBit CapPerms #maskBits ;
+    LetE ecapVal : ECap <- ##cap`"ecap" ;
+    LetE oldPerms : CapPerms <- ##ecapVal`"perms" ;
+    LetE rawMask : CapPerms <- And [ #oldPerms; #maskVal ] ;
+    LetE newPerms : CapPerms <- fixPerms rawMask ;
+    LetE sealed : Bool <- isSealed ecapVal ;
+    LetE maskAllOnesNonGL : Bool <- isAllOnes (#maskVal `{ "GL" <- ConstTBool true }) ;
+    LetE keepTag : Bool <- Or [ Not #sealed; #maskAllOnesNonGL ] ;
+    LetE outTag : Bool <- And [ ##cap`"tag"; #keepTag ] ;
+    LetE outECap : ECap <- ##ecapVal `{ "perms" <- #newPerms } ;
+    @RetE _ FullECapWithTag (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap; "addr" ::= ##cap`"addr" }).
 End ExecutionUnits.
