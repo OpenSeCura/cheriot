@@ -68,7 +68,8 @@ comparators and specialized capability blocks:
   7. TopBoundsCheck  : Dedicated lookahead comparator verifying pointer <= top.
   8. BaseBoundsCheck : Dedicated lookahead comparator verifying pointer >= base.
   9. BoundsCalc      : Self-contained compression engine for CSetBounds, CRAM, CRRL.
-  10. CapPermMask    : Dedicated local bitwise unit for CAndPerm masking and legalization.
+  10. CAndPerm       : Dedicated local bitwise unit for CAndPerm masking and legalization.
+  11. SealerUnsealer : Dedicated local authorization and object-type tagging unit for CSeal/CUnseal.
 
 ===============================================================================
 2. PHYSICAL HARDWARE RESOURCE INVENTORY & SIGNAL INTERFACE
@@ -369,24 +370,42 @@ Purpose: Fully dedicated, self-contained CHERIoT hardware computing compressed
       destination integer register rd.
 
 -------------------------------------------------------------------------------
-RESOURCE 10: CapPermMask (12-Bit Dedicated Local Permission Masking Unit)
+RESOURCE 10: CAndPerm (Dedicated Local Bitwise Permission Masking Unit)
 -------------------------------------------------------------------------------
-Purpose: 12 local parallel AND gates handling `CAndPerm`.
+Purpose: Dedicated local hardware handling bitwise capability permission masking (`CAndPerm`).
 
   [Inputs]
-    * authPerm_CapPermMask   : Bit 12 (Source capability permission bits cs1.perms)
-    * maskVal_CapPermMask    : Bit 12 (Mask register operand rs2[11:0])
+    * cap_CAndPerm   : FullECapWithTag (Target capability operand `cs1`)
+    * rs2_CAndPerm   : Data            (Raw mask register operand `rs2`)
 
   [Outputs]
-    * newPerm_CapPermMask    : Bit 12 (Masked permission bits: `authPerm & maskVal`)
+    * res_CAndPerm   : FullECapWithTag (Legalized capability result with updated tag and permissions)
 
   [Input Mapping]
-    * Group 15 (CAndPerm): Source permissions cs1.perms drive authPerm;
-      lower 12 bits of register rs2 drive maskVal.
+    * Group 15 (CAndPerm): Source capability cs1 and raw mask register rs2 route directly.
 
   [Output Mapping]
-    * Group 15 (CAndPerm): Bitwise AND result newPerm writes to destination
-      capability register cd.perms.
+    * Group 15 (CAndPerm): Legalized capability record res writes to destination capability register cd.ecap and cd.tag.
+
+-------------------------------------------------------------------------------
+RESOURCE 11: SealerUnsealer (Dedicated Capability Sealing & Unsealing Unit)
+-------------------------------------------------------------------------------
+Purpose: Dedicated local hardware authorizing and applying capability sealing (`CSeal`) and unsealing (`CUnseal`).
+
+  [Inputs]
+    * isUnseal_SealerUnsealer    : Bool            (Sealing polarity: False = Seal, True = Unseal)
+    * boundsValid_SealerUnsealer : Bool            (True if candidate address is within `cs2` bounds)
+    * src1_SealerUnsealer        : FullECapWithTag (Target capability operand `cs1`)
+    * src2_SealerUnsealer        : FullECapWithTag (Authorizing capability operand `cs2`)
+
+  [Outputs]
+    * res_SealerUnsealer      : FullECapWithTag (Authorized capability result with updated tag and object type)
+
+  [Input Mapping]
+    * Group 17 (CSeal, CUnseal): Target capability cs1 and authorizing capability cs2 route directly into internal bounds verification and otype tagging logic.
+
+  [Output Mapping]
+    * Group 17 (CSeal, CUnseal): Authorized capability record res writes to destination capability register cd.ecap and cd.tag.
 
 ===============================================================================
 3. RV32I & CHERIoT INSTRUCTION ROUTING MAP (EXHAUSTIVE & STRICTLY RESOURCE-ISOLATED)
@@ -543,14 +562,14 @@ GROUP 14: CAPABILITY DIRECT ADDRESS SUBSTITUTION (RESOURCE: DIRECT BUS + TopBoun
       - cd.tag  = cs1.tag & topValid_TopBoundsCheck & baseValid_BaseBoundsCheck.
 
 -------------------------------------------------------------------------------
-GROUP 15: CAPABILITY BITWISE PERMISSION MASKING (RESOURCE: CapPermMask)
+GROUP 15: CAPABILITY BITWISE PERMISSION MASKING (RESOURCE: CAndPerm)
 -------------------------------------------------------------------------------
 * CAndPerm cd, cs1, rs2
-    Input Preproc: tag = cs1.tag; cap = cs1.ecap; maskVal = rs2[11:0].
+    Input Preproc: Route target capability cs1 and raw register rs2 into CAndPerm.
     Output Route :
-      - cd.ecap = res_CapPermMask.ecap.
+      - cd.ecap = res_CAndPerm.ecap.
       - cd.addr = cs1.addr.
-      - cd.tag  = res_CapPermMask.tag.
+      - cd.tag  = res_CAndPerm.tag.
 
 -------------------------------------------------------------------------------
 GROUP 16: CAPABILITY TAG CLEARING (RESOURCE: DIRECT BUS)
@@ -822,6 +841,22 @@ Silicon Verdict (Go Dedicated Relational Tree):
   A lookahead comparison tree resolves in ~8 gate levels (~100ps), delivering the
   branch decision flag `take` ~200ps earlier than arithmetic subtraction. This guarantees
   ultra-fast PC multiplexer switching and preserves 100% pure adder isolation on `MainAdder`.
+
+-------------------------------------------------------------------------------
+PART F: METADATA SPECIALIZATION UNITS (BOUNDSCALC, CANDPERM)
+-------------------------------------------------------------------------------
+False Economy of Micro-Sharing:
+  In execution datapath design, it can be tempting to search for sub-expression sharing
+  opportunities across distinct specialized instructions (e.g., sharing the `isSealed`
+  tag check across `CAndPerm` and `CSetBounds`).
+
+Silicon Verdict (Go Dedicated Encapsulated Blocks):
+  Given that simple 3-input OR checks represent negligible standard-cell area (<3 gates),
+  attempting to multiplex and route shared intermediate flags across isolated computation blocks
+  introduces routing congestion and wiring capacitance bloat. We allocate self-contained,
+  dedicated hardware blocks (`BoundsCalc`, `CAndPerm`) for capability metadata operations.
+  Any minor combinational redundancy is deliberately ignored at the RTL level, allowing backend
+  synthesis tools (Synopsys DC) to perform local Boolean optimization cleanly.
 
 -------------------------------------------------------------------------------
 EXECUTIVE CORE SUMMARY
@@ -1108,4 +1143,29 @@ Section ExecutionUnits.
     LetE outTag : Bool <- And [ ##cap`"tag"; #keepTag ] ;
     LetE outECap : ECap <- ##ecapVal `{ "perms" <- #newPerms } ;
     @RetE _ FullECapWithTag (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap; "addr" ::= ##cap`"addr" }).
+
+  Definition SealerUnsealer (isUnseal boundsValid : ty Bool) (src1 src2 : ty FullECapWithTag) : LetExpr ty FullECapWithTag :=
+    LetE ecap1 : ECap <- ##src1`"ecap" ;
+    LetE ecap2 : ECap <- ##src2`"ecap" ;
+    LetE perms1 : CapPerms <- ##ecap1`"perms" ;
+    LetE perms2 : CapPerms <- ##ecap2`"perms" ;
+    LetE sealed1 : Bool <- isSealed ecap1 ;
+    LetE sealed2 : Bool <- isSealed ecap2 ;
+    LetE cs2Addr : Data <- ##src2`"addr" ;
+    
+    (* OType Legalization range check for CSeal *)
+    LetE sealRange : Bool <- ITE (##perms1`"EX")
+                               (And [ Sgt #cs2Addr $0; Sle #cs2Addr $7 ])
+                               (And [ Sgt #cs2Addr $8; Sle #cs2Addr $15 ]) ;
+                               
+    LetE permit : Bool <- ITE #isUnseal
+                            (And [ #sealed1; ##perms2`"US" ])
+                            (And [ Not #sealed1; ##perms2`"SE"; #sealRange ]) ;
+                            
+    LetE outTag : Bool <- And [ ##src1`"tag"; ##src2`"tag"; #boundsValid; Not #sealed2; #permit ] ;
+    LetE outOType : Bit CapOTypeSz <- ITE #isUnseal $0 (TruncLsb (AddrSz - CapOTypeSz) CapOTypeSz #cs2Addr) ;
+    LetE outGL : Bool <- ITE #isUnseal (And [ ##perms1`"GL"; ##perms2`"GL" ]) (##perms1`"GL") ;
+    LetE outPerms : CapPerms <- ##perms1 `{ "GL" <- #outGL } ;
+    LetE outECap : ECap <- ##ecap1 `{ "oType" <- #outOType } `{ "perms" <- #outPerms } ;
+    @RetE _ FullECapWithTag (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap; "addr" ::= ##src1`"addr" }).
 End ExecutionUnits.
