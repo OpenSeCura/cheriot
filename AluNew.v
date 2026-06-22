@@ -62,7 +62,7 @@ comparators and specialized capability blocks:
   1. MainAdder       : Primary datapath arithmetic, branch flags, pointer sums.
   2. PcAdder         : Dedicated control-flow targets (Branch, JAL, JALR).
   3. MemAdder        : Dedicated memory effective addresses and return link PCs.
-  4. BarrelShifter   : Dedicated 32-bit integer shifter strictly for RV32I shifts.
+  4. Shifter   : Dedicated 32-bit integer shifter strictly for RV32I shifts.
   5. LogicUnit       : Dedicated 32-bit engine strictly for RV32I boolean logic.
   6. Comparator      : Dedicated 32-bit lookahead comparator for SLT*, branch conditions, and equality.
   7. TopBoundsCheck  : Dedicated lookahead comparator verifying pointer <= top.
@@ -186,19 +186,19 @@ Purpose: Dual-service block dedicated to Data Memory effective address math
       routes directly to the data memory pipeline request interface.
 
 -------------------------------------------------------------------------------
-EXECUTE UNIT 4: BarrelShifter (32-Bit Dedicated Integer Barrel Shifter)
+EXECUTE UNIT 4: Shifter (32-Bit Dedicated Integer Barrel Shifter)
 -------------------------------------------------------------------------------
 Purpose: Dedicated strictly to RV32I base integer CPU shift instructions (`SLL`, 
          `SRL`, `SRA`, `SLLI`, `SRLI`, `SRAI`).
 
   [Inputs]
-    * val_BarrelShifter     : Bit 32 (Operand to be shifted)
-    * amt_BarrelShifter     : Bit 5  (Shift amount immediate or `rs2[4:0]`)
-    * isRight_BarrelShifter : Bool   (0 = Shift Left; 1 = Shift Right)
-    * isArith_BarrelShifter : Bool   (0 = Logical fill; 1 = Arithmetic sign-extend)
+    * val_Shifter     : Bit 32 (Operand to be shifted)
+    * amt_Shifter     : Bit 5  (Shift amount immediate or `rs2[4:0]`)
+    * isRight_Shifter : Bool   (0 = Shift Left; 1 = Shift Right)
+    * isArith_Shifter : Bool   (0 = Logical fill; 1 = Arithmetic sign-extend)
 
   [Outputs]
-    * res32_BarrelShifter   : Bit 32 (Shifted output result)
+    * res32_Shifter   : Bit 32 (Shifted output result)
 
   [Input Mapping]
     * Group 9 (SLL, SRL, SRA, SLLI, SRLI, SRAI): Base register rs1 drives val;
@@ -569,7 +569,7 @@ GROUP 8: MEMORY EFFECTIVE ADDRESS CALCULATION (EXECUTE UNIT: MemAdder)
     Output Route : memAddr = res32_MemAdder -> Data Memory Pipeline Interface.
 
 -------------------------------------------------------------------------------
-GROUP 9: INTEGER BARREL SHIFTING (EXECUTE UNIT: BarrelShifter)
+GROUP 9: INTEGER BARREL SHIFTING (EXECUTE UNIT: Shifter)
 -------------------------------------------------------------------------------
 * SLL rd, rs1, rs2
 * SRL rd, rs1, rs2
@@ -577,10 +577,10 @@ GROUP 9: INTEGER BARREL SHIFTING (EXECUTE UNIT: BarrelShifter)
 * SLLI rd, rs1, shamt
 * SRLI rd, rs1, shamt
 * SRAI rd, rs1, shamt
-    Input Preproc: val_BarrelShifter = rs1; amt = rs2[4:0] / decoded shift immediate.
+    Input Preproc: val_Shifter = rs1; amt = rs2[4:0] / decoded shift immediate.
                    isRight = (Opcode == SRL/SRA); isArith = Funct7[5].
                    Note: For left shifts (SLL/SLLI), input val and output res32 are reversed.
-    Output Route : resVal = res32_BarrelShifter -> Register File rd; rd.tag = False.
+    Output Route : resVal = res32_Shifter -> Register File rd; rd.tag = False.
 
 -------------------------------------------------------------------------------
 GROUP 10: INTEGER BITWISE BOOLEAN LOGIC (EXECUTE UNIT: LogicUnit)
@@ -988,12 +988,12 @@ Single-Cycle Combinatorial Requirement:
 
 Analysis of Partial Shifter Offloading:
   If we attempt to offload even a single shift (e.g. `d <- Srl length e`) to the 
-  main CPU `BarrelShifter`, we save ~200 gates of internal shifter but incur 111 
+  main CPU `Shifter`, we save ~200 gates of internal shifter but incur 111 
   gates of bus multiplexing, yielding a negligible net savings of +89 gates. 
   Crucially, exponent e is dynamically computed by `BoundsCalc`'s priority 
   encoder (`countLeadingZeros`). Offloading creates a severe physical floorplan 
   timing loop:
-    RegRead -> BoundsCalc Priority Encoder -> CPU BarrelShifter -> BoundsCalc Adder
+    RegRead -> BoundsCalc Priority Encoder -> CPU Shifter -> BoundsCalc Adder
   Zigzagging timing-critical buses out of `BoundsCalc`, across the datapath 
   into the CPU shifter, and back into `BoundsCalc` introduces immense wire 
   capacitance (RC delay) on the core's critical path.
@@ -1128,7 +1128,7 @@ Section ExecutionUnits.
     RetE (TruncLsb 1 Xlen #sum).
 
   (* If isArith is set for left shift, results are wrong *)
-  Definition BarrelShifter (val : ty (Bit Xlen)) (amt : ty (Bit LgXlen)) (isRight isArith : ty Bool)
+  Definition Shifter (val : ty (Bit Xlen)) (amt : ty (Bit LgXlen)) (isRight isArith : ty Bool)
     : LetExpr ty (Bit Xlen) :=
     structSimplCbn (
       let rev e := ToBit (ArrayReverse (FromBit (Array (Z.to_nat Xlen) Bool) e)) in
@@ -1617,9 +1617,6 @@ Section AluDatapath.
   Variable inst : ty Data.
   Variable aluCtrl : ty AluControl.
   Variable wbCtrl : ty WbControl.
-
-  Local Definition null_ecap : Expr ty ECap := Const ty ECap (getDefault _).
-
   Definition Alu : LetExpr ty AluOutput := (
     (* 1. Unpack Capability Slices *)
     LetE pccAddr : Data <- ##pcc`"addr" ;
@@ -1634,32 +1631,17 @@ Section AluDatapath.
     LetE src2ECap : ECap <- ##src2`"ecap" ;
     LetE src2Tag : Bool <- ##src2`"tag" ;
 
-    (* Extract immediate slices from 32-bit inst word *)
-    LetE shift7  : Bit LgXlen <- $7 ;
-    LetE shift8  : Bit LgXlen <- $8 ;
-    LetE shift11 : Bit LgXlen <- $11 ;
-    LetE shift12 : Bit LgXlen <- $12 ;
-    LetE shift20 : Bit LgXlen <- $20 ;
-    LetE shift21 : Bit LgXlen <- $21 ;
-    LetE shift25 : Bit LgXlen <- $25 ;
+    (* Extract immediate slices from 32-bit inst word using direct bit extraction *)
+    LetE simm12 : Data <- SignExtendTo AddrSz (#inst`[31:20]) ;
+    LetE uimm20 : Data <- ({< #inst`[31:12], Const ty (Bit 12) Zmod.zero >}) ;
+    LetE uimm20_11 : Data <- ({< #inst`[31:31], #inst`[31:12], Const ty (Bit 11) Zmod.zero >}) ;
+    LetE shamt : Bit LgXlen <- #inst`[24:20] ;
+    LetE rs2Low5 : Bit LgXlen <- #src2Addr`[4:0] ;
 
-    LetE simm12 : Data <- SignExtendTo AddrSz (TruncMsb 12 20 #inst) ;
-    LetE uimm20 : Data <- Sll (ZeroExtendTo AddrSz (TruncMsb 20 12 #inst)) #shift12 ;
-    LetE uimm20_11 : Data <- Sll (ZeroExtendTo AddrSz (TruncMsb 20 12 #inst)) #shift11 ;
-    LetE shamt : Bit LgXlen <- TruncLsb 27 LgXlen (Srl #inst #shift20) ;
-    LetE rs2Low5 : Bit LgXlen <- TruncLsb 27 LgXlen #src2Addr ;
-
-    LetE bit31 : Bit 1 <- TruncMsb 1 31 #inst ;
-    LetE bit7  : Bit 1 <- TruncLsb 31 1 (Srl #inst #shift7) ;
-    LetE bits30_25 : Bit 6 <- TruncLsb 26 6 (Srl #inst #shift25) ;
-    LetE bits11_8  : Bit 4 <- TruncLsb 28 4 (Srl #inst #shift8) ;
-    LetE bimm13 : Bit 13 <- ({< #bit31, #bit7, #bits30_25, #bits11_8, Const ty (Bit 1) Zmod.zero >}) ;
+    LetE bimm13 : Bit 13 <- ({< #inst`[31:31], #inst`[7:7], #inst`[30:25], #inst`[11:8], Const ty (Bit 1) Zmod.zero >}) ;
     LetE bimm12 : Data <- SignExtendTo AddrSz #bimm13 ;
 
-    LetE bits19_12 : Bit 8 <- TruncLsb 24 8 (Srl #inst #shift12) ;
-    LetE bit20     : Bit 1 <- TruncLsb 31 1 (Srl #inst #shift20) ;
-    LetE bits30_21 : Bit 10 <- TruncLsb 22 10 (Srl #inst #shift21) ;
-    LetE jimm21 : Bit 21 <- ({< #bit31, #bits19_12, #bit20, #bits30_21, Const ty (Bit 1) Zmod.zero >}) ;
+    LetE jimm21 : Bit 21 <- ({< #inst`[31:31], #inst`[19:12], #inst`[20:20], #inst`[30:21], Const ty (Bit 1) Zmod.zero >}) ;
     LetE jimm20 : Data <- SignExtendTo AddrSz #jimm21 ;
 
     (* Unpack AluControl flags needed for execution unit calls *)
@@ -1702,7 +1684,7 @@ Section AluDatapath.
     LETE res_PcAdder : Data <- PcAdder pcSrc1 pcSrc2 ;
 
     LetE shiftAmt : Bit LgXlen <- ITE ##aluCtrl`"Shifter_amt_shamt" #shamt #rs2Low5 ;
-    LETE res_Shifter : Data <- BarrelShifter src1Addr shiftAmt shiftRight shiftArith ;
+    LETE res_Shifter : Data <- Shifter src1Addr shiftAmt shiftRight shiftArith ;
 
     LetE logicSrc2 : Data <- ITE ##aluCtrl`"Logic_src2_simm12" #simm12 #src2Addr ;
     LETE res_Logic : Data <- Logic src1Addr logicSrc2 logicOpSel ;
@@ -1749,7 +1731,7 @@ Section AluDatapath.
            ITE0 ##wbCtrl`"reg_addr_BoundsCalc_length"  #lenData ] ;
 
     LetE regECap : ECap <-
-      Or [ ITE0 ##wbCtrl`"reg_ecap_null"       null_ecap ;
+      Or [ ITE0 ##wbCtrl`"reg_ecap_null"       (Const ty ECap (getDefault _)) ;
            ITE0 ##wbCtrl`"reg_ecap_cs1"        #src1ECap ;
            ITE0 ##wbCtrl`"reg_ecap_Pcc"        #pccECap ;
            ITE0 ##wbCtrl`"reg_DirectCs1"       #src1ECap ;
