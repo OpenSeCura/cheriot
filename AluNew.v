@@ -1846,7 +1846,7 @@ Section AluDatapath.
 
     LetE regTag : Bool <-
       Or [ And [ ##wbCtrl`"reg_tag_False" ; #constFalse ] ;
-           And [ ##wbCtrl`"reg_tag_cs1BoundsValid" ; #src1Tag; #TopBoundsCheck_topValid; #BaseBoundsCheck_baseValid ] ;
+           And [ ##wbCtrl`"reg_tag_cs1BoundsValid" ; #src1Tag; And [#TopBoundsCheck_topValid; #BaseBoundsCheck_baseValid] ] ;
            ##wbCtrl`"reg_tag_Pcc" ;
            And [ ##wbCtrl`"reg_DirectCs1" ; #src1Tag ] ;
            And [ ##wbCtrl`"reg_CAndPerm" ; ##CAndPerm_res`"tag" ] ;
