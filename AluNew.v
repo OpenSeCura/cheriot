@@ -1024,9 +1024,9 @@ Silicon Verdict (Go Dedicated):
 PART D: SYSTEM CSRs & SPECIAL CAPABILITY REGISTERS (ALU SHARING vs COPROCESSOR BUS)
 -------------------------------------------------------------------------------
 Architectural Complications of System Operations:
-  RV32I system CSR instructions (CSRRW, CSRRS, CSRRC and immediate variants) and CHERIoT Special Capability
-  Registers (CSpecialRW) introduce unique architectural control-state constraints
-  decoupled from standard arithmetic computation:
+  RV32I system CSR instructions (`CSRRW`, `CSRRS`, `CSRRC` and imm variants) and
+  CHERIoT Special Capability Registers (`CSpecialRW`) introduce unique architectural
+  control-state constraints decoupled from standard arithmetic computation:
     a) Exception Prioritization: Pipeline exception gating (e.g. invalid CSR index,
        privilege violation, unaligned capability load/store) takes strict priority
        over CSR read/write side effects. If an exception fires, pending CSR updates
@@ -1036,6 +1036,12 @@ Architectural Complications of System Operations:
        MTCC (Trap Code Capability) or MEPCC (Exception Program Counter Capability)
        enforces capability unsealing, executable permission verification, and bounds
        legalization before committing to state.
+    c) Microarchitectural CSR / MEPCC Read Symmetry: For standard CSR bitwise
+       instructions (`CSRRS`, `CSRRC`), the integer mask `rs1` routes to port
+       `src1`, while target CSR read data routes onto `src2`. To maintain strict
+       symmetry and avoid crossbar multiplexing onto `src1`, return operations
+       (`MRET`) route `MEPCC` onto `src2`, allowing `out_pcc` to grab `src2` at
+       writeback with zero extra hardware routing.
 
 Analysis of ALU LogicUnit Sharing:
   Multiplexing csrCurr and operand csrIn onto Execute Unit 5 (`LogicUnit`) to perform
@@ -1670,6 +1676,36 @@ Section AluDatapath.
     LETE res_MainAdder33 : Bit (Xlen + 1) <- MainAdder mainSrc1 mainSrc2 subEn ;
     LetE res_MainAdder : Data <- TruncLsb 1 Xlen #res_MainAdder33 ;
 
+    LetE cs1OType <- ##src1ECap`"oType" ;
+
+    LetE topInpAddr : Bit (Xlen + 1) <-
+      Or [ ITE0 ##aluCtrl`"TopCheck_inpAddr_SumMainAdder" #res_MainAdder33 ;
+           ITE0 ##aluCtrl`"TopCheck_inpAddr_SignExtRs2"   (SignExtendTo (Xlen+1) #src2Addr) ;
+           ITE0 ##aluCtrl`"TopCheck_inpAddr_Cs1Addr"      (ZeroExtendTo (Xlen+1) #src1Addr) ;
+           ITE0 ##aluCtrl`"TopCheck_inpAddr_Cs1Otype"     (ZeroExtendTo (Xlen+1) #cs1OType) ;
+           ITE0 ##aluCtrl`"TopCheck_inpAddr_Cs2Addr"      (ZeroExtendTo (Xlen+1) #src2Addr) ;
+           ITE0 ##aluCtrl`"TopCheck_inpAddr_Cs2Top"       (##src2ECap`"top") ] ;
+
+    LetE topLimit : Bit (Xlen + 1) <-
+      Or [ ITE0 ##aluCtrl`"TopCheck_limit_TopRep" (##src1ECap`"top") ;
+           ITE0 ##aluCtrl`"TopCheck_limit_Cs2Top" (##src2ECap`"top") ;
+           ITE0 ##aluCtrl`"TopCheck_limit_Cs1Top" (##src1ECap`"top") ] ;
+
+    LetE topInclusive : Bool <- ##aluCtrl`"TopCheck_isInclusive" ;
+    LETE topValid : Bool <- TopBoundsCheck topInpAddr topLimit topInclusive ;
+
+    LetE baseInpAddr : Bit (Xlen + 1) <-
+      Or [ ITE0 ##aluCtrl`"BaseCheck_inpAddr_SumMainAdder" #res_MainAdder33 ;
+           ITE0 ##aluCtrl`"BaseCheck_inpAddr_SignExtRs2"   (SignExtendTo (Xlen+1) #src2Addr) ;
+           ITE0 ##aluCtrl`"BaseCheck_inpAddr_Cs1Addr"      (ZeroExtendTo (Xlen+1) #src1Addr) ;
+           ITE0 ##aluCtrl`"BaseCheck_inpAddr_Cs1Otype"     (ZeroExtendTo (Xlen+1) #cs1OType) ;
+           ITE0 ##aluCtrl`"BaseCheck_inpAddr_Cs2Addr"      (ZeroExtendTo (Xlen+1) #src2Addr) ;
+           ITE0 ##aluCtrl`"BaseCheck_inpAddr_Cs2Base"      (##src2ECap`"base") ] ;
+
+    LetE baseLimit : Bit (Xlen + 1) <- ##src1ECap`"base" ;
+
+    LETE baseValid : Bool <- BaseBoundsCheck baseInpAddr baseLimit ;
+
     LetE pcSrc1 : Bit (Xlen + 1) <-
       ITE ##aluCtrl`"PcAdder_src1_PC_Rs1Addr" (ZeroExtendTo (Xlen+1) #pccAddr) (ZeroExtendTo (Xlen+1) #src1Addr) ;
     LetE pcSrc2 : Bit (Xlen + 1) <-
@@ -1687,7 +1723,7 @@ Section AluDatapath.
     LetE compSrc2 : Data <- ITE ##aluCtrl`"Comparator_src2_simm12" #simm12 #src2Addr ;
     LETE branchTaken : Bool <- Comparator src1Addr compSrc2 compUnsigned constFalse constFalse ;
 
-    LetE bcBase : Bit (AddrSz + 1) <- ITE0 #aluCtrl`"BoundsCalc_base_Cs1Addr_Zero"
+    LetE bcBase : Bit (AddrSz + 1) <- ITE0 ##aluCtrl`"BoundsCalc_base_Cs1Addr_Zero"
                                         (ZeroExtendTo (AddrSz+1) #src1Addr) ;
     LetE bcLen : Bit (AddrSz + 1) <-
       Or [ ITE0 ##aluCtrl`"BoundsCalc_length_Rs2"    (ZeroExtendTo (AddrSz+1) #src2Addr) ;
@@ -1738,7 +1774,7 @@ Section AluDatapath.
 
     LetE regTag : Bool <-
       Or [ ITE0 ##wbCtrl`"reg_tag_False"          #constFalse ;
-           ITE0 ##wbCtrl`"reg_tag_cs1BoundsValid" #src1Tag ;
+           ITE0 ##wbCtrl`"reg_tag_cs1BoundsValid" (And [ #src1Tag; #topValid; #baseValid ]) ;
            ITE0 ##wbCtrl`"reg_tag_Pcc"            #pccTag ;
            ITE0 ##wbCtrl`"reg_DirectCs1"          #src1Tag ;
            ITE0 ##wbCtrl`"reg_CAndPerm"           (##res_CAndPerm`"tag") ;
@@ -1761,7 +1797,6 @@ Section AluDatapath.
     LetE cs1InBounds : Bool <- And [ Sge #targetPc (##src1ECap`"base"); Sle #targetPc (##src1ECap`"top") ] ;
 
     LetE unsealedCs1ECap : ECap <- #src1ECap `{ "oType" <- $0 } ;
-    LetE cs1OType <- ##src1ECap`"oType" ;
     LetE isCs1Sentry : Bool <- isSentry cs1OType ;
 
     LetE cleanedBranchTag : Bool <- And [ #pccTag; #pccInBounds ] ;
