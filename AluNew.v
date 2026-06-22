@@ -38,8 +38,7 @@ To eliminate microarchitectural ambiguity and maintain absolute gate-level
 clarity during physical refactoring and synthesis, this architecture enforces 
 strict EXECUTE-UNIT DOT NAMING:
   - Every physical hardware block is assigned a unique ExecuteUnitName.
-  - Every input pin driving an execute unit is prefixed with `ExecuteUnitName.`.
-  - Every output pin driven by an execute unit is prefixed with `ExecuteUnitName.`.
+  - Every input or output of an execute unit is prefixed with `ExecuteUnitName_`.
 
 EXPANDED CAPABILITY REGISTER MODEL & BOUNDS RECOMPUTATION:
 A core pillar of this architecture is that the architectural Register File 
@@ -62,7 +61,7 @@ comparators and specialized capability blocks:
   1. MainAdder       : Primary datapath arithmetic, branch flags, pointer sums.
   2. PcAdder         : Dedicated control-flow targets (Branch, JAL, JALR).
   3. MemAdder        : Dedicated memory effective addresses and return link PCs.
-  4. Shifter   : Dedicated 32-bit integer shifter strictly for RV32I shifts.
+  4. Shifter         : Dedicated 32-bit integer shifter strictly for RV32I shifts.
   5. LogicUnit       : Dedicated 32-bit engine strictly for RV32I boolean logic.
   6. Comparator      : Dedicated 32-bit lookahead comparator for SLT*, branch conditions, and equality.
   7. TopBoundsCheck  : Dedicated lookahead comparator verifying pointer <= top.
@@ -87,12 +86,12 @@ Purpose: Primary integer arithmetic (`ADD`, `SUB`, `ADDI`), `AUICGP`, Branch
          and `CGetLen`.
 
   [Inputs]
-    * MainAdder.src1      : Bit 33 (Sign-extended or Zero-extended operand 1)
-    * MainAdder.src2      : Bit 33 (Sign-extended or Zero-extended operand 2)
-    * MainAdder.subEnable : Bool   (0 = ADD/Cin=0; 1 = SUBTRACT/Cin=1)
+    * MainAdder_src1      : Bit 33 (Sign-extended or Zero-extended operand 1)
+    * MainAdder_src2      : Bit 33 (Sign-extended or Zero-extended operand 2)
+    * MainAdder_subEnable : Bool   (0 = ADD/Cin=0; 1 = SUBTRACT/Cin=1)
 
   [Outputs]
-    * MainAdder.sum       : Bit 33 (Full 33-bit sum / difference)
+    * MainAdder_sum       : Bit 33 (Full 33-bit sum / difference)
 
   [Input Mapping]
     * Group 2 (AUICGP, AUIPCC): 32-bit capability base address (CGP.addr or PCC.addr)
@@ -113,7 +112,7 @@ Purpose: Primary integer arithmetic (`ADD`, `SUB`, `ADDI`), `AUICGP`, Branch
   [Output Mapping]
     * Group 2 (AUICGP, AUIPCC), Group 4 (ADD, SUB, ADDI), Group 12
       (CGetLen), Group 13 (CIncAddr, CIncAddrImm), Group 19 (CSub): Truncated 32-bit
-      slice `MainAdder.sum[31:0]` updates destination register rd (or cd.addr).
+      slice `MainAdder_sum[31:0]` updates destination register rd (or cd.addr).
     * Group 13 (CIncAddr, CIncAddrImm): Full 33-bit un-truncated sum routes sideways
       into Execute Unit 7 (`TopBoundsCheck`) and Execute Unit 8 (`BaseBoundsCheck`).
 
@@ -132,11 +131,11 @@ Purpose: Dedicated strictly to PC target address calculations (`Branch`, `JAL`,
 `JALR`).
 
   [Inputs]
-    * PcAdder.src1        : Bit 33 (Sign-extended PC or rs1 base address)
-    * PcAdder.src2        : Bit 33 (Sign-extended branch or jal offset immediate)
+    * PcAdder_src1        : Bit 33 (Sign-extended PC or rs1 base address)
+    * PcAdder_src2        : Bit 33 (Sign-extended branch or jal offset immediate)
 
   [Outputs]
-    * PcAdder.res32       : Bit 32 (Target PC with LSB hardwired to 0: `(src1 + src2)[31:1] ## 1'b0`)
+    * PcAdder_res32       : Bit 32 (Target PC with LSB hardwired to 0: `(src1 + src2)[31:1] ## 1'b0`)
 
   [Input Mapping]
     * Group 6 (BEQ, BNE, BLT, BGE, BLTU, BGEU), Group 7 (JAL): 32-bit current
@@ -165,11 +164,11 @@ Purpose: Dual-service block dedicated to Data Memory effective address math
          un-taken branch fallback).
 
   [Inputs]
-    * MemAdder.src1       : Bit 33 (Sign-extended rs1 base address or PC)
-    * MemAdder.src2       : Bit 33 (Sign-extended load/store imm or +4 / +2)
+    * MemAdder_src1       : Bit 33 (Sign-extended rs1 base address or PC)
+    * MemAdder_src2       : Bit 33 (Sign-extended load/store imm or +4 / +2)
 
   [Outputs]
-    * MemAdder.res32      : Bit 32 (Computed 32-bit memory address or return PC: `(src1 + src2)[31:0]`)
+    * MemAdder_res32      : Bit 32 (Computed 32-bit memory address or return PC: `(src1 + src2)[31:0]`)
 
   [Input Mapping]
     * Group 6 (BEQ, BNE, BLT, BGE, BLTU, BGEU), Group 7 (JAL, JALR): 32-bit
@@ -195,13 +194,13 @@ Purpose: Dedicated strictly to RV32I base integer CPU shift instructions (`SLL`,
          `SRL`, `SRA`, `SLLI`, `SRLI`, `SRAI`).
 
   [Inputs]
-    * Shifter.val     : Bit 32 (Operand to be shifted)
-    * Shifter.amt     : Bit 5  (Shift amount immediate or `rs2[4:0]`)
-    * Shifter.isRight : Bool   (0 = Shift Left; 1 = Shift Right)
-    * Shifter.isArith : Bool   (0 = Logical fill; 1 = Arithmetic sign-extend)
+    * Shifter_val     : Bit 32 (Operand to be shifted)
+    * Shifter_amt     : Bit 5  (Shift amount immediate or `rs2[4:0]`)
+    * Shifter_isRight : Bool   (0 = Shift Left; 1 = Shift Right)
+    * Shifter_isArith : Bool   (0 = Logical fill; 1 = Arithmetic sign-extend)
 
   [Outputs]
-    * Shifter.res32   : Bit 32 (Shifted output result)
+    * Shifter_res32   : Bit 32 (Shifted output result)
 
   [Input Mapping]
     * Group 9 (SLL, SRL, SRA, SLLI, SRLI, SRAI): Base register rs1 drives val;
@@ -226,12 +225,12 @@ Purpose: Dedicated strictly to RV32I base integer boolean manipulation (`AND`,
          `OR`, `XOR`, `ANDI`, `ORI`, `XORI`).
 
   [Inputs]
-    * LogicUnit.src1        : Bit 32 (Integer Register rs1 value)
-    * LogicUnit.src2        : Bit 32 (Integer Register rs2 value or immediate)
-    * LogicUnit.opSel       : Bit 2  (00 = AND; 01 = OR; 10 = XOR)
+    * LogicUnit_src1        : Bit 32 (Integer Register rs1 value)
+    * LogicUnit_src2        : Bit 32 (Integer Register rs2 value or immediate)
+    * LogicUnit_opSel       : Bit 2  (00 = AND; 01 = OR; 10 = XOR)
 
   [Outputs]
-    * LogicUnit.res32       : Bit 32 (Bitwise boolean result)
+    * LogicUnit_res32       : Bit 32 (Bitwise boolean result)
 
   [Input Mapping]
     * Group 10 (AND, OR, XOR, ANDI, ORI, XORI): Base register rs1 drives src1;
@@ -249,14 +248,14 @@ Purpose: Dedicated parallel-prefix magnitude comparator evaluating integer relat
          strictly for branching (`Branch`) and set-less-than (`SLT*`, `CSetEqual`).
 
   [Inputs]
-    * Comparator.src1       : Bit 32 (Integer register rs1 or cs1.addr)
-    * Comparator.src2       : Bit 32 (Integer register rs2, immediate, or cs2.addr)
-    * Comparator.isUnsigned : Bool   (Decoder control: funct3[1])
-    * Comparator.invert     : Bool   (Decoder control: funct3[0])
-    * Comparator.checkLtGe  : Bool   (Decoder control: funct3[2])
+    * Comparator_src1       : Bit 32 (Integer register rs1 or cs1.addr)
+    * Comparator_src2       : Bit 32 (Integer register rs2, immediate, or cs2.addr)
+    * Comparator_isUnsigned : Bool   (Decoder control: funct3[1])
+    * Comparator_invert     : Bool   (Decoder control: funct3[0])
+    * Comparator_checkLtGe  : Bool   (Decoder control: funct3[2])
 
   [Outputs]
-    * Comparator.resVal     : Bool   (True if relational comparison condition is satisfied)
+    * Comparator_resVal     : Bool   (True if relational comparison condition is satisfied)
 
   [Input Mapping]
     * Group 5 (SLT variants), Group 6 (Branch variants), Group 19 (CSetEqual): Route operands to src1 and src2.
@@ -275,7 +274,7 @@ Purpose: Dedicated parallel-prefix magnitude comparator evaluating integer relat
       massive $F_{max}$ victories:
         1. Strips comparison input MUX complexity off `MainAdder`, accelerating pointer math.
         2. Resolves branch outcome flag `take` ~200ps earlier than carry-propagate subtraction,
-           ensuring the nextPC multiplexer (`PcAdder.res32` vs `MemAdder.res32`) switches well
+           ensuring the nextPC multiplexer (`PcAdder_res32` vs `MemAdder_res32`) switches well
            before clock setup time.
 
 -------------------------------------------------------------------------------
@@ -285,12 +284,12 @@ Purpose: Dedicated parallel-prefix magnitude comparator evaluating upper pointer
          in dual relational modes (`inpAddr < limit` vs `inpAddr <= limit`).
 
   [Inputs]
-    * TopBoundsCheck.inpAddr    : Bit 33 (Input pointer address `inpAddr` or rs2)
-    * TopBoundsCheck.limit      : Bit 33 (Upper bound: `top_rep` or architectural `top`)
-    * TopBoundsCheck.isInclusive: Bool   (Decoder control: False for `<`; True for `<=`)
+    * TopBoundsCheck_inpAddr    : Bit 33 (Input pointer address `inpAddr` or rs2)
+    * TopBoundsCheck_limit      : Bit 33 (Upper bound: `top_rep` or architectural `top`)
+    * TopBoundsCheck_isInclusive: Bool   (Decoder control: False for `<`; True for `<=`)
 
   [Outputs]
-    * TopBoundsCheck.topValid   : Bool   (Combined validity flag: `isLess | (isInclusive & isEqual)`)
+    * TopBoundsCheck_topValid   : Bool   (Combined validity flag: `isLess | (isInclusive & isEqual)`)
 
   [Input Mapping]
     * Group 2 (AUICGP, AUIPCC), Group 13 (CIncAddr, CIncAddrImm), Group 14 (CSetAddr): For
@@ -322,15 +321,15 @@ Purpose: Dedicated parallel-prefix magnitude comparator evaluating whether an
          input pointer address undercuts lower limits (`inpAddr >= base`).
 
   [Inputs]
-    * BaseBoundsCheck.inpAddr  : Bit 33 (Input pointer address `inpAddr` or rs2)
-    * BaseBoundsCheck.base     : Bit 33 (Capability lower bound `base`)
+    * BaseBoundsCheck_inpAddr  : Bit 33 (Input pointer address `inpAddr` or rs2)
+    * BaseBoundsCheck_base     : Bit 33 (Capability lower bound `base`)
 
   [Outputs]
-    * BaseBoundsCheck.baseValid: Bool   (True if `inpAddr >= base`)
+    * BaseBoundsCheck_baseValid: Bool   (True if `inpAddr >= base`)
 
   [Input Mapping]
     * Group 2 (AUICGP, AUIPCC), Group 13 (CIncAddr, CIncAddrImm): Computed 33-bit
-      MainAdder.sum drives inpAddr; capability base drives base.
+      MainAdder_sum drives inpAddr; capability base drives base.
     * Group 14 (CSetAddr): Sign-extended 33-bit rs2 drives inpAddr; capability
       cs1.base drives base.
     * Group 17 (CSeal, CUnseal): For sealing authorization bounds checks, inpAddr is driven
@@ -350,17 +349,17 @@ Purpose: Fully dedicated, self-contained CHERIoT hardware computing compressed
          exponent E and mantissa adjustments, equipped with internal parallel shifters.
 
   [Inputs]
-    * BoundsCalc.base        : Bit (AddrSz + 1) (Candidate base capability address)
-    * BoundsCalc.length      : Bit (AddrSz + 1) (Candidate requested length)
-    * BoundsCalc.isRoundDown : Bool             (True for CRAM/CRRL rounding down mode)
+    * BoundsCalc_base        : Bit (AddrSz + 1) (Candidate base capability address)
+    * BoundsCalc_length      : Bit (AddrSz + 1) (Candidate requested length)
+    * BoundsCalc_isRoundDown : Bool             (True for CRAM/CRRL rounding down mode)
 
   [Outputs]
-    * BoundsCalc.outE        : Bit ExpSz        (Computed canonical exponent)
-    * BoundsCalc.outBase     : Bit (AddrSz + 1) (Computed representable base address)
-    * BoundsCalc.outTop      : Bit (AddrSz + 1) (Computed representable top address)
-    * BoundsCalc.cram        : Bit (AddrSz + 1) (Computed representable alignment mask for CRAM)
-    * BoundsCalc.outLen      : Bit (AddrSz + 1) (Computed representable rounded length for CRRL)
-    * BoundsCalc.exact       : Bool             (Exactness verification flag for CSetBoundsExact)
+    * BoundsCalc_outE        : Bit ExpSz        (Computed canonical exponent)
+    * BoundsCalc_outBase     : Bit (AddrSz + 1) (Computed representable base address)
+    * BoundsCalc_outTop      : Bit (AddrSz + 1) (Computed representable top address)
+    * BoundsCalc_cram        : Bit (AddrSz + 1) (Computed representable alignment mask for CRAM)
+    * BoundsCalc_outLen      : Bit (AddrSz + 1) (Computed representable rounded length for CRRL)
+    * BoundsCalc_exact       : Bool             (Exactness verification flag for CSetBoundsExact)
 
   [Input Mapping]
     * Group 18 (CSetBounds, CSetBoundsExact, CSetBoundsImm, CRAM, CRRL): Base address
@@ -369,9 +368,9 @@ Purpose: Fully dedicated, self-contained CHERIoT hardware computing compressed
 
   [Output Mapping]
     * Group 18 (CSetBounds, CSetBoundsExact, CSetBoundsImm): Writeback stage routes
-      BoundsCalc.outE, BoundsCalc.outBase, and BoundsCalc.outTop to construct destination capability.
-    * Group 18 (CRAM): Writeback stage routes BoundsCalc.cram -> integer register rd.
-    * Group 18 (CRRL): Writeback stage routes BoundsCalc.outLen -> integer register rd.
+      BoundsCalc_outE, BoundsCalc_outBase, and BoundsCalc_outTop to construct destination capability.
+    * Group 18 (CRAM): Writeback stage routes BoundsCalc_cram -> integer register rd.
+    * Group 18 (CRRL): Writeback stage routes BoundsCalc_outLen -> integer register rd.
 
 -------------------------------------------------------------------------------
 EXECUTE UNIT 10: CAndPerm (Dedicated Local Bitwise Permission Masking Unit)
@@ -379,11 +378,11 @@ EXECUTE UNIT 10: CAndPerm (Dedicated Local Bitwise Permission Masking Unit)
 Purpose: Dedicated local hardware handling bitwise capability permission masking (`CAndPerm`).
 
   [Inputs]
-    * CAndPerm.cap   : FullECapWithTag (Target capability operand `cs1`)
-    * CAndPerm.rs2   : Data            (Raw mask register operand `rs2`)
+    * CAndPerm_cap   : FullECapWithTag (Target capability operand `cs1`)
+    * CAndPerm_rs2   : Data            (Raw mask register operand `rs2`)
 
   [Outputs]
-    * CAndPerm.res   : FullECapWithTag (Legalized capability result with updated tag and permissions)
+    * CAndPerm_res   : FullECapWithTag (Legalized capability result with updated tag and permissions)
 
   [Input Mapping]
     * Group 15 (CAndPerm): Source capability cs1 and raw mask register rs2 route directly.
@@ -398,13 +397,13 @@ EXECUTE UNIT 11: SealerUnsealer (Dedicated Capability Sealing & Unsealing Unit)
 Purpose: Dedicated local hardware authorizing and applying capability sealing (`CSeal`) and unsealing (`CUnseal`).
 
   [Inputs]
-    * SealerUnsealer.isUnseal    : Bool            (Sealing polarity: False = Seal, True = Unseal)
-    * SealerUnsealer.boundsValid : Bool            (True if candidate address is within `cs2` bounds)
-    * SealerUnsealer.src1        : FullECapWithTag (Target capability operand `cs1`)
-    * SealerUnsealer.src2        : FullECapWithTag (Authorizing capability operand `cs2`)
+    * SealerUnsealer_isUnseal    : Bool            (Sealing polarity: False = Seal, True = Unseal)
+    * SealerUnsealer_boundsValid : Bool            (True if candidate address is within `cs2` bounds)
+    * SealerUnsealer_src1        : FullECapWithTag (Target capability operand `cs1`)
+    * SealerUnsealer_src2        : FullECapWithTag (Authorizing capability operand `cs2`)
 
   [Outputs]
-    * SealerUnsealer.res      : FullECapWithTag (Authorized capability result with updated tag and object type)
+    * SealerUnsealer_res      : FullECapWithTag (Authorized capability result with updated tag and object type)
 
   [Input Mapping]
     * Group 17 (CSeal, CUnseal): Target capability cs1 and authorizing capability cs2 route directly
@@ -421,10 +420,10 @@ Purpose: Dedicated local hardware sanitizing capability writes into special capa
          (to be used for `MEPCC` and `MTCC`).
 
   [Inputs]
-    * ScrSanitizer.inpCap : FullECapWithTag (Candidate capability operand `cs1` to commit into SCR)
+    * ScrSanitizer_inpCap : FullECapWithTag (Candidate capability operand `cs1` to commit into SCR)
 
   [Outputs]
-    * ScrSanitizer.outCap : FullECapWithTag (tag cleared if not a good MEPCC/MTCC capability).
+    * ScrSanitizer_outCap : FullECapWithTag (tag cleared if not a good MEPCC/MTCC capability).
 
   [Input Mapping]
     * Group 21 (CSpecialRw): Source capability cs1 routes directly.
@@ -439,16 +438,16 @@ Purpose: Verifies target PC representability for branches (`BEQ`, `BLT`, etc.) a
          validating capability tag, execution permissions, and sentry object-type constraints before committing.
 
   [Inputs]
-    * TargetPccTag.isBranch    : Bool            (Asserted for conditional branch instructions)
-    * TargetPccTag.isCjal      : Bool            (Asserted for direct jump CJAL instructions)
-    * TargetPccTag.isCjalr     : Bool            (Asserted for indirect jump CJALR instructions)
-    * TargetPccTag.branchTaken : Bool            (Branch condition evaluation result from Comparator)
-    * TargetPccTag.topValid    : Bool            (Output from TopBoundsCheck evaluating target PC <= top)
-    * TargetPccTag.baseValid   : Bool            (Output from BaseBoundsCheck evaluating target PC >= base)
-    * TargetPccTag.cs1         : FullECapWithTag (Candidate target capability operand cs1 for CJALR)
+    * TargetPccTag_isBranch    : Bool            (Asserted for conditional branch instructions)
+    * TargetPccTag_isCjal      : Bool            (Asserted for direct jump CJAL instructions)
+    * TargetPccTag_isCjalr     : Bool            (Asserted for indirect jump CJALR instructions)
+    * TargetPccTag_branchTaken : Bool            (Branch condition evaluation result from Comparator)
+    * TargetPccTag_topValid    : Bool            (Output from TopBoundsCheck evaluating target PC <= top)
+    * TargetPccTag_baseValid   : Bool            (Output from BaseBoundsCheck evaluating target PC >= base)
+    * TargetPccTag_cs1         : FullECapWithTag (Candidate target capability operand cs1 for CJALR)
 
   [Outputs]
-    * TargetPccTag.nextTag     : Bool            (Computed valid tag for next instruction PC capability)
+    * TargetPccTag_nextTag     : Bool            (Computed valid tag for next instruction PC capability)
 
   [Input Mapping]
     * Group 6 (Branches), Group 7 (CJAL, CJALR): Appropriate opcode decode flags assert isBranch/isCjal/isCjalr;
@@ -463,11 +462,11 @@ EXECUTE UNIT 14: MultiOp (Dedicated Multicycle Memory & System Operation Unit)
 Purpose: Dedicated local hardware managing multicycle loads, stores, and system operations.
 
   [Inputs]
-    * MultiOp.kind    : Option Bool (None = None, Some False = Load, Some True = Store)
-    * MultiOp.memOpSz : Bit 2       (Encoding Lg(NumBytesXlen): 0=1B, 1=2B, 2=4B, 3=8B)
+    * MultiOp_kind    : Option Bool (None = None, Some False = Load, Some True = Store)
+    * MultiOp_memOpSz : Bit 2       (Encoding Lg(NumBytesXlen): 0=1B, 1=2B, 2=4B, 3=8B)
 
   [Outputs]
-    * MultiOp.res     : Data        (Memory or system interaction control bundle)
+    * MultiOp_res     : Data        (Memory or system interaction control bundle)
 
 ===============================================================================
 3. RV32I & CHERIoT INSTRUCTION ROUTING MAP (EXHAUSTIVE & STRICTLY EXECUTE-UNIT-ISOLATED)
@@ -490,30 +489,30 @@ GROUP 2: UPPER IMMEDIATE CAPABILITY DERIVATION (EXECUTE UNIT: MainAdder + TopBou
     Input Preproc:
       - MainAdder       : Route base address (CGP.addr or PCC.addr) to src1; route decoded immediate
                           to src2. Note: Both AUICGP and AUIPCC shift immediate left 11 bits (imm << 11).
-      - TopBoundsCheck  : inpAddr = MainAdder.sum; limit = authCap.top_rep (base + 2^(E + 9)); isInclusive = False.
-      - BaseBoundsCheck : inpAddr = MainAdder.sum; base = authCap.base.
+      - TopBoundsCheck  : inpAddr = MainAdder_sum; limit = authCap.top_rep (base + 2^(E + 9)); isInclusive = False.
+      - BaseBoundsCheck : inpAddr = MainAdder_sum; base = authCap.base.
     Output Route :
       - cd.ecap = authCap.ecap (preserve source expanded capability struct).
-      - cd.addr = MainAdder.res32.
-      - cd.tag  = authCap.tag & TopBoundsCheck.topValid & BaseBoundsCheck.baseValid.
+      - cd.addr = MainAdder_res32.
+      - cd.tag  = authCap.tag & TopBoundsCheck_topValid & BaseBoundsCheck_baseValid.
 
 -------------------------------------------------------------------------------
 GROUP 4: MAIN ALU ADDER ARITHMETIC (EXECUTE UNIT: MainAdder)
 -------------------------------------------------------------------------------
 * ADD rd, rs1, rs2
-    Input Preproc: MainAdder.src1 = SignExt(rs1); MainAdder.src2 = SignExt(rs2).
-                   MainAdder.subEnable = False.
-    Output Route : resVal = MainAdder.res32 -> Register File rd; rd.tag = False.
+    Input Preproc: MainAdder_src1 = SignExt(rs1); MainAdder_src2 = SignExt(rs2).
+                   MainAdder_subEnable = False.
+    Output Route : resVal = MainAdder_res32 -> Register File rd; rd.tag = False.
 
 * SUB rd, rs1, rs2
-    Input Preproc: MainAdder.src1 = SignExt(rs1); MainAdder.src2 = SignExt(rs2).
-                   MainAdder.subEnable = True.
-    Output Route : resVal = MainAdder.res32 -> Register File rd; rd.tag = False.
+    Input Preproc: MainAdder_src1 = SignExt(rs1); MainAdder_src2 = SignExt(rs2).
+                   MainAdder_subEnable = True.
+    Output Route : resVal = MainAdder_res32 -> Register File rd; rd.tag = False.
 
 * ADDI rd, rs1, simm12
-    Input Preproc: MainAdder.src1 = SignExt(rs1); MainAdder.src2 = SignExt(decoded immediate).
-                   MainAdder.subEnable = False.
-    Output Route : resVal = MainAdder.res32 -> Register File rd; rd.tag = False.
+    Input Preproc: MainAdder_src1 = SignExt(rs1); MainAdder_src2 = SignExt(decoded immediate).
+                   MainAdder_subEnable = False.
+    Output Route : resVal = MainAdder_res32 -> Register File rd; rd.tag = False.
 
 -------------------------------------------------------------------------------
 GROUP 5: INTEGER SET LESS THAN COMPARISONS (EXECUTE UNIT: Comparator)
@@ -525,7 +524,7 @@ GROUP 5: INTEGER SET LESS THAN COMPARISONS (EXECUTE UNIT: Comparator)
     Input Preproc: Route rs1 to src1; route rs2 / sign-extended immediate to src2.
                    Assert isUnsigned = funct3[0] (False for SLT/SLTI; True for SLTU/SLTIU).
                    Assert invert = False; checkLtGe = True.
-    Output Route : resVal = ZeroExtend(32, Comparator.resVal) -> rd; force rd.tag = False.
+    Output Route : resVal = ZeroExtend(32, Comparator_resVal) -> rd; force rd.tag = False.
 
 -------------------------------------------------------------------------------
 GROUP 6: BRANCH CONDITION EVALUATION (EXECUTE UNIT: Comparator + PcAdder + MemAdder + Bounds Comparators + TargetPccTag)
@@ -544,8 +543,8 @@ GROUP 6: BRANCH CONDITION EVALUATION (EXECUTE UNIT: Comparator + PcAdder + MemAd
       - PcAdder       : src1 = SignExt(PC); src2 = SignExt(branch offset: imm[12:1] ## 1'b0).
       - MemAdder      : src1 = SignExt(PC); src2 = SignExt(isCompressed ? 2 : 4).
     Output Route :
-      - take = Comparator.resVal
-      - nextPC = take ? PcAdder.res32 (LSB hardwired to 0) : MemAdder.res32. (No write to register file).
+      - take = Comparator_resVal
+      - nextPC = take ? PcAdder_res32 (LSB hardwired to 0) : MemAdder_res32. (No write to register file).
 
 -------------------------------------------------------------------------------
 GROUP 7: CONTROL FLOW JUMP TARGET CALCULATION (EXECUTE UNIT: PcAdder + MemAdder + Bounds Comparators + TargetPccTag)
@@ -554,9 +553,9 @@ GROUP 7: CONTROL FLOW JUMP TARGET CALCULATION (EXECUTE UNIT: PcAdder + MemAdder 
     Implicit Read : PCC (entire Program Counter Capability record to construct return sentry PCC + 2 and jump target).
     Implicit Write: PCC.addr, PCC.tag (cleared if target PC violates representability bounds).
     Input Preproc:
-      - PcAdder  : PcAdder.src1 = SignExt(PC); PcAdder.src2 = SignExt(jal offset: imm[20:1] ## 1'b0).
-      - MemAdder : MemAdder.src1 = SignExt(PC); MemAdder.src2 = SignExt(isCompressed ? 2 : 4).
-    Output Route : nextPC = PcAdder.res32 (LSB hardwired to 0); resVal = MemAdder.res32 -> cd.addr
+      - PcAdder  : PcAdder_src1 = SignExt(PC); PcAdder_src2 = SignExt(jal offset: imm[20:1] ## 1'b0).
+      - MemAdder : MemAdder_src1 = SignExt(PC); MemAdder_src2 = SignExt(isCompressed ? 2 : 4).
+    Output Route : nextPC = PcAdder_res32 (LSB hardwired to 0); resVal = MemAdder_res32 -> cd.addr
                    (unsealed sentry link).
 
 * CJALR cd, cs1, simm12
@@ -566,10 +565,10 @@ GROUP 7: CONTROL FLOW JUMP TARGET CALCULATION (EXECUTE UNIT: PcAdder + MemAdder 
                     (e.g. sealed but not a valid Sentry). CJALR itself does not throw exceptions.
                     (Note: Clearing the tag here instead of throwing an exception diverges from the official CHERIoT spec).
     Input Preproc:
-      - PcAdder  : PcAdder.src1 = cs1.addr; PcAdder.src2 = SignExt(decoded immediate: imm[11:0], unshifted).
-      - MemAdder : MemAdder.src1 = SignExt(PC); MemAdder.src2 = SignExt(isCompressed ? 2 : 4).
-    Output Route : nextPC = PcAdder.res32 (LSB hardwired to 0);
-                   resVal = MemAdder.res32 -> cd.addr (unsealed sentry link).
+      - PcAdder  : PcAdder_src1 = cs1.addr; PcAdder_src2 = SignExt(decoded immediate: imm[11:0], unshifted).
+      - MemAdder : MemAdder_src1 = SignExt(PC); MemAdder_src2 = SignExt(isCompressed ? 2 : 4).
+    Output Route : nextPC = PcAdder_res32 (LSB hardwired to 0);
+                   resVal = MemAdder_res32 -> cd.addr (unsealed sentry link).
 
 -------------------------------------------------------------------------------
 GROUP 8: MEMORY EFFECTIVE ADDRESS CALCULATION (EXECUTE UNIT: MemAdder)
@@ -593,8 +592,8 @@ GROUP 8: MEMORY EFFECTIVE ADDRESS CALCULATION (EXECUTE UNIT: MemAdder)
     Fault Triggers: CapEx_TagViolation, CapEx_SealViolation, CapEx_PermitStoreViolation,
                     CapEx_PermitStoreCapViolation, CapEx_BoundsViolation, Store Access Fault,
                     Store Address Misaligned.
-    Input Preproc: MemAdder.src1 = cs1.addr; MemAdder.src2 = SignExt(decoded immediate).
-    Output Route : memAddr = MemAdder.res32 -> Data Memory Pipeline Interface.
+    Input Preproc: MemAdder_src1 = cs1.addr; MemAdder_src2 = SignExt(decoded immediate).
+    Output Route : memAddr = MemAdder_res32 -> Data Memory Pipeline Interface.
 
 -------------------------------------------------------------------------------
 GROUP 9: INTEGER BARREL SHIFTING (EXECUTE UNIT: Shifter)
@@ -605,10 +604,10 @@ GROUP 9: INTEGER BARREL SHIFTING (EXECUTE UNIT: Shifter)
 * SLLI rd, rs1, shamt
 * SRLI rd, rs1, shamt
 * SRAI rd, rs1, shamt
-    Input Preproc: Shifter.val = rs1; amt = rs2[4:0] / decoded shift immediate.
+    Input Preproc: Shifter_val = rs1; amt = rs2[4:0] / decoded shift immediate.
                    isRight = (Opcode == SRL/SRA); isArith = Funct7[5].
                    Note: For left shifts (SLL/SLLI), input val and output res32 are reversed.
-    Output Route : resVal = Shifter.res32 -> Register File rd; rd.tag = False.
+    Output Route : resVal = Shifter_res32 -> Register File rd; rd.tag = False.
 
 -------------------------------------------------------------------------------
 GROUP 10: INTEGER BITWISE BOOLEAN LOGIC (EXECUTE UNIT: LogicUnit)
@@ -619,9 +618,9 @@ GROUP 10: INTEGER BITWISE BOOLEAN LOGIC (EXECUTE UNIT: LogicUnit)
 * ANDI rd, rs1, simm12
 * ORI rd, rs1, simm12
 * XORI rd, rs1, simm12
-    Input Preproc: LogicUnit.src1 = rs1; LogicUnit.src2 = rs2 / decoded immediate.
-                   LogicUnit.opSel = DecodedFunct3.
-    Output Route : resVal = LogicUnit.res32 -> Register File rd; rd.tag = False.
+    Input Preproc: LogicUnit_src1 = rs1; LogicUnit_src2 = rs2 / decoded immediate.
+                   LogicUnit_opSel = DecodedFunct3.
+    Output Route : resVal = LogicUnit_res32 -> Register File rd; rd.tag = False.
 
 -------------------------------------------------------------------------------
 GROUP 11: DIRECT CAPABILITY FIELD EXTRACTION (EXECUTE UNIT: DIRECT BUS)
@@ -640,9 +639,9 @@ GROUP 11: DIRECT CAPABILITY FIELD EXTRACTION (EXECUTE UNIT: DIRECT BUS)
 GROUP 12: CAPABILITY LENGTH CALCULATION (EXECUTE UNIT: MainAdder)
 -------------------------------------------------------------------------------
 * CGetLen rd, cs1
-    Input Preproc: MainAdder.src1 = cs1.top; MainAdder.src2 = cs1.base.
-                   MainAdder.subEnable = True (Compute Top - Base).
-    Output Route : resVal = MainAdder.res32 -> rd; force rd.tag = False.
+    Input Preproc: MainAdder_src1 = cs1.top; MainAdder_src2 = cs1.base.
+                   MainAdder_subEnable = True (Compute Top - Base).
+    Output Route : resVal = MainAdder_res32 -> rd; force rd.tag = False.
 
 -------------------------------------------------------------------------------
 GROUP 13: CAPABILITY POINTER ARITHMETIC & REPRESENTABILITY (EXECUTE UNIT: MainAdder + TopBoundsCheck + BaseBoundsCheck)
@@ -650,14 +649,14 @@ GROUP 13: CAPABILITY POINTER ARITHMETIC & REPRESENTABILITY (EXECUTE UNIT: MainAd
 * CIncAddr cd, cs1, rs2
 * CIncAddrImm cd, cs1, simm12
     Input Preproc:
-      - MainAdder       : MainAdder.src1 = SignExt(cs1.addr); MainAdder.src2 = SignExt(rs2 / 12-bit immediate).
-      - TopBoundsCheck  : inpAddr = MainAdder.sum; limit = cs1.top_rep (cs1.base + 2^(cs1.E + 9));
+      - MainAdder       : MainAdder_src1 = SignExt(cs1.addr); MainAdder_src2 = SignExt(rs2 / 12-bit immediate).
+      - TopBoundsCheck  : inpAddr = MainAdder_sum; limit = cs1.top_rep (cs1.base + 2^(cs1.E + 9));
                           isInclusive = False.
-      - BaseBoundsCheck : inpAddr = MainAdder.sum; base = cs1.base.
+      - BaseBoundsCheck : inpAddr = MainAdder_sum; base = cs1.base.
     Output Route :
       - cd.ecap = cs1.ecap (preserve source expanded capability struct).
-      - cd.addr = MainAdder.res32.
-      - cd.tag  = cs1.tag & TopBoundsCheck.topValid & BaseBoundsCheck.baseValid.
+      - cd.addr = MainAdder_res32.
+      - cd.tag  = cs1.tag & TopBoundsCheck_topValid & BaseBoundsCheck_baseValid.
 
 -------------------------------------------------------------------------------
 GROUP 14: CAPABILITY DIRECT ADDRESS SUBSTITUTION (EXECUTE UNIT: DIRECT BUS + TopBoundsCheck + BaseBoundsCheck)
@@ -671,7 +670,7 @@ GROUP 14: CAPABILITY DIRECT ADDRESS SUBSTITUTION (EXECUTE UNIT: DIRECT BUS + Top
     Output Route :
       - cd.ecap = cs1.ecap (preserve source expanded capability struct).
       - cd.addr = rs2.
-      - cd.tag  = cs1.tag & TopBoundsCheck.topValid & BaseBoundsCheck.baseValid.
+      - cd.tag  = cs1.tag & TopBoundsCheck_topValid & BaseBoundsCheck_baseValid.
 
 -------------------------------------------------------------------------------
 GROUP 15: CAPABILITY BITWISE PERMISSION MASKING (EXECUTE UNIT: CAndPerm)
@@ -679,9 +678,9 @@ GROUP 15: CAPABILITY BITWISE PERMISSION MASKING (EXECUTE UNIT: CAndPerm)
 * CAndPerm cd, cs1, rs2
     Input Preproc: Route target capability cs1 and raw register rs2 into CAndPerm.
     Output Route :
-      - cd.ecap = CAndPerm.res.ecap.
+      - cd.ecap = CAndPerm_res.ecap.
       - cd.addr = cs1.addr.
-      - cd.tag  = CAndPerm.res.tag.
+      - cd.tag  = CAndPerm_res.tag.
 
 -------------------------------------------------------------------------------
 GROUP 16: CAPABILITY TAG CLEARING (EXECUTE UNIT: DIRECT BUS)
@@ -703,9 +702,9 @@ GROUP 17: CAPABILITY SEALING & UNSEALING (EXECUTE UNIT: TopBoundsCheck + BaseBou
       - BaseBoundsCheck : inpAddr = cs2.addr (CSeal) or cs1.otype (CUnseal); base = cs2.base.
       - SealerUnsealer  : Route isUnseal flag, boundsValid (topValid & baseValid), cs1, and cs2.
     Output Route :
-      - cd.ecap = SealerUnsealer.res.ecap.
+      - cd.ecap = SealerUnsealer_res.ecap.
       - cd.addr = cs1.addr.
-      - cd.tag  = SealerUnsealer.res.tag.
+      - cd.tag  = SealerUnsealer_res.tag.
 
 -------------------------------------------------------------------------------
 GROUP 18: CAPABILITY BOUNDS COMPRESSION RECOMPUTATION (EXECUTE UNIT: BoundsCalc)
@@ -716,30 +715,30 @@ GROUP 18: CAPABILITY BOUNDS COMPRESSION RECOMPUTATION (EXECUTE UNIT: BoundsCalc)
 * CSetBoundsImm cd, cs1, simm12
     Input Preproc: Route source capability cs1 and length rs2 / decoded immediate.
     Output Route :
-      - cd.ecap = BoundsCalc.newCap (recomputed expanded capability struct).
+      - cd.ecap = BoundsCalc_newCap (recomputed expanded capability struct).
       - cd.addr = cs1.addr.
       - cd.tag  = cs1.tag & ~cs1.isSeal & isValidBounds & (isExact | ~isCSetBoundsExact).
 
 * CRAM rd, rs1
     Input Preproc: Route source capability rs1 and requested length.
-    Output Route : resVal = BoundsCalc.resMask -> integer register rd; rd.tag = False.
+    Output Route : resVal = BoundsCalc_resMask -> integer register rd; rd.tag = False.
 
 * CRRL rd, rs1
     Input Preproc: Route source capability rs1 and requested length.
-    Output Route : resVal = BoundsCalc.resLen -> integer register rd; rd.tag = False.
+    Output Route : resVal = BoundsCalc_resLen -> integer register rd; rd.tag = False.
 
 -------------------------------------------------------------------------------
 GROUP 19: CAPABILITY DIFFS & COMPARISONS (EXECUTE UNIT: MainAdder + Comparator + Bounds Comparators)
 -------------------------------------------------------------------------------
 * CSub rd, cs1, cs2
-    Input Preproc: MainAdder.src1 = cs1.addr; MainAdder.src2 = cs2.addr.
-                   MainAdder.subEnable = True.
-    Output Route : resVal = MainAdder.res32 -> integer register rd.
+    Input Preproc: MainAdder_src1 = cs1.addr; MainAdder_src2 = cs2.addr.
+                   MainAdder_subEnable = True.
+    Output Route : resVal = MainAdder_res32 -> integer register rd.
 
 * CSetEqual rd, cs1, cs2
     Input Preproc: Route cs1.addr and cs2.addr to Comparator.
                    Assert checkLtGe = False; invert = False; isUnsigned = True.
-    Output Route : resVal = ZeroExtend(32, Comparator.resVal & (cs1.cap == cs2.cap)) -> rd.
+    Output Route : resVal = ZeroExtend(32, Comparator_resVal & (cs1.cap == cs2.cap)) -> rd.
 
 * CTestSubset rd, cs1, cs2
     Input Preproc:
@@ -767,10 +766,10 @@ GROUP 21: SYSTEM CSRs & SPECIAL CAPABILITY MOVES (EXECUTE UNIT: DIRECT BUS)
 * CSpecialRw cd, cSpecial, cs1
     Decode-Stage Fault Trigger: System Register Violation (SrViolation) if !PCC.perms.AccessSystemRegisters
                                 (trapped combinationally prior to Execute dispatch).
-    Input Preproc: Route CSR / SCR via Direct Bus. Route cs1 -> ScrSanitizer.inpCap.
+    Input Preproc: Route CSR / SCR via Direct Bus. Route cs1 -> ScrSanitizer_inpCap.
     Output Route :
       - Old CSR / SCR -> rd / cd.
-      - New SCR committed from ScrSanitizer.outCap (tag cleared if not a good MEPCC/MTCC capability).
+      - New SCR committed from ScrSanitizer_outCap (tag cleared if not a good MEPCC/MTCC capability).
       - Exception gating takes strict priority over state commits.
 
 -------------------------------------------------------------------------------
@@ -869,12 +868,12 @@ Decoder emits these explicit multiplexer select and enablement bundles:
    * isSigned    : { True = Signed, False = Unsigned }
 
 7. Ctrl_TopCheck
-   * sel_inpAddr : { MainAdder.sum, SignExtRs2, Cs1Addr, Cs1Otype, Cs2Addr, Cs2Top, PcAdder }
+   * sel_inpAddr : { MainAdder_sum, SignExtRs2, Cs1Addr, Cs1Otype, Cs2Addr, Cs2Top, PcAdder }
    * sel_limit   : { TopRep, Cs2Top, Cs1Top, PccTop }
    * isInclusive : { True = Less Or Equal, False = Strict Less Than }
 
 8. Ctrl_BaseCheck
-   * sel_inpAddr : { MainAdder.sum, SignExtRs2, Cs1Addr, Cs1Otype, Cs2Addr, Cs2Base, PcAdder }
+   * sel_inpAddr : { MainAdder_sum, SignExtRs2, Cs1Addr, Cs1Otype, Cs2Addr, Cs2Base, PcAdder }
    * sel_base    : { AuthBase, Cs1Base, PccBase }
 
 9. Ctrl_BoundsCalc
@@ -925,8 +924,8 @@ Centralized One-Hot Commit Routing Architecture:
       reg_addr_rs2                (* CSetAddr *)
       reg_addr_cs1Addr            (* CClearTag, CSetBounds* *)
       reg_DirectCs1               (* CMove -> cs1.addr *)
-      reg_CAndPerm                (* CAndPerm -> CAndPerm.res.addr *)
-      reg_Sealer                  (* CSeal, CUnseal -> SealerUnsealer.res.addr *)
+      reg_CAndPerm                (* CAndPerm -> CAndPerm_res.addr *)
+      reg_Sealer                  (* CSeal, CUnseal -> SealerUnsealer_res.addr *)
       reg_addr_csrRead            (* CSRRS, CSRRC, CSRRW *)
       reg_ScrRead                 (* CSpecialRw -> scrReadData.addr *)
       reg_addr_capField           (* CGetPerm, CGetTag, etc. *)
@@ -938,9 +937,9 @@ Centralized One-Hot Commit Routing Architecture:
       reg_ecap_cs1                (* AUICGP, CIncAddr, CSetAddr, CClearTag *)
       reg_ecap_Pcc                (* CJAL, CJALR -> return sentry capability metadata *)
       reg_DirectCs1               (* CMove -> cs1.ecap *)
-      reg_CAndPerm                (* CAndPerm -> CAndPerm.res.ecap *)
-      reg_Sealer                  (* CSeal, CUnseal -> SealerUnsealer.res.ecap *)
-      reg_ecap_BoundsCalc         (* CSetBounds* -> BoundsCalc.newCap *)
+      reg_CAndPerm                (* CAndPerm -> CAndPerm_res.ecap *)
+      reg_Sealer                  (* CSeal, CUnseal -> SealerUnsealer_res.ecap *)
+      reg_ecap_BoundsCalc         (* CSetBounds* -> BoundsCalc_newCap *)
       reg_ScrRead                 (* CSpecialRw -> scrReadData.ecap *)
 
   * reg_tag MUX Selects (1-bit Capability Tag):
@@ -948,8 +947,8 @@ Centralized One-Hot Commit Routing Architecture:
       reg_tag_cs1BoundsValid      (* AUICGP, CIncAddr, CSetAddr -> cs1.tag & boundsCheck *)
       reg_tag_Pcc                 (* CJAL, CJALR -> return sentry tag (gated by permitExecute) *)
       reg_DirectCs1               (* CMove -> cs1.tag *)
-      reg_CAndPerm                (* CAndPerm -> CAndPerm.res.tag *)
-      reg_Sealer                  (* CSeal, CUnseal -> SealerUnsealer.res.tag *)
+      reg_CAndPerm                (* CAndPerm -> CAndPerm_res.tag *)
+      reg_Sealer                  (* CSeal, CUnseal -> SealerUnsealer_res.tag *)
       reg_tag_BoundsCalc          (* CSetBounds* -> validBounds *)
       reg_ScrRead                 (* CSpecialRw -> scrReadData.tag *)
 
@@ -970,7 +969,7 @@ Centralized One-Hot Commit Routing Architecture:
 
   * pcc_tag MUX Selects (Program Counter Capability Tag):
       pcc_tag_Current             (* Sequential ops keep current PCC.tag *)
-      pcc_tag_TargetPccTag        (* Control flow ops (Branch, CJAL, CJALR) route TargetPccTag.nextTag *)
+      pcc_tag_TargetPccTag        (* Control flow ops (Branch, CJAL, CJALR) route TargetPccTag_nextTag *)
       pcc_Mepcc                   (* MRET -> MEPCC.tag *)
 
 -------------------------------------------------------------------------------
@@ -1003,7 +1002,7 @@ Silicon Verdict (Go Dedicated Magnitude Comparators):
   magnitude comparator does not compute difference sums and can be synthesized as a
   shallow borrow-lookahead tree (~120 gates, ~6 to 8 gate levels).
   
-  Tapping MainAdder.sum directly into dedicated lookahead comparators allows bounds
+  Tapping MainAdder_sum directly into dedicated lookahead comparators allows bounds
   validation to resolve in parallel ~60ps after MainAdder finishes, keeping PcAdder
   and MemAdder shallow and ensuring zero critical path timing loops.
 
@@ -1078,7 +1077,7 @@ Analysis of ALU LogicUnit Sharing:
   Multiplexing csrCurr and operand csrIn onto Execute Unit 5 (`LogicUnit`) to perform
   bitwise CSRRS (OR) and CSRRC (AND-NOT) math saves ~32 gates of duplicate bitwise
   logic. However, it introduces wide 32-bit multiplexers onto the hot ALU execution
-  inputs (`LogicUnit.src1` and `LogicUnit.src2`), degrading core integer Fmax.
+  inputs (`LogicUnit_src1` and `LogicUnit_src2`), degrading core integer Fmax.
   Furthermore, routing control-state registers through the main ALU interconnect
   creates severe physical routing congestion across the architectural register file.
 
@@ -1103,7 +1102,7 @@ Timing Bottleneck of Sharing Arithmetic Subtractors:
        slowing down pointer arithmetic lookahead calculation.
     2. Late PC Multiplexer Switching: For branch instructions, the branch outcome
        flag `take` controls the control-flow PC multiplexer selecting between
-       `nextPC = take ? PcAdder.res32 : MemAdder.res32`. Chaining carry-propagate
+       `nextPC = take ? PcAdder_res32 : MemAdder_res32`. Chaining carry-propagate
        subtraction (~35 gate levels, ~300ps+) delays the resolution of `take`,
        forcing the PC multiplexer to switch dangerously close to clock setup time.
 
