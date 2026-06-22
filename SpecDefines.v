@@ -65,6 +65,8 @@ Definition FullECapWithTag := STRUCT_TYPE { "tag" :: Bool;
                                             "addr" :: Addr }.
 
 Definition isSealed ty (ecap: ty ECap) : Expr ty Bool := isNotZero (##ecap`"oType").
+Definition isSentry ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
+  And [ Sge #oType $1; Sle #oType $5 ].
 
 Definition fixPerms ty (perms: ty CapPerms) : Expr ty CapPerms :=
   (ITE (And [##perms`"EX"; ##perms`"LD"; ##perms`"MC"])
