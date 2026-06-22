@@ -33,6 +33,7 @@ Definition LgXlen   := Eval compute in Z.log2_up Xlen.
 Definition Data     := Eval compute in Bit Xlen.
 Definition AddrSz   := Eval compute in Xlen.
 Definition Addr     := Eval compute in Bit AddrSz.
+Definition Inst     := Eval compute in Bit 32.
 Definition LgAddrSz := Eval compute in Z.log2_up AddrSz.
 Definition ExpSz    := Eval compute in LgAddrSz.
 Definition NumBytesXlen := Eval compute in (Xlen / 8).
@@ -52,21 +53,6 @@ Definition CapPerms := STRUCT_TYPE { "U0" :: Bool ;
                                      "SD" :: Bool ;
                                      "LG" :: Bool ;
                                      "GL" :: Bool }.
-
-Definition ECap := STRUCT_TYPE { "R"     :: Bool;
-                                 "perms" :: CapPerms;
-                                 "oType" :: Bit CapOTypeSz;
-                                 "E"     :: Bit ExpSz;
-                                 "top"   :: Bit (AddrSz + 1);
-                                 "base"  :: Bit (AddrSz + 1) }.
-
-Definition FullECapWithTag := STRUCT_TYPE { "tag" :: Bool;
-                                            "ecap" :: ECap;
-                                            "addr" :: Addr }.
-
-Definition isSealed ty (ecap: ty ECap) : Expr ty Bool := isNotZero (##ecap`"oType").
-Definition isSentry ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
-  And [ Sge #oType $1; Sle #oType $5 ].
 
 Definition fixPerms ty (perms: ty CapPerms) : Expr ty CapPerms :=
   (ITE (And [##perms`"EX"; ##perms`"LD"; ##perms`"MC"])
@@ -123,3 +109,32 @@ Definition fixPerms ty (perms: ty CapPerms) : Expr ty CapPerms :=
                  `{ "LM" <- ConstTBool false }
                  `{ "SD" <- ConstTBool false }
                  `{ "LG" <- ConstTBool false })))))).
+
+Definition ECap := STRUCT_TYPE { "R"     :: Bool;
+                                 "perms" :: CapPerms;
+                                 "oType" :: Bit CapOTypeSz;
+                                 "E"     :: Bit ExpSz;
+                                 "top"   :: Bit (AddrSz + 1);
+                                 "base"  :: Bit (AddrSz + 1) }.
+
+Definition FullECapWithTag := STRUCT_TYPE { "tag" :: Bool;
+                                            "ecap" :: ECap;
+                                            "addr" :: Addr }.
+
+Definition CallSentryIh : Z := 1.
+Definition CallSentryId : Z := 2.
+Definition CallSentryIe : Z := 3.
+Definition RetSentryId  : Z := 4.
+Definition RetSentryIe  : Z := 5.
+
+Definition isSealed ty (ecap: ty ECap) : Expr ty Bool := isNotZero (##ecap`"oType").
+Definition isCallSentry ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
+  Or [ Eq #oType $CallSentryIh; Eq #oType $CallSentryId; Eq #oType $CallSentryIe ].
+Definition isRetSentry ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
+  Or [ Eq #oType $RetSentryId; Eq #oType $RetSentryIe ].
+Definition isSentry ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
+  Or [ isCallSentry oType; isRetSentry oType ].
+Definition isSentryIe ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
+  Or [ Eq #oType $CallSentryIe; Eq #oType $RetSentryIe ].
+Definition isSentryId ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
+  Or [ Eq #oType $CallSentryId; Eq #oType $RetSentryId ].

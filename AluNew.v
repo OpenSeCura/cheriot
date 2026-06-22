@@ -58,20 +58,20 @@ HARDWARE ALLOCATION STRATEGY:
 To optimize area, timing ($F_{max}$), and power, the datapath allocates exactly 
 three physical 33-bit carry-propagate adders alongside dedicated magnitude 
 comparators and specialized capability blocks:
-  1. MainAdder       : Primary datapath arithmetic, branch flags, pointer sums.
-  2. PcAdder         : Dedicated control-flow targets (Branch, JAL, JALR).
-  3. MemAdder        : Dedicated memory effective addresses and return link PCs.
-  4. Shifter         : Dedicated 32-bit integer shifter strictly for RV32I shifts.
-  5. LogicUnit       : Dedicated 32-bit engine strictly for RV32I boolean logic.
-  6. Comparator      : Dedicated 32-bit lookahead comparator for SLT*, branch conditions, and equality.
-  7. TopBoundsCheck  : Dedicated lookahead comparator verifying pointer <= top.
-  8. BaseBoundsCheck : Dedicated lookahead comparator verifying pointer >= base.
-  9. BoundsCalc      : Self-contained compression engine for CSetBounds, CRAM, CRRL.
-  10. CAndPerm       : Dedicated local bitwise unit for CAndPerm masking and legalization.
-  11. SealerUnsealer : Dedicated local authorization and object-type tagging unit for CSeal/CUnseal.
-  12. ScrSanitizer   : Dedicated local capability sanitization unit for special scratch registers.
-  13. TargetPccTag   : Dedicated control-flow target representability and tag validation unit.
-  14. MultiOp        : Dedicated memory effective address and multicycle system interaction unit.
+  1. MainAdder        : Primary datapath arithmetic, branch flags, pointer sums.
+  2. PcAdder          : Dedicated control-flow targets (Branch, JAL, JALR).
+  3. MemAdder         : Dedicated memory effective addresses and return link PCs.
+  4. Shifter          : Dedicated 32-bit integer shifter strictly for RV32I shifts.
+  5. LogicUnit        : Dedicated 32-bit engine strictly for RV32I boolean logic.
+  6. Comparator       : Dedicated 32-bit lookahead comparator for SLT*, branch conditions, and equality.
+  7. TopBoundsCheck   : Dedicated lookahead comparator verifying pointer <= top.
+  8. BaseBoundsCheck  : Dedicated lookahead comparator verifying pointer >= base.
+  9. BoundsCalc       : Self-contained compression engine for CSetBounds, CRAM, CRRL.
+  10. CAndPerm        : Dedicated local bitwise unit for CAndPerm masking and legalization.
+  11. SealerUnsealer  : Dedicated local authorization and object-type tagging unit for CSeal/CUnseal.
+  12. ScrSanitizer    : Dedicated local capability sanitization unit for special scratch registers.
+  13. BranchJalPccTag : Dedicated control-flow target representability and tag validation unit.
+  14. MultiOp         : Dedicated memory effective address and multicycle system interaction unit.
 
 ===============================================================================
 2. PHYSICAL HARDWARE EXECUTE UNIT INVENTORY & SIGNAL INTERFACE
@@ -433,22 +433,22 @@ Purpose: Dedicated local hardware sanitizing capability writes into special capa
     * Group 21 (CSpecialRw): Sanitized capability record outCap commits to destination SCR register file.
 
 -------------------------------------------------------------------------------
-EXECUTE UNIT 13: TargetPccTag (Dedicated Next PCC Tag & Representability Verification Unit)
+EXECUTE UNIT 13: BranchJalPccTag (Dedicated Next PCC Tag & Representability Verification Unit)
 -------------------------------------------------------------------------------
 Purpose: Verifies target PC representability for branches (`BEQ`, `BLT`, etc.) and jumps (`CJAL`, `CJALR`),
          validating capability tag, execution permissions, and sentry object-type constraints before committing.
 
   [Inputs]
-    * TargetPccTag_isBranch    : Bool            (Asserted for conditional branch instructions)
-    * TargetPccTag_isCjal      : Bool            (Asserted for direct jump CJAL instructions)
-    * TargetPccTag_isCjalr     : Bool            (Asserted for indirect jump CJALR instructions)
-    * TargetPccTag_branchTaken : Bool            (Branch condition evaluation result from Comparator)
-    * TargetPccTag_topValid    : Bool            (Output from TopBoundsCheck evaluating target PC <= top)
-    * TargetPccTag_baseValid   : Bool            (Output from BaseBoundsCheck evaluating target PC >= base)
-    * TargetPccTag_cs1         : FullECapWithTag (Candidate target capability operand cs1 for CJALR)
+    * BranchJalPccTag_isBranch    : Bool            (Asserted for conditional branch instructions)
+    * BranchJalPccTag_isCjal      : Bool            (Asserted for direct jump CJAL instructions)
+    * BranchJalPccTag_isCjalr     : Bool            (Asserted for indirect jump CJALR instructions)
+    * BranchJalPccTag_branchTaken : Bool            (Branch condition evaluation result from Comparator)
+    * BranchJalPccTag_topValid    : Bool            (Output from TopBoundsCheck evaluating target PC <= top)
+    * BranchJalPccTag_baseValid   : Bool            (Output from BaseBoundsCheck evaluating target PC >= base)
+    * BranchJalPccTag_cs1         : FullECapWithTag (Candidate target capability operand cs1 for CJALR)
 
   [Outputs]
-    * TargetPccTag_nextTag     : Bool            (Computed valid tag for next instruction PC capability)
+    * BranchJalPccTag_nextTag     : Bool            (Computed valid tag for next instruction PC capability)
 
   [Input Mapping]
     * Group 6 (Branches), Group 7 (CJAL, CJALR): Appropriate opcode decode flags assert isBranch/isCjal/isCjalr;
@@ -528,7 +528,7 @@ GROUP 5: INTEGER SET LESS THAN COMPARISONS (EXECUTE UNIT: Comparator)
     Output Route : resVal = ZeroExtend(32, Comparator_resVal) -> rd; force rd.tag = False.
 
 -------------------------------------------------------------------------------
-GROUP 6: BRANCH CONDITION EVALUATION (EXECUTE UNIT: Comparator + PcAdder + MemAdder + Bounds Comparators + TargetPccTag)
+GROUP 6: BRANCH CONDITION EVALUATION (EXECUTE UNIT: Comparator + PcAdder + MemAdder + Bounds Comparators + BranchJalPccTag)
 -------------------------------------------------------------------------------
 * BEQ rs1, rs2, bimm12
 * BNE rs1, rs2, bimm12
@@ -548,7 +548,7 @@ GROUP 6: BRANCH CONDITION EVALUATION (EXECUTE UNIT: Comparator + PcAdder + MemAd
       - nextPC = take ? PcAdder_res (LSB hardwired to 0) : MemAdder_res. (No write to register file).
 
 -------------------------------------------------------------------------------
-GROUP 7: CONTROL FLOW JUMP TARGET CALCULATION (EXECUTE UNIT: PcAdder + MemAdder + Bounds Comparators + TargetPccTag)
+GROUP 7: CONTROL FLOW JUMP TARGET CALCULATION (EXECUTE UNIT: PcAdder + MemAdder + Bounds Comparators + BranchJalPccTag)
 -------------------------------------------------------------------------------
 * CJAL cd, jimm20
     Implicit Read : PCC (entire Program Counter Capability record to construct return sentry PCC + 2 and jump target).
@@ -891,7 +891,7 @@ Decoder emits these explicit multiplexer select and enablement bundles:
 12. Ctrl_ScrSanitizer
     * enable     : { True = Enable ScrSanitizer, False = Disable }
 
-13. Ctrl_TargetPccTag
+13. Ctrl_BranchJalPccTag
     * isBranch   : { True = Branch Mode, False = Disable }
     * isCjal     : { True = CJAL Mode, False = Disable }
     * isCjalr    : { True = CJALR Mode, False = Disable }
@@ -970,7 +970,7 @@ Centralized One-Hot Commit Routing Architecture:
 
   * pcc_tag MUX Selects (Program Counter Capability Tag):
       pcc_tag_Current             (* Sequential ops keep current PCC.tag *)
-      pcc_tag_TargetPccTag        (* Control flow ops (Branch, CJAL, CJALR) route TargetPccTag_nextTag *)
+      pcc_tag_BranchJalPccTag        (* Control flow ops (Branch, CJAL, CJALR) route BranchJalPccTag_nextTag *)
       pcc_Mepcc                   (* MRET -> MEPCC.tag *)
 
 -------------------------------------------------------------------------------
@@ -1457,7 +1457,7 @@ Section ExecutionUnits.
     @RetE _ FullECapWithTag (STRUCT { "tag" ::= #outTag; "ecap" ::= #ecap; "addr" ::= #addr }).
 
   (* TODO: return updated interrupt status; also needs to route current interrupt status *)
-  Definition TargetPccTag (isBranch isCjal isCjalr branchTaken topValid baseValid : ty Bool)
+  Definition BranchJalPccTag (isBranch isCjal isCjalr branchTaken topValid baseValid : ty Bool)
                           (cs1 : ty FullECapWithTag) : LetExpr ty Bool :=
     LetE cs1Tag : Bool <- ##cs1`"tag" ;
     LetE cs1ECap : ECap <- ##cs1`"ecap" ;
@@ -1578,10 +1578,10 @@ Definition AluControl := STRUCT_TYPE {
   (* 12. Ctrl_ScrSanitizer *)
   "ScrSanitizer_enable" :: Bool ;
 
-  (* 13. Ctrl_TargetPccTag *)
-  "TargetPccTag_isBranch" :: Bool ;
-  "TargetPccTag_isCjal" :: Bool ;
-  "TargetPccTag_isCjalr" :: Bool ;
+  (* 13. Ctrl_BranchJalPccTag *)
+  "BranchJalPccTag_isBranch" :: Bool ;
+  "BranchJalPccTag_isCjal" :: Bool ;
+  "BranchJalPccTag_isCjalr" :: Bool ;
 
   (* 14. Ctrl_MultiOp *)
   "MultiOp_kind" :: Option Bool ; (* None = None, Some False = Load, Some True = Store *)
@@ -1645,7 +1645,7 @@ Definition WbControl := STRUCT_TYPE {
 
   (* pcc_tag MUX Selects *)
   "pcc_tag_Current" :: Bool ;
-  "pcc_tag_TargetPccTag" :: Bool ;
+  "pcc_tag_BranchJalPccTag" :: Bool ;
   (* pcc_Mepcc *)
 
   (* 3. SYSTEM & SPECIAL REGISTERS (specialRegs) *)
@@ -1673,7 +1673,8 @@ Section AluDatapath.
   Variable pccECap : ty ECap.
   Variable pccAddr : ty Data.
   Variable src1 src2 : ty FullECapWithTag.
-  Variable inst : ty Data.
+  Variable inst : ty Inst.
+  Variable interruptStatus : ty Bool.
   Variable aluCtrl : ty AluControl.
   Variable wbCtrl : ty WbControl.
 
@@ -1784,10 +1785,10 @@ Section AluDatapath.
 
     LETE BaseBoundsCheck_baseValid : Bool <- BaseBoundsCheck BaseBoundsCheck_inpAddr BaseBoundsCheck_base ;
 
-    LetE TargetPccTag_isBranch <- ##aluCtrl`"TargetPccTag_isBranch" ;
-    LetE TargetPccTag_isCjal   <- ##aluCtrl`"TargetPccTag_isCjal" ;
-    LetE TargetPccTag_isCjalr  <- ##aluCtrl`"TargetPccTag_isCjalr" ;
-    LETE TargetPccTag_nextTag : Bool <- TargetPccTag TargetPccTag_isBranch TargetPccTag_isCjal TargetPccTag_isCjalr Comparator_resVal TopBoundsCheck_topValid BaseBoundsCheck_baseValid src1 ;
+    LetE BranchJalPccTag_isBranch <- ##aluCtrl`"BranchJalPccTag_isBranch" ;
+    LetE BranchJalPccTag_isCjal   <- ##aluCtrl`"BranchJalPccTag_isCjal" ;
+    LetE BranchJalPccTag_isCjalr  <- ##aluCtrl`"BranchJalPccTag_isCjalr" ;
+    LETE BranchJalPccTag_nextTag : Bool <- BranchJalPccTag BranchJalPccTag_isBranch BranchJalPccTag_isCjal BranchJalPccTag_isCjalr Comparator_resVal TopBoundsCheck_topValid BaseBoundsCheck_baseValid src1 ;
 
     LetE Shifter_amt : Bit LgXlen <- ITE ##aluCtrl`"Shifter_amt_Rs2Low_shamt" #rs2Low #shamt ;
     LETE Shifter_res : Data <- Shifter src1Addr Shifter_amt shiftRight shiftArith ;
@@ -1846,7 +1847,8 @@ Section AluDatapath.
 
     LetE regTag : Bool <-
       Or [ And [ ##wbCtrl`"reg_tag_False" ; #constFalse ] ;
-           And [ ##wbCtrl`"reg_tag_cs1BoundsValid" ; #src1Tag; And [#TopBoundsCheck_topValid; #BaseBoundsCheck_baseValid] ] ;
+           And [ ##wbCtrl`"reg_tag_cs1BoundsValid" ; #src1Tag;
+                 And [#TopBoundsCheck_topValid; #BaseBoundsCheck_baseValid] ] ;
            ##wbCtrl`"reg_tag_Pcc" ;
            And [ ##wbCtrl`"reg_DirectCs1" ; #src1Tag ] ;
            And [ ##wbCtrl`"reg_CAndPerm" ; ##CAndPerm_res`"tag" ] ;
@@ -1872,7 +1874,7 @@ Section AluDatapath.
 
     LetE nextPccTag : Bool <-
       Or [ ##wbCtrl`"pcc_tag_Current" ;
-           And [ ##wbCtrl`"pcc_tag_TargetPccTag" ; #TargetPccTag_nextTag ] ;
+           And [ ##wbCtrl`"pcc_tag_BranchJalPccTag" ; #BranchJalPccTag_nextTag ] ;
            And [ ##wbCtrl`"pcc_Mepcc" ; #src2Tag ] ] ;
 
     LetE out_pcc : FullECapWithTag <- STRUCT { "tag" ::= #nextPccTag;
