@@ -814,7 +814,7 @@ Decoder emits these explicit multiplexer select and enablement bundles:
 1. Ctrl_MainAdder
    * sel_src1    : { Rs1, Cs1Addr, Cs1Top, CgpAddr, PccAddr, Zero }
    * sel_src2    : { Rs2, simm12, uimm20_11, Cs1Base, Cs2Addr }
-   * subEnable   : { False = Add, True = Subtract }
+   * subEnable   : { True = Subtract, False = Add }
 
 2. Ctrl_PcAdder
    * sel_src1    : { PC, Rs1Addr }
@@ -827,8 +827,8 @@ Decoder emits these explicit multiplexer select and enablement bundles:
 4. Ctrl_Shifter
    * sel_val     : { Rs1 }
    * sel_amt     : { Rs2Low5, shamt }
-   * isRight     : { False = Shift Left, True = Shift Right }
-   * isArith     : { False = Logical, True = Arithmetic }
+   * isRight     : { True = Shift Right, False = Shift Left }
+   * isArith     : { True = Arithmetic, False = Logical }
 
 5. Ctrl_Logic
    * sel_src1    : { Rs1 }
@@ -838,12 +838,12 @@ Decoder emits these explicit multiplexer select and enablement bundles:
 6. Ctrl_Comparator
    * sel_src1    : { Rs1, Cs1Addr }
    * sel_src2    : { Rs2, simm12, Cs2Addr }
-   * isSigned    : { False = Unsigned, True = Signed }
+   * isSigned    : { True = Signed, False = Unsigned }
 
 7. Ctrl_TopCheck
    * sel_inpAddr : { SumMainAdder, SignExtRs2, Cs1Addr, Cs1Otype, Cs2Addr, Cs2Top }
    * sel_limit   : { TopRep, Cs2Top, Cs1Top }
-   * isInclusive : { False = Strict Less Than, True = Less Or Equal }
+   * isInclusive : { True = Less Or Equal, False = Strict Less Than }
 
 8. Ctrl_BaseCheck
    * sel_inpAddr : { SumMainAdder, SignExtRs2, Cs1Addr, Cs1Otype, Cs2Addr, Cs2Base }
@@ -855,16 +855,16 @@ Decoder emits these explicit multiplexer select and enablement bundles:
    * isRoundDown : Bool
 
 10. Ctrl_CAndPerm
-    * enable     : { False = Disable, True = Enable CAndPerm }
+    * enable     : { True = Enable CAndPerm, False = Disable }
 
 11. Ctrl_SealerUnsealer
-    * isUnseal   : { False = CSeal mode, True = CUnseal mode }
+    * isUnseal   : { True = CUnseal mode, False = CSeal mode }
 
 12. Ctrl_ScrSanitizer
-    * enable     : { False = Disable, True = Enable ScrSanitizer }
+    * enable     : { True = Enable ScrSanitizer, False = Disable }
 
 13. Ctrl_MultiOp
-    * multiOp    : Option Bool (* None = No MultiOp, Some False = Load, Some True = Store *)
+    * multiOp    : Option Bool (* None = No MultiOp, Some True = Store, Some False = Load *)
     * memOpSz    : { Byte, Half, Word, Cap } (* Encoding is Lg(NumBytesXlen): 0=1B, 1=2B, 2=4B, 3=8B *)
 
 ===============================================================================
