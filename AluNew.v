@@ -781,7 +781,7 @@ Whenever normal instruction execution aborts due to a synchronous hardware fault
 (Tag, Seal, Bounds, Permission, Alignment violation) OR an explicit trap (ECALL, EBREAK):
   * Universal Trap Read : Hardware reads MTCC (Machine Trap Vector Root).
   * Universal Trap Write: PCC <- MTCC; MEPCC <- faulting PCC; mcause <- trap cause;
-                          mstatus (interrupt disposition commit); mtval <- fault info.
+                          mstatus (interrupt status commit); mtval <- fault info.
                           (Note: mePrevPcc is implicitly preserved upon trap to indicate the source of the jump
                            if this was a fetch fault).
 
