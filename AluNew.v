@@ -70,6 +70,9 @@ comparators and specialized capability blocks:
   9. BoundsCalc      : Self-contained compression engine for CSetBounds, CRAM, CRRL.
   10. CAndPerm       : Dedicated local bitwise unit for CAndPerm masking and legalization.
   11. SealerUnsealer : Dedicated local authorization and object-type tagging unit for CSeal/CUnseal.
+  12. ScrSanitizer   : Dedicated local capability sanitization unit for special scratch registers.
+  13. TargetPccTag   : Dedicated control-flow target representability and tag validation unit.
+  14. MultiOp        : Dedicated memory effective address and multicycle system interaction unit.
 
 ===============================================================================
 2. PHYSICAL HARDWARE EXECUTE UNIT INVENTORY & SIGNAL INTERFACE
@@ -430,7 +433,32 @@ Purpose: Dedicated local hardware sanitizing capability writes into special capa
     * Group 21 (CSpecialRw): Sanitized capability record outCap commits to destination SCR register file.
 
 -------------------------------------------------------------------------------
-EXECUTE UNIT 13: MultiOp (Dedicated Multicycle Memory & System Operation Unit)
+EXECUTE UNIT 13: TargetPccTag (Dedicated Next PCC Tag & Representability Verification Unit)
+-------------------------------------------------------------------------------
+Purpose: Verifies target PC representability for branches (`BEQ`, `BLT`, etc.) and jumps (`CJAL`, `CJALR`),
+         validating capability tag, execution permissions, and sentry object-type constraints before committing.
+
+  [Inputs]
+    * TargetPccTag.isBranch    : Bool            (Asserted for conditional branch instructions)
+    * TargetPccTag.isCjal      : Bool            (Asserted for direct jump CJAL instructions)
+    * TargetPccTag.isCjalr     : Bool            (Asserted for indirect jump CJALR instructions)
+    * TargetPccTag.branchTaken : Bool            (Branch condition evaluation result from Comparator)
+    * TargetPccTag.topValid    : Bool            (Output from TopBoundsCheck evaluating target PC <= top)
+    * TargetPccTag.baseValid   : Bool            (Output from BaseBoundsCheck evaluating target PC >= base)
+    * TargetPccTag.cs1         : FullECapWithTag (Candidate target capability operand cs1 for CJALR)
+
+  [Outputs]
+    * TargetPccTag.nextTag     : Bool            (Computed valid tag for next instruction PC capability)
+
+  [Input Mapping]
+    * Group 6 (Branches), Group 7 (CJAL, CJALR): Appropriate opcode decode flags assert isBranch/isCjal/isCjalr;
+      TopBoundsCheck and BaseBoundsCheck evaluate jump target PC address against PCC or cs1 bounds.
+
+  [Output Mapping]
+    * Group 6 (Branches), Group 7 (CJAL, CJALR): nextTag drives the pcc_tag commit routing multiplexer.
+
+-------------------------------------------------------------------------------
+EXECUTE UNIT 14: MultiOp (Dedicated Multicycle Memory & System Operation Unit)
 -------------------------------------------------------------------------------
 Purpose: Dedicated local hardware managing multicycle loads, stores, and system operations.
 
@@ -500,7 +528,7 @@ GROUP 5: INTEGER SET LESS THAN COMPARISONS (EXECUTE UNIT: Comparator)
     Output Route : resVal = ZeroExtend(32, Comparator.resVal) -> rd; force rd.tag = False.
 
 -------------------------------------------------------------------------------
-GROUP 6: BRANCH CONDITION EVALUATION (EXECUTE UNIT: Comparator + PcAdder + MemAdder)
+GROUP 6: BRANCH CONDITION EVALUATION (EXECUTE UNIT: Comparator + PcAdder + MemAdder + Bounds Comparators + TargetPccTag)
 -------------------------------------------------------------------------------
 * BEQ rs1, rs2, bimm12
 * BNE rs1, rs2, bimm12
@@ -520,7 +548,7 @@ GROUP 6: BRANCH CONDITION EVALUATION (EXECUTE UNIT: Comparator + PcAdder + MemAd
       - nextPC = take ? PcAdder.res32 (LSB hardwired to 0) : MemAdder.res32. (No write to register file).
 
 -------------------------------------------------------------------------------
-GROUP 7: CONTROL FLOW JUMP TARGET CALCULATION (EXECUTE UNIT: PcAdder + MemAdder)
+GROUP 7: CONTROL FLOW JUMP TARGET CALCULATION (EXECUTE UNIT: PcAdder + MemAdder + Bounds Comparators + TargetPccTag)
 -------------------------------------------------------------------------------
 * CJAL cd, jimm20
     Implicit Read : PCC (entire Program Counter Capability record to construct return sentry PCC + 2 and jump target).
@@ -841,18 +869,18 @@ Decoder emits these explicit multiplexer select and enablement bundles:
    * isSigned    : { True = Signed, False = Unsigned }
 
 7. Ctrl_TopCheck
-   * sel_inpAddr : { MainAdder.sum, SignExtRs2, Cs1Addr, Cs1Otype, Cs2Addr, Cs2Top }
-   * sel_limit   : { TopRep, Cs2Top, Cs1Top }
+   * sel_inpAddr : { MainAdder.sum, SignExtRs2, Cs1Addr, Cs1Otype, Cs2Addr, Cs2Top, PcAdder }
+   * sel_limit   : { TopRep, Cs2Top, Cs1Top, PccTop }
    * isInclusive : { True = Less Or Equal, False = Strict Less Than }
 
 8. Ctrl_BaseCheck
-   * sel_inpAddr : { MainAdder.sum, SignExtRs2, Cs1Addr, Cs1Otype, Cs2Addr, Cs2Base }
-   * sel_base    : { AuthBase, Cs1Base }
+   * sel_inpAddr : { MainAdder.sum, SignExtRs2, Cs1Addr, Cs1Otype, Cs2Addr, Cs2Base, PcAdder }
+   * sel_base    : { AuthBase, Cs1Base, PccBase }
 
 9. Ctrl_BoundsCalc
    * sel_base    : { Cs1Addr, Zero }
    * sel_length  : { Rs2, simm12, Rs1 }
-   * isRoundDown : Bool
+   * isRoundDown : { True = Round Down, False = Round Up / Exact }
 
 10. Ctrl_CAndPerm
     * enable     : { True = Enable CAndPerm, False = Disable }
@@ -863,7 +891,12 @@ Decoder emits these explicit multiplexer select and enablement bundles:
 12. Ctrl_ScrSanitizer
     * enable     : { True = Enable ScrSanitizer, False = Disable }
 
-13. Ctrl_MultiOp
+13. Ctrl_TargetPccTag
+    * isBranch   : { True = Branch Mode, False = Disable }
+    * isCjal     : { True = CJAL Mode, False = Disable }
+    * isCjalr    : { True = CJALR Mode, False = Disable }
+
+14. Ctrl_MultiOp
     * multiOp    : Option Bool (* None = No MultiOp, Some True = Store, Some False = Load *)
     * memOpSz    : { Byte, Half, Word, Cap } (* Encoding is Lg(NumBytesXlen): 0=1B, 1=2B, 2=4B, 3=8B *)
 
@@ -936,10 +969,8 @@ Centralized One-Hot Commit Routing Architecture:
       pcc_Mepcc                   (* MRET -> MEPCC.ecap *)
 
   * pcc_tag MUX Selects (Program Counter Capability Tag):
-      pcc_tag_Current             (* Sequential ops *)
-      pcc_Branch                  (* Branch -> cleared if target PC violates representability *)
-      pcc_CjalTarget              (* CJAL -> cleared if target PC violates representability *)
-      pcc_CjalrTarget             (* CJALR -> cleared if representability or permitExecute fails *)
+      pcc_tag_Current             (* Sequential ops keep current PCC.tag *)
+      pcc_tag_TargetPccTag        (* Control flow ops (Branch, CJAL, CJALR) route TargetPccTag.nextTag *)
       pcc_Mepcc                   (* MRET -> MEPCC.tag *)
 
 -------------------------------------------------------------------------------
@@ -1424,6 +1455,26 @@ Section ExecutionUnits.
     LetE condClear : Bool <- And [#enable; #invalid];
     LetE outTag : Bool <- And [ ##inpCap`"tag"; Not #condClear ] ;
     @RetE _ FullECapWithTag (STRUCT { "tag" ::= #outTag; "ecap" ::= #ecap; "addr" ::= #addr }).
+
+  (* TODO: return updated interrupt status; also needs to route current interrupt status *)
+  Definition TargetPccTag (isBranch isCjal isCjalr branchTaken topValid baseValid : ty Bool)
+                          (cs1 : ty FullECapWithTag) : LetExpr ty Bool :=
+    LetE cs1Tag : Bool <- ##cs1`"tag" ;
+    LetE cs1ECap : ECap <- ##cs1`"ecap" ;
+    LetE cs1PermEx : Bool <- ##cs1ECap`"perms"`"EX" ;
+    LetE notSealed : Bool <- Not (isSealed cs1ECap) ;
+    LetE cs1OType <- ##cs1ECap`"oType" ;
+    LetE sentry : Bool <- isSentry cs1OType ;
+    LetE boundsValid : Bool <- And [#topValid; #baseValid] ;
+    (* TODO: This is not correct according to CHERIoT Sail spec. In Sail execute(CJALR):
+       1. If cs1 is sealed (isSealed), simm12 MUST be 0 (simm12 == 0).
+       2. If cd == zreg & cs1 == ra (return): cs1 must be unsealed OR a backward sentry (isCapBackwardSentry).
+       3. If cd == ra (call): cs1 must be unsealed OR a forward sentry (isCapForwardSentry).
+       4. Else (tail/outlined call): cs1 must be unsealed OR a forward inherit sentry (isCapForwardInheritSentry). *)
+    LetE cjalrLegal : Bool <- And [ #cs1Tag; #cs1PermEx; #boundsValid; Or [#notSealed; #sentry] ] ;
+    RetE (Or [ And [ #isCjalr; #cjalrLegal ] ;
+               And [ Or [ #isCjal; #isBranch ] ; #boundsValid ] ;
+               And [ #isBranch; Not #branchTaken ] ]).
 End ExecutionUnits.
 
 Definition AluControl := STRUCT_TYPE {
@@ -1488,10 +1539,12 @@ Definition AluControl := STRUCT_TYPE {
   "TopCheck_inpAddr_Cs1Otype" :: Bool ;
   "TopCheck_inpAddr_Cs2Addr" :: Bool ;
   "TopCheck_inpAddr_Cs2Top" :: Bool ;
+  "TopCheck_inpAddr_PcAdder" :: Bool ;
   
   "TopCheck_limit_TopRep" :: Bool ;
   "TopCheck_limit_Cs2Top" :: Bool ;
   "TopCheck_limit_Cs1Top" :: Bool ;
+  "TopCheck_limit_PccTop" :: Bool ;
   
   "TopCheck_isInclusive" :: Bool ;
 
@@ -1502,8 +1555,10 @@ Definition AluControl := STRUCT_TYPE {
   "BaseCheck_inpAddr_Cs1Otype" :: Bool ;
   "BaseCheck_inpAddr_Cs2Addr" :: Bool ;
   "BaseCheck_inpAddr_Cs2Base" :: Bool ;
+  "BaseCheck_inpAddr_PcAdder" :: Bool ;
   
   "BaseCheck_base_AuthBase_Cs1Base" :: Bool ; (* True = AuthBase, False = Cs1Base *)
+  "BaseCheck_base_PccBase" :: Bool ;
 
   (* 9. Ctrl_BoundsCalc *)
   "BoundsCalc_base_Cs1Addr_Zero" :: Bool ; (* True = Cs1Addr, False = Zero *)
@@ -1523,7 +1578,12 @@ Definition AluControl := STRUCT_TYPE {
   (* 12. Ctrl_ScrSanitizer *)
   "ScrSanitizer_enable" :: Bool ;
 
-  (* 13. Ctrl_MultiOp *)
+  (* 13. Ctrl_TargetPccTag *)
+  "TargetPccTag_isBranch" :: Bool ;
+  "TargetPccTag_isCjal" :: Bool ;
+  "TargetPccTag_isCjalr" :: Bool ;
+
+  (* 14. Ctrl_MultiOp *)
   "MultiOp_kind" :: Option Bool ; (* None = None, Some False = Load, Some True = Store *)
   "MultiOp_memOpSz" :: Bit (Z.log2_up NumBytesXlen) (* 0=Byte (1B), 1=Half (2B), 2=Word (4B), 3=Cap (8B) *)
 }.
@@ -1585,9 +1645,7 @@ Definition WbControl := STRUCT_TYPE {
 
   (* pcc_tag MUX Selects *)
   "pcc_tag_Current" :: Bool ;
-  (* pcc_Branch *)
-  (* pcc_CjalTarget *)
-  (* pcc_CjalrTarget *)
+  "pcc_tag_TargetPccTag" :: Bool ;
   (* pcc_Mepcc *)
 
   (* 3. SYSTEM & SPECIAL REGISTERS (specialRegs) *)
@@ -1616,6 +1674,12 @@ Section AluDatapath.
   Variable inst : ty Data.
   Variable aluCtrl : ty AluControl.
   Variable wbCtrl : ty WbControl.
+
+  (* TODO: Implement CHERIoT Sail link register sealing rules for CJAL / CJALR.
+     When destination register is cra (x1): seal return capability as backward sentry
+     (otype_sentry_bie = 5 if mstatus.MIE == 1 else otype_sentry_bid = 4).
+     When destination register is not cra: output unsealed capability (otype = 0).
+     Requires routing cd == cra (is_cd_cra) and mstatus.MIE into ALU datapath. *)
   Definition Alu : LetExpr ty AluOutput := (
     (* 1. Unpack Capability Slices *)
     LetE pccAddr : Data <- ##pcc`"addr" ;
@@ -1678,18 +1742,31 @@ Section AluDatapath.
 
     LetE cs1OType <- ##src1ECap`"oType" ;
 
+    LetE pcSrc1 : Bit (Xlen + 1) <-
+      ITE ##aluCtrl`"PcAdder_src1_PC_Rs1Addr" (ZeroExtendTo (Xlen+1) #pccAddr) (ZeroExtendTo (Xlen+1) #src1Addr) ;
+    LetE pcSrc2 : Bit (Xlen + 1) <-
+      Or [ ITE0 ##aluCtrl`"PcAdder_src2_bimm12" (SignExtendTo (Xlen+1) #bimm12) ;
+           ITE0 ##aluCtrl`"PcAdder_src2_jimm20" (SignExtendTo (Xlen+1) #jimm20) ;
+           ITE0 ##aluCtrl`"PcAdder_src2_simm12" (SignExtendTo (Xlen+1) #simm12) ] ;
+    LETE res_PcAdder : Data <- PcAdder pcSrc1 pcSrc2 ;
+
+    LetE compSrc2 : Data <- ITE ##aluCtrl`"Comparator_src2_simm12" #simm12 #src2Addr ;
+    LETE branchTaken : Bool <- Comparator src1Addr compSrc2 compUnsigned constFalse constFalse ;
+
     LetE topInpAddr : Bit (Xlen + 1) <-
       Or [ ITE0 ##aluCtrl`"TopCheck_inpAddr_SumMainAdder" #res_MainAdder33 ;
            ITE0 ##aluCtrl`"TopCheck_inpAddr_SignExtRs2"   (SignExtendTo (Xlen+1) #src2Addr) ;
            ITE0 ##aluCtrl`"TopCheck_inpAddr_Cs1Addr"      (ZeroExtendTo (Xlen+1) #src1Addr) ;
            ITE0 ##aluCtrl`"TopCheck_inpAddr_Cs1Otype"     (ZeroExtendTo (Xlen+1) #cs1OType) ;
            ITE0 ##aluCtrl`"TopCheck_inpAddr_Cs2Addr"      (ZeroExtendTo (Xlen+1) #src2Addr) ;
-           ITE0 ##aluCtrl`"TopCheck_inpAddr_Cs2Top"       (##src2ECap`"top") ] ;
+           ITE0 ##aluCtrl`"TopCheck_inpAddr_Cs2Top"       (##src2ECap`"top") ;
+           ITE0 ##aluCtrl`"TopCheck_inpAddr_PcAdder"      (ZeroExtend 1 #res_PcAdder) ] ;
 
     LetE topLimit : Bit (Xlen + 1) <-
       Or [ ITE0 ##aluCtrl`"TopCheck_limit_TopRep" (##src1ECap`"top") ;
            ITE0 ##aluCtrl`"TopCheck_limit_Cs2Top" (##src2ECap`"top") ;
-           ITE0 ##aluCtrl`"TopCheck_limit_Cs1Top" (##src1ECap`"top") ] ;
+           ITE0 ##aluCtrl`"TopCheck_limit_Cs1Top" (##src1ECap`"top") ;
+           ITE0 ##aluCtrl`"TopCheck_limit_PccTop" (##pccECap`"top") ] ;
 
     LetE topInclusive : Bool <- ##aluCtrl`"TopCheck_isInclusive" ;
     LETE topValid : Bool <- TopBoundsCheck topInpAddr topLimit topInclusive ;
@@ -1700,28 +1777,24 @@ Section AluDatapath.
            ITE0 ##aluCtrl`"BaseCheck_inpAddr_Cs1Addr"      (ZeroExtendTo (Xlen+1) #src1Addr) ;
            ITE0 ##aluCtrl`"BaseCheck_inpAddr_Cs1Otype"     (ZeroExtendTo (Xlen+1) #cs1OType) ;
            ITE0 ##aluCtrl`"BaseCheck_inpAddr_Cs2Addr"      (ZeroExtendTo (Xlen+1) #src2Addr) ;
-           ITE0 ##aluCtrl`"BaseCheck_inpAddr_Cs2Base"      (##src2ECap`"base") ] ;
+           ITE0 ##aluCtrl`"BaseCheck_inpAddr_Cs2Base"      (##src2ECap`"base") ;
+           ITE0 ##aluCtrl`"BaseCheck_inpAddr_PcAdder"      (ZeroExtend 1 #res_PcAdder) ] ;
 
-    LetE baseLimit : Bit (Xlen + 1) <- ##src1ECap`"base" ;
+    LetE baseLimit : Bit (Xlen + 1) <-
+      ITE ##aluCtrl`"BaseCheck_base_PccBase" (##pccECap`"base") (##src1ECap`"base") ;
 
     LETE baseValid : Bool <- BaseBoundsCheck baseInpAddr baseLimit ;
 
-    LetE pcSrc1 : Bit (Xlen + 1) <-
-      ITE ##aluCtrl`"PcAdder_src1_PC_Rs1Addr" (ZeroExtendTo (Xlen+1) #pccAddr) (ZeroExtendTo (Xlen+1) #src1Addr) ;
-    LetE pcSrc2 : Bit (Xlen + 1) <-
-      Or [ ITE0 ##aluCtrl`"PcAdder_src2_bimm12" (SignExtendTo (Xlen+1) #bimm12) ;
-           ITE0 ##aluCtrl`"PcAdder_src2_jimm20" (SignExtendTo (Xlen+1) #jimm20) ;
-           ITE0 ##aluCtrl`"PcAdder_src2_simm12" (SignExtendTo (Xlen+1) #simm12) ] ;
-    LETE res_PcAdder : Data <- PcAdder pcSrc1 pcSrc2 ;
+    LetE tpBranch <- ##aluCtrl`"TargetPccTag_isBranch" ;
+    LetE tpCjal   <- ##aluCtrl`"TargetPccTag_isCjal" ;
+    LetE tpCjalr  <- ##aluCtrl`"TargetPccTag_isCjalr" ;
+    LETE targetPccTag : Bool <- TargetPccTag tpBranch tpCjal tpCjalr branchTaken topValid baseValid src1 ;
 
     LetE shiftAmt : Bit LgXlen <- ITE ##aluCtrl`"Shifter_amt_Rs2Low_shamt" #rs2Low #shamt ;
     LETE res_Shifter : Data <- Shifter src1Addr shiftAmt shiftRight shiftArith ;
 
     LetE logicSrc2 : Data <- ITE ##aluCtrl`"Logic_src2_Rs2_simm12" #src2Addr #simm12 ;
     LETE res_Logic : Data <- Logic src1Addr logicSrc2 logicOpSel ;
-
-    LetE compSrc2 : Data <- ITE ##aluCtrl`"Comparator_src2_simm12" #simm12 #src2Addr ;
-    LETE branchTaken : Bool <- Comparator src1Addr compSrc2 compUnsigned constFalse constFalse ;
 
     LetE bcBase : Bit (AddrSz + 1) <- ITE0 ##aluCtrl`"BoundsCalc_base_Cs1Addr_Zero"
                                         (ZeroExtendTo (AddrSz+1) #src1Addr) ;
@@ -1773,14 +1846,14 @@ Section AluDatapath.
            ITE0 ##wbCtrl`"reg_ScrRead"         #src2ECap ] ;
 
     LetE regTag : Bool <-
-      Or [ ITE0 ##wbCtrl`"reg_tag_False"          #constFalse ;
-           ITE0 ##wbCtrl`"reg_tag_cs1BoundsValid" (And [ #src1Tag; #topValid; #baseValid ]) ;
-           ITE0 ##wbCtrl`"reg_tag_Pcc"            #pccTag ;
-           ITE0 ##wbCtrl`"reg_DirectCs1"          #src1Tag ;
-           ITE0 ##wbCtrl`"reg_CAndPerm"           (##res_CAndPerm`"tag") ;
-           ITE0 ##wbCtrl`"reg_Sealer"             (##res_Sealer`"tag") ;
-           ITE0 ##wbCtrl`"reg_tag_BoundsCalc"     #src1Tag ;
-           ITE0 ##wbCtrl`"reg_ScrRead"            #src2Tag ] ;
+      Or [ And [ ##wbCtrl`"reg_tag_False" ; #constFalse ] ;
+           And [ ##wbCtrl`"reg_tag_cs1BoundsValid" ; #src1Tag; #topValid; #baseValid ] ;
+           And [ ##wbCtrl`"reg_tag_Pcc" ; #pccTag ] ;
+           And [ ##wbCtrl`"reg_DirectCs1" ; #src1Tag ] ;
+           And [ ##wbCtrl`"reg_CAndPerm" ; ##res_CAndPerm`"tag" ] ;
+           And [ ##wbCtrl`"reg_Sealer" ; ##res_Sealer`"tag" ] ;
+           And [ ##wbCtrl`"reg_tag_BoundsCalc" ; #src1Tag ] ;
+           And [ ##wbCtrl`"reg_ScrRead" ; #src2Tag ] ] ;
 
     LetE out_reg : FullECapWithTag <- STRUCT { "tag" ::= #regTag; "ecap" ::= #regECap; "addr" ::= #regAddr } ;
 
@@ -1791,18 +1864,7 @@ Section AluDatapath.
            ITE0 ##wbCtrl`"pcc_CjalrTarget"  #res_PcAdder ;
            ITE0 ##wbCtrl`"pcc_Mepcc"        #src2Addr ] ;
 
-    (* Preprocessing for control flow metadata (unsealing & cleaned untagging) *)
-    LetE targetPc : Bit (AddrSz + 1) <- ZeroExtendTo (AddrSz + 1) #res_PcAdder ;
-    LetE pccInBounds : Bool <- And [ Sge #targetPc (##pccECap`"base"); Sle #targetPc (##pccECap`"top") ] ;
-    LetE cs1InBounds : Bool <- And [ Sge #targetPc (##src1ECap`"base"); Sle #targetPc (##src1ECap`"top") ] ;
-
     LetE unsealedCs1ECap : ECap <- #src1ECap `{ "oType" <- $0 } ;
-    LetE isCs1Sentry : Bool <- isSentry cs1OType ;
-
-    LetE cleanedBranchTag : Bool <- And [ #pccTag; #pccInBounds ] ;
-    LetE cleanedCjalTag   : Bool <- And [ #pccTag; #pccInBounds ] ;
-    LetE cleanedCjalrTag  : Bool <- And [ #src1Tag; #cs1InBounds; (##src1ECap`"perms"`"EX");
-                                          Or [ Not (isSealed src1ECap); #isCs1Sentry ] ] ;
 
     LetE nextPccECap : ECap <-
       Or [ ITE0 ##wbCtrl`"pcc_ecap_Current" #pccECap ;
@@ -1810,11 +1872,9 @@ Section AluDatapath.
            ITE0 ##wbCtrl`"pcc_Mepcc"        #src2ECap ] ;
 
     LetE nextPccTag : Bool <-
-      Or [ ITE0 ##wbCtrl`"pcc_tag_Current" #pccTag ;
-           ITE0 ##wbCtrl`"pcc_Branch"      #cleanedBranchTag ;
-           ITE0 ##wbCtrl`"pcc_CjalTarget"  #cleanedCjalTag ;
-           ITE0 ##wbCtrl`"pcc_CjalrTarget" #cleanedCjalrTag ;
-           ITE0 ##wbCtrl`"pcc_Mepcc"       #src2Tag ] ;
+      Or [ And [ ##wbCtrl`"pcc_tag_Current" ; #pccTag ] ;
+           And [ ##wbCtrl`"pcc_tag_TargetPccTag" ; #targetPccTag ] ;
+           And [ ##wbCtrl`"pcc_Mepcc" ; #src2Tag ] ] ;
 
     LetE out_pcc : FullECapWithTag <- STRUCT { "tag" ::= #nextPccTag;
                                                "ecap" ::= #nextPccECap;
