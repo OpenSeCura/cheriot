@@ -833,7 +833,7 @@ Decoder emits these explicit multiplexer select and enablement bundles:
 5. Ctrl_Logic
    * sel_src1    : { Rs1 }
    * sel_src2    : { Rs2, simm12 }
-   * opSel       : { 00 = AND; 01 = OR; 10 = XOR }
+   * opSel       : { 00 = AND, 01 = OR, 10 = XOR }
 
 6. Ctrl_Comparator
    * sel_src1    : { Rs1, Cs1Addr }
