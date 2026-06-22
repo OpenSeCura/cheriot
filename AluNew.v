@@ -31,15 +31,15 @@ Import ListNotations.
 
 1. EXECUTIVE SUMMARY & ARCHITECTURAL PHILOSOPHY
 -------------------------------------------------------------------------------
-This document establishes the microarchitectural resource specification map for
+This document establishes the microarchitectural execute unit specification map for
 the CHERIoT processor.
 
 To eliminate microarchitectural ambiguity and maintain absolute gate-level 
 clarity during physical refactoring and synthesis, this architecture enforces 
-strict RESOURCE-SUFFIX NAMING:
-  - Every physical hardware block is assigned a unique ResourceName.
-  - Every input wire driving a resource is suffixed with `_<ResourceName>`.
-  - Every output wire driven by a resource is suffixed with `_<ResourceName>`.
+strict EXECUTE-UNIT-SUFFIX NAMING:
+  - Every physical hardware block is assigned a unique ExecuteUnitName.
+  - Every input wire driving an execute unit is suffixed with `_<ExecuteUnitName>`.
+  - Every output wire driven by an execute unit is suffixed with `_<ExecuteUnitName>`.
 
 EXPANDED CAPABILITY REGISTER MODEL & BOUNDS RECOMPUTATION:
 A core pillar of this architecture is that the architectural Register File 
@@ -72,11 +72,11 @@ comparators and specialized capability blocks:
   11. SealerUnsealer : Dedicated local authorization and object-type tagging unit for CSeal/CUnseal.
 
 ===============================================================================
-2. PHYSICAL HARDWARE RESOURCE INVENTORY & SIGNAL INTERFACE
+2. PHYSICAL HARDWARE EXECUTE UNIT INVENTORY & SIGNAL INTERFACE
 ===============================================================================
 
 -------------------------------------------------------------------------------
-RESOURCE 1: MainAdder (33-Bit Datapath Arithmetic Adder / Subtractor)
+EXECUTE UNIT 1: MainAdder (33-Bit Datapath Arithmetic Adder / Subtractor)
 -------------------------------------------------------------------------------
 Purpose: Primary integer arithmetic (`ADD`, `SUB`, `ADDI`), `AUICGP`, Branch 
          condition evaluation ($rs1 - rs2$), SLT/SLTU difference math, capability 
@@ -112,7 +112,7 @@ Purpose: Primary integer arithmetic (`ADD`, `SUB`, `ADDI`), `AUICGP`, Branch
       (CGetLen), Group 13 (CIncAddr, CIncAddrImm), Group 19 (CSub): Truncated 32-bit
       slice `sum_MainAdder[31:0]` updates destination register rd (or cd.addr).
     * Group 13 (CIncAddr, CIncAddrImm): Full 33-bit un-truncated sum routes sideways
-      into Resource 7 (`TopBoundsCheck`) and Resource 8 (`BaseBoundsCheck`).
+      into Execute Unit 7 (`TopBoundsCheck`) and Execute Unit 8 (`BaseBoundsCheck`).
 
   [Additional Comments]
     * Pure Arithmetic Isolation Rationale: By stripping relational branch flags (`isZero`,
@@ -123,7 +123,7 @@ Purpose: Primary integer arithmetic (`ADD`, `SUB`, `ADDI`), `AUICGP`, Branch
       and maximizes chip Fmax.
 
 -------------------------------------------------------------------------------
-RESOURCE 2: PcAdder (33-Bit Dedicated Control-Flow Target Adder)
+EXECUTE UNIT 2: PcAdder (33-Bit Dedicated Control-Flow Target Adder)
 -------------------------------------------------------------------------------
 Purpose: Dedicated strictly to PC target address calculations (`Branch`, `JAL`,
 `JALR`).
@@ -155,7 +155,7 @@ Purpose: Dedicated strictly to PC target address calculations (`Branch`, `JAL`,
       is provably exact and eliminates LSB multiplexer logic.
 
 -------------------------------------------------------------------------------
-RESOURCE 3: MemAdder (33-Bit Dedicated Memory Address & Link PC Adder)
+EXECUTE UNIT 3: MemAdder (33-Bit Dedicated Memory Address & Link PC Adder)
 -------------------------------------------------------------------------------
 Purpose: Dual-service block dedicated to Data Memory effective address math 
          (`Load`, `Store`) and return link PC calculation (`JAL`, `JALR`, and 
@@ -186,7 +186,7 @@ Purpose: Dual-service block dedicated to Data Memory effective address math
       routes directly to the data memory pipeline request interface.
 
 -------------------------------------------------------------------------------
-RESOURCE 4: BarrelShifter (32-Bit Dedicated Integer Barrel Shifter)
+EXECUTE UNIT 4: BarrelShifter (32-Bit Dedicated Integer Barrel Shifter)
 -------------------------------------------------------------------------------
 Purpose: Dedicated strictly to RV32I base integer CPU shift instructions (`SLL`, 
          `SRL`, `SRA`, `SLLI`, `SRLI`, `SRAI`).
@@ -217,7 +217,7 @@ Purpose: Dedicated strictly to RV32I base integer CPU shift instructions (`SLL`,
       output is flipped back before returning on res32.
 
 -------------------------------------------------------------------------------
-RESOURCE 5: LogicUnit (32-Bit Dedicated Integer Bitwise Engine)
+EXECUTE UNIT 5: LogicUnit (32-Bit Dedicated Integer Bitwise Engine)
 -------------------------------------------------------------------------------
 Purpose: Dedicated strictly to RV32I base integer boolean manipulation (`AND`, 
          `OR`, `XOR`, `ANDI`, `ORI`, `XORI`).
@@ -240,7 +240,7 @@ Purpose: Dedicated strictly to RV32I base integer boolean manipulation (`AND`,
       updates destination register rd.
 
 -------------------------------------------------------------------------------
-RESOURCE 6: Comparator (32-Bit Dedicated Parallel Lookahead Comparator)
+EXECUTE UNIT 6: Comparator (32-Bit Dedicated Parallel Lookahead Comparator)
 -------------------------------------------------------------------------------
 Purpose: Dedicated parallel-prefix magnitude comparator evaluating integer relational tests
          strictly for branching (`Branch`) and set-less-than (`SLT*`, `CSetEqual`).
@@ -276,7 +276,7 @@ Purpose: Dedicated parallel-prefix magnitude comparator evaluating integer relat
            before clock setup time.
 
 -------------------------------------------------------------------------------
-RESOURCE 7: TopBoundsCheck (Dedicated Lookahead Relational Comparator)
+EXECUTE UNIT 7: TopBoundsCheck (Dedicated Lookahead Relational Comparator)
 -------------------------------------------------------------------------------
 Purpose: Dedicated parallel-prefix magnitude comparator evaluating upper pointer limits
          in dual relational modes (`inpAddr < limit` vs `inpAddr <= limit`).
@@ -313,7 +313,7 @@ Purpose: Dedicated parallel-prefix magnitude comparator evaluating upper pointer
       ($A \le B$) without synthesizing 33-bit arithmetic decrementers on input buses.
 
 -------------------------------------------------------------------------------
-RESOURCE 8: BaseBoundsCheck (Dedicated Lookahead Relational Comparator)
+EXECUTE UNIT 8: BaseBoundsCheck (Dedicated Lookahead Relational Comparator)
 -------------------------------------------------------------------------------
 Purpose: Dedicated parallel-prefix magnitude comparator evaluating whether an 
          input pointer address undercuts lower limits (`inpAddr >= base`).
@@ -341,7 +341,7 @@ Purpose: Dedicated parallel-prefix magnitude comparator evaluating whether an
     * Group 19 (CTestSubset): Polarity signal baseValid verifies lower bound subsetting.
 
 -------------------------------------------------------------------------------
-RESOURCE 9: BoundsCalc (Self-Contained CHERIoT Compression Engine)
+EXECUTE UNIT 9: BoundsCalc (Self-Contained CHERIoT Compression Engine)
 -------------------------------------------------------------------------------
 Purpose: Fully dedicated, self-contained CHERIoT hardware computing compressed 
          exponent E and mantissa adjustments, equipped with internal parallel shifters.
@@ -371,7 +371,7 @@ Purpose: Fully dedicated, self-contained CHERIoT hardware computing compressed
     * Group 18 (CRRL): Writeback stage routes outLen_BoundsCalc -> integer register rd.
 
 -------------------------------------------------------------------------------
-RESOURCE 10: CAndPerm (Dedicated Local Bitwise Permission Masking Unit)
+EXECUTE UNIT 10: CAndPerm (Dedicated Local Bitwise Permission Masking Unit)
 -------------------------------------------------------------------------------
 Purpose: Dedicated local hardware handling bitwise capability permission masking (`CAndPerm`).
 
@@ -390,7 +390,7 @@ Purpose: Dedicated local hardware handling bitwise capability permission masking
                            and cd.tag.
 
 -------------------------------------------------------------------------------
-RESOURCE 11: SealerUnsealer (Dedicated Capability Sealing & Unsealing Unit)
+EXECUTE UNIT 11: SealerUnsealer (Dedicated Capability Sealing & Unsealing Unit)
 -------------------------------------------------------------------------------
 Purpose: Dedicated local hardware authorizing and applying capability sealing (`CSeal`) and unsealing (`CUnseal`).
 
@@ -412,7 +412,7 @@ Purpose: Dedicated local hardware authorizing and applying capability sealing (`
                                  and cd.tag.
 
 -------------------------------------------------------------------------------
-RESOURCE 12: ScrSanitizer (Dedicated Special Capability Register Sanitization Unit)
+EXECUTE UNIT 12: ScrSanitizer (Dedicated Special Capability Register Sanitization Unit)
 -------------------------------------------------------------------------------
 Purpose: Dedicated local hardware sanitizing capability writes into special capability registers
          (to be used for `MEPCC` and `MTCC`).
@@ -430,7 +430,7 @@ Purpose: Dedicated local hardware sanitizing capability writes into special capa
     * Group 21 (CSpecialRw): Sanitized capability record outCap commits to destination SCR register file.
 
 -------------------------------------------------------------------------------
-RESOURCE 13: MultiOp (Dedicated Multicycle Memory & System Operation Unit)
+EXECUTE UNIT 13: MultiOp (Dedicated Multicycle Memory & System Operation Unit)
 -------------------------------------------------------------------------------
 Purpose: Dedicated local hardware managing multicycle loads, stores, and system operations.
 
@@ -442,18 +442,18 @@ Purpose: Dedicated local hardware managing multicycle loads, stores, and system 
     * res_MultiOp     : Data        (Memory or system interaction control bundle)
 
 ===============================================================================
-3. RV32I & CHERIoT INSTRUCTION ROUTING MAP (EXHAUSTIVE & STRICTLY RESOURCE-ISOLATED)
+3. RV32I & CHERIoT INSTRUCTION ROUTING MAP (EXHAUSTIVE & STRICTLY EXECUTE-UNIT-ISOLATED)
 ===============================================================================
 
 -------------------------------------------------------------------------------
-GROUP 1: DIRECT IMMEDIATE BUS ROUTING (RESOURCE: DIRECT IMMEDIATE BUS)
+GROUP 1: DIRECT IMMEDIATE BUS ROUTING (EXECUTE UNIT: DIRECT IMMEDIATE BUS)
 -------------------------------------------------------------------------------
 * LUI rd, uimm20
     Input Preproc: 20-bit immediate shifted left 12 bits -> decoded immediate.
     Output Route : resVal = decoded immediate -> Register File rd; rd.tag = False.
 
 -------------------------------------------------------------------------------
-GROUP 2: UPPER IMMEDIATE CAPABILITY DERIVATION (RESOURCE: MainAdder + TopBoundsCheck + BaseBoundsCheck)
+GROUP 2: UPPER IMMEDIATE CAPABILITY DERIVATION (EXECUTE UNIT: MainAdder + TopBoundsCheck + BaseBoundsCheck)
 -------------------------------------------------------------------------------
 * AUICGP cd, uimm20_11
     Implicit Read: c3 / CGP (ABI General Purpose Capability Register 3).
@@ -470,7 +470,7 @@ GROUP 2: UPPER IMMEDIATE CAPABILITY DERIVATION (RESOURCE: MainAdder + TopBoundsC
       - cd.tag  = authCap.tag & topValid_TopBoundsCheck & baseValid_BaseBoundsCheck.
 
 -------------------------------------------------------------------------------
-GROUP 4: MAIN ALU ADDER ARITHMETIC (RESOURCE: MainAdder)
+GROUP 4: MAIN ALU ADDER ARITHMETIC (EXECUTE UNIT: MainAdder)
 -------------------------------------------------------------------------------
 * ADD rd, rs1, rs2
     Input Preproc: src1_MainAdder = SignExt(rs1); src2_MainAdder = SignExt(rs2).
@@ -488,7 +488,7 @@ GROUP 4: MAIN ALU ADDER ARITHMETIC (RESOURCE: MainAdder)
     Output Route : resVal = res32_MainAdder -> Register File rd; rd.tag = False.
 
 -------------------------------------------------------------------------------
-GROUP 5: INTEGER SET LESS THAN COMPARISONS (RESOURCE: Comparator)
+GROUP 5: INTEGER SET LESS THAN COMPARISONS (EXECUTE UNIT: Comparator)
 -------------------------------------------------------------------------------
 * SLT rd, rs1, rs2
 * SLTU rd, rs1, rs2
@@ -500,7 +500,7 @@ GROUP 5: INTEGER SET LESS THAN COMPARISONS (RESOURCE: Comparator)
     Output Route : resVal = ZeroExtend(32, resVal_Comparator) -> rd; force rd.tag = False.
 
 -------------------------------------------------------------------------------
-GROUP 6: BRANCH CONDITION EVALUATION (RESOURCE: Comparator + PcAdder + MemAdder)
+GROUP 6: BRANCH CONDITION EVALUATION (EXECUTE UNIT: Comparator + PcAdder + MemAdder)
 -------------------------------------------------------------------------------
 * BEQ rs1, rs2, bimm12
 * BNE rs1, rs2, bimm12
@@ -520,7 +520,7 @@ GROUP 6: BRANCH CONDITION EVALUATION (RESOURCE: Comparator + PcAdder + MemAdder)
       - nextPC = take ? res32_PcAdder (LSB hardwired to 0) : res32_MemAdder. (No write to register file).
 
 -------------------------------------------------------------------------------
-GROUP 7: CONTROL FLOW JUMP TARGET CALCULATION (RESOURCE: PcAdder + MemAdder)
+GROUP 7: CONTROL FLOW JUMP TARGET CALCULATION (EXECUTE UNIT: PcAdder + MemAdder)
 -------------------------------------------------------------------------------
 * CJAL cd, jimm20
     Implicit Read : PCC (entire Program Counter Capability record to construct return sentry PCC + 2 and jump target).
@@ -544,7 +544,7 @@ GROUP 7: CONTROL FLOW JUMP TARGET CALCULATION (RESOURCE: PcAdder + MemAdder)
                    resVal = res32_MemAdder -> cd.addr (unsealed sentry link).
 
 -------------------------------------------------------------------------------
-GROUP 8: MEMORY EFFECTIVE ADDRESS CALCULATION (RESOURCE: MemAdder)
+GROUP 8: MEMORY EFFECTIVE ADDRESS CALCULATION (EXECUTE UNIT: MemAdder)
 -------------------------------------------------------------------------------
 * LB rd, imm12(cs1)
 * LH rd, imm12(cs1)
@@ -569,7 +569,7 @@ GROUP 8: MEMORY EFFECTIVE ADDRESS CALCULATION (RESOURCE: MemAdder)
     Output Route : memAddr = res32_MemAdder -> Data Memory Pipeline Interface.
 
 -------------------------------------------------------------------------------
-GROUP 9: INTEGER BARREL SHIFTING (RESOURCE: BarrelShifter)
+GROUP 9: INTEGER BARREL SHIFTING (EXECUTE UNIT: BarrelShifter)
 -------------------------------------------------------------------------------
 * SLL rd, rs1, rs2
 * SRL rd, rs1, rs2
@@ -583,7 +583,7 @@ GROUP 9: INTEGER BARREL SHIFTING (RESOURCE: BarrelShifter)
     Output Route : resVal = res32_BarrelShifter -> Register File rd; rd.tag = False.
 
 -------------------------------------------------------------------------------
-GROUP 10: INTEGER BITWISE BOOLEAN LOGIC (RESOURCE: LogicUnit)
+GROUP 10: INTEGER BITWISE BOOLEAN LOGIC (EXECUTE UNIT: LogicUnit)
 -------------------------------------------------------------------------------
 * AND rd, rs1, rs2
 * OR rd, rs1, rs2
@@ -596,7 +596,7 @@ GROUP 10: INTEGER BITWISE BOOLEAN LOGIC (RESOURCE: LogicUnit)
     Output Route : resVal = res32_LogicUnit -> Register File rd; rd.tag = False.
 
 -------------------------------------------------------------------------------
-GROUP 11: DIRECT CAPABILITY FIELD EXTRACTION (RESOURCE: DIRECT BUS)
+GROUP 11: DIRECT CAPABILITY FIELD EXTRACTION (EXECUTE UNIT: DIRECT BUS)
 -------------------------------------------------------------------------------
 * CGetPerm rd, cs1
 * CGetType rd, cs1
@@ -609,7 +609,7 @@ GROUP 11: DIRECT CAPABILITY FIELD EXTRACTION (RESOURCE: DIRECT BUS)
     Output Route : ZeroExtend extracted field to 32 bits -> rd; force rd.tag = False.
 
 -------------------------------------------------------------------------------
-GROUP 12: CAPABILITY LENGTH CALCULATION (RESOURCE: MainAdder)
+GROUP 12: CAPABILITY LENGTH CALCULATION (EXECUTE UNIT: MainAdder)
 -------------------------------------------------------------------------------
 * CGetLen rd, cs1
     Input Preproc: src1_MainAdder = cs1.top; src2_MainAdder = cs1.base.
@@ -617,7 +617,7 @@ GROUP 12: CAPABILITY LENGTH CALCULATION (RESOURCE: MainAdder)
     Output Route : resVal = res32_MainAdder -> rd; force rd.tag = False.
 
 -------------------------------------------------------------------------------
-GROUP 13: CAPABILITY POINTER ARITHMETIC & REPRESENTABILITY (RESOURCE: MainAdder + TopBoundsCheck + BaseBoundsCheck)
+GROUP 13: CAPABILITY POINTER ARITHMETIC & REPRESENTABILITY (EXECUTE UNIT: MainAdder + TopBoundsCheck + BaseBoundsCheck)
 -------------------------------------------------------------------------------
 * CIncAddr cd, cs1, rs2
 * CIncAddrImm cd, cs1, simm12
@@ -632,7 +632,7 @@ GROUP 13: CAPABILITY POINTER ARITHMETIC & REPRESENTABILITY (RESOURCE: MainAdder 
       - cd.tag  = cs1.tag & topValid_TopBoundsCheck & baseValid_BaseBoundsCheck.
 
 -------------------------------------------------------------------------------
-GROUP 14: CAPABILITY DIRECT ADDRESS SUBSTITUTION (RESOURCE: DIRECT BUS + TopBoundsCheck + BaseBoundsCheck)
+GROUP 14: CAPABILITY DIRECT ADDRESS SUBSTITUTION (EXECUTE UNIT: DIRECT BUS + TopBoundsCheck + BaseBoundsCheck)
 -------------------------------------------------------------------------------
 * CSetAddr cd, cs1, rs2
 * CSetHigh cd, cs1, rs2
@@ -646,7 +646,7 @@ GROUP 14: CAPABILITY DIRECT ADDRESS SUBSTITUTION (RESOURCE: DIRECT BUS + TopBoun
       - cd.tag  = cs1.tag & topValid_TopBoundsCheck & baseValid_BaseBoundsCheck.
 
 -------------------------------------------------------------------------------
-GROUP 15: CAPABILITY BITWISE PERMISSION MASKING (RESOURCE: CAndPerm)
+GROUP 15: CAPABILITY BITWISE PERMISSION MASKING (EXECUTE UNIT: CAndPerm)
 -------------------------------------------------------------------------------
 * CAndPerm cd, cs1, rs2
     Input Preproc: Route target capability cs1 and raw register rs2 into CAndPerm.
@@ -656,7 +656,7 @@ GROUP 15: CAPABILITY BITWISE PERMISSION MASKING (RESOURCE: CAndPerm)
       - cd.tag  = res_CAndPerm.tag.
 
 -------------------------------------------------------------------------------
-GROUP 16: CAPABILITY TAG CLEARING (RESOURCE: DIRECT BUS)
+GROUP 16: CAPABILITY TAG CLEARING (EXECUTE UNIT: DIRECT BUS)
 -------------------------------------------------------------------------------
 * CClearTag cd, cs1
     Input Preproc: Direct Bus
@@ -666,7 +666,7 @@ GROUP 16: CAPABILITY TAG CLEARING (RESOURCE: DIRECT BUS)
       - cd.tag  = False (explicitly force tag to 0).
 
 -------------------------------------------------------------------------------
-GROUP 17: CAPABILITY SEALING & UNSEALING (RESOURCE: TopBoundsCheck + BaseBoundsCheck + SealerUnsealer)
+GROUP 17: CAPABILITY SEALING & UNSEALING (EXECUTE UNIT: TopBoundsCheck + BaseBoundsCheck + SealerUnsealer)
 -------------------------------------------------------------------------------
 * CSeal cd, cs1, cs2
 * CUnseal cd, cs1, cs2
@@ -680,7 +680,7 @@ GROUP 17: CAPABILITY SEALING & UNSEALING (RESOURCE: TopBoundsCheck + BaseBoundsC
       - cd.tag  = res_SealerUnsealer.tag.
 
 -------------------------------------------------------------------------------
-GROUP 18: CAPABILITY BOUNDS COMPRESSION RECOMPUTATION (RESOURCE: BoundsCalc)
+GROUP 18: CAPABILITY BOUNDS COMPRESSION RECOMPUTATION (EXECUTE UNIT: BoundsCalc)
 -------------------------------------------------------------------------------
 * CSetBounds cd, cs1, rs2
 * CSetBoundsExact cd, cs1, rs2
@@ -701,7 +701,7 @@ GROUP 18: CAPABILITY BOUNDS COMPRESSION RECOMPUTATION (RESOURCE: BoundsCalc)
     Output Route : resVal = resLen_BoundsCalc -> integer register rd; rd.tag = False.
 
 -------------------------------------------------------------------------------
-GROUP 19: CAPABILITY DIFFS & COMPARISONS (RESOURCE: MainAdder + Comparator + Bounds Comparators)
+GROUP 19: CAPABILITY DIFFS & COMPARISONS (EXECUTE UNIT: MainAdder + Comparator + Bounds Comparators)
 -------------------------------------------------------------------------------
 * CSub rd, cs1, cs2
     Input Preproc: src1_MainAdder = cs1.addr; src2_MainAdder = cs2.addr.
@@ -721,14 +721,14 @@ GROUP 19: CAPABILITY DIFFS & COMPARISONS (RESOURCE: MainAdder + Comparator + Bou
     Output Route : resVal = ZeroExtend(32, (cs1.tag == cs2.tag) & topValid & baseValid & permValid) -> rd.
 
 -------------------------------------------------------------------------------
-GROUP 20: DIRECT CAPABILITY REGISTER COPY (RESOURCE: DIRECT BUS)
+GROUP 20: DIRECT CAPABILITY REGISTER COPY (EXECUTE UNIT: DIRECT BUS)
 -------------------------------------------------------------------------------
 * CMove cd, cs1
     Input Preproc: Direct Bus
     Output Route : cd = cs1 (Direct 1:1 expanded capability record move).
 
 -------------------------------------------------------------------------------
-GROUP 21: SYSTEM CSRs & SPECIAL CAPABILITY MOVES (RESOURCE: DIRECT BUS)
+GROUP 21: SYSTEM CSRs & SPECIAL CAPABILITY MOVES (EXECUTE UNIT: DIRECT BUS)
 -------------------------------------------------------------------------------
 * CSRRW rd, csr, rs1
 * CSRRS rd, csr, rs1
@@ -746,7 +746,7 @@ GROUP 21: SYSTEM CSRs & SPECIAL CAPABILITY MOVES (RESOURCE: DIRECT BUS)
       - Exception gating takes strict priority over state commits.
 
 -------------------------------------------------------------------------------
-GROUP 22: EXPLICIT SYNCHRONOUS SYSTEM TRAPS (RESOURCE: TRAP CONTROL)
+GROUP 22: EXPLICIT SYNCHRONOUS SYSTEM TRAPS (EXECUTE UNIT: TRAP CONTROL)
 -------------------------------------------------------------------------------
 * ECALL
 * EBREAK
@@ -755,7 +755,7 @@ GROUP 22: EXPLICIT SYNCHRONOUS SYSTEM TRAPS (RESOURCE: TRAP CONTROL)
     Output Route : MEPCC = PCC; PCC = MTCC; mcause = trap_cause.
 
 -------------------------------------------------------------------------------
-GROUP 23: PRIVILEGED EXCEPTION RETURN (RESOURCE: EXCEPTION RETURN)
+GROUP 23: PRIVILEGED EXCEPTION RETURN (EXECUTE UNIT: EXCEPTION RETURN)
 -------------------------------------------------------------------------------
 * MRET
     Implicit Read : MEPCC (exception return root).
@@ -872,7 +872,7 @@ Decoder emits these explicit multiplexer select and enablement bundles:
 ===============================================================================
 Centralized One-Hot Commit Routing Architecture:
   The ID Decoder evaluates instruction opcodes and combinationally emits explicit
-  one-hot boolean control lines. Whenever an execution or system resource commits
+  one-hot boolean control lines. Whenever an execution or system execute unit commits
   multiple components of a capability record (`FullECapWithTag`), the exact same
   control signal drives the corresponding datapath MUXes across `addr`, `ecap`, and `tag`.
 
@@ -1006,7 +1006,7 @@ Microarchitectural Verdict (Go Dedicated):
 -------------------------------------------------------------------------------
 PART C: BITWISE PERMISSION MASKING (CAndPerm)
 -------------------------------------------------------------------------------
-Cost of Shared Resource Routing:
+Cost of Shared Execute Unit Routing:
   To route `CAndPerm` (`cs1.perms & rs2[11:0]`) through the main 32-bit integer 
   `LogicUnit`, we must add 32-bit multiplexers to the `src1` and `src2` buses. 
   This routing overhead costs ~192 equivalent gates.
@@ -1038,7 +1038,7 @@ Architectural Complications of System Operations:
        legalization before committing to state.
 
 Analysis of ALU LogicUnit Sharing:
-  Multiplexing csrCurr and operand csrIn onto Resource 5 (`LogicUnit`) to perform
+  Multiplexing csrCurr and operand csrIn onto Execute Unit 5 (`LogicUnit`) to perform
   bitwise CSRRS (OR) and CSRRC (AND-NOT) math saves ~32 gates of duplicate bitwise
   logic. However, it introduces wide 32-bit multiplexers onto the hot ALU execution
   inputs (`src1_LogicUnit` and `src2_LogicUnit`), degrading core integer Fmax.
@@ -1071,7 +1071,7 @@ Timing Bottleneck of Sharing Arithmetic Subtractors:
        forcing the PC multiplexer to switch dangerously close to clock setup time.
 
 Silicon Verdict (Go Dedicated Relational Tree):
-  To eliminate comparison MUX bloat and protect core Fmax, we allocate Resource 6
+  To eliminate comparison MUX bloat and protect core Fmax, we allocate Execute Unit 6
   (`Comparator`) as a dedicated 32-bit parallel-prefix magnitude comparator.
   A lookahead comparison tree resolves in ~8 gate levels (~100ps), delivering the
   branch decision flag `take` ~200ps earlier than arithmetic subtraction. This guarantees
@@ -1101,7 +1101,7 @@ allocating dedicated parallel-prefix magnitude comparators (`Comparator`,
 `TopBoundsCheck`, and `BaseBoundsCheck`), the datapath achieves an optimal layout: 
 protecting chip Fmax and eliminating interconnect timing hazards at a negligible area cost.
 
-END OF ARCHITECTURAL RESOURCE MAP
+END OF ARCHITECTURAL EXECUTE UNIT MAP
 ===============================================================================
 *)
 
@@ -1609,3 +1609,213 @@ Definition AluOutput := STRUCT_TYPE {
   "pcc_CjalTarget"  :: Bool ;
   "pcc_CjalrTarget" :: Bool
 }.
+
+Section AluDatapath.
+  Variable ty : Kind -> Type.
+
+  Variable pcc src1 src2 : ty FullECapWithTag.
+  Variable inst : ty Data.
+  Variable aluCtrl : ty AluControl.
+  Variable wbCtrl : ty WbControl.
+
+  Local Definition null_ecap : Expr ty ECap := Const ty ECap (getDefault _).
+
+  Definition Alu : LetExpr ty AluOutput := (
+    (* 1. Unpack Capability Slices *)
+    LetE pccAddr : Data <- ##pcc`"addr" ;
+    LetE pccECap : ECap <- ##pcc`"ecap" ;
+    LetE pccTag : Bool <- ##pcc`"tag" ;
+
+    LetE src1Addr : Data <- ##src1`"addr" ;
+    LetE src1ECap : ECap <- ##src1`"ecap" ;
+    LetE src1Tag : Bool <- ##src1`"tag" ;
+
+    LetE src2Addr : Data <- ##src2`"addr" ;
+    LetE src2ECap : ECap <- ##src2`"ecap" ;
+    LetE src2Tag : Bool <- ##src2`"tag" ;
+
+    (* Extract immediate slices from 32-bit inst word *)
+    LetE shift7  : Bit LgXlen <- $7 ;
+    LetE shift8  : Bit LgXlen <- $8 ;
+    LetE shift11 : Bit LgXlen <- $11 ;
+    LetE shift12 : Bit LgXlen <- $12 ;
+    LetE shift20 : Bit LgXlen <- $20 ;
+    LetE shift21 : Bit LgXlen <- $21 ;
+    LetE shift25 : Bit LgXlen <- $25 ;
+
+    LetE simm12 : Data <- SignExtendTo AddrSz (TruncMsb 12 20 #inst) ;
+    LetE uimm20 : Data <- Sll (ZeroExtendTo AddrSz (TruncMsb 20 12 #inst)) #shift12 ;
+    LetE uimm20_11 : Data <- Sll (ZeroExtendTo AddrSz (TruncMsb 20 12 #inst)) #shift11 ;
+    LetE shamt : Bit LgXlen <- TruncLsb 27 LgXlen (Srl #inst #shift20) ;
+    LetE rs2Low5 : Bit LgXlen <- TruncLsb 27 LgXlen #src2Addr ;
+
+    LetE bit31 : Bit 1 <- TruncMsb 1 31 #inst ;
+    LetE bit7  : Bit 1 <- TruncLsb 31 1 (Srl #inst #shift7) ;
+    LetE bits30_25 : Bit 6 <- TruncLsb 26 6 (Srl #inst #shift25) ;
+    LetE bits11_8  : Bit 4 <- TruncLsb 28 4 (Srl #inst #shift8) ;
+    LetE bimm13 : Bit 13 <- ({< #bit31, #bit7, #bits30_25, #bits11_8, Const ty (Bit 1) Zmod.zero >}) ;
+    LetE bimm12 : Data <- SignExtendTo AddrSz #bimm13 ;
+
+    LetE bits19_12 : Bit 8 <- TruncLsb 24 8 (Srl #inst #shift12) ;
+    LetE bit20     : Bit 1 <- TruncLsb 31 1 (Srl #inst #shift20) ;
+    LetE bits30_21 : Bit 10 <- TruncLsb 22 10 (Srl #inst #shift21) ;
+    LetE jimm21 : Bit 21 <- ({< #bit31, #bits19_12, #bit20, #bits30_21, Const ty (Bit 1) Zmod.zero >}) ;
+    LetE jimm20 : Data <- SignExtendTo AddrSz #jimm21 ;
+
+    (* Unpack AluControl flags needed for execution unit calls *)
+    LetE subEn        <- ##aluCtrl`"MainAdder_subEnable" ;
+    LetE shiftRight   <- ##aluCtrl`"Shifter_isRight" ;
+    LetE shiftArith   <- ##aluCtrl`"Shifter_isArith" ;
+    LetE logicOpSel   <- ##aluCtrl`"Logic_opSel" ;
+    LetE compSigned   <- ##aluCtrl`"Comparator_isSigned" ;
+    LetE bcRoundDown  <- ##aluCtrl`"BoundsCalc_isRoundDown" ;
+    LetE sealerUnseal <- ##aluCtrl`"SealerUnsealer_isUnseal" ;
+    LetE scrEn        <- ##aluCtrl`"ScrSanitizer_enable" ;
+
+    LetE compUnsigned <- Not #compSigned ;
+    LetE constFalse   <- Const ty Bool false ;
+
+    (* 2. Instantiate Shared Arithmetic & Logic Units *)
+    LetE mainSrc1 : Bit (Xlen + 1) <-
+      Or [ ITE0 ##aluCtrl`"MainAdder_src1_Rs1"     (ZeroExtendTo (Xlen+1) #src1Addr) ;
+           ITE0 ##aluCtrl`"MainAdder_src1_Cs1Addr" (ZeroExtendTo (Xlen+1) #src1Addr) ;
+           ITE0 ##aluCtrl`"MainAdder_src1_Cs1Top"  (##src1ECap`"top") ;
+           ITE0 ##aluCtrl`"MainAdder_src1_CgpAddr" (ZeroExtendTo (Xlen+1) #src1Addr) ;
+           ITE0 ##aluCtrl`"MainAdder_src1_PccAddr" (ZeroExtendTo (Xlen+1) #pccAddr) ] ;
+
+    LetE mainSrc2 : Bit (Xlen + 1) <-
+      Or [ ITE0 ##aluCtrl`"MainAdder_src2_Rs2"       (ZeroExtendTo (Xlen+1) #src2Addr) ;
+           ITE0 ##aluCtrl`"MainAdder_src2_simm12"    (SignExtendTo (Xlen+1) #simm12) ;
+           ITE0 ##aluCtrl`"MainAdder_src2_uimm20_11" (ZeroExtendTo (Xlen+1) #uimm20_11) ;
+           ITE0 ##aluCtrl`"MainAdder_src2_Cs1Base"   (##src1ECap`"base") ;
+           ITE0 ##aluCtrl`"MainAdder_src2_Cs2Addr"   (ZeroExtendTo (Xlen+1) #src2Addr) ] ;
+
+    LETE res_MainAdder33 : Bit (Xlen + 1) <- MainAdder mainSrc1 mainSrc2 subEn ;
+    LetE res_MainAdder : Data <- TruncLsb 1 Xlen #res_MainAdder33 ;
+
+    LetE pcSrc1 : Bit (Xlen + 1) <-
+      ITE ##aluCtrl`"PcAdder_src1_Rs1Addr" (ZeroExtendTo (Xlen+1) #src1Addr) (ZeroExtendTo (Xlen+1) #pccAddr) ;
+    LetE pcSrc2 : Bit (Xlen + 1) <-
+      Or [ ITE0 ##aluCtrl`"PcAdder_src2_bimm12" (SignExtendTo (Xlen+1) #bimm12) ;
+           ITE0 ##aluCtrl`"PcAdder_src2_jimm20" (SignExtendTo (Xlen+1) #jimm20) ;
+           ITE0 ##aluCtrl`"PcAdder_src2_simm12" (SignExtendTo (Xlen+1) #simm12) ] ;
+    LETE res_PcAdder : Data <- PcAdder pcSrc1 pcSrc2 ;
+
+    LetE shiftAmt : Bit LgXlen <- ITE ##aluCtrl`"Shifter_amt_shamt" #shamt #rs2Low5 ;
+    LETE res_Shifter : Data <- BarrelShifter src1Addr shiftAmt shiftRight shiftArith ;
+
+    LetE logicSrc2 : Data <- ITE ##aluCtrl`"Logic_src2_simm12" #simm12 #src2Addr ;
+    LETE res_Logic : Data <- Logic src1Addr logicSrc2 logicOpSel ;
+
+    LetE compSrc2 : Data <- ITE ##aluCtrl`"Comparator_src2_simm12" #simm12 #src2Addr ;
+    LETE branchTaken : Bool <- Comparator src1Addr compSrc2 compUnsigned constFalse constFalse ;
+
+    LetE bcBase : Bit (AddrSz + 1) <- ITE ##aluCtrl`"BoundsCalc_base_Zero" $0 (ZeroExtendTo (AddrSz+1) #src1Addr) ;
+    LetE bcLen : Bit (AddrSz + 1) <-
+      Or [ ITE0 ##aluCtrl`"BoundsCalc_length_Rs2"    (ZeroExtendTo (AddrSz+1) #src2Addr) ;
+           ITE0 ##aluCtrl`"BoundsCalc_length_simm12" (SignExtendTo (AddrSz+1) #simm12) ;
+           ITE0 ##aluCtrl`"BoundsCalc_length_Rs1"    (ZeroExtendTo (AddrSz+1) #src1Addr) ] ;
+    LETE res_Bounds : Bounds <- BoundsCalc bcBase bcLen bcRoundDown ;
+    LetE ecap_BoundsCalc : ECap <-
+      ##src1ECap `{ "base" <- ##res_Bounds`"base" }
+                 `{ "top"  <- ##res_Bounds`"top" }
+                 `{ "E"    <- ##res_Bounds`"E" } ;
+
+    LETE res_CAndPerm : FullECapWithTag <- CAndPerm src1 src2Addr ;
+    LETE res_Sealer : FullECapWithTag <- SealerUnsealer sealerUnseal src1Tag src1 src2 ;
+    LETE res_ScrSanitizer : FullECapWithTag <- ScrSanitizer scrEn src1 ;
+
+    (* 3. Commit Routing Datapath MUXes (wbCtrl) *)
+    LetE pcc_SeqNext : Data <- Add [ #pccAddr; $4 ] ;
+    LetE cramData : Data <- TruncLsb 1 Xlen (##res_Bounds`"cram") ;
+    LetE lenData : Data <- TruncLsb 1 Xlen (##res_Bounds`"length") ;
+
+    LetE regAddr : Data <-
+      Or [ ITE0 ##wbCtrl`"reg_addr_MainAdder"          #res_MainAdder ;
+           ITE0 ##wbCtrl`"reg_addr_PcAdder"            #res_PcAdder ;
+           ITE0 ##wbCtrl`"reg_addr_Shifter"            #res_Shifter ;
+           ITE0 ##wbCtrl`"reg_addr_Logic"              #res_Logic ;
+           ITE0 ##wbCtrl`"reg_addr_Comparator"         (ZeroExtendTo Xlen (ToBit #branchTaken)) ;
+           ITE0 ##wbCtrl`"reg_addr_uimm20"             #uimm20 ;
+           ITE0 ##wbCtrl`"reg_addr_rs2"                #src2Addr ;
+           ITE0 ##wbCtrl`"reg_addr_cs1Addr"            #src1Addr ;
+           ITE0 ##wbCtrl`"reg_DirectCs1"               #src1Addr ;
+           ITE0 ##wbCtrl`"reg_CAndPerm"                (##res_CAndPerm`"addr") ;
+           ITE0 ##wbCtrl`"reg_Sealer"                  (##res_Sealer`"addr") ;
+           ITE0 ##wbCtrl`"reg_addr_csrRead"            #src2Addr ;
+           ITE0 ##wbCtrl`"reg_ScrRead"                 #src2Addr ;
+           ITE0 ##wbCtrl`"reg_addr_capField"           #src2Addr ;
+           ITE0 ##wbCtrl`"reg_addr_BoundsCalc_cram"    #cramData ;
+           ITE0 ##wbCtrl`"reg_addr_BoundsCalc_length"  #lenData ] ;
+
+    LetE regECap : ECap <-
+      Or [ ITE0 ##wbCtrl`"reg_ecap_null"       null_ecap ;
+           ITE0 ##wbCtrl`"reg_ecap_cs1"        #src1ECap ;
+           ITE0 ##wbCtrl`"reg_ecap_Pcc"        #pccECap ;
+           ITE0 ##wbCtrl`"reg_DirectCs1"       #src1ECap ;
+           ITE0 ##wbCtrl`"reg_CAndPerm"        (##res_CAndPerm`"ecap") ;
+           ITE0 ##wbCtrl`"reg_Sealer"          (##res_Sealer`"ecap") ;
+           ITE0 ##wbCtrl`"reg_ecap_BoundsCalc" #ecap_BoundsCalc ;
+           ITE0 ##wbCtrl`"reg_ScrRead"         #src2ECap ] ;
+
+    LetE regTag : Bool <-
+      Or [ ITE0 ##wbCtrl`"reg_tag_False"          #constFalse ;
+           ITE0 ##wbCtrl`"reg_tag_cs1BoundsValid" #src1Tag ;
+           ITE0 ##wbCtrl`"reg_tag_Pcc"            #pccTag ;
+           ITE0 ##wbCtrl`"reg_DirectCs1"          #src1Tag ;
+           ITE0 ##wbCtrl`"reg_CAndPerm"           (##res_CAndPerm`"tag") ;
+           ITE0 ##wbCtrl`"reg_Sealer"             (##res_Sealer`"tag") ;
+           ITE0 ##wbCtrl`"reg_tag_BoundsCalc"     #src1Tag ;
+           ITE0 ##wbCtrl`"reg_ScrRead"            #src2Tag ] ;
+
+    LetE out_reg : FullECapWithTag <- STRUCT { "tag" ::= #regTag; "ecap" ::= #regECap; "addr" ::= #regAddr } ;
+
+    LetE nextPccAddr : Data <-
+      Or [ ITE0 ##wbCtrl`"pcc_addr_SeqNext" #pcc_SeqNext ;
+           ITE0 ##wbCtrl`"pcc_Branch"       #res_PcAdder ;
+           ITE0 ##wbCtrl`"pcc_CjalTarget"   #res_PcAdder ;
+           ITE0 ##wbCtrl`"pcc_CjalrTarget"  #res_PcAdder ;
+           ITE0 ##wbCtrl`"pcc_Mepcc"        #src2Addr ] ;
+
+    (* Preprocessing for control flow metadata (unsealing & cleaned untagging) *)
+    LetE targetPc : Bit (AddrSz + 1) <- ZeroExtendTo (AddrSz + 1) #res_PcAdder ;
+    LetE pccInBounds : Bool <- And [ Sge #targetPc (##pccECap`"base"); Sle #targetPc (##pccECap`"top") ] ;
+    LetE cs1InBounds : Bool <- And [ Sge #targetPc (##src1ECap`"base"); Sle #targetPc (##src1ECap`"top") ] ;
+
+    LetE unsealedCs1ECap : ECap <- #src1ECap `{ "oType" <- $0 } ;
+    LetE cs1OType <- ##src1ECap`"oType" ;
+    LetE isCs1Sentry : Bool <- Or [ Eq #cs1OType $1; Eq #cs1OType $2; Eq #cs1OType $3; Eq #cs1OType $4; Eq #cs1OType $5 ] ;
+
+    LetE cleanedBranchTag : Bool <- And [ #pccTag; #pccInBounds ] ;
+    LetE cleanedCjalTag   : Bool <- And [ #pccTag; #pccInBounds ] ;
+    LetE cleanedCjalrTag  : Bool <- And [ #src1Tag; #cs1InBounds; (##src1ECap`"perms"`"EX"); Or [ Not (isSealed src1ECap); #isCs1Sentry ] ] ;
+
+    LetE nextPccECap : ECap <-
+      Or [ ITE0 ##wbCtrl`"pcc_ecap_Current" #pccECap ;
+           ITE0 ##wbCtrl`"pcc_CjalrTarget"  #unsealedCs1ECap ;
+           ITE0 ##wbCtrl`"pcc_Mepcc"        #src2ECap ] ;
+
+    LetE nextPccTag : Bool <-
+      Or [ ITE0 ##wbCtrl`"pcc_tag_Current" #pccTag ;
+           ITE0 ##wbCtrl`"pcc_Branch"      #cleanedBranchTag ;
+           ITE0 ##wbCtrl`"pcc_CjalTarget"  #cleanedCjalTag ;
+           ITE0 ##wbCtrl`"pcc_CjalrTarget" #cleanedCjalrTag ;
+           ITE0 ##wbCtrl`"pcc_Mepcc"       #src2Tag ] ;
+
+    LetE out_pcc : FullECapWithTag <- STRUCT { "tag" ::= #nextPccTag; "ecap" ::= #nextPccECap; "addr" ::= #nextPccAddr } ;
+
+    LetE out_special : FullECapWithTag <-
+      ITE ##wbCtrl`"specialReg_writeEnableCap" #res_ScrSanitizer #src1 ;
+
+    @RetE _ AluOutput (STRUCT {
+      "reg"             ::= #out_reg ;
+      "pcc"             ::= #out_pcc ;
+      "special"         ::= #out_special ;
+      "pcc_SeqNext"     ::= #pcc_SeqNext ;
+      "pcc_Branch"      ::= ##wbCtrl`"pcc_Branch" ;
+      "branchTaken"     ::= #branchTaken ;
+      "pcc_CjalTarget"  ::= ##wbCtrl`"pcc_CjalTarget" ;
+      "pcc_CjalrTarget" ::= ##wbCtrl`"pcc_CjalrTarget"
+    })
+  ).
+End AluDatapath.
