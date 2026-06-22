@@ -35,6 +35,7 @@ Definition AddrSz   := Eval compute in Xlen.
 Definition Addr     := Eval compute in Bit AddrSz.
 Definition LgAddrSz := Eval compute in Z.log2_up AddrSz.
 Definition ExpSz    := Eval compute in LgAddrSz.
+Definition NumBytesXlen := Eval compute in (Xlen / 8).
 
 Definition CapBSz   := 9.
 Definition CapOTypeSz := 3.

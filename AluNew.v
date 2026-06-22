@@ -94,8 +94,8 @@ Purpose: Primary integer arithmetic (`ADD`, `SUB`, `ADDI`), `AUICGP`, Branch
   [Input Mapping]
     * Group 2 (AUICGP, AUIPCC): 32-bit capability base address (CGP.addr or PCC.addr)
       drives src1 sign-extended to 33 bits; decoded 20-bit immediate drives src2
-      sign-extended to 33 bits. Note that AUICGP shifts its immediate left by 12 bits
-      (imm << 12), whereas AUIPCC shifts its immediate left by 11 bits (imm << 11).
+      sign-extended to 33 bits. Note that both AUICGP and AUIPCC shift their immediate
+      left by exactly 11 bits (imm << 11).
     * Group 4 (ADD, SUB, ADDI): 32-bit register rs1 drives src1 sign-extended
       to 33 bits; 32-bit register rs2 or sign-extended 12-bit immediate drives
       src2 sign-extended to 33 bits, asserting subEnable strictly for SUB.
@@ -347,27 +347,28 @@ Purpose: Fully dedicated, self-contained CHERIoT hardware computing compressed
          exponent E and mantissa adjustments, equipped with internal parallel shifters.
 
   [Inputs]
-    * authCap_BoundsCalc : ECap   (Source capability)
-    * newLen_BoundsCalc  : Bit 32 (Requested length)
+    * base_BoundsCalc        : Bit (AddrSz + 1) (Candidate base capability address)
+    * length_BoundsCalc      : Bit (AddrSz + 1) (Candidate requested length)
+    * isRoundDown_BoundsCalc : Bool             (True for CRAM/CRRL rounding down mode)
 
   [Outputs]
-    * newCap_BoundsCalc  : ECap   (Recomputed expanded capability struct)
-    * resMask_BoundsCalc : Bit 32 (Computed representable alignment mask for CRAM)
-    * resLen_BoundsCalc  : Bit 32 (Computed representable rounded length for CRRL)
-    * isExact_BoundsCalc : Bool   (Exactness verification flag for CSetBoundsExact)
+    * outE_BoundsCalc        : Bit ExpSz        (Computed canonical exponent)
+    * outBase_BoundsCalc     : Bit (AddrSz + 1) (Computed representable base address)
+    * outTop_BoundsCalc      : Bit (AddrSz + 1) (Computed representable top address)
+    * cram_BoundsCalc        : Bit (AddrSz + 1) (Computed representable alignment mask for CRAM)
+    * outLen_BoundsCalc      : Bit (AddrSz + 1) (Computed representable rounded length for CRRL)
+    * exact_BoundsCalc       : Bool             (Exactness verification flag for CSetBoundsExact)
 
   [Input Mapping]
-    * Group 18 (CSetBounds, CSetBoundsExact, CSetBoundsImm, CRAM, CRRL): Source
-      capability cs1 and requested length (rs2, 12-bit immediate, or rs1) route
-      into internal priority encoders and parallel shifters.
+    * Group 18 (CSetBounds, CSetBoundsExact, CSetBoundsImm, CRAM, CRRL): Base address
+      and requested length (rs2, simm12, or rs1) route via separate input MUXes
+      alongside the isRoundDown boolean flag.
 
   [Output Mapping]
-    * Group 18 (CSetBounds, CSetBoundsExact, CSetBoundsImm): Recomputed expanded
-      capability record newCap writes to destination capability register cd.ecap.
-    * Group 18 (CRAM): Computed 32-bit representable alignment mask resMask updates
-      destination integer register rd.
-    * Group 18 (CRRL): Computed 32-bit representable rounded length resLen updates
-      destination integer register rd.
+    * Group 18 (CSetBounds, CSetBoundsExact, CSetBoundsImm): Writeback stage routes
+      outE_BoundsCalc, outBase_BoundsCalc, and outTop_BoundsCalc to construct destination capability.
+    * Group 18 (CRAM): Writeback stage routes cram_BoundsCalc -> integer register rd.
+    * Group 18 (CRRL): Writeback stage routes outLen_BoundsCalc -> integer register rd.
 
 -------------------------------------------------------------------------------
 RESOURCE 10: CAndPerm (Dedicated Local Bitwise Permission Masking Unit)
@@ -410,6 +411,36 @@ Purpose: Dedicated local hardware authorizing and applying capability sealing (`
     * Group 17 (CSeal, CUnseal): Authorized capability record res writes to destination capability register cd.ecap
                                  and cd.tag.
 
+-------------------------------------------------------------------------------
+RESOURCE 12: ScrSanitizer (Dedicated Special Capability Register Sanitization Unit)
+-------------------------------------------------------------------------------
+Purpose: Dedicated local hardware sanitizing capability writes into special capability registers
+         (to be used for `MEPCC` and `MTCC`).
+
+  [Inputs]
+    * inpCap_ScrSanitizer : FullECapWithTag (Candidate capability operand `cs1` to commit into SCR)
+
+  [Outputs]
+    * outCap_ScrSanitizer : FullECapWithTag (tag cleared if not a good MEPCC/MTCC capability).
+
+  [Input Mapping]
+    * Group 21 (CSpecialRw): Source capability cs1 routes directly.
+
+  [Output Mapping]
+    * Group 21 (CSpecialRw): Sanitized capability record outCap commits to destination SCR register file.
+
+-------------------------------------------------------------------------------
+RESOURCE 13: MultiOp (Dedicated Multicycle Memory & System Operation Unit)
+-------------------------------------------------------------------------------
+Purpose: Dedicated local hardware managing multicycle loads, stores, and system operations.
+
+  [Inputs]
+    * kind_MultiOp    : Option Bool (None = None, Some False = Load, Some True = Store)
+    * memOpSz_MultiOp : Bit 2       (Encoding Lg(NumBytesXlen): 0=1B, 1=2B, 2=4B, 3=8B)
+
+  [Outputs]
+    * res_MultiOp     : Data        (Memory or system interaction control bundle)
+
 ===============================================================================
 3. RV32I & CHERIoT INSTRUCTION ROUTING MAP (EXHAUSTIVE & STRICTLY RESOURCE-ISOLATED)
 ===============================================================================
@@ -424,14 +455,13 @@ GROUP 1: DIRECT IMMEDIATE BUS ROUTING (RESOURCE: DIRECT IMMEDIATE BUS)
 -------------------------------------------------------------------------------
 GROUP 2: UPPER IMMEDIATE CAPABILITY DERIVATION (RESOURCE: MainAdder + TopBoundsCheck + BaseBoundsCheck)
 -------------------------------------------------------------------------------
-* AUICGP cd, uimm20
+* AUICGP cd, uimm20_11
     Implicit Read: c3 / CGP (ABI General Purpose Capability Register 3).
-* AUIPCC cd, uimm20
+* AUIPCC cd, uimm20_11
     Implicit Read: PCC (Program Counter Capability).
     Input Preproc:
       - MainAdder       : Route base address (CGP.addr or PCC.addr) to src1; route decoded immediate
-                          to src2. Note: AUICGP shifts immediate left 12 bits (imm << 12), whereas
-                          AUIPCC shifts immediate left 11 bits (imm << 11).
+                          to src2. Note: Both AUICGP and AUIPCC shift immediate left 11 bits (imm << 11).
       - TopBoundsCheck  : inpAddr = sum_MainAdder; limit = authCap.top_rep (base + 2^(E + 9)); isInclusive = False.
       - BaseBoundsCheck : inpAddr = sum_MainAdder; base = authCap.base.
     Output Route :
@@ -709,11 +739,10 @@ GROUP 21: SYSTEM CSRs & SPECIAL CAPABILITY MOVES (RESOURCE: DIRECT BUS)
 * CSpecialRw cd, cSpecial, cs1
     Decode-Stage Fault Trigger: System Register Violation (SrViolation) if !PCC.perms.AccessSystemRegisters
                                 (trapped combinationally prior to Execute dispatch).
-    Input Preproc: Route CSR / SCR via Coprocessor Interface / Direct Bus.
+    Input Preproc: Route CSR / SCR via Direct Bus. Route cs1 -> inpCap_ScrSanitizer.
     Output Route :
       - Old CSR / SCR -> rd / cd.
-      - cd.ecap = scr.ecap.
-      - cd.tag  = scr.tag (enforcing local SCR tag legalization for MTCC/MEPCC).
+      - New SCR committed from outCap_ScrSanitizer (tag cleared if not a good MEPCC/MTCC capability).
       - Exception gating takes strict priority over state commits.
 
 -------------------------------------------------------------------------------
@@ -783,49 +812,47 @@ To bridge the gap between opcode decoding and physical datapath execution, the
 Decoder emits these explicit multiplexer select and enablement bundles:
 
 1. Ctrl_MainAdder
-   * sel_src1    : { Src1_Rs1, Src1_Cs1Addr, Src1_Cs1Top, Src1_CgpAddr,
-                     Src1_PccAddr, Src1_Zero }
-   * sel_src2    : { Src2_Rs2, Src2_Imm12, Src2_Imm20, Src2_Cs1Base, Src2_Cs2Addr }
+   * sel_src1    : { Rs1, Cs1Addr, Cs1Top, CgpAddr, PccAddr, Zero }
+   * sel_src2    : { Rs2, simm12, uimm20_11, Cs1Base, Cs2Addr }
    * subEnable   : { False = Add, True = Subtract }
 
 2. Ctrl_PcAdder
-   * sel_src1    : { PcSrc1_PC, PcSrc1_Rs1Addr }
-   * sel_src2    : { PcSrc2_BranchOffset, PcSrc2_JalOffset, PcSrc2_JalrImm }
+   * sel_src1    : { PC, Rs1Addr }
+   * sel_src2    : { bimm12, jimm20, simm12 }
 
 3. Ctrl_MemAdder
-   * sel_src1    : { MemSrc1_PC, MemSrc1_Rs1Addr }
-   * sel_src2    : { MemSrc2_Constant2, MemSrc2_Constant4, MemSrc2_LoadStoreOffset }
+   * sel_src1    : { PC, Rs1Addr }
+   * sel_src2    : { Constant2, Constant4, simm12 }
 
 4. Ctrl_Shifter
-   * sel_val     : { ShiftVal_Rs1 }
-   * sel_amt     : { ShiftAmt_Rs2Low5, ShiftAmt_Imm5 }
+   * sel_val     : { Rs1 }
+   * sel_amt     : { Rs2Low5, shamt }
    * isRight     : { False = Shift Left, True = Shift Right }
    * isArith     : { False = Logical, True = Arithmetic }
 
 5. Ctrl_Logic
-   * sel_src1    : { LogicSrc1_Rs1 }
-   * sel_src2    : { LogicSrc2_Rs2, LogicSrc2_Imm12 }
+   * sel_src1    : { Rs1 }
+   * sel_src2    : { Rs2, simm12 }
    * opSel       : { 00 = AND; 01 = OR; 10 = XOR }
 
 6. Ctrl_Comparator
-   * sel_src1    : { CompSrc1_Rs1, CompSrc1_Cs1Addr }
-   * sel_src2    : { CompSrc2_Rs2, CompSrc2_Imm12, CompSrc2_Cs2Addr }
+   * sel_src1    : { Rs1, Cs1Addr }
+   * sel_src2    : { Rs2, simm12, Cs2Addr }
    * isSigned    : { False = Unsigned, True = Signed }
 
 7. Ctrl_TopCheck
-   * sel_inpAddr : { TopInp_SumMainAdder, TopInp_SignExtRs2, TopInp_Cs1Addr,
-                     TopInp_Cs1Otype, TopInp_Cs2Addr, TopInp_Cs2Top }
-   * sel_limit   : { TopLim_TopRep, TopLim_Cs2Top, TopLim_Cs1Top }
+   * sel_inpAddr : { SumMainAdder, SignExtRs2, Cs1Addr, Cs1Otype, Cs2Addr, Cs2Top }
+   * sel_limit   : { TopRep, Cs2Top, Cs1Top }
    * isInclusive : { False = Strict Less Than, True = Less Or Equal }
 
 8. Ctrl_BaseCheck
-   * sel_inpAddr : { BaseInp_SumMainAdder, BaseInp_SignExtRs2, BaseInp_Cs1Addr,
-                     BaseInp_Cs1Otype, BaseInp_Cs2Addr, BaseInp_Cs2Base }
-   * sel_base    : { BaseLim_AuthBase, BaseLim_Cs1Base }
+   * sel_inpAddr : { SumMainAdder, SignExtRs2, Cs1Addr, Cs1Otype, Cs2Addr, Cs2Base }
+   * sel_base    : { AuthBase, Cs1Base }
 
 9. Ctrl_BoundsCalc
-   * opKind      : { Calc_None, Calc_SetBounds, Calc_SetBoundsExact,
-                     Calc_SetBoundsImm, Calc_Cram, Calc_Crrl }
+   * sel_base    : { Cs1Addr, Zero }
+   * sel_length  : { Rs2, simm12, Rs1 }
+   * isRoundDown : Bool
 
 10. Ctrl_CAndPerm
     * enable     : { False = Disable, True = Enable CAndPerm }
@@ -833,73 +860,94 @@ Decoder emits these explicit multiplexer select and enablement bundles:
 11. Ctrl_SealerUnsealer
     * isUnseal   : { False = CSeal mode, True = CUnseal mode }
 
-12. Ctrl_MultiOp
-    * multiOp    : { MultiOp_None, MultiOp_Load, MultiOp_Store }
-    * memOpSz    : { Mem_Byte, Mem_Half, Mem_Word, Mem_Cap }
+12. Ctrl_ScrSanitizer
+    * enable     : { False = Disable, True = Enable ScrSanitizer }
+
+13. Ctrl_MultiOp
+    * multiOp    : Option Bool (* None = No MultiOp, Some False = Load, Some True = Store *)
+    * memOpSz    : { Byte, Half, Word, Cap } (* Encoding is Lg(NumBytesXlen): 0=1B, 1=2B, 2=4B, 3=8B *)
 
 ===============================================================================
-6. SYSTEM WRITEBACK COMMIT MODEL (INFINITE WRITE PORTS)
+6. WRITEBACK CONTROL SPECIFICATIONS
 ===============================================================================
-Architectural Decoupling Rationale:
-  In formal ISA modeling and modular microarchitectural specification, enforcing a
-  singular centralized writeback multiplexer introduces artificial MUX enum complexity.
-  To maintain pure execution unit encapsulation, this specification assumes an INFINITE
-  WRITE PORT model for the architectural register file (`regs`). Each instruction routing
-  group directly assigns its execution outputs to destination registers.
+Centralized One-Hot Commit Routing Architecture:
+  The ID Decoder evaluates instruction opcodes and combinationally emits explicit
+  one-hot boolean control lines. Whenever an execution or system resource commits
+  multiple components of a capability record (`FullECapWithTag`), the exact same
+  control signal drives the corresponding datapath MUXes across `addr`, `ecap`, and `tag`.
 
 -------------------------------------------------------------------------------
-1. SCALAR INTEGER WRITE PORTS (regs[rd] <- 32-bit Data, Tag hardwired False)
+1. GENERAL PURPOSE & CAPABILITY REGISTER FILE (regs[rd] / regs[cd])
 -------------------------------------------------------------------------------
-  * Group 1  (LUI)           : rd <- rs2 (direct immediate move)
-  * Group 4  (ADD, SUB, ADDI): rd <- sum_MainAdder[31:0]
-  * Group 5  (SLL, SRL, SRA) : rd <- res_Shifter
-  * Group 6  (AND, OR, XOR)  : rd <- res_Logic
-  * Group 7  (SLT variants)  : rd <- ZeroExtend(isLess_Comparator)
-  * Group 10 (System CSRs)   : rd <- csrReadData
-  * Group 11 (CGetBase/Top..): rd <- getCapFieldData
-  * Group 12 (CGetLen)       : rd <- sum_MainAdder[31:0]
-  * Group 18 (CRAM)          : rd <- resMask_BoundsCalc
-  * Group 18 (CRRL)          : rd <- resLen_BoundsCalc
+  * Register Enablement:
+      reg_writeEnable : Bool
+
+  * reg_addr MUX Selects (32-bit Integer Address):
+      reg_addr_MainAdder          (* ADD, SUB, AUICGP, CIncAddr, CGetLen, etc. *)
+      reg_addr_PcAdder            (* CJAL, CJALR -> return sentry link address PC+2/PC+4 *)
+      reg_addr_Shifter            (* SLL, SRL, SRA *)
+      reg_addr_Logic              (* AND, OR, XOR *)
+      reg_addr_Comparator         (* SLT, SLTU *)
+      reg_addr_uimm20             (* LUI -> uimm20 << 12 *)
+      reg_addr_rs2                (* CSetAddr *)
+      reg_addr_cs1Addr            (* CClearTag, CSetBounds* *)
+      reg_DirectCs1               (* CMove -> cs1.addr *)
+      reg_CAndPerm                (* CAndPerm -> res_CAndPerm.addr *)
+      reg_Sealer                  (* CSeal, CUnseal -> res_Sealer.addr *)
+      reg_addr_csrRead            (* CSRRS, CSRRC, CSRRW *)
+      reg_ScrRead                 (* CSpecialRw -> scrReadData.addr *)
+      reg_addr_capField           (* CGetPerm, CGetTag, etc. *)
+      reg_addr_BoundsCalc_cram    (* CRAM *)
+      reg_addr_BoundsCalc_length  (* CRRL *)
+
+  * reg_ecap MUX Selects (Expanded Capability Metadata Struct):
+      reg_ecap_null               (* Integer ops, LUI, CGet*, CRAM, CSR*, etc. -> null_ecap *)
+      reg_ecap_cs1                (* AUICGP, CIncAddr, CSetAddr, CClearTag *)
+      reg_ecap_Pcc                (* CJAL, CJALR -> return sentry capability metadata *)
+      reg_DirectCs1               (* CMove -> cs1.ecap *)
+      reg_CAndPerm                (* CAndPerm -> res_CAndPerm.ecap *)
+      reg_Sealer                  (* CSeal, CUnseal -> res_Sealer.ecap *)
+      reg_ecap_BoundsCalc         (* CSetBounds* -> newCap_BoundsCalc *)
+      reg_ScrRead                 (* CSpecialRw -> scrReadData.ecap *)
+
+  * reg_tag MUX Selects (1-bit Capability Tag):
+      reg_tag_False               (* Integer ops, ADD, LUI, CClearTag, CGet*, etc. -> False *)
+      reg_tag_cs1BoundsValid      (* AUICGP, CIncAddr, CSetAddr -> cs1.tag & boundsCheck *)
+      reg_tag_Pcc                 (* CJAL, CJALR -> return sentry tag (gated by permitExecute) *)
+      reg_DirectCs1               (* CMove -> cs1.tag *)
+      reg_CAndPerm                (* CAndPerm -> res_CAndPerm.tag *)
+      reg_Sealer                  (* CSeal, CUnseal -> res_Sealer.tag *)
+      reg_tag_BoundsCalc          (* CSetBounds* -> validBounds *)
+      reg_ScrRead                 (* CSpecialRw -> scrReadData.tag *)
 
 -------------------------------------------------------------------------------
-2. CAPABILITY WRITE PORTS (regs[cd] <- FullECapWithTag)
+2. PROGRAM COUNTER CAPABILITY (PCC)
 -------------------------------------------------------------------------------
-  * Group 2  (AUICGP, AUIPCC):
-      cd.addr <- sum_MainAdder[31:0]; cd.ecap <- cs1.ecap;
-      cd.tag  <- cs1.tag & topValid_TopBoundsCheck & baseValid_BaseBoundsCheck.
+  * pcc_addr MUX Selects (Program Counter Address):
+      pcc_addr_SeqNext            (* Sequential PC+2 / PC+4 *)
+      pcc_Branch                  (* Conditional branch target PCC.addr + bimm12 *)
+      pcc_CjalTarget              (* CJAL target PCC.addr + jimm20 *)
+      pcc_CjalrTarget             (* CJALR target cs1.addr + simm12 with LSB cleared *)
+      pcc_Mepcc                   (* MRET -> restore from MEPCC.addr *)
 
-  * Group 13 (CIncAddr, CIncAddrImm):
-      cd.addr <- sum_MainAdder[31:0]; cd.ecap <- cs1.ecap;
-      cd.tag  <- cs1.tag & topValid_TopBoundsCheck & baseValid_BaseBoundsCheck.
+  * pcc_ecap MUX Selects (Program Counter Metadata Struct):
+      pcc_ecap_Current            (* Sequential ops, branches, and CJAL keep current PCC metadata *)
+      pcc_CjalrTarget             (* CJALR -> unsealed cs1 metadata *)
+      pcc_Mepcc                   (* MRET -> MEPCC.ecap *)
 
-  * Group 14 (CSetAddr):
-      cd.addr <- rs2; cd.ecap <- cs1.ecap;
-      cd.tag  <- cs1.tag & topValid_TopBoundsCheck & baseValid_BaseBoundsCheck.
+  * pcc_tag MUX Selects (Program Counter Capability Tag):
+      pcc_tag_Current             (* Sequential ops *)
+      pcc_Branch                  (* Branch -> cleared if target PC violates representability *)
+      pcc_CjalTarget              (* CJAL -> cleared if target PC violates representability *)
+      pcc_CjalrTarget             (* CJALR -> cleared if representability or permitExecute fails *)
+      pcc_Mepcc                   (* MRET -> MEPCC.tag *)
 
-  * Group 15 (CAndPerm):
-      cd <- res_CAndPerm (Direct 1:1 struct commit).
-
-  * Group 16 (CClearTag):
-      cd.addr <- cs1.addr; cd.ecap <- cs1.ecap; cd.tag <- False.
-
-  * Group 17 (CSeal, CUnseal):
-      cd <- res_SealerUnsealer (Direct 1:1 struct commit).
-
-  * Group 18 (CSetBounds, CSetBoundsExact, CSetBoundsImm):
-      cd.addr <- cs1.addr; cd.ecap <- newCap_BoundsCalc;
-      cd.tag  <- cs1.tag & ~cs1.isSealed & validBounds_BoundsCalc & exactValid.
-
-  * Group 20 (CMove):
-      cd <- cs1 (Direct 1:1 expanded capability struct copy).
-
-  * Group 21 (CSpecialRw):
-      cd <- old_scr (Direct 1:1 struct move from Special Capability Register).
-
-  * Group 22 (ECALL, EBREAK):
-      MEPCC <- PCC; PCC <- MTCC; mcause <- trap_cause.
-
-  * Group 23 (MRET):
-      PCC <- MEPCC.
+-------------------------------------------------------------------------------
+3. SYSTEM & SPECIAL REGISTERS (specialRegs: CSRs, SCRs)
+-------------------------------------------------------------------------------
+  * Write Enablement:
+      specialReg_writeEnableData : Bool   (* Asserted for both CSR updates and SCR updates *)
+      specialReg_writeEnableCap  : Bool   (* Asserted for SCR updates (ecap/tag); hardwired False for CSRs *)
 
 ===============================================================================
 7. QUANTITATIVE SILICON ECONOMICS & DESIGN RATIONALE
@@ -1357,4 +1405,207 @@ Section ExecutionUnits.
     LetE outPerms : CapPerms <- ##perms1 `{ "GL" <- #outGL } ;
     LetE outECap : ECap <- ##ecap1 `{ "oType" <- #outOType } `{ "perms" <- #outPerms } ;
     @RetE _ FullECapWithTag (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap; "addr" ::= ##src1`"addr" }).
+
+  Definition ScrSanitizer (enable : ty Bool) (inpCap : ty FullECapWithTag)
+    : LetExpr ty FullECapWithTag :=
+    LetE ecap : ECap <- ##inpCap`"ecap" ;
+    LetE perms : CapPerms <- ##ecap`"perms" ;
+    LetE addr : Data <- ##inpCap`"addr" ;
+    LetE isLsbSet : Bool <- FromBit Bool (TruncLsb (AddrSz - 1) 1 #addr) ;
+    LetE sealed : Bool <- isSealed ecap ;
+    LetE noExec : Bool <- Not (##perms`"EX") ;
+    LetE invalid : Bool <- Or [ #isLsbSet; #sealed; #noExec ] ;
+    LetE condClear : Bool <- And [#enable; #invalid];
+    LetE outTag : Bool <- And [ ##inpCap`"tag"; Not #condClear ] ;
+    @RetE _ FullECapWithTag (STRUCT { "tag" ::= #outTag; "ecap" ::= #ecap; "addr" ::= #addr }).
 End ExecutionUnits.
+
+Definition AluControl := STRUCT_TYPE {
+  (* 1. Ctrl_MainAdder *)
+  "MainAdder_src1_Rs1" :: Bool ;
+  "MainAdder_src1_Cs1Addr" :: Bool ;
+  "MainAdder_src1_Cs1Top" :: Bool ;
+  "MainAdder_src1_CgpAddr" :: Bool ;
+  "MainAdder_src1_PccAddr" :: Bool ;
+  "MainAdder_src1_Zero" :: Bool ;
+  
+  "MainAdder_src2_Rs2" :: Bool ;
+  "MainAdder_src2_simm12" :: Bool ;
+  "MainAdder_src2_uimm20_11" :: Bool ;
+  "MainAdder_src2_Cs1Base" :: Bool ;
+  "MainAdder_src2_Cs2Addr" :: Bool ;
+  
+  "MainAdder_subEnable" :: Bool ;
+
+  (* 2. Ctrl_PcAdder *)
+  "PcAdder_src1_PC" :: Bool ;
+  "PcAdder_src1_Rs1Addr" :: Bool ;
+  
+  "PcAdder_src2_bimm12" :: Bool ;
+  "PcAdder_src2_jimm20" :: Bool ;
+  "PcAdder_src2_simm12" :: Bool ;
+
+  (* 3. Ctrl_MemAdder *)
+  "MemAdder_src1_PC" :: Bool ;
+  "MemAdder_src1_Rs1Addr" :: Bool ;
+  
+  "MemAdder_src2_Constant2" :: Bool ;
+  "MemAdder_src2_Constant4" :: Bool ;
+  "MemAdder_src2_simm12" :: Bool ;
+
+  (* 4. Ctrl_Shifter *)
+  "Shifter_val_Rs1" :: Bool ;
+  
+  "Shifter_amt_Rs2Low5" :: Bool ;
+  "Shifter_amt_shamt" :: Bool ;
+  
+  "Shifter_isRight" :: Bool ;
+  "Shifter_isArith" :: Bool ;
+
+  (* 5. Ctrl_Logic *)
+  "Logic_src1_Rs1" :: Bool ;
+  
+  "Logic_src2_Rs2" :: Bool ;
+  "Logic_src2_simm12" :: Bool ;
+  
+  "Logic_opSel" :: Bit 2 ; (* 00 = AND, 01 = OR, 10 = XOR *)
+
+  (* 6. Ctrl_Comparator *)
+  "Comparator_src1_Rs1" :: Bool ;
+  "Comparator_src1_Cs1Addr" :: Bool ;
+  
+  "Comparator_src2_Rs2" :: Bool ;
+  "Comparator_src2_simm12" :: Bool ;
+  "Comparator_src2_Cs2Addr" :: Bool ;
+  
+  "Comparator_isSigned" :: Bool ;
+
+  (* 7. Ctrl_TopCheck *)
+  "TopCheck_inpAddr_SumMainAdder" :: Bool ;
+  "TopCheck_inpAddr_SignExtRs2" :: Bool ;
+  "TopCheck_inpAddr_Cs1Addr" :: Bool ;
+  "TopCheck_inpAddr_Cs1Otype" :: Bool ;
+  "TopCheck_inpAddr_Cs2Addr" :: Bool ;
+  "TopCheck_inpAddr_Cs2Top" :: Bool ;
+  
+  "TopCheck_limit_TopRep" :: Bool ;
+  "TopCheck_limit_Cs2Top" :: Bool ;
+  "TopCheck_limit_Cs1Top" :: Bool ;
+  
+  "TopCheck_isInclusive" :: Bool ;
+
+  (* 8. Ctrl_BaseCheck *)
+  "BaseCheck_inpAddr_SumMainAdder" :: Bool ;
+  "BaseCheck_inpAddr_SignExtRs2" :: Bool ;
+  "BaseCheck_inpAddr_Cs1Addr" :: Bool ;
+  "BaseCheck_inpAddr_Cs1Otype" :: Bool ;
+  "BaseCheck_inpAddr_Cs2Addr" :: Bool ;
+  "BaseCheck_inpAddr_Cs2Base" :: Bool ;
+  
+  "BaseCheck_base_AuthBase" :: Bool ;
+  "BaseCheck_base_Cs1Base" :: Bool ;
+
+  (* 9. Ctrl_BoundsCalc *)
+  "BoundsCalc_base_Cs1Addr" :: Bool ;
+  "BoundsCalc_base_Zero" :: Bool ;
+  
+  "BoundsCalc_length_Rs2" :: Bool ;
+  "BoundsCalc_length_simm12" :: Bool ;
+  "BoundsCalc_length_Rs1" :: Bool ;
+  
+  "BoundsCalc_isRoundDown" :: Bool ;
+
+  (* 10. Ctrl_CAndPerm *)
+  "CAndPerm_enable" :: Bool ;
+
+  (* 11. Ctrl_SealerUnsealer *)
+  "SealerUnsealer_isUnseal" :: Bool ;
+
+  (* 12. Ctrl_ScrSanitizer *)
+  "ScrSanitizer_enable" :: Bool ;
+
+  (* 13. Ctrl_MultiOp *)
+  "MultiOp_kind" :: Option Bool ; (* None = None, Some False = Load, Some True = Store *)
+  "MultiOp_memOpSz" :: Bit (Z.log2_up NumBytesXlen) (* 0=Byte (1B), 1=Half (2B), 2=Word (4B), 3=Cap (8B) *)
+}.
+
+Definition WbControl := STRUCT_TYPE {
+  (* 1. GENERAL PURPOSE & CAPABILITY REGISTER FILE (regs) *)
+  "reg_writeEnable" :: Bool ;
+
+  (* reg_addr MUX Selects *)
+  "reg_addr_MainAdder" :: Bool ;
+  "reg_addr_PcAdder" :: Bool ;
+  "reg_addr_Shifter" :: Bool ;
+  "reg_addr_Logic" :: Bool ;
+  "reg_addr_Comparator" :: Bool ;
+  "reg_addr_uimm20" :: Bool ;
+  "reg_addr_rs2" :: Bool ;
+  "reg_addr_cs1Addr" :: Bool ;
+  "reg_DirectCs1" :: Bool ;
+  "reg_CAndPerm" :: Bool ;
+  "reg_Sealer" :: Bool ;
+  "reg_addr_csrRead" :: Bool ;
+  "reg_ScrRead" :: Bool ;
+  "reg_addr_capField" :: Bool ;
+  "reg_addr_BoundsCalc_cram" :: Bool ;
+  "reg_addr_BoundsCalc_length" :: Bool ;
+
+  (* reg_ecap MUX Selects *)
+  "reg_ecap_null" :: Bool ;
+  "reg_ecap_cs1" :: Bool ;
+  "reg_ecap_Pcc" :: Bool ;
+  (* reg_DirectCs1 *)
+  (* reg_CAndPerm *)
+  (* reg_Sealer *)
+  "reg_ecap_BoundsCalc" :: Bool ;
+  (* reg_ScrRead *)
+
+  (* reg_tag MUX Selects *)
+  "reg_tag_False" :: Bool ;
+  "reg_tag_cs1BoundsValid" :: Bool ;
+  "reg_tag_Pcc" :: Bool ;
+  (* reg_DirectCs1 *)
+  (* reg_CAndPerm *)
+  (* reg_Sealer *)
+  "reg_tag_BoundsCalc" :: Bool ;
+  (* reg_ScrRead *)
+
+  (* 2. PROGRAM COUNTER CAPABILITY (PCC) *)
+  (* pcc_addr MUX Selects *)
+  "pcc_addr_SeqNext" :: Bool ;
+  "pcc_Branch" :: Bool ;
+  "pcc_CjalTarget" :: Bool ;
+  "pcc_CjalrTarget" :: Bool ;
+  "pcc_Mepcc" :: Bool ;
+
+  (* pcc_ecap MUX Selects *)
+  "pcc_ecap_Current" :: Bool ;
+  (* pcc_CjalrTarget *)
+  (* pcc_Mepcc *)
+
+  (* pcc_tag MUX Selects *)
+  "pcc_tag_Current" :: Bool ;
+  (* pcc_Branch *)
+  (* pcc_CjalTarget *)
+  (* pcc_CjalrTarget *)
+  (* pcc_Mepcc *)
+
+  (* 3. SYSTEM & SPECIAL REGISTERS (specialRegs) *)
+  "specialReg_writeEnableData" :: Bool ;
+  "specialReg_writeEnableCap" :: Bool
+}.
+
+Definition AluOutput := STRUCT_TYPE {
+  (* 1. Architectural Commit Targets *)
+  "reg"     :: FullECapWithTag ;
+  "pcc"     :: FullECapWithTag ;
+  "special" :: FullECapWithTag ;
+
+  (* 2. Extra Control Flow & Predictor Outputs *)
+  "pcc_SeqNext"     :: Data ;
+  "pcc_Branch"      :: Bool ;
+  "branchTaken"     :: Bool ;
+  "pcc_CjalTarget"  :: Bool ;
+  "pcc_CjalrTarget" :: Bool
+}.
