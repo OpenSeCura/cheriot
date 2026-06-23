@@ -25,7 +25,7 @@ Import ListNotations.
 
 Local Open Scope Z_scope.
 
-Definition Xlen : Z := 32.
+Definition Xlen := 32.
 
 Local Open Scope guru_scope.
 
@@ -38,8 +38,12 @@ Definition LgAddrSz := Eval compute in Z.log2_up AddrSz.
 Definition ExpSz    := Eval compute in LgAddrSz.
 Definition NumBytesXlen := Eval compute in (Xlen / 8).
 
-Definition CapBSz   := 9.
 Definition CapOTypeSz := 3.
+Definition RegIdxSz   := 5.
+Definition Cra        := 1.
+
+Definition getCd ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[11:7].
+Definition getCs1 ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[19:15].
 
 Definition CapPerms := STRUCT_TYPE { "U0" :: Bool ;
                                      "SE" :: Bool ;
@@ -121,11 +125,13 @@ Definition FullECapWithTag := STRUCT_TYPE { "tag" :: Bool;
                                             "ecap" :: ECap;
                                             "addr" :: Addr }.
 
-Definition CallSentryIh : Z := 1.
-Definition CallSentryId : Z := 2.
-Definition CallSentryIe : Z := 3.
-Definition RetSentryId  : Z := 4.
-Definition RetSentryIe  : Z := 5.
+Definition CapBSz := 9.
+
+Definition CallSentryIh := 1.
+Definition CallSentryId := 2.
+Definition CallSentryIe := 3.
+Definition RetSentryId  := 4.
+Definition RetSentryIe  := 5.
 
 Definition isSealed ty (ecap: ty ECap) : Expr ty Bool := isNotZero (##ecap`"oType").
 Definition isCallSentry ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
