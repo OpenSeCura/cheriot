@@ -1962,7 +1962,7 @@ Section AluDatapath.
       "reg"             ::= #out_reg ;
       "pcc"             ::= #out_pcc ;
       "special"         ::= #out_special ;
-      "interruptStatus" ::= ConstT ty Bool true;
+      "interruptStatus" ::= Const ty Bool true;
       "pcc_SeqNext"     ::= #pcc_SeqNext ;
       "pcc_Branch"      ::= ##wbCtrl`"pcc_Branch" ;
       "branchTaken"     ::= #Comparator_resVal ;
