@@ -1728,9 +1728,10 @@ Definition WbControl := STRUCT_TYPE {
 
 Definition AluOutput := STRUCT_TYPE {
   (* 1. Architectural Commit Targets *)
-  "reg"     :: FullECapWithTag ;
-  "pcc"     :: FullECapWithTag ;
-  "special" :: FullECapWithTag ;
+  "reg"             :: FullECapWithTag ;
+  "pcc"             :: FullECapWithTag ;
+  "special"         :: FullECapWithTag ;
+  "interruptStatus" :: Bool ;
 
   (* 2. Extra Control Flow & Predictor Outputs *)
   "pcc_SeqNext"     :: Data ;
@@ -1961,6 +1962,7 @@ Section AluDatapath.
       "reg"             ::= #out_reg ;
       "pcc"             ::= #out_pcc ;
       "special"         ::= #out_special ;
+      "interruptStatus" ::= ConstT ty Bool true;
       "pcc_SeqNext"     ::= #pcc_SeqNext ;
       "pcc_Branch"      ::= ##wbCtrl`"pcc_Branch" ;
       "branchTaken"     ::= #Comparator_resVal ;
