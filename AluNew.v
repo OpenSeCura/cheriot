@@ -71,7 +71,7 @@ comparators and specialized capability blocks:
   11. SealerUnsealer  : Dedicated local authorization and object-type tagging unit for CSeal/CUnseal.
   12. ScrSanitizer    : Dedicated local capability sanitization unit for special scratch registers.
   13. BranchJalPccTag : Dedicated control-flow target representability and tag validation unit.
-  14. Cjalr           : Dedicated CJALR target capability metadata, tag, and interrupt evaluation unit.
+  14. CjalrPcc        : Dedicated CJALR target capability metadata, tag, and interrupt evaluation unit.
   15. MultiOp         : Dedicated memory effective address and multicycle system interaction unit.
 
 ===============================================================================
@@ -459,30 +459,30 @@ Purpose: Verifies target PC representability for branches (`BEQ`, `BLT`, etc.) a
     * Group 6 (Branches), Group 7 (CJAL, CJALR): nextTag drives the pcc_tag commit routing multiplexer.
 
 -------------------------------------------------------------------------------
-EXECUTE UNIT 14: Cjalr (Dedicated CJALR Target Metadata & Legality Verification Unit)
+EXECUTE UNIT 14: CjalrPcc (Dedicated CJALR Target Metadata & Legality Verification Unit)
 -------------------------------------------------------------------------------
 Purpose: Dedicated architectural evaluation unit for `CJALR` jump target capability metadata (`PCC.ecap`),
          return link capability (`rd.ecap`), tag validity (`PCC.tag`), and interrupt status (`MIE`),
          enforcing CHERIoT Sail sentry unsealing and return sealing rules.
 
   [Inputs]
-    * Cjalr_pccECap             : ECap            (Current authorizing Program Counter Capability metadata)
-    * Cjalr_cs1                 : FullECapWithTag (Authorizing jump target capability operand $cs1$)
-    * Cjalr_inst                : Inst            (Raw 32-bit instruction word encoding $cd$, $cs1$, and $simm12$)
-    * Cjalr_currInterruptStatus : Bool            (Current architectural interrupt enable status `MIE`)
+    * CjalrPcc_pccECap             : ECap            (Current authorizing Program Counter Capability metadata)
+    * CjalrPcc_cs1                 : FullECapWithTag (Authorizing jump target capability operand $cs1$)
+    * CjalrPcc_inst                : Inst            (Raw 32-bit instruction word encoding $cd$, $cs1$, and $simm12$)
+    * CjalrPcc_currInterruptStatus : Bool            (Current architectural interrupt enable status `MIE`)
 
   [Outputs]
-    * Cjalr_nextPccTag          : Bool (Legalized target PCC tag validity flag)
-    * Cjalr_nextPccECap         : ECap (Unsealed target PCC capability metadata struct)
-    * Cjalr_linkECap            : ECap (Return link capability metadata potentially sealed as backward sentry)
-    * Cjalr_interruptStatus     : Bool (Updated architectural interrupt enable status `MIE`)
+    * CjalrPcc_nextPccTag          : Bool (Legalized target PCC tag validity flag)
+    * CjalrPcc_nextPccECap         : ECap (Unsealed target PCC capability metadata struct)
+    * CjalrPcc_linkECap            : ECap (Return link capability metadata potentially sealed as backward sentry)
+    * CjalrPcc_interruptStatus     : Bool (Updated architectural interrupt enable status `MIE`)
 
   [Input Mapping]
     * Group 7 (CJALR): Current pccECap drives pccECap; authorizing capability cs1 drives cs1;
       raw instruction word drives inst; interruptStatus drives currInterruptStatus. (Not connected yet).
 
   [Output Mapping]
-    * Group 7 (CJALR): Struct outputs Cjalr_nextPccTag, Cjalr_nextPccECap, Cjalr_linkECap, and Cjalr_interruptStatus
+    * Group 7 (CJALR): Struct outputs CjalrPcc_nextPccTag, CjalrPcc_nextPccECap, CjalrPcc_linkECap, and CjalrPcc_interruptStatus
       (Not connected yet).
 
 -------------------------------------------------------------------------------
@@ -1504,13 +1504,13 @@ Section ExecutionUnits.
                And [ Or [ #isCjal; #isBranch ] ; #boundsValid ] ;
                And [ #isBranch; Not #branchTaken ] ]).
 
-  Definition CjalrOut := STRUCT_TYPE { "nextPccTag"      :: Bool;
-                                       "nextPccECap"     :: ECap;
-                                       "linkECap"        :: ECap;
-                                       "interruptStatus" :: Bool }.
+  Definition CjalrPccOut := STRUCT_TYPE { "nextPccTag"      :: Bool;
+                                          "nextPccECap"     :: ECap;
+                                          "linkECap"        :: ECap;
+                                          "interruptStatus" :: Bool }.
 
-  Definition Cjalr (pccECap : ty ECap) (cs1 : ty FullECapWithTag) (inst : ty Inst) (currInterruptStatus : ty Bool)
-                   : LetExpr ty CjalrOut :=
+  Definition CjalrPcc (pccECap : ty ECap) (cs1 : ty FullECapWithTag) (inst : ty Inst) (currInterruptStatus : ty Bool)
+                      : LetExpr ty CjalrPccOut :=
     LetE cs1Tag : Bool <- ##cs1`"tag" ;
     LetE cs1ECap : ECap <- ##cs1`"ecap" ;
     LetE cs1PermEx : Bool <- ##cs1ECap`"perms"`"EX" ;
@@ -1543,10 +1543,10 @@ Section ExecutionUnits.
     LetE bwdSentryOType : Bit CapOTypeSz <- ITE #currInterruptStatus $RetSentryIe $RetSentryId ;
     LetE linkECap : ECap <- #pccECap `{ "oType" <- ITE0 #isCall #bwdSentryOType } ;
 
-    @RetE _ CjalrOut (STRUCT { "nextPccTag"      ::= #nextPccTag;
-                               "nextPccECap"     ::= #nextPccECap;
-                               "linkECap"        ::= #linkECap;
-                               "interruptStatus" ::= #nextIntStatus }).
+    @RetE _ CjalrPccOut (STRUCT { "nextPccTag"      ::= #nextPccTag;
+                                  "nextPccECap"     ::= #nextPccECap;
+                                  "linkECap"        ::= #linkECap;
+                                  "interruptStatus" ::= #nextIntStatus }).
 
 End ExecutionUnits.
 
