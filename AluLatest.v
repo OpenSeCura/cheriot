@@ -511,7 +511,7 @@ Local Open Scope string_scope.
 
 Definition InstGroup := STRUCT_TYPE {
   "isCompressed"  :: Bool ;
-  "Logical_opSel" :: Bit 2 ;
+  "Logical_opSel" :: Bit 2 ; (* Options: 0 (2'b00) = AND, 1 (2'b01) = OR, 2 (2'b10) = XOR *)
   "Branch"        :: Bool ;
   "Cjal"          :: Bool ;
   "Aui"           :: Bool ;
