@@ -12,7 +12,7 @@ def verify_alu(file_path):
 
     # 2. Extract Section 1 and Section 2 blocks
     s1_match = re.search(r"1\. INSTRUCTION GROUPS(.*?)(?:2\. FUNCTIONAL UNIT|\Z)", content_no_comments, re.DOTALL)
-    s2_match = re.search(r"2\. FUNCTIONAL UNIT/RESOURCE MAPPING(.*?)(?:3\. LOAD BALANCING|\Z)", content_no_comments, re.DOTALL)
+    s2_match = re.search(r"2\. FUNCTIONAL UNIT/RESOURCE MAPPING(.*?)(?:\*\)|\Z)", content_no_comments, re.DOTALL)
 
     if not s1_match or not s2_match:
         print("[!] Error: Could not locate Section 1 or Section 2 in file.")
@@ -27,7 +27,7 @@ def verify_alu(file_path):
         if not line or line.startswith(" ") or line.startswith("\t") or line.startswith("*") or line.startswith("-"):
             continue
         token = line.split(":")[0].strip()
-        if token and not token.startswith("---") and "Immediate" not in token and "0." not in token:
+        if token and not token.startswith("---") and "Immediate" not in token and "Miscellaneous" not in token and "0." not in token:
             section1_groups.add(token)
 
     reachability = {g: {"units": set(), "writebacks": set()} for g in section1_groups}

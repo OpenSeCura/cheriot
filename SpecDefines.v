@@ -144,3 +144,5 @@ Definition isSentryIe ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
   Or [ Eq #oType $CallSentryIe; Eq #oType $RetSentryIe ].
 Definition isSentryId ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
   Or [ Eq #oType $CallSentryId; Eq #oType $RetSentryId ].
+Definition isSentryIh ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
+  Eq #oType $CallSentryIh.

@@ -480,3 +480,733 @@ Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (Aui, CIncAddr, Load, Store),
 Exception: LoadUnit.Exception (Load), StoreUnit.Exception (Store), 0 (others)
 LoadPostProcess: LoadUnit.LoadPostProcess (Load), 0 (others)
 *)
+
+From Stdlib Require Import String List ZArith Zmod.
+From Guru Require Import Library Syntax Notations.
+From Cheriot Require Import SpecDefines.
+
+Set Implicit Arguments.
+Unset Strict Implicit.
+Set Asymmetric Patterns.
+
+Import ListNotations.
+Local Open Scope guru_scope.
+Local Open Scope string_scope.
+
+Definition AluControl := STRUCT_TYPE {
+  "AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr" :: Bool ;
+  "AdderBeforeBoundsCheck_offset_bimm12" :: Bool ;
+  "AdderBeforeBoundsCheck_offset_jimm20" :: Bool ;
+  "AdderBeforeBoundsCheck_offset_uimm20_11" :: Bool ;
+  "AdderBeforeBoundsCheck_offset_cs2Addr" :: Bool ;
+  "AdderBeforeBoundsCheck_offset_simm12" :: Bool ; (* default option *)
+  "AdderToOutput_base_pccAddr" :: Bool ;
+  "AdderToOutput_base_cs1Addr" :: Bool ; (* default option *)
+  "AdderToOutput_base_cs1Top" :: Bool ;
+  "AdderToOutput_offset_const2" :: Bool ;
+  "AdderToOutput_offset_const4" :: Bool ; (* default option *)
+  "AdderToOutput_offset_cs2Addr" :: Bool ;
+  "AdderToOutput_offset_simm12" :: Bool ;
+  "AdderToOutput_offset_cs1Base" :: Bool ;
+  "AdderToOutput_isSub" :: Bool ;
+  "Add_CapBSz_baseExp_isPccExpNotCs1Exp" :: Bool ;
+  "ComparatorGeneral_op2_isCs2AddrNotSimm12" :: Bool ;
+  "ComparatorGeneral_isUnsigned" :: Bool ;
+  "ComparatorGeneral_checkLt" :: Bool ;
+  "ComparatorGeneral_checkEq" :: Bool ;
+  "ComparatorGeneral_invertRes" :: Bool ;
+  "Logical_op2_isCs2AddrNotSimm12" :: Bool ;
+  "Logical_opSel" :: Bit 2 ; (* Options: 0 (2'b00) = AND, 1 (2'b01) = OR, 2 (2'b10) = XOR *)
+  "SealerUnsealer_isUnseal" :: Bool ;
+  "Bounds_reqLimit_cs2Addr" :: Bool ;
+  "Bounds_reqLimit_zimm12" :: Bool ; (* default option *)
+  "Bounds_reqLimit_cs1Addr" :: Bool ;
+  "Bounds_isRoundDown" :: Bool ;
+  "Shifter_data_isCs1AddrNotConst1" :: Bool ;
+  "Shifter_shamt_cs2Addr" :: Bool ;
+  "Shifter_shamt_shamt" :: Bool ; (* default option *)
+  "Shifter_shamt_AddCapBSz" :: Bool ;
+  "Shifter_isRight" :: Bool ;
+  "Shifter_isArith" :: Bool ;
+  "AdderBeforeRepCheck_base_isPccBaseNotCs1Base" :: Bool ;
+  "ComparatorTopRep_addr_AdderBeforeBoundsCheck" :: Bool ;
+  "ComparatorTopRep_addr_cs1Addr" :: Bool ; (* default option *)
+  "ComparatorTopRep_addr_cs1OType" :: Bool ;
+  "ComparatorTopRep_addr_cs1Top" :: Bool ;
+  "ComparatorTopRep_topRep_AdderBeforeRepCheck" :: Bool ;
+  "ComparatorTopRep_topRep_cs1Top" :: Bool ; (* default option *)
+  "ComparatorTopRep_topRep_cs2Top" :: Bool ;
+  "ComparatorTopRep_checkLte" :: Bool ;
+  "ComparatorBase_addr_AdderBeforeBoundsCheck" :: Bool ;
+  "ComparatorBase_addr_cs1Addr" :: Bool ; (* default option *)
+  "ComparatorBase_addr_cs1OType" :: Bool ;
+  "ComparatorBase_addr_cs1Base" :: Bool ;
+  "ComparatorBase_base_pccBase" :: Bool ;
+  "ComparatorBase_base_cs1Base" :: Bool ; (* default option *)
+  "ComparatorBase_base_cs2Base" :: Bool ;
+  "AddrBoundsCheck_tag_isPccTagNotCs1Tag" :: Bool ;
+  "NewPcc_tag_isAddrBoundsCheckNotCjalrUnitTag" :: Bool ;
+  "NewPcc_ecap_isCjalrUnitEcapNotPccEcap" :: Bool ;
+  "NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput" :: Bool ;
+  "Reg_tag_const0" :: Bool ; (* default option *)
+  "Reg_tag_pccTag" :: Bool ;
+  "Reg_tag_cs1Tag" :: Bool ;
+  "Reg_tag_AddrBoundsCheck" :: Bool ;
+  "Reg_tag_specialTag" :: Bool ;
+  "Reg_ecap_const0" :: Bool ; (* default option *)
+  "Reg_ecap_pccEcap" :: Bool ;
+  "Reg_ecap_cs1Ecap" :: Bool ;
+  "Reg_ecap_cs2Addr" :: Bool ;
+  "Reg_ecap_CAndPerm" :: Bool ;
+  "Reg_ecap_SealerUnsealer" :: Bool ;
+  "Reg_ecap_Bounds" :: Bool ;
+  "Reg_ecap_specialEcap" :: Bool ;
+  "Reg_addr_uimm20" :: Bool ; (* default option *)
+  "Reg_addr_AdderBeforeBoundsCheck" :: Bool ;
+  "Reg_addr_ComparatorGeneralLt" :: Bool ;
+  "Reg_addr_Shifter" :: Bool ;
+  "Reg_addr_Logical" :: Bool ;
+  "Reg_addr_AdderToOutput" :: Bool ;
+  "Reg_addr_cs1Fields" :: Bool ;
+  "Reg_addr_cs2Addr" :: Bool ;
+  "Reg_addr_cs1Addr" :: Bool ;
+  "Reg_addr_BoundsBase" :: Bool ;
+  "Reg_addr_BoundsCram" :: Bool ;
+  "Reg_addr_BoundsCrrl" :: Bool ;
+  "Reg_addr_CapSubset" :: Bool ;
+  "Reg_addr_CapEq" :: Bool ;
+  "Reg_addr_specialAddr" :: Bool ;
+  "Exception_isLoadUnitNotStoreUnit" :: Bool }.
+
+Section CherIoT_ALU_Formal_Specification.
+  Variable ty : Kind -> Type.
+  Variable pcc cs1 cs2 special : ty FullECapWithTag.
+  Variable inst : ty (Bit 32).
+  Variable currInterruptStatus : ty Bool.
+
+  (* ===========================================================================
+     1. GALLINA FUNCTIONAL UNIT SPECIFICATIONS
+     =========================================================================== *)
+
+  Definition AdderBeforeBoundsCheck (base offset : ty (Bit Xlen)) : LetExpr ty (Bit Xlen) :=
+    LetE sum : Bit Xlen <- Add [ #base; #offset ];
+    RetE #sum.
+
+  Definition AdderToOutput (base offset : ty (Bit Xlen)) (isSub : ty Bool) : LetExpr ty (Bit Xlen) :=
+    LetE op2 : Bit Xlen <- ITE #isSub (Not #offset) #offset;
+    LetE cin : Bit Xlen <- ZeroExtendTo Xlen (ToBit #isSub);
+    LetE sum : Bit Xlen <- Add [ #base; #op2; #cin ];
+    RetE #sum.
+
+  Definition Add_CapBSz (baseExp : ty (Bit ExpSz)) : LetExpr ty (Bit ExpSz) :=
+    LetE sum : Bit ExpSz <- Add [ #baseExp; $CapBSz ];
+    RetE #sum.
+
+  Definition ComparatorOut := STRUCT_TYPE {
+    "lt" :: Bool ;
+    "eq" :: Bool }.
+
+  Definition ComparatorGeneral (op1 op2 : ty (Bit Xlen)) (isUnsigned checkLt checkEq invertRes : ty Bool) :
+    LetExpr ty ComparatorOut :=
+    LetE flipBit : Bit 1 <- ToBit (Not #isUnsigned) ;
+    let flipMsb e:= {< Xor [#flipBit; TruncMsb 1 (Xlen-1) e], TruncLsb 1 (Xlen-1) e >} in
+    LetE op1_flipped : Bit Xlen <- flipMsb #op1 ;
+    LetE op2_flipped : Bit Xlen <- flipMsb #op2 ;
+    LetE ltRes : Bool <- Slt #op1_flipped #op2_flipped;
+    LetE eqRes : Bool <- Eq #op1 #op2;
+    LetE cond  : Bool <- Or [ And [ #checkLt; #ltRes ]; And [ #checkEq; #eqRes ] ];
+    LetE finalRes : Bool <- ITE #invertRes (Not #cond) #cond;
+    @RetE _ ComparatorOut (STRUCT { "lt" ::= #finalRes; "eq" ::= #eqRes }).
+
+  Definition CjalrUnitRes := STRUCT_TYPE {
+    "tag"             :: Bool;
+    "ecap"            :: ECap;
+    "interruptStatus" :: Bool }.
+
+  (* TODO: fix comment to take care of interrupt status *)
+  Definition CjalrUnit (cs1 : ty FullECapWithTag) (instWord : ty Inst) (currIntStatus : ty Bool)
+                       : LetExpr ty CjalrUnitRes :=
+    LetE cs1Tag : Bool <- ##cs1`"tag" ;
+    LetE cs1ECap : ECap <- ##cs1`"ecap" ;
+    LetE cs1PermEx : Bool <- ##cs1ECap`"perms"`"EX" ;
+    LetE cs1Sealed : Bool <- isSealed cs1ECap ;
+    LetE notCs1Sealed : Bool <- Not #cs1Sealed ;
+
+    LetE cdNum : Bit RegIdxSz <- getCd instWord ;
+    LetE cs1Num : Bit RegIdxSz <- getCs1 instWord ;
+    LetE immZero : Bool <- isZero (#instWord`[31:20]) ;
+
+    LetE isCdZero : Bool <- isZero #cdNum ;
+    LetE isCs1Cra : Bool <- Eq #cs1Num $Cra ;
+    LetE isCdCra  : Bool <- Eq #cdNum $Cra ;
+    LetE isReturn : Bool <- And [#isCdZero; #isCs1Cra] ;
+    LetE isCall   : Bool <- #isCdCra ;
+
+    LetE cs1OType : Bit CapOTypeSz <- ##cs1ECap`"oType" ;
+
+    LetE nextPccLegal : Bool <- caseDefault [ (#isReturn, isRetSentry cs1OType);
+                                              (#isCall, Or [#notCs1Sealed; isCallSentry cs1OType]) ]
+                                  (Or [#notCs1Sealed; Eq #cs1OType $CallSentryIh]);
+
+    LetE nextPccTag : Bool <- And [#cs1Tag; #cs1PermEx; #nextPccLegal; Or [#notCs1Sealed; #immZero]] ;
+    LetE nextPccECap : ECap <- ##cs1ECap `{ "oType" <- $0 } ;
+
+    LetE nextIntStatus : Bool <- ITE (And [#nextPccTag; Not (isSentryIh cs1OType)])
+                                   (isSentryIe cs1OType)
+                                   #currIntStatus;
+
+    @RetE _ CjalrUnitRes (STRUCT { "tag"             ::= #nextPccTag;
+                                   "ecap"            ::= #nextPccECap;
+                                   "interruptStatus" ::= #nextIntStatus }).
+
+  Definition Logical (op1 op2 : ty (Bit Xlen)) (opSel : ty (Bit 2)) : LetExpr ty (Bit Xlen) :=
+    LetE andRes : Bit Xlen <- And [ #op1; #op2 ];
+    LetE orRes  : Bit Xlen <- Or [ #op1; #op2 ];
+    LetE xorRes : Bit Xlen <- Xor [ #op1; #op2 ];
+    LetE selArr : Array 2 Bool <- FromBit _ #opSel;
+    RetE (ITE (#selArr$[1]) #xorRes (ITE (#selArr$[0]) #orRes #andRes)).
+
+  Definition CAndPermRes := STRUCT_TYPE {
+    "tag"  :: Bool ;
+    "ecap" :: ECap }.
+
+  Definition CAndPerm (cap : ty FullECapWithTag) (rs2 : ty Data) : LetExpr ty CAndPermRes :=
+    LetE maskBits : Bit (kindSize CapPerms) <- TruncLsb (Xlen - kindSize CapPerms) (kindSize CapPerms) #rs2 ;
+    LetE maskVal : CapPerms <- FromBit CapPerms #maskBits ;
+    LetE ecapVal : ECap <- ##cap`"ecap" ;
+    LetE oldPerms : CapPerms <- ##ecapVal`"perms" ;
+    LetE rawMask : CapPerms <- And [ ##oldPerms; #maskVal ] ;
+    LetE newPerms : CapPerms <- fixPerms rawMask ;
+    LetE sealed : Bool <- isSealed ecapVal ;
+    LetE maskAllOnesNonGL : Bool <- isAllOnes (#maskVal `{ "GL" <- ConstTBool true }) ;
+    LetE keepTag : Bool <- Or [ Not #sealed; #maskAllOnesNonGL ] ;
+    LetE capTag : Bool <- ##cap`"tag" ;
+    LetE outTag : Bool <- And [ #capTag; #keepTag ] ;
+    LetE outECap : ECap <- ##ecapVal `{ "perms" <- #newPerms } ;
+    @RetE _ CAndPermRes (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap }).
+
+  Definition SealerUnsealerRes := STRUCT_TYPE {
+    "tag"  :: Bool ;
+    "ecap" :: ECap }.
+
+  Definition SealerUnsealer (isUnseal boundsValid : ty Bool) (src1 src2 : ty FullECapWithTag)
+    : LetExpr ty SealerUnsealerRes :=
+    LetE ecap1 : ECap <- ##src1`"ecap" ;
+    LetE ecap2 : ECap <- ##src2`"ecap" ;
+    LetE perms1 : CapPerms <- ##ecap1`"perms" ;
+    LetE perms2 : CapPerms <- ##ecap2`"perms" ;
+    LetE sealed1 : Bool <- isSealed ecap1 ;
+    LetE sealed2 : Bool <- isSealed ecap2 ;
+    LetE cs2Addr : Data <- ##src2`"addr" ;
+    LetE cs1Tag : Bool <- ##src1`"tag" ;
+    LetE cs2Tag : Bool <- ##src2`"tag" ;
+    LetE sealRange : Bool <- ITE (##perms1`"EX")
+                               (And [ Sgt #cs2Addr $0; Sle #cs2Addr $7 ])
+                               (And [ Sgt #cs2Addr $8; Sle #cs2Addr $15 ]) ;
+    LetE permit : Bool <- ITE #isUnseal
+                            (And [ #sealed1; ##perms2`"US" ])
+                            (And [ Not #sealed1; ##perms2`"SE"; #sealRange ]) ;
+    LetE outTag : Bool <- And [ #cs1Tag; #cs2Tag; #boundsValid; Not #sealed2; #permit ] ;
+    LetE outOType : Bit CapOTypeSz <- ITE #isUnseal $0 (TruncLsb (AddrSz - CapOTypeSz) CapOTypeSz #cs2Addr) ;
+    LetE outGL : Bool <- ITE #isUnseal (And [ ##perms1`"GL"; ##perms2`"GL" ]) (##perms1`"GL") ;
+    LetE outPerms : CapPerms <- ##perms1 `{ "GL" <- #outGL } ;
+    LetE outECap : ECap <- ##ecap1 `{ "oType" <- #outOType } `{ "perms" <- #outPerms } ;
+    @RetE _ SealerUnsealerRes (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap }).
+
+  Definition BoundsRes := STRUCT_TYPE {
+    "E" :: Bit ExpSz ;
+    "base" :: Bit (Xlen + 1) ;
+    "top" :: Bit (Xlen + 1) ;
+    "cram" :: Bit (Xlen + 1) ;
+    "length" :: Bit (Xlen + 1) ;
+    "exact" :: Bool }.
+
+  (*  ===================================================================
+      CSETBOUNDS ALGORITHM & INFORMAL PROOF OF CORRECTNESS
+      ===================================================================
+
+      Problem Statement:
+      Given input base (AddrSz + 1 bits) and length (AddrSz + 1 bits),
+      compute mantissa m (CapBSz bits), exponent e (LgAddrSz bits) s.t.:
+        1) outBase = floor(base / 2^e) * 2^e
+        2) outLength = m * 2^e
+        3) outBase <= base
+        4) outBase + outLength >= base + length
+        5) outBase + (m - 1) * 2^e < base + length
+        6) MSB of m is 1 unless e is 0.
+
+      ALGORITHM DEFINITION:
+
+      Step 1: Initial Canonical Exponent Selection & Sub-Algorithm
+        Sub-Algorithm to obtain e_init:
+          Let lenTrunc : Bit (AddrSz + 1 - CapBSz) = floor(length / 2^CapBSz).
+          Let clz : Bit LgAddrSz = countLeadingZeros(lenTrunc).
+          Let e_init : Bit LgAddrSz = (AddrSz + 1 - CapBSz) - clz.
+
+        Bit-Width Justifications:
+          - lenTrunc: length is AddrSz + 1 bits. Right shift by CapBSz leaves AddrSz + 1 - CapBSz bits.
+          - clz, e_init: Since CapBSz >= 2, lenTrunc width W = AddrSz + 1 - CapBSz < AddrSz = 2^LgAddrSz.
+           Thus max count W <= 2^LgAddrSz - 1, fitting in LgAddrSz bits.
+
+        Condition Satisfied:
+          if length < 2^CapBSz, then e_init = 0
+          if length >= 2^CapBSz, then 2^e_init > length / 2^CapBSz >= 2^(e_init - 1).
+
+        Proof of Condition:
+          Let W = AddrSz + 1 - CapBSz be bit-width of lenTrunc.
+          - If lenTrunc == 0 (length < 2^CapBSz): clz = W implies e_init = 0.
+          - If lenTrunc >= 1 (length >= 2^CapBSz): Top '1' bit of lenTrunc is at index
+            (W - 1) - clz = e_init - 1. Thus 2^(e_init - 1) <= lenTrunc <= 2^e_init - 1 < 2^e_init.
+            Since lenTrunc = floor(length / 2^CapBSz) <= length / 2^CapBSz, we have:
+              length / 2^CapBSz >= lenTrunc >= 2^(e_init - 1).
+            And since length / 2^CapBSz < lenTrunc + 1 (lenTrunc is the floor(length/2^CapBSz)) <= 2^e_init,
+              we strictly have: length / 2^CapBSz < 2^e_init.
+            Thus 2^e_init > length / 2^CapBSz >= 2^(e_init - 1). (QED)
+
+      Step 2: Base Candidate & Unaligned Remainders
+        Let d : Bit (CapBSz + 1) = floor(length / 2^e_init).
+        Let base_mod_e : Bit (AddrSz + 2 - CapBSz) = base mod 2^e_init.
+        Let length_mod_e : Bit (AddrSz + 2 - CapBSz) = length mod 2^e_init.
+        Let sum_mod_e : Bit (AddrSz + 2 - CapBSz) = base_mod_e + length_mod_e.
+        Let iCeil : Bit 2 = ceil(sum_mod_e / 2^e_init).
+        Let m_raw : Bit (CapBSz + 1) = d + iCeil.
+
+        Bit-Width Justifications:
+          - d: By Step 1 proof, length / 2^e_init < 2^CapBSz, so d <= 2^CapBSz - 1.
+          - remainders: Since clz >= 0, max e_init = AddrSz + 1 - CapBSz.
+                        Moduli at 2^e_init are strictly < 2^e_init,
+            fitting in AddrSz + 1 - CapBSz bits; their sum needs + 1 carry bit (AddrSz + 2 - CapBSz bits total).
+          - iCeil: sum_mod_e / 2^e_init < 2, so ceil <= 2 (2 bits).
+          - m_raw: max(d) + max(iCeil) = 2^CapBSz + 1, fitting in CapBSz + 1 bits.
+
+        Condition Satisfied:
+          floor(base / 2^e_init) * 2^e_init + m_raw * 2^e_init >= base + length.
+
+        Proof of Condition:
+          Let c1_base = floor(base / 2^e_init) * 2^e_init.
+          By standard remainder definitions:
+            base = c1_base + base_mod_e
+            length = d * 2^e_init + length_mod_e.
+          Summing these exact inputs: base + length = c1_base + d * 2^e_init + sum_mod_e.
+          Since iCeil = ceil(sum_mod_e / 2^e_init), we have iCeil * 2^e_init >= sum_mod_e.
+          Adding c1_base + d * 2^e_init to both sides yields:
+            c1_base + (d + iCeil) * 2^e_init >= base + length.
+          Substituting m_raw = d + iCeil proves c1_base + m_raw * 2^e_init >= base + length. (QED)
+
+      Step 3: Normalization & Base Parity Inspection
+        Let b_e : Bit 1 = (base / 2^e_init) mod 2  (bit e_init of base).
+        Let isOverflow : Bool = (m_raw >= 2^CapBSz).
+
+        Final Exponent Output (e : Bit LgAddrSz):
+          Let e_unsat : Bit LgAddrSz = e_init + 1  if isOverflow else  e_init
+          e : Bit LgAddrSz = AddrSz + 1 - CapBSz  if (e_unsat > AddrSz - CapBSz) else  e_unsat
+
+        Final Mantissa Output (m : Bit CapBSz):
+          if not isOverflow:
+            m : Bit CapBSz = TruncLsb CapBSz m_raw
+          else:
+            m : Bit CapBSz = 2^(CapBSz - 1) + (1 if (m_raw + b_e > 2^CapBSz) else 0)
+
+        Conditions Satisfied:
+          0) if isOverflow then m = ceil((m_raw + b_e) / 2) else m = m_raw
+          1) outBase = floor(base / 2^e) * 2^e <= base
+          2) outBase + m * 2^e >= base + length
+          3) outBase + (m - 1) * 2^e < base + length
+          4) MSB of m is 1 unless e is 0.
+
+        Proofs of Conditions:
+          0) Trivial for non overflow case.
+             For overflow case, by checking all cases of m_raw in {2^CapBSz, 2^CapBSz + 1} and b_e in {0, 1},
+               m is algebraically identical to ceil((m_raw + b_e) / 2).
+          1) Lower Bound: By properties of integer division floor, floor(X) <= X. (QED)
+          2) Upper Bound:
+              Let c1_base = floor(base / 2^e_init) * 2^e_init.
+              If not isOverflow (e = e_init, m = m_raw): outBase = c1_base.
+                By Step 2 proof, c1_base + m_raw * 2^e_init >= base + length. (QED)
+              If isOverflow (e = e_init + 1, 2^e = 2 * 2^e_init):
+                By parity shift, outBase = c1_base - b_e * 2^e_init.
+                Thus outBase + outLength = c1_base - b_e * 2^e_init + m * (2 * 2^e_init).
+                By definition of ceiling, ceil(X) >= X. Letting X = (m_raw + b_e) / 2,
+                  we have m >= (m_raw + b_e) / 2.
+                Multiplying both sides of this inequality by 2 yields 2 * m >= m_raw + b_e.
+                Substituting yields outBase + outLength >= c1_base + m_raw * 2^e_init >= base + length. (QED)
+          3) Minimality:
+              We prove outBase + (m - 1) * 2^e < base + length for both execution cases:
+              - Case 1 (not isOverflow, e = e_init, m = d + iCeil, outBase = c1_base):
+                  outBase + (m - 1) * 2^e_init = c1_base + d * 2^e_init + (iCeil - 1) * 2^e_init.
+                  Since base + length = c1_base + d * 2^e_init + sum_mod_e, difference is:
+                  (iCeil - 1) * 2^e_init - sum_mod_e.
+                  Since iCeil = ceil(sum_mod_e / 2^e_init), strictly (iCeil - 1) * 2^e_init < sum_mod_e.
+                  Thus outBase + (m - 1) * 2^e < base + length. (QED)
+              - Case 2 (isOverflow, e = e_init + 1, granularity 2 * 2^e_init, outBase = c1_base - b_e * 2^e_init):
+                  Since m = ceil((m_raw + b_e) / 2), strictly 2 * (m - 1) < m_raw + b_e.
+                  Thus outLength = (m - 1) * (2 * 2^e_init) < (m_raw + b_e) * 2^e_init.
+                  Summing outBase + outLength strictly yields < c1_base + m_raw * 2^e_init.
+                  By Case 1 proof, any multiple below m_raw * 2^e_init strictly falls short of base + length. (QED)
+          4) Normalization Form:
+              For any CapBSz-bit integer m, MSB is 1 iff m >= 2^(CapBSz - 1). Assume e > 0.
+              If not isOverflow: e = e_init > 0. By Step 1 proof, length / 2^CapBSz >= 2^(e_init - 1),
+                implying length / 2^e_init >= 2^(CapBSz - 1). Thus m = m_raw >= d >= 2^(CapBSz - 1).
+              If isOverflow: By Step 3 formula, m >= 2^(CapBSz - 1). Thus MSB is strictly 1. (QED)
+
+      The RoundDown variation is a minor change to the above (outLength should be less than input length):
+        Given base alignment 2^e_b (e_b trailing zeros), exact base retention requires e_init <= e_b.
+        - If e_b <= e_init-1: length / 2^e_b >= 2^CapBSz overflows mantissa. To maximize length <= input,
+          we set e = e_b and saturate m = 2^CapBSz - 1. MSB is strictly 1. (QED)
+        - If e_b >= e_init: base is aligned to 2^e_init. We set e = e_init and m = d <= length / 2^e_init.
+          By Step 1 of the previous proof, d >= 2^(CapBSz - 1), so MSB is strictly 1. (QED)
+   *)
+
+  Definition Bounds (base length : ty (Bit (Xlen + 1))) (isRoundDown : ty Bool) : LetExpr ty BoundsRes :=
+    ( LetE lenTrunc : Bit (AddrSz + 1 - CapBSz) <- TruncMsb (AddrSz + 1 - CapBSz) CapBSz #length;
+      LETE clz: Bit ExpSz <- countLeadingZerosArray (mkBoolArray (AddrSz + 1 - CapBSz) #lenTrunc) _;
+      LetE e_init: Bit ExpSz <- Add [$(AddrSz + 2 - CapBSz); Not #clz];
+      LetE d : Bit (CapBSz + 1) <- TruncLsb (AddrSz - CapBSz) (CapBSz + 1) (Srl #length #e_init);
+      LetE mask_e : Bit (AddrSz + 2 - CapBSz) <- Not (Sll (ConstBit (Zmod.of_Z _ (-1))) #e_init);
+      LetE base_mod_e : Bit (AddrSz + 2 - CapBSz) <-
+                          And [TruncLsb (CapBSz - 1) (AddrSz + 2 - CapBSz) #base; #mask_e];
+      LetE length_mod_e : Bit (AddrSz + 2 - CapBSz) <-
+                            And [TruncLsb (CapBSz - 1) (AddrSz + 2 - CapBSz) #length; #mask_e];
+      LetE sum_mod_e : Bit (AddrSz + 2 - CapBSz) <- Add [#base_mod_e; #length_mod_e];
+      LetE iFloor : Bit 2 <- TruncLsb (AddrSz - CapBSz) 2 (Srl #sum_mod_e #e_init);
+      LetE lost_sum : Bool <- isNotZero (And [#sum_mod_e; #mask_e]);
+      LetE iCeil : Bit 2 <- Add [#iFloor; ZeroExtendTo 2 (ToBit #lost_sum)];
+      LetE m_raw : Bit (CapBSz + 1) <- Add [#d; ZeroExtend (CapBSz-1) #iCeil];
+
+      LetE b_e : Bool <- (mkBoolArray (AddrSz + 1) #base) @[ #e_init ];
+      LetE isOverflow : Bool <- FromBit Bool (TruncMsb 1 CapBSz #m_raw);
+      LetE e_unsat : Bit ExpSz <- Add [#e_init; ITE #isOverflow $1 $0];
+      LetE isESaturated : Bool <- Sgt #e_unsat $(AddrSz - CapBSz);
+      LetE e_normal : Bit ExpSz <- ITE #isESaturated $(AddrSz + 1 - CapBSz) #e_unsat;
+
+      LetE m_raw_lsb : Bool <- FromBit Bool (TruncLsb CapBSz 1 #m_raw);
+      LetE inc_ovf : Bool <- Or [#m_raw_lsb; #b_e];
+      LetE m_ovf : Bit CapBSz <- {< Const _ (Bit (CapBSz - 1)) (Zmod.of_Z _ (2^(CapBSz - 2))) , ToBit #inc_ovf >};
+      LetE m_normal : Bit CapBSz <- ITE #isOverflow #m_ovf (TruncLsb 1 CapBSz #m_raw);
+
+      LETE e_b: Bit ExpSz <- countTrailingZerosArray (mkBoolArray (AddrSz + 1) #base) _;
+      LetE pick_b: Bool <- Slt #e_b #e_init;
+      LetE e_roundDown: Bit ExpSz <- ITE #pick_b #e_b #e_init;
+      LetE m_roundDown: Bit CapBSz <- ITE #pick_b (Const ty (Bit CapBSz) (InvDefault _)) (TruncLsb 1 CapBSz #d);
+
+      LetE ef: Bit ExpSz <- ITE #isRoundDown #e_roundDown #e_normal;
+      LetE mf: Bit CapBSz <- ITE #isRoundDown #m_roundDown #m_normal;
+
+      LetE cram: Bit (AddrSz + 1) <- Sll (ConstBit (Zmod.of_Z _ (-1))) #ef;
+      LetE outBase : Bit (AddrSz + 1) <- And [#base; #cram];
+      LetE outLen: Bit (AddrSz + 1) <- Sll (ZeroExtendTo (AddrSz + 1) #mf) #ef;
+      LetE outTop : Bit (AddrSz + 1) <- Add [#outBase; #outLen] ;
+      @RetE _ BoundsRes (STRUCT {
+                          "E" ::= #ef;
+                          "base" ::= #outBase;
+                          "top" ::= #outTop;
+                          "cram" ::= #cram;
+                          "length" ::= #outLen;
+                          "exact" ::= Or [isNotZero #base_mod_e; isNotZero #length_mod_e] })).
+
+  (* If isArith is set for left shift, results are wrong *)
+  Definition Shifter (val : ty (Bit Xlen)) (amt : ty (Bit 5)) (isRight isArith : ty Bool) : LetExpr ty (Bit Xlen) :=
+    ( let rev e := ToBit (ArrayReverse (FromBit (Array (Z.to_nat Xlen) Bool) e)) in
+      LetE inpVal : Bit Xlen <- ITE #isRight #val (rev #val) ;
+      LetE signBit : Bit 1 <- ITE #isArith (TruncMsb 1 (Xlen - 1) #inpVal) (Const ty (Bit 1) Zmod.zero) ;
+      LetE extVal : Bit (Xlen + 1) <- {< #signBit, #inpVal >} ;
+      LetE shiftedExt : Bit (Xlen + 1) <- Sra #extVal #amt ;
+      LetE shiftedXlen : Bit Xlen <- TruncLsb 1 Xlen #shiftedExt ;
+      @RetE _ (Bit Xlen) (ITE #isRight #shiftedXlen (rev #shiftedXlen))
+    ).
+
+  Definition AdderBeforeRepCheck (base shifter : ty (Bit (Xlen + 1))) : LetExpr ty (Bit (Xlen + 1)) :=
+    LetE repLimit : Bit (Xlen + 1) <- Add [ #base; #shifter ];
+    RetE #repLimit.
+
+  Definition ComparatorTopRep (addr topRep : ty (Bit (Xlen + 1))) (checkLte : ty Bool) : LetExpr ty ComparatorOut :=
+    LetE ltRes : Bool <- Slt #addr #topRep;
+    LetE eqRes : Bool <- Eq #addr #topRep;
+    LetE lteRes : Bool <- Or [ #ltRes; #eqRes ];
+    LetE outLt : Bool <- ITE #checkLte #lteRes #ltRes;
+    @RetE _ ComparatorOut (STRUCT { "lt" ::= #outLt; "eq" ::= #eqRes }).
+
+  Definition ComparatorBase (addr base : ty (Bit (Xlen + 1))) : LetExpr ty ComparatorOut :=
+    LetE ltRes : Bool <- Slt #addr #base;
+    LetE eqRes : Bool <- Eq #addr #base;
+    @RetE _ ComparatorOut (STRUCT { "lt" ::= #ltRes; "eq" ::= #eqRes }).
+
+  Definition AddrBoundsCheck (tag topLt baseLt baseEq : ty Bool) : LetExpr ty Bool :=
+    LetE inBounds : Bool <- And [ #topLt; Or [ (Not #baseLt); #baseEq ] ];
+    @RetE _ Bool (And [ #tag; #inBounds ]).
+
+  Definition CapSubset (topLe baseGe tag1 tag2 : ty Bool) (perms1 perms2 : ty CapPerms) : LetExpr ty Bool :=
+    LetE pAnd : CapPerms <- And [ #perms1; #perms2 ];
+    LetE pEq : Bool <- Eq #pAnd #perms2;
+    @RetE _ Bool (And [ #tag1; #tag2; #topLe; #baseGe; #pEq ]).
+
+  Definition CapEq (addrEq tag1 tag2 : ty Bool) (ecap1 ecap2 : ty ECap) : LetExpr ty Bool :=
+    LetE metaEq : Bool <- Eq #ecap1 #ecap2;
+    LetE tagsEq : Bool <- Eq #tag1 #tag2;
+    @RetE _ Bool (And [ #addrEq; #metaEq; #tagsEq ]).
+
+  Definition ScrSanitizer (cs1 : ty FullECapWithTag) (inst : ty (Bit 32)) : LetExpr ty Bool :=
+    LetE lsbZero : Bool <- Eq (TruncLsb (Xlen - 1) 1 (##cs1`"addr")) (Const ty (Bit 1) Zmod.zero);
+    @RetE _ Bool (And [ ##cs1`"tag"; #lsbZero ]).
+
+  Definition LoadUnitRes := STRUCT_TYPE {
+    "Exception" :: Bool ;
+    "LoadPostProcess" :: Bit 3 }.
+
+  Definition LoadUnit (tag : ty Bool) (ecap : ty ECap) (inBounds : ty Bool) (loadOp : ty (Bit 3)) : LetExpr ty LoadUnitRes :=
+    LetE exc : Bool <- Or [ (Not #tag); (Not #inBounds) ];
+    @RetE _ LoadUnitRes (STRUCT { "Exception" ::= #exc; "LoadPostProcess" ::= #loadOp }).
+
+  Definition StoreUnit (tag : ty Bool) (ecap : ty ECap) (inBounds : ty Bool) : LetExpr ty Bool :=
+    LetE exc : Bool <- Or [ (Not #tag); (Not #inBounds) ];
+    RetE #exc.
+
+  (* ===========================================================================
+     2. ROUTING & DATAPATH MULTIPLEXING BASED ON AluControl
+     =========================================================================== *)
+
+  Definition AluOut := STRUCT_TYPE {
+    "NewPcc" :: FullECapWithTag ;
+    "NewSpecial" :: FullECapWithTag ;
+    "Reg" :: FullECapWithTag ;
+    "Exception" :: Bool ;
+    "LoadPostProcess" :: Bit 3 ;
+    "interruptStatus" :: Bool
+  }.
+
+  Definition aluRouting (aluControl : ty AluControl) : LetExpr ty AluOut :=
+    LetE inst_val : Bit 32 <- ##inst ;
+
+    LetE pccAddr : Bit Xlen <- ##pcc`"addr" ;
+    LetE pccTag : Bool <- ##pcc`"tag" ;
+    LetE pccBase : Bit (AddrSz + 1) <- ##pcc`"ecap"`"base" ;
+    LetE pccExp : Bit ExpSz <- ##pcc`"ecap"`"E" ;
+
+    LetE cs1Addr : Bit Xlen <- ##cs1`"addr" ;
+    LetE cs1Tag : Bool <- ##cs1`"tag" ;
+    LetE cs1Base : Bit (AddrSz + 1) <- ##cs1`"ecap"`"base" ;
+    LetE cs1Top : Bit (AddrSz + 1) <- ##cs1`"ecap"`"top" ;
+    LetE cs1Exp : Bit ExpSz <- ##cs1`"ecap"`"E" ;
+    LetE cs1Perms : CapPerms <- ##cs1`"ecap"`"perms" ;
+    LetE cs1OType : Bit CapOTypeSz <- ##cs1`"ecap"`"oType" ;
+
+    LetE cs2Addr : Bit Xlen <- ##cs2`"addr" ;
+    LetE cs2Tag : Bool <- ##cs2`"tag" ;
+    LetE cs2Base : Bit (AddrSz + 1) <- ##cs2`"ecap"`"base" ;
+    LetE cs2Top : Bit (AddrSz + 1) <- ##cs2`"ecap"`"top" ;
+    LetE cs2Perms : CapPerms <- ##cs2`"ecap"`"perms" ;
+
+    LetE specialAddr : Bit Xlen <- ##special`"addr" ;
+    LetE specialTag : Bool <- ##special`"tag" ;
+
+    LetE simm12 : Bit Xlen <- SignExtendTo Xlen (#inst_val`[31:20]) ;
+    LetE zimm12 : Bit Xlen <- ZeroExtendTo Xlen (#inst_val`[31:20]) ;
+    LetE uimm20 : Bit Xlen <- ({< #inst_val`[31:12], Const ty (Bit 12) Zmod.zero >}) ;
+    LetE uimm20_11 : Bit Xlen <- ({< #inst_val`[31:31], #inst_val`[31:12], Const ty (Bit 11) Zmod.zero >}) ;
+    LetE shamt : Bit 5 <- ConstExtract 7 5 20 #inst_val ;
+    LetE bimm13 : Bit 13 <- ({< #inst_val`[31:31], #inst_val`[7:7], #inst_val`[30:25], #inst_val`[11:8], Const _ (Bit 1) Zmod.zero >}) ;
+    LetE bimm12 : Bit Xlen <- SignExtendTo Xlen #bimm13 ;
+    LetE jimm21 : Bit 21 <- ({< #inst_val`[31:31], #inst_val`[19:12], #inst_val`[20:20], #inst_val`[30:21], Const _ (Bit 1) Zmod.zero >}) ;
+    LetE jimm20 : Bit Xlen <- SignExtendTo Xlen #jimm21 ;
+    LetE LoadOp : Bit 3 <- ConstExtract 17 3 12 #inst_val ;
+
+    (* AdderBeforeBoundsCheck Input Routing *)
+    LetE AdderBeforeBoundsCheck_base : Bit Xlen <-
+      ITE (##aluControl`"AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr") #pccAddr #cs1Addr ;
+    LetE AdderBeforeBoundsCheck_offset : Bit Xlen <-
+      caseDefault (k := Bit Xlen) [ (##aluControl`"AdderBeforeBoundsCheck_offset_bimm12", #bimm12) ;
+                                    (##aluControl`"AdderBeforeBoundsCheck_offset_jimm20", #jimm20) ;
+                                    (##aluControl`"AdderBeforeBoundsCheck_offset_uimm20_11", #uimm20_11) ;
+                                    (##aluControl`"AdderBeforeBoundsCheck_offset_cs2Addr", #cs2Addr) ]
+        #simm12 ;
+    LETE AdderBeforeBoundsCheckOut : Bit Xlen <- AdderBeforeBoundsCheck AdderBeforeBoundsCheck_base AdderBeforeBoundsCheck_offset ;
+
+    (* AdderToOutput Input Routing *)
+    LetE AdderToOutput_base : Bit Xlen <-
+      caseDefault (k := Bit Xlen) [ (##aluControl`"AdderToOutput_base_pccAddr", #pccAddr) ;
+                                    (##aluControl`"AdderToOutput_base_cs1Top", TruncLsb 1 Xlen #cs1Top) ]
+        #cs1Addr ;
+    LetE AdderToOutput_offset : Bit Xlen <-
+      caseDefault (k := Bit Xlen) [ (##aluControl`"AdderToOutput_offset_const2", Const ty (Bit Xlen) (Zmod.of_Z _ 2)) ;
+                                    (##aluControl`"AdderToOutput_offset_cs2Addr", #cs2Addr) ;
+                                    (##aluControl`"AdderToOutput_offset_simm12", #simm12) ;
+                                    (##aluControl`"AdderToOutput_offset_cs1Base", TruncLsb 1 Xlen #cs1Base) ]
+        (Const ty (Bit Xlen) (Zmod.of_Z _ 4)) ;
+    LetE AdderToOutput_isSub : Bool <- ##aluControl`"AdderToOutput_isSub" ;
+    LETE AdderToOutputOut : Bit Xlen <- AdderToOutput AdderToOutput_base AdderToOutput_offset AdderToOutput_isSub ;
+
+    (* Add_CapBSz Input Routing *)
+    LetE Add_CapBSz_baseExp : Bit ExpSz <-
+      ITE (##aluControl`"Add_CapBSz_baseExp_isPccExpNotCs1Exp") #pccExp #cs1Exp ;
+    LETE Add_CapBSzOut : Bit ExpSz <- Add_CapBSz Add_CapBSz_baseExp ;
+
+    (* Shifter *)
+    LetE Shifter_data : Bit Xlen <-
+      ITE (##aluControl`"Shifter_data_isCs1AddrNotConst1") #cs1Addr (Const ty (Bit Xlen) (Zmod.of_Z _ 1)) ;
+    LetE Shifter_shamt : Bit 5 <-
+      caseDefault (k := Bit 5) [ (##aluControl`"Shifter_shamt_cs2Addr", TruncLsb (Xlen - 5) 5 #cs2Addr) ;
+                                 (##aluControl`"Shifter_shamt_AddCapBSz", TruncLsb (ExpSz - 5) 5 #Add_CapBSzOut) ]
+        #shamt ;
+    LetE Shifter_isRight : Bool <- ##aluControl`"Shifter_isRight" ;
+    LetE Shifter_isArith : Bool <- ##aluControl`"Shifter_isArith" ;
+    LETE ShifterOut : Bit Xlen <- Shifter Shifter_data Shifter_shamt Shifter_isRight Shifter_isArith ;
+
+    (* AdderBeforeRepCheck *)
+    LetE AdderBeforeRepCheck_base : Bit (Xlen + 1) <-
+      ITE (##aluControl`"AdderBeforeRepCheck_base_isPccBaseNotCs1Base") #pccBase #cs1Base ;
+    LetE AdderBeforeRepCheck_shifter : Bit (Xlen + 1) <- ZeroExtendTo (Xlen + 1) #ShifterOut ;
+    LETE AdderBeforeRepCheckOut : Bit (Xlen + 1) <- AdderBeforeRepCheck AdderBeforeRepCheck_base AdderBeforeRepCheck_shifter ;
+
+    (* ComparatorTopRep *)
+    LetE ComparatorTopRep_addr : Bit (Xlen + 1) <-
+      caseDefault (k := Bit (Xlen + 1)) [ (##aluControl`"ComparatorTopRep_addr_AdderBeforeBoundsCheck", ZeroExtendTo (Xlen + 1) #AdderBeforeBoundsCheckOut) ;
+                                          (##aluControl`"ComparatorTopRep_addr_cs1OType", ZeroExtendTo (Xlen + 1) #cs1OType) ;
+                                          (##aluControl`"ComparatorTopRep_addr_cs1Top", #cs1Top) ]
+        (ZeroExtendTo (Xlen + 1) #cs1Addr) ;
+    LetE ComparatorTopRep_topRep : Bit (Xlen + 1) <-
+      caseDefault (k := Bit (Xlen + 1)) [ (##aluControl`"ComparatorTopRep_topRep_AdderBeforeRepCheck", #AdderBeforeRepCheckOut) ;
+                                          (##aluControl`"ComparatorTopRep_topRep_cs2Top", #cs2Top) ]
+        #cs1Top ;
+    LetE ComparatorTopRep_checkLte : Bool <- ##aluControl`"ComparatorTopRep_checkLte" ;
+    LETE ComparatorTopRepOut : ComparatorOut <- ComparatorTopRep ComparatorTopRep_addr ComparatorTopRep_topRep ComparatorTopRep_checkLte ;
+
+    (* ComparatorBase *)
+    LetE ComparatorBase_addr : Bit (Xlen + 1) <-
+      caseDefault (k := Bit (Xlen + 1)) [ (##aluControl`"ComparatorBase_addr_AdderBeforeBoundsCheck", ZeroExtendTo (Xlen + 1) #AdderBeforeBoundsCheckOut) ;
+                                          (##aluControl`"ComparatorBase_addr_cs1OType", ZeroExtendTo (Xlen + 1) #cs1OType) ;
+                                          (##aluControl`"ComparatorBase_addr_cs1Base", #cs1Base) ]
+        (ZeroExtendTo (Xlen + 1) #cs1Addr) ;
+    LetE ComparatorBase_base : Bit (Xlen + 1) <-
+      caseDefault (k := Bit (Xlen + 1)) [ (##aluControl`"ComparatorBase_base_pccBase", #pccBase) ;
+                                          (##aluControl`"ComparatorBase_base_cs2Base", #cs2Base) ]
+        #cs1Base ;
+    LETE ComparatorBaseOut : ComparatorOut <- ComparatorBase ComparatorBase_addr ComparatorBase_base ;
+
+    (* AddrBoundsCheck *)
+    LetE AddrBoundsCheck_tag : Bool <-
+      ITE (##aluControl`"AddrBoundsCheck_tag_isPccTagNotCs1Tag") #pccTag #cs1Tag ;
+    LetE AddrBoundsCheck_topLt : Bool <- ##ComparatorTopRepOut`"lt" ;
+    LetE AddrBoundsCheck_baseLt : Bool <- ##ComparatorBaseOut`"lt" ;
+    LetE AddrBoundsCheck_baseEq : Bool <- ##ComparatorBaseOut`"eq" ;
+    LETE AddrBoundsCheckOut : Bool <- AddrBoundsCheck AddrBoundsCheck_tag AddrBoundsCheck_topLt AddrBoundsCheck_baseLt AddrBoundsCheck_baseEq ;
+
+    (* SealerUnsealer *)
+    LetE SealerUnsealer_isUnseal : Bool <- ##aluControl`"SealerUnsealer_isUnseal" ;
+    LETE SealerUnsealerOut : SealerUnsealerRes <- SealerUnsealer SealerUnsealer_isUnseal AddrBoundsCheckOut cs1 cs2 ;
+
+    (* ComparatorGeneral Input Routing *)
+    LetE ComparatorGeneral_op1 : Bit Xlen <- #cs1Addr ;
+    LetE ComparatorGeneral_op2 : Bit Xlen <-
+      ITE (##aluControl`"ComparatorGeneral_op2_isCs2AddrNotSimm12") #cs2Addr #simm12 ;
+    LetE ComparatorGeneral_isUnsigned : Bool <- ##aluControl`"ComparatorGeneral_isUnsigned" ;
+    LetE ComparatorGeneral_checkLt    : Bool <- ##aluControl`"ComparatorGeneral_checkLt" ;
+    LetE ComparatorGeneral_checkEq    : Bool <- ##aluControl`"ComparatorGeneral_checkEq" ;
+    LetE ComparatorGeneral_invertRes  : Bool <- ##aluControl`"ComparatorGeneral_invertRes" ;
+    LETE ComparatorGeneralOut : ComparatorOut <- ComparatorGeneral ComparatorGeneral_op1 ComparatorGeneral_op2 ComparatorGeneral_isUnsigned ComparatorGeneral_checkLt ComparatorGeneral_checkEq ComparatorGeneral_invertRes ;
+
+    (* CjalrUnit *)
+    LETE CjalrUnitOut : CjalrUnitRes <- CjalrUnit cs1 inst currInterruptStatus ;
+
+    (* Logical Input Routing *)
+    LetE Logical_op1 : Bit Xlen <- #cs1Addr ;
+    LetE Logical_op2 : Bit Xlen <-
+      ITE (##aluControl`"Logical_op2_isCs2AddrNotSimm12") #cs2Addr #simm12 ;
+    LetE Logical_opSel : Bit 2 <- ##aluControl`"Logical_opSel" ;
+    LETE LogicalOut : Bit Xlen <- Logical Logical_op1 Logical_op2 Logical_opSel ;
+
+    (* CAndPerm Input Routing *)
+    LETE CAndPermOut : CAndPermRes <- CAndPerm cs1 cs2Addr ;
+
+    (* Bounds *)
+    LetE Bounds_reqLimit : Bit Xlen <-
+      caseDefault (k := Bit Xlen) [ (##aluControl`"Bounds_reqLimit_cs2Addr", #cs2Addr) ;
+                                    (##aluControl`"Bounds_reqLimit_cs1Addr", #cs1Addr) ]
+        #zimm12 ;
+    LetE Bounds_reqLimitExt : Bit (Xlen + 1) <- ZeroExtendTo (Xlen + 1) #Bounds_reqLimit ;
+    LetE Bounds_isRoundDown : Bool <- ##aluControl`"Bounds_isRoundDown" ;
+    LETE BoundsOut : BoundsRes <- Bounds cs1Base Bounds_reqLimitExt Bounds_isRoundDown ;
+
+    (* CapSubset *)
+    LETE CapSubsetOut : Bool <- CapSubset AddrBoundsCheck_topLt AddrBoundsCheck_baseLt cs1Tag cs2Tag cs1Perms cs2Perms ;
+
+    (* CapEq *)
+    LetE cs1ECap : ECap <- ##cs1`"ecap" ;
+    LetE cs2ECap : ECap <- ##cs2`"ecap" ;
+    LetE CapEq_generalEq : Bool <- ##ComparatorGeneralOut`"eq" ;
+    LETE CapEqOut : Bool <- CapEq CapEq_generalEq cs1Tag cs2Tag cs1ECap cs2ECap ;
+
+    (* ScrSanitizer *)
+    LETE ScrSanitizerOut : Bool <- ScrSanitizer cs1 inst ;
+
+    (* LoadUnit & StoreUnit *)
+    LETE LoadUnitOut  : LoadUnitRes  <- LoadUnit cs1Tag cs1ECap AddrBoundsCheckOut LoadOp ;
+    LETE StoreUnitOut : Bool <- StoreUnit cs1Tag cs1ECap AddrBoundsCheckOut ;
+
+    (* =========================================================================
+       WRITEBACK NETWORKS (WbControl defined via AluControl)
+       ========================================================================= *)
+    LetE NewPcc_tag : Bool <-
+      ITE (##aluControl`"NewPcc_tag_isAddrBoundsCheckNotCjalrUnitTag") #AddrBoundsCheckOut (##CjalrUnitOut`"tag") ;
+    LetE NewPcc_ecap : ECap <-
+      ITE (##aluControl`"NewPcc_ecap_isCjalrUnitEcapNotPccEcap") (##CjalrUnitOut`"ecap") (##pcc`"ecap") ;
+    LetE NewPcc_addr : Addr <-
+      ITE (##aluControl`"NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput") #AdderBeforeBoundsCheckOut #AdderToOutputOut ;
+
+    LetE NewSpecial_tag : Bool <- #ScrSanitizerOut ;
+
+    LetE Reg_tag : Bool <-
+      caseDefault (k := Bool) [ (##aluControl`"Reg_tag_pccTag", #pccTag) ;
+                                (##aluControl`"Reg_tag_cs1Tag", #cs1Tag) ;
+                                (##aluControl`"Reg_tag_AddrBoundsCheck", #AddrBoundsCheckOut) ;
+                                (##aluControl`"Reg_tag_specialTag", #specialTag) ]
+        (Const ty Bool false) ;
+
+    LetE Bounds_outECap : ECap <-
+      (##cs1`"ecap") `{ "base" <- ##BoundsOut`"base" }
+                     `{ "top"  <- ##BoundsOut`"top" }
+                     `{ "E"    <- ##BoundsOut`"E" } ;
+
+    LetE Reg_ecap : ECap <-
+      caseDefault (k := ECap) [ (##aluControl`"Reg_ecap_pccEcap", ##pcc`"ecap") ;
+                                (##aluControl`"Reg_ecap_cs1Ecap", ##cs1`"ecap") ;
+                                (##aluControl`"Reg_ecap_cs2Addr", ##cs2`"ecap") ;
+                                (##aluControl`"Reg_ecap_CAndPerm", ##CAndPermOut`"ecap") ;
+                                (##aluControl`"Reg_ecap_SealerUnsealer", ##SealerUnsealerOut`"ecap") ;
+                                (##aluControl`"Reg_ecap_Bounds", #Bounds_outECap) ;
+                                (##aluControl`"Reg_ecap_specialEcap", ##special`"ecap") ]
+        (Const ty ECap (getDefault _)) ;
+
+    LetE Reg_addr : Data <-
+      caseDefault (k := Data) [ (##aluControl`"Reg_addr_AdderBeforeBoundsCheck", #AdderBeforeBoundsCheckOut) ;
+                                (##aluControl`"Reg_addr_ComparatorGeneralLt", ZeroExtendTo Xlen (ToBit (##ComparatorGeneralOut`"lt"))) ;
+                                (##aluControl`"Reg_addr_Shifter", #ShifterOut) ;
+                                (##aluControl`"Reg_addr_Logical", #LogicalOut) ;
+                                (##aluControl`"Reg_addr_AdderToOutput", #AdderToOutputOut) ;
+                                (##aluControl`"Reg_addr_cs1Fields", #cs1Addr) ;
+                                (##aluControl`"Reg_addr_cs2Addr", #cs2Addr) ;
+                                (##aluControl`"Reg_addr_cs1Addr", #cs1Addr) ;
+                                (##aluControl`"Reg_addr_BoundsBase", TruncLsb 1 Xlen (##BoundsOut`"base")) ;
+                                (##aluControl`"Reg_addr_BoundsCram", TruncLsb 1 Xlen (##BoundsOut`"cram")) ;
+                                (##aluControl`"Reg_addr_BoundsCrrl", TruncLsb 1 Xlen (##BoundsOut`"length")) ;
+                                (##aluControl`"Reg_addr_CapSubset", ZeroExtendTo Xlen (ToBit #CapSubsetOut)) ;
+                                (##aluControl`"Reg_addr_CapEq", ZeroExtendTo Xlen (ToBit #CapEqOut)) ;
+                                (##aluControl`"Reg_addr_specialAddr", #specialAddr) ]
+        #uimm20 ;
+
+    LetE ExceptionRes : Bool <-
+      ITE (##aluControl`"Exception_isLoadUnitNotStoreUnit") (##LoadUnitOut`"Exception") #StoreUnitOut ;
+
+    LetE LoadPostProcessRes : Bit 3 <- ##LoadUnitOut`"LoadPostProcess" ;
+
+    LetE NewPccVal : FullECapWithTag <- STRUCT { "tag" ::= #NewPcc_tag ; "ecap" ::= #NewPcc_ecap ; "addr" ::= #NewPcc_addr } ;
+    LetE NewSpecialVal : FullECapWithTag <- STRUCT { "tag" ::= #NewSpecial_tag ; "ecap" ::= ##cs1`"ecap" ; "addr" ::= #cs1Addr } ;
+    LetE RegVal : FullECapWithTag <- STRUCT { "tag" ::= #Reg_tag ; "ecap" ::= #Reg_ecap ; "addr" ::= #Reg_addr } ;
+    @RetE _ AluOut (STRUCT {
+      "NewPcc" ::= #NewPccVal ;
+      "NewSpecial" ::= #NewSpecialVal ;
+      "Reg" ::= #RegVal ;
+      "Exception" ::= #ExceptionRes ;
+      "LoadPostProcess" ::= #LoadPostProcessRes ;
+      "interruptStatus" ::= ##CjalrUnitOut`"interruptStatus"
+    }).
+End CherIoT_ALU_Formal_Specification.
