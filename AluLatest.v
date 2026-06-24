@@ -560,15 +560,13 @@ Definition AluControl := STRUCT_TYPE {
   "Reg_tag_pccTag" :: Bool ;
   "Reg_tag_cs1Tag" :: Bool ;
   "Reg_tag_AddrBoundsCheck" :: Bool ;
-  "Reg_tag_CAndPerm" :: Bool ;
-  "Reg_tag_SealerUnsealer" :: Bool ;
+  "Reg_CAndPerm" :: Bool ;
+  "Reg_SealerUnsealer" :: Bool ;
   "Reg_tag_specialTag" :: Bool ;
   "Reg_ecap_const0" :: Bool ; (* default option *)
   "Reg_ecap_pccEcap" :: Bool ;
   "Reg_ecap_cs1Ecap" :: Bool ;
   "Reg_ecap_cs2Addr" :: Bool ;
-  "Reg_ecap_CAndPerm" :: Bool ;
-  "Reg_ecap_SealerUnsealer" :: Bool ;
   "Reg_ecap_Bounds" :: Bool ;
   "Reg_ecap_specialEcap" :: Bool ;
   "Reg_addr_uimm20" :: Bool ; (* default option *)
@@ -1160,8 +1158,8 @@ Section CherIoT_ALU_Formal_Specification.
       Or [ And [ ##aluControl`"Reg_tag_pccTag"         ; #pccTag ] ;
            And [ ##aluControl`"Reg_tag_cs1Tag"         ; #cs1Tag ] ;
            And [ ##aluControl`"Reg_tag_AddrBoundsCheck"; #AddrBoundsCheckOut ] ;
-           And [ ##aluControl`"Reg_tag_CAndPerm"       ; ##CAndPermOut`"tag" ] ;
-           And [ ##aluControl`"Reg_tag_SealerUnsealer" ; ##SealerUnsealerOut`"tag" ] ;
+           And [ ##aluControl`"Reg_CAndPerm"           ; ##CAndPermOut`"tag" ] ;
+           And [ ##aluControl`"Reg_SealerUnsealer"     ; ##SealerUnsealerOut`"tag" ] ;
            And [ ##aluControl`"Reg_tag_specialTag"     ; #specialTag ] ] ;
 
     LetE Bounds_outECap : ECap <-
@@ -1173,8 +1171,8 @@ Section CherIoT_ALU_Formal_Specification.
       caseDefault (k := ECap) [ (##aluControl`"Reg_ecap_pccEcap", ##pcc`"ecap") ;
                                 (##aluControl`"Reg_ecap_cs1Ecap", ##cs1`"ecap") ;
                                 (##aluControl`"Reg_ecap_cs2Addr", ##cs2`"ecap") ;
-                                (##aluControl`"Reg_ecap_CAndPerm", ##CAndPermOut`"ecap") ;
-                                (##aluControl`"Reg_ecap_SealerUnsealer", ##SealerUnsealerOut`"ecap") ;
+                                (##aluControl`"Reg_CAndPerm", ##CAndPermOut`"ecap") ;
+                                (##aluControl`"Reg_SealerUnsealer", ##SealerUnsealerOut`"ecap") ;
                                 (##aluControl`"Reg_ecap_Bounds", #Bounds_outECap) ;
                                 (##aluControl`"Reg_ecap_specialEcap", ##special`"ecap") ]
         (Const ty ECap (getDefault _)) ;
