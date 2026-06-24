@@ -501,6 +501,39 @@ Import ListNotations.
 Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
+Definition InstGroup := STRUCT_TYPE {
+  "Branch"      :: Bool ;
+  "Cjal"        :: Bool ;
+  "Aui"         :: Bool ;
+  "CIncAddr"    :: Bool ;
+  "CSetAddr"    :: Bool ;
+  "Cjalr"       :: Bool ;
+  "CTestSubset" :: Bool ;
+  "CSetBounds"  :: Bool ;
+  "Seal"        :: Bool ;
+  "Load"        :: Bool ;
+  "Store"       :: Bool ;
+  "AddSub"      :: Bool ;
+  "CSub"        :: Bool ;
+  "CGetLen"     :: Bool ;
+  "Slt"         :: Bool ;
+  "CSetEqual"   :: Bool ;
+  "Shift"       :: Bool ;
+  "Logical"     :: Bool ;
+  "Cram"        :: Bool ;
+  "Crrl"        :: Bool ;
+  "CAndPerm"    :: Bool ;
+  "Csr"         :: Bool ;
+  "Scr"         :: Bool ;
+  "Lui"         :: Bool ;
+  "CGet"        :: Bool ;
+  "CSetHigh"    :: Bool ;
+  "CClearTag"   :: Bool ;
+  "CMove"       :: Bool ;
+  "Trap"        :: Bool ;
+  "Mret"        :: Bool
+}.
+
 Definition AluControl := STRUCT_TYPE {
   "AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr" :: Bool ;
   "AdderBeforeBoundsCheck_offset_bimm12" :: Bool ;
@@ -584,7 +617,97 @@ Definition AluControl := STRUCT_TYPE {
   "Reg_addr_specialAddr" :: Bool ;
   "Exception_isLoadUnitNotStoreUnit" :: Bool }.
 
-Section CherIoT_ALU_Formal_Specification.
+Section DecodeInstGroup.
+  Variable ty : Kind -> Type.
+  Variable group : ty InstGroup.
+
+  Definition decodeInstGroup : Expr ty AluControl :=
+    STRUCT {
+      "AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui" ] ;
+      "AdderBeforeBoundsCheck_offset_bimm12" ::= ##group`"Branch" ;
+      "AdderBeforeBoundsCheck_offset_jimm20" ::= ##group`"Cjal" ;
+      "AdderBeforeBoundsCheck_offset_uimm20_11" ::= ##group`"Aui" ;
+      "AdderBeforeBoundsCheck_offset_cs2Addr" ::= ##group`"CSetAddr" ;
+      "AdderBeforeBoundsCheck_offset_simm12" ::= Const ty Bool true ;
+      "AdderToOutput_base_pccAddr" ::= Or [ ##group`"Cjal"; ##group`"Cjalr" ] ;
+      "AdderToOutput_base_cs1Addr" ::= Const ty Bool true ;
+      "AdderToOutput_base_cs1Top" ::= ##group`"CGetLen" ;
+      "AdderToOutput_offset_const2" ::= Const ty Bool false ;
+      "AdderToOutput_offset_const4" ::= Const ty Bool true ;
+      "AdderToOutput_offset_cs2Addr" ::= ##group`"CSub" ;
+      "AdderToOutput_offset_simm12" ::= ##group`"AddSub" ;
+      "AdderToOutput_offset_cs1Base" ::= ##group`"CGetLen" ;
+      "AdderToOutput_isSub" ::= Or [ ##group`"CSub"; ##group`"CGetLen" ] ;
+      "Add_CapBSz_baseExp_isPccExpNotCs1Exp" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui" ] ;
+      "ComparatorGeneral_op2_isCs2AddrNotSimm12" ::= Or [ ##group`"Branch"; ##group`"CSetEqual" ] ;
+      "ComparatorGeneral_isUnsigned" ::= Or [ ##group`"Branch"; ##group`"Slt" ] ;
+      "ComparatorGeneral_checkLt" ::= Or [ ##group`"Branch"; ##group`"Slt" ] ;
+      "ComparatorGeneral_checkEq" ::= Or [ ##group`"Branch"; ##group`"CSetEqual" ] ;
+      "ComparatorGeneral_invertRes" ::= Const ty Bool false ;
+      "Logical_op2_isCs2AddrNotSimm12" ::= ##group`"Logical" ;
+      "Logical_opSel" ::= Const ty (Bit 2) Zmod.zero ;
+      "SealerUnsealer_isUnseal" ::= Const ty Bool false ;
+      "Bounds_reqLimit_cs2Addr" ::= ##group`"CSetBounds" ;
+      "Bounds_reqLimit_zimm12" ::= Const ty Bool true ;
+      "Bounds_reqLimit_cs1Addr" ::= Or [ ##group`"Cram"; ##group`"Crrl" ] ;
+      "Bounds_isRoundDown" ::= ##group`"CSetBounds" ;
+      "Shifter_data_isCs1AddrNotConst1" ::= ##group`"Shift" ;
+      "Shifter_shamt_cs2Addr" ::= ##group`"CSetAddr" ;
+      "Shifter_shamt_shamt" ::= Const ty Bool true ;
+      "Shifter_shamt_AddCapBSz" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui"; ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
+      "Shifter_isRight" ::= ##group`"Shift" ;
+      "Shifter_isArith" ::= ##group`"Shift" ;
+      "AdderBeforeRepCheck_base_isPccBaseNotCs1Base" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui" ] ;
+      "ComparatorTopRep_addr_AdderBeforeBoundsCheck" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui"; ##group`"CIncAddr"; ##group`"Load"; ##group`"Store" ] ;
+      "ComparatorTopRep_addr_cs1Addr" ::= Const ty Bool true ;
+      "ComparatorTopRep_addr_cs1OType" ::= ##group`"Seal" ;
+      "ComparatorTopRep_addr_cs1Top" ::= ##group`"CTestSubset" ;
+      "ComparatorTopRep_topRep_AdderBeforeRepCheck" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds" ] ;
+      "ComparatorTopRep_topRep_cs1Top" ::= Const ty Bool true ;
+      "ComparatorTopRep_topRep_cs2Top" ::= Or [ ##group`"CTestSubset"; ##group`"Seal" ] ;
+      "ComparatorTopRep_checkLte" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CTestSubset" ] ;
+      "ComparatorBase_addr_AdderBeforeBoundsCheck" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui"; ##group`"CIncAddr"; ##group`"Load"; ##group`"Store" ] ;
+      "ComparatorBase_addr_cs1Addr" ::= Const ty Bool true ;
+      "ComparatorBase_addr_cs1OType" ::= ##group`"Seal" ;
+      "ComparatorBase_addr_cs1Base" ::= ##group`"CTestSubset" ;
+      "ComparatorBase_base_pccBase" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui" ] ;
+      "ComparatorBase_base_cs1Base" ::= Const ty Bool true ;
+      "ComparatorBase_base_cs2Base" ::= Or [ ##group`"CTestSubset"; ##group`"Seal" ] ;
+      "AddrBoundsCheck_tag_isPccTagNotCs1Tag" ::= Or [ ##group`"Branch"; ##group`"Cjal" ] ;
+      "NewPcc_tag_isAddrBoundsCheckNotCjalrUnitTag" ::= Or [ ##group`"Branch"; ##group`"Cjal" ] ;
+      "NewPcc_ecap_isCjalrUnitEcapNotPccEcap" ::= ##group`"Cjalr" ;
+      "NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Cjalr" ] ;
+      "Reg_tag_const0" ::= Const ty Bool true ;
+      "Reg_tag_pccTag" ::= ##group`"Cjal" ;
+      "Reg_tag_cs1Tag" ::= Or [ ##group`"Cjalr"; ##group`"CMove" ] ;
+      "Reg_tag_AddrBoundsCheck" ::= Or [ ##group`"Aui"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds" ] ;
+      "Reg_CAndPerm" ::= ##group`"CAndPerm" ;
+      "Reg_SealerUnsealer" ::= ##group`"Seal" ;
+      "Reg_tag_or_ecap_special" ::= ##group`"Scr" ;
+      "Reg_ecap_const0" ::= Const ty Bool true ;
+      "Reg_ecap_pccEcap" ::= Or [ ##group`"Aui"; ##group`"Cjal"; ##group`"Cjalr" ] ;
+      "Reg_ecap_cs1Ecap" ::= Or [ ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CClearTag"; ##group`"CMove" ] ;
+      "Reg_ecap_cs2Addr" ::= ##group`"CSetHigh" ;
+      "Reg_ecap_or_addr_Bounds" ::= ##group`"CSetBounds" ;
+      "Reg_addr_uimm20" ::= Const ty Bool true ;
+      "Reg_addr_AdderBeforeBoundsCheck" ::= Or [ ##group`"Aui"; ##group`"CIncAddr"; ##group`"Load"; ##group`"Store" ] ;
+      "Reg_addr_ComparatorGeneralLt" ::= ##group`"Slt" ;
+      "Reg_addr_Shifter" ::= ##group`"Shift" ;
+      "Reg_addr_Logical" ::= ##group`"Logical" ;
+      "Reg_addr_AdderToOutput" ::= Or [ ##group`"Cjal"; ##group`"Cjalr"; ##group`"AddSub"; ##group`"CGetLen"; ##group`"CSub" ] ;
+      "Reg_addr_cs1Fields" ::= ##group`"CGet" ;
+      "Reg_addr_cs2Addr" ::= ##group`"CSetAddr" ;
+      "Reg_addr_cs1Addr" ::= Or [ ##group`"CAndPerm"; ##group`"CClearTag"; ##group`"Seal"; ##group`"CMove"; ##group`"CSetHigh" ] ;
+      "Reg_addr_BoundsCram" ::= ##group`"Cram" ;
+      "Reg_addr_BoundsCrrl" ::= ##group`"Crrl" ;
+      "Reg_addr_CapSubset" ::= ##group`"CTestSubset" ;
+      "Reg_addr_CapEq" ::= ##group`"CSetEqual" ;
+      "Reg_addr_specialAddr" ::= Or [ ##group`"Csr"; ##group`"Scr" ] ;
+      "Exception_isLoadUnitNotStoreUnit" ::= ##group`"Load"
+    }.
+End DecodeInstGroup.
+
+Section Alu.
   Variable ty : Kind -> Type.
   Variable pcc cs1 cs2 special : ty FullECapWithTag.
   Variable inst : ty (Bit 32).
@@ -1208,4 +1331,4 @@ Section CherIoT_ALU_Formal_Specification.
       "LoadPostProcess" ::= #LoadPostProcessRes ;
       "NewInterruptStatus" ::= ##CjalrUnitOut`"interruptStatus"
     }).
-End CherIoT_ALU_Formal_Specification.
+End Alu.
