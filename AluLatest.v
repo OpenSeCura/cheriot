@@ -672,7 +672,7 @@ Section CherIoT_ALU_Formal_Specification.
     "tag"  :: Bool ;
     "ecap" :: ECap }.
 
-  (* TODO: fix the comment and Wb to route the change in tag *)
+  (* TODO: change input to TagECap; fix the comment and Wb to route the change in tag *)
   Definition CAndPerm (cap : ty FullECapWithTag) (rs2 : ty Data) : LetExpr ty TagECap :=
     LetE maskBits : Bit (kindSize CapPerms) <- TruncLsb (Xlen - kindSize CapPerms) (kindSize CapPerms) #rs2 ;
     LetE maskVal : CapPerms <- FromBit CapPerms #maskBits ;
@@ -688,7 +688,7 @@ Section CherIoT_ALU_Formal_Specification.
     LetE outECap : ECap <- ##ecapVal `{ "perms" <- #newPerms } ;
     @RetE _ TagECap (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap }).
 
-  (* TODO: fix the comment and Wb to route the change in tag *)
+  (* TODO: change src1 input to TagECap; fix the comment and Wb to route the change in tag *)
   Definition SealerUnsealer (isUnseal boundsValid : ty Bool) (src1 src2 : ty FullECapWithTag)
     : LetExpr ty TagECap :=
     LetE ecap1 : ECap <- ##src1`"ecap" ;
