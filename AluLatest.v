@@ -668,11 +668,12 @@ Section CherIoT_ALU_Formal_Specification.
     LetE selArr : Array 2 Bool <- FromBit _ #opSel;
     RetE (ITE (#selArr$[1]) #xorRes (ITE (#selArr$[0]) #orRes #andRes)).
 
-  Definition CAndPermRes := STRUCT_TYPE {
+  Definition TagECap := STRUCT_TYPE {
     "tag"  :: Bool ;
     "ecap" :: ECap }.
 
-  Definition CAndPerm (cap : ty FullECapWithTag) (rs2 : ty Data) : LetExpr ty CAndPermRes :=
+  (* TODO: fix the comment and Wb to route the change in tag *)
+  Definition CAndPerm (cap : ty FullECapWithTag) (rs2 : ty Data) : LetExpr ty TagECap :=
     LetE maskBits : Bit (kindSize CapPerms) <- TruncLsb (Xlen - kindSize CapPerms) (kindSize CapPerms) #rs2 ;
     LetE maskVal : CapPerms <- FromBit CapPerms #maskBits ;
     LetE ecapVal : ECap <- ##cap`"ecap" ;
@@ -685,14 +686,11 @@ Section CherIoT_ALU_Formal_Specification.
     LetE capTag : Bool <- ##cap`"tag" ;
     LetE outTag : Bool <- And [ #capTag; #keepTag ] ;
     LetE outECap : ECap <- ##ecapVal `{ "perms" <- #newPerms } ;
-    @RetE _ CAndPermRes (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap }).
+    @RetE _ TagECap (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap }).
 
-  Definition SealerUnsealerRes := STRUCT_TYPE {
-    "tag"  :: Bool ;
-    "ecap" :: ECap }.
-
+  (* TODO: fix the comment and Wb to route the change in tag *)
   Definition SealerUnsealer (isUnseal boundsValid : ty Bool) (src1 src2 : ty FullECapWithTag)
-    : LetExpr ty SealerUnsealerRes :=
+    : LetExpr ty TagECap :=
     LetE ecap1 : ECap <- ##src1`"ecap" ;
     LetE ecap2 : ECap <- ##src2`"ecap" ;
     LetE perms1 : CapPerms <- ##ecap1`"perms" ;
@@ -713,7 +711,7 @@ Section CherIoT_ALU_Formal_Specification.
     LetE outGL : Bool <- ITE #isUnseal (And [ ##perms1`"GL"; ##perms2`"GL" ]) (##perms1`"GL") ;
     LetE outPerms : CapPerms <- ##perms1 `{ "GL" <- #outGL } ;
     LetE outECap : ECap <- ##ecap1 `{ "oType" <- #outOType } `{ "perms" <- #outPerms } ;
-    @RetE _ SealerUnsealerRes (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap }).
+    @RetE _ TagECap (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap }).
 
   Definition BoundsRes := STRUCT_TYPE {
     "E" :: Bit ExpSz ;
@@ -1094,7 +1092,7 @@ Section CherIoT_ALU_Formal_Specification.
 
     (* SealerUnsealer *)
     LetE SealerUnsealer_isUnseal : Bool <- ##aluControl`"SealerUnsealer_isUnseal" ;
-    LETE SealerUnsealerOut : SealerUnsealerRes <- SealerUnsealer SealerUnsealer_isUnseal AddrBoundsCheckOut cs1 cs2 ;
+    LETE SealerUnsealerOut : TagECap <- SealerUnsealer SealerUnsealer_isUnseal AddrBoundsCheckOut cs1 cs2 ;
 
     (* ComparatorGeneral Input Routing *)
     LetE ComparatorGeneral_op1 : Bit Xlen <- #cs1Addr ;
@@ -1117,7 +1115,7 @@ Section CherIoT_ALU_Formal_Specification.
     LETE LogicalOut : Bit Xlen <- Logical Logical_op1 Logical_op2 Logical_opSel ;
 
     (* CAndPerm Input Routing *)
-    LETE CAndPermOut : CAndPermRes <- CAndPerm cs1 cs2Addr ;
+    LETE CAndPermOut : TagECap <- CAndPerm cs1 cs2Addr ;
 
     (* Bounds *)
     LetE Bounds_reqLimit : Bit Xlen <-
