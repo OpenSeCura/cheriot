@@ -479,3 +479,4 @@ Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (Aui, CIncAddr, Load, Store),
 
 Exception: LoadUnit.Exception (Load), StoreUnit.Exception (Store), 0 (others)
 LoadPostProcess: LoadUnit.LoadPostProcess (Load), 0 (others)
+*)
