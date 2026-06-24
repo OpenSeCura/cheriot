@@ -511,7 +511,6 @@ Local Open Scope string_scope.
 
 Definition InstGroup := STRUCT_TYPE {
   "isCompressed"  :: Bool ;
-  "Logical_opSel" :: Bit 2 ; (* Options: 0 (2'b00) = AND, 1 (2'b01) = OR, 2 (2'b10) = XOR *)
   "Branch"        :: Bool ;
   "Cjal"          :: Bool ;
   "Aui"           :: Bool ;
@@ -531,6 +530,7 @@ Definition InstGroup := STRUCT_TYPE {
   "CSetEqual"     :: Bool ;
   "Shift"         :: Bool ;
   "Logical"       :: Bool ;
+  "Logical_opSel" :: Bit 2 ; (* Options: 0 (2'b00) = AND, 1 (2'b01) = OR, 2 (2'b10) = XOR *)
   "Cram"          :: Bool ;
   "Crrl"          :: Bool ;
   "CAndPerm"      :: Bool ;
@@ -632,8 +632,8 @@ Section DecodeInstGroup.
   Variable ty : Kind -> Type.
   Variable group : ty InstGroup.
 
-  Definition decodeInstGroup : Expr ty AluControl :=
-    STRUCT {
+  Definition decodeInstGroup : LetExpr ty AluControl :=
+    RetE (STRUCT {
       "AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui" ] ;
       "AdderBeforeBoundsCheck_offset_bimm12" ::= ##group`"Branch" ;
       "AdderBeforeBoundsCheck_offset_jimm20" ::= ##group`"Cjal" ;
@@ -715,7 +715,7 @@ Section DecodeInstGroup.
       "Reg_addr_CapEq" ::= ##group`"CSetEqual" ;
       "Reg_addr_specialAddr" ::= Or [ ##group`"Csr"; ##group`"Scr" ] ;
       "Exception_isLoadUnitNotStoreUnit" ::= ##group`"Load"
-    }.
+    }).
 End DecodeInstGroup.
 
 Section Alu.
