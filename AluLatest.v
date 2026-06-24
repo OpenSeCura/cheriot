@@ -505,7 +505,6 @@ Local Open Scope string_scope.
 Definition InstGroup := STRUCT_TYPE {
   "isCompressed"  :: Bool ;
   "Logical_opSel" :: Bit 2 ;
-  "isUnseal"      :: Bool ;
   "Branch"        :: Bool ;
   "Cjal"          :: Bool ;
   "Aui"           :: Bool ;
@@ -515,6 +514,7 @@ Definition InstGroup := STRUCT_TYPE {
   "CTestSubset"   :: Bool ;
   "CSetBounds"    :: Bool ;
   "Seal"          :: Bool ;
+  "Unseal"        :: Bool ;
   "Load"          :: Bool ;
   "Store"         :: Bool ;
   "AddSub"        :: Bool ;
@@ -650,7 +650,7 @@ Section DecodeInstGroup.
       "ComparatorGeneral_invertRes" ::= ##group`"Branch" ;
       "Logical_op2_isCs2AddrNotSimm12" ::= ##group`"Logical" ;
       "Logical_opSel" ::= ##group`"Logical_opSel" ;
-      "SealerUnsealer_isUnseal" ::= ##group`"isUnseal" ;
+      "SealerUnsealer_isUnseal" ::= ##group`"Unseal" ;
       "Bounds_reqLimit_cs2Addr" ::= ##group`"CSetBounds" ;
       "Bounds_reqLimit_zimm12" ::= ##group`"CSetBounds" ;
       "Bounds_reqLimit_cs1Addr" ::= Or [ ##group`"Cram"; ##group`"Crrl" ] ;
