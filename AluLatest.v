@@ -1157,13 +1157,12 @@ Section CherIoT_ALU_Formal_Specification.
     LetE NewSpecial_tag : Bool <- #ScrSanitizerOut ;
 
     LetE Reg_tag : Bool <-
-      caseDefault (k := Bool) [ (##aluControl`"Reg_tag_pccTag", #pccTag) ;
-                                (##aluControl`"Reg_tag_cs1Tag", #cs1Tag) ;
-                                (##aluControl`"Reg_tag_AddrBoundsCheck", #AddrBoundsCheckOut) ;
-                                (##aluControl`"Reg_tag_CAndPerm", ##CAndPermOut`"tag") ;
-                                (##aluControl`"Reg_tag_SealerUnsealer", ##SealerUnsealerOut`"tag") ;
-                                (##aluControl`"Reg_tag_specialTag", #specialTag) ]
-        (Const ty Bool false) ;
+      Or [ And [ ##aluControl`"Reg_tag_pccTag"         ; #pccTag ] ;
+           And [ ##aluControl`"Reg_tag_cs1Tag"         ; #cs1Tag ] ;
+           And [ ##aluControl`"Reg_tag_AddrBoundsCheck"; #AddrBoundsCheckOut ] ;
+           And [ ##aluControl`"Reg_tag_CAndPerm"       ; ##CAndPermOut`"tag" ] ;
+           And [ ##aluControl`"Reg_tag_SealerUnsealer" ; ##SealerUnsealerOut`"tag" ] ;
+           And [ ##aluControl`"Reg_tag_specialTag"     ; #specialTag ] ] ;
 
     LetE Bounds_outECap : ECap <-
       (##cs1`"ecap") `{ "base" <- ##BoundsOut`"base" }
