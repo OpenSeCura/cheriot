@@ -23,17 +23,18 @@
 1. INSTRUCTION GROUPS
 -------------------------------------------------------------------------------
 Immediate Formats:
-  * simm12    : 12-bit sign-extended immediate (arithmetic, loads/stores & CJALR offsets)
-  * zimm12    : 12-bit zero-extended immediate (CSetBoundsImm)
-  * uimm20    : 20-bit sign-extended upper immediate shifted left 12 bits (LUI)
-  * uimm20_11 : 20-bit sign-extended upper immediate shifted left 11 bits (CHERIoT AUIPCC / AUICGP format)
-  * bimm12    : 12-bit sign-extended branch offset (weird concatenation for branches with LSB 0)
-  * jimm20    : 20-bit sign-extended jump offset (another weird concatenation for JAL with LSB 0)
-  * shamt     : 5-bit shift amount
-  * zimm5     : 5-bit zero-extended immediate (CSR manipulations)
+  * simm12          : 12-bit sign-extended immediate (arithmetic, loads/stores & CJALR offsets)
+  * zimm12          : 12-bit zero-extended immediate (CSetBoundsImm)
+  * uimm20          : 20-bit sign-extended upper immediate shifted left 12 bits (LUI)
+  * uimm20_11       : 20-bit sign-extended upper immediate shifted left 11 bits (CHERIoT AUIPCC / AUICGP format)
+  * bimm12          : 12-bit sign-extended branch offset (weird concatenation for branches with LSB 0)
+  * jimm20          : 20-bit sign-extended jump offset (another weird concatenation for JAL with LSB 0)
+  * shamt           : 5-bit shift amount
+  * zimm5           : 5-bit zero-extended immediate (CSR manipulations)
 
 Miscellaneous:
-  * LoadOp    : generic load modifier (determines size and sign/zero extension)
+  * LoadOp          : generic load modifier (determines size and sign/zero extension)
+  * interruptStatus : Current interruptm status
 
 Branch
 * BEQ rs1, rs2, bimm12
@@ -42,8 +43,8 @@ Branch
 * BGE rs1, rs2, bimm12
 * BLTU rs1, rs2, bimm12
 * BGEU rs1, rs2, bimm12
-    Implicit Read : PCC
-    Implicit Write: PCC.addr, PCC.tag
+    Implicit Read : pcc
+    Implicit Write: pcc.addr, pcc.tag
     Functional Units:
       a) AdderBeforeBoundsCheck (computing branch target address PC + bimm12)
       b) AdderToOutput (computing sequential next PC PC + 2 / PC + 4)
@@ -57,8 +58,8 @@ Branch
 
 Cjal
 * CJAL cd, jimm20
-    Implicit Read : PCC
-    Implicit Write: PCC.addr, PCC.tag
+    Implicit Read : pcc
+    Implicit Write: pcc.addr, pcc.tag
     Functional Units:
       a) AdderBeforeBoundsCheck (computing jump target address PC + jimm20)
       b) AdderToOutput (computing return link address PC + 2 / PC + 4)
@@ -73,7 +74,7 @@ Aui
 * AUICGP cd, uimm20_11
     Implicit Read : c3 / CGP
 * AUIPCC cd, uimm20_11
-    Implicit Read : PCC
+    Implicit Read : pcc
     Functional Units:
       a) AdderBeforeBoundsCheck (address calculation pcc.addr / cs1.addr + uimm20_11)
       b) Add_CapBSz (computing representable limit exponent)
@@ -107,8 +108,8 @@ CSetAddr
 
 Cjalr
 * CJALR cd, cs1, simm12
-    Implicit Read : PCC
-    Implicit Write: PCC
+    Implicit Read : pcc, interruptStatus
+    Implicit Write: pcc, interruptStatus
     Functional Units:
       a) AdderBeforeBoundsCheck (computing jump target address cs1.addr + simm12)
       b) AdderToOutput (computing return link address PC + 2 / PC + 4)
@@ -247,7 +248,7 @@ Csr
 
 Scr
 * CSpecialRw cd, cSpecial, cs1
-    Implicit Read : PCC.perms
+    Implicit Read : pcc.perms
     Decoder can cause exceptions if no ASR
     Functional Units:
       a) ScrSanitizer (check if the last LSB bit is 0 for certain SCR writes)
@@ -286,16 +287,16 @@ CMove
 Trap
 * ECALL
 * EBREAK
-    Implicit Read : MTCC, PCC
-    Implicit Write: MEPCC, PCC, mcause
+    Implicit Read : MTCC, pcc
+    Implicit Write: MEPCC, pcc, mcause
     Will cause exception
     Functional Units:
       a) None (direct register copy)
 
 Mret
 * MRET
-    Implicit Read : MEPCC, PCC.perms
-    Implicit Write: PCC
+    Implicit Read : MEPCC, pcc.perms
+    Implicit Write: pcc
     Decoder can cause exceptions if no ASR
     Functional Units:
       a) None (direct register copy)
@@ -334,9 +335,10 @@ ComparatorGeneral:
 
 CjalrUnit: Specialized sentry legality and unsealing check unit for indirect jumps (CJALR).
   - CheckSentryAndUnseal : Cjalr
-  Outputs: CjalrUnit.tag (unsealed sentry tag), CjalrUnit.ecap (unsealed capability metadata)
+  Outputs: CjalrUnit.tag (unsealed sentry tag), CjalrUnit.ecap (unsealed capability metadata), CjalrUnit.interruptStatus (updated interrupt status)
   inp1: cs1 (Cjalr)
   inp2: simm12 (Cjalr)
+  inp3: currInterruptStatus (Cjalr)
 
 Logical:
   - AND : Logical (when AND/ANDI)
@@ -448,6 +450,7 @@ StoreUnit: Specialized store exception calculation unit.
 NewPcc.tag: AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
 NewPcc.ecap: CjalrUnit.ecap (Cjalr), pcc.ecap (others)
 NewPcc.addr: AdderBeforeBoundsCheck (Branch taken, Cjal, Cjalr), AdderToOutput (Branch not taken, others)
+NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
 
 NewSpecial.tag: ScrSanitizer (Scr)
 NewSpecial.ecap: cs1.ecap (Scr)
@@ -623,7 +626,6 @@ Section CherIoT_ALU_Formal_Specification.
     "ecap"            :: ECap;
     "interruptStatus" :: Bool }.
 
-  (* TODO: fix comment to take care of interrupt status *)
   Definition CjalrUnit (cs1 : ty FullECapWithTag) (instWord : ty Inst) (currIntStatus : ty Bool)
                        : LetExpr ty CjalrUnitRes :=
     LetE cs1Tag : Bool <- ##cs1`"tag" ;
@@ -971,7 +973,7 @@ Section CherIoT_ALU_Formal_Specification.
     "Reg" :: FullECapWithTag ;
     "Exception" :: Bool ;
     "LoadPostProcess" :: Bit 3 ;
-    "interruptStatus" :: Bool
+    "NewInterruptStatus" :: Bool
   }.
 
   Definition aluRouting (aluControl : ty AluControl) : LetExpr ty AluOut :=
@@ -1207,6 +1209,6 @@ Section CherIoT_ALU_Formal_Specification.
       "Reg" ::= #RegVal ;
       "Exception" ::= #ExceptionRes ;
       "LoadPostProcess" ::= #LoadPostProcessRes ;
-      "interruptStatus" ::= ##CjalrUnitOut`"interruptStatus"
+      "NewInterruptStatus" ::= ##CjalrUnitOut`"interruptStatus"
     }).
 End CherIoT_ALU_Formal_Specification.
