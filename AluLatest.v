@@ -562,13 +562,12 @@ Definition AluControl := STRUCT_TYPE {
   "Reg_tag_AddrBoundsCheck" :: Bool ;
   "Reg_CAndPerm" :: Bool ;
   "Reg_SealerUnsealer" :: Bool ;
-  "Reg_tag_specialTag" :: Bool ;
+  "Reg_tag_or_ecap_special" :: Bool ;
   "Reg_ecap_const0" :: Bool ; (* default option *)
   "Reg_ecap_pccEcap" :: Bool ;
   "Reg_ecap_cs1Ecap" :: Bool ;
   "Reg_ecap_cs2Addr" :: Bool ;
-  "Reg_ecap_Bounds" :: Bool ;
-  "Reg_ecap_specialEcap" :: Bool ;
+  "Reg_ecap_or_addr_Bounds" :: Bool ;
   "Reg_addr_uimm20" :: Bool ; (* default option *)
   "Reg_addr_AdderBeforeBoundsCheck" :: Bool ;
   "Reg_addr_ComparatorGeneralLt" :: Bool ;
@@ -578,7 +577,6 @@ Definition AluControl := STRUCT_TYPE {
   "Reg_addr_cs1Fields" :: Bool ;
   "Reg_addr_cs2Addr" :: Bool ;
   "Reg_addr_cs1Addr" :: Bool ;
-  "Reg_addr_BoundsBase" :: Bool ;
   "Reg_addr_BoundsCram" :: Bool ;
   "Reg_addr_BoundsCrrl" :: Bool ;
   "Reg_addr_CapSubset" :: Bool ;
@@ -1160,7 +1158,7 @@ Section CherIoT_ALU_Formal_Specification.
            And [ ##aluControl`"Reg_tag_AddrBoundsCheck"; #AddrBoundsCheckOut ] ;
            And [ ##aluControl`"Reg_CAndPerm"           ; ##CAndPermOut`"tag" ] ;
            And [ ##aluControl`"Reg_SealerUnsealer"     ; ##SealerUnsealerOut`"tag" ] ;
-           And [ ##aluControl`"Reg_tag_specialTag"     ; #specialTag ] ] ;
+           And [ ##aluControl`"Reg_tag_or_ecap_special"; #specialTag ] ] ;
 
     LetE Bounds_outECap : ECap <-
       (##cs1`"ecap") `{ "base" <- ##BoundsOut`"base" }
@@ -1173,8 +1171,8 @@ Section CherIoT_ALU_Formal_Specification.
                                 (##aluControl`"Reg_ecap_cs2Addr", ##cs2`"ecap") ;
                                 (##aluControl`"Reg_CAndPerm", ##CAndPermOut`"ecap") ;
                                 (##aluControl`"Reg_SealerUnsealer", ##SealerUnsealerOut`"ecap") ;
-                                (##aluControl`"Reg_ecap_Bounds", #Bounds_outECap) ;
-                                (##aluControl`"Reg_ecap_specialEcap", ##special`"ecap") ]
+                                (##aluControl`"Reg_ecap_or_addr_Bounds", #Bounds_outECap) ;
+                                (##aluControl`"Reg_tag_or_ecap_special", ##special`"ecap") ]
         (Const ty ECap (getDefault _)) ;
 
     LetE Reg_addr : Data <-
@@ -1186,7 +1184,7 @@ Section CherIoT_ALU_Formal_Specification.
                                 (##aluControl`"Reg_addr_cs1Fields", #cs1Addr) ;
                                 (##aluControl`"Reg_addr_cs2Addr", #cs2Addr) ;
                                 (##aluControl`"Reg_addr_cs1Addr", #cs1Addr) ;
-                                (##aluControl`"Reg_addr_BoundsBase", TruncLsb 1 Xlen (##BoundsOut`"base")) ;
+                                (##aluControl`"Reg_ecap_or_addr_Bounds", TruncLsb 1 Xlen (##BoundsOut`"base")) ;
                                 (##aluControl`"Reg_addr_BoundsCram", TruncLsb 1 Xlen (##BoundsOut`"cram")) ;
                                 (##aluControl`"Reg_addr_BoundsCrrl", TruncLsb 1 Xlen (##BoundsOut`"length")) ;
                                 (##aluControl`"Reg_addr_CapSubset", ZeroExtendTo Xlen (ToBit #CapSubsetOut)) ;
