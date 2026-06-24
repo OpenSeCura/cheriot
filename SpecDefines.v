@@ -24,24 +24,25 @@ Set Asymmetric Patterns.
 Import ListNotations.
 
 Local Open Scope Z_scope.
-
-Definition Xlen := 32.
-
 Local Open Scope guru_scope.
 
-Definition LgXlen   := Eval compute in Z.log2_up Xlen.
-Definition Data     := Eval compute in Bit Xlen.
-Definition AddrSz   := Eval compute in Xlen.
-Definition Addr     := Eval compute in Bit AddrSz.
-Definition Inst     := Eval compute in Bit 32.
-Definition LgAddrSz := Eval compute in Z.log2_up AddrSz.
-Definition ExpSz    := Eval compute in LgAddrSz.
-Definition NumBytesXlen := Eval compute in (Xlen / 8).
+Definition Xlen := 32.
+Definition InstSz   := 32.
 
 Definition CapOTypeSz := 3.
 Definition RegIdxSz   := 5.
 Definition Cra        := 1.
 
+Definition LgXlen   := Eval compute in Z.log2_up Xlen.
+Definition Data     := Eval compute in Bit Xlen.
+Definition AddrSz   := Eval compute in Xlen.
+Definition Addr     := Eval compute in Bit AddrSz.
+Definition Inst     := Eval compute in Bit InstSz.
+Definition LgAddrSz := Eval compute in Z.log2_up AddrSz.
+Definition ExpSz    := Eval compute in LgAddrSz.
+Definition NumBytesXlen := Eval compute in (Xlen / 8).
+
+Definition isCompressed ty (inst: ty Inst) : Expr ty (Bit 2) := TruncLsb (InstSz-2) 2 #inst.
 Definition getCd ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[11:7].
 Definition getCs1 ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[19:15].
 
