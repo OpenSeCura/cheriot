@@ -22,7 +22,7 @@
 
 1. INSTRUCTION GROUPS
 -------------------------------------------------------------------------------
-Immediate Formats (Broad Strokes):
+Immediate Formats:
   * simm12    : 12-bit sign-extended immediate (arithmetic, loads/stores & CJALR offsets)
   * zimm12    : 12-bit zero-extended immediate (CSetBoundsImm)
   * uimm20    : 20-bit sign-extended upper immediate shifted left 12 bits (LUI)
@@ -31,6 +31,8 @@ Immediate Formats (Broad Strokes):
   * jimm20    : 20-bit sign-extended jump offset (another weird concatenation for JAL with LSB 0)
   * shamt     : 5-bit shift amount
   * zimm5     : 5-bit zero-extended immediate (CSR manipulations)
+
+Miscellaneous:
   * LoadOp    : generic load modifier (determines size and sign/zero extension)
 
 Branch
