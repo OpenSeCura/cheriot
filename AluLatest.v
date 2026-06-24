@@ -349,16 +349,19 @@ Logical:
 
 CAndPerm: Specialized bitwise permission masking unit.
   - MaskPerms : CAndPerm
-  Outputs: CAndPerm.ecap (updated capability metadata word with masked permissions)
-  inp1: cs1.perms (CAndPerm)
-  inp2: cs2.addr (CAndPerm)
+  Outputs: CAndPerm.tag, CAndPerm.ecap (updated tag and capability metadata word with masked permissions)
+  inp1: cs1.tag (CAndPerm)
+  inp2: cs1.ecap (CAndPerm)
+  inp3: cs2.addr (CAndPerm)
 
 SealerUnsealer: Specialized capability sealing and unsealing verification unit.
   - Seal   : Seal (when CSeal)
   - Unseal : Seal (when CUnseal)
-  Outputs: SealerUnsealer.ecap (sealed or unsealed capability metadata word)
-  inp1: cs1 (Seal)
-  inp2: cs2 (Seal)
+  Outputs: SealerUnsealer.tag, SealerUnsealer.ecap (sealed or unsealed tag and capability metadata word)
+  inp1: cs1.tag (Seal)
+  inp2: cs1.ecap (Seal)
+  inp3: cs2 (Seal)
+  inp4: AddrBoundsCheck (Seal)
 
 Bounds: Specialized capability bounds calculation, mask and length computation unit.
   - SetBounds   : CSetBounds
@@ -459,8 +462,10 @@ NewSpecial.addr: cs1.addr (Scr)
 Reg.tag: 0 (Lui, AddSub, Slt, Shift, Logical, CGet, CGetLen, Cram, Crrl,
             CSub, CSetEqual, CTestSubset, Csr, CSetHigh, CClearTag, Load, Store),
          pcc.tag (Cjal),
-         cs1.tag (Cjalr, CMove, CAndPerm),
-         AddrBoundsCheck (Aui, CIncAddr, CSetAddr, CSetBounds, Seal),
+         cs1.tag (Cjalr, CMove),
+         AddrBoundsCheck (Aui, CIncAddr, CSetAddr, CSetBounds),
+         CAndPerm.tag (CAndPerm),
+         SealerUnsealer.tag (Seal),
          special.tag (Scr)
 
 Reg.ecap: 0 (Lui, AddSub, Slt, Shift, Logical, CGet, CGetLen, Cram, Crrl,
@@ -555,6 +560,8 @@ Definition AluControl := STRUCT_TYPE {
   "Reg_tag_pccTag" :: Bool ;
   "Reg_tag_cs1Tag" :: Bool ;
   "Reg_tag_AddrBoundsCheck" :: Bool ;
+  "Reg_tag_CAndPerm" :: Bool ;
+  "Reg_tag_SealerUnsealer" :: Bool ;
   "Reg_tag_specialTag" :: Bool ;
   "Reg_ecap_const0" :: Bool ; (* default option *)
   "Reg_ecap_pccEcap" :: Bool ;
@@ -672,33 +679,27 @@ Section CherIoT_ALU_Formal_Specification.
     "tag"  :: Bool ;
     "ecap" :: ECap }.
 
-  (* TODO: change input to TagECap; fix the comment and Wb to route the change in tag *)
-  Definition CAndPerm (cap : ty FullECapWithTag) (rs2 : ty Data) : LetExpr ty TagECap :=
+  Definition CAndPerm (capTag : ty Bool) (ecapVal : ty ECap) (rs2 : ty Data) : LetExpr ty TagECap :=
     LetE maskBits : Bit (kindSize CapPerms) <- TruncLsb (Xlen - kindSize CapPerms) (kindSize CapPerms) #rs2 ;
     LetE maskVal : CapPerms <- FromBit CapPerms #maskBits ;
-    LetE ecapVal : ECap <- ##cap`"ecap" ;
     LetE oldPerms : CapPerms <- ##ecapVal`"perms" ;
     LetE rawMask : CapPerms <- And [ ##oldPerms; #maskVal ] ;
     LetE newPerms : CapPerms <- fixPerms rawMask ;
     LetE sealed : Bool <- isSealed ecapVal ;
     LetE maskAllOnesNonGL : Bool <- isAllOnes (#maskVal `{ "GL" <- ConstTBool true }) ;
     LetE keepTag : Bool <- Or [ Not #sealed; #maskAllOnesNonGL ] ;
-    LetE capTag : Bool <- ##cap`"tag" ;
     LetE outTag : Bool <- And [ #capTag; #keepTag ] ;
     LetE outECap : ECap <- ##ecapVal `{ "perms" <- #newPerms } ;
     @RetE _ TagECap (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap }).
 
-  (* TODO: change src1 input to TagECap; fix the comment and Wb to route the change in tag *)
-  Definition SealerUnsealer (isUnseal boundsValid : ty Bool) (src1 src2 : ty FullECapWithTag)
+  Definition SealerUnsealer (isUnseal boundsValid cs1Tag : ty Bool) (ecap1 : ty ECap) (src2 : ty FullECapWithTag)
     : LetExpr ty TagECap :=
-    LetE ecap1 : ECap <- ##src1`"ecap" ;
     LetE ecap2 : ECap <- ##src2`"ecap" ;
     LetE perms1 : CapPerms <- ##ecap1`"perms" ;
     LetE perms2 : CapPerms <- ##ecap2`"perms" ;
     LetE sealed1 : Bool <- isSealed ecap1 ;
     LetE sealed2 : Bool <- isSealed ecap2 ;
     LetE cs2Addr : Data <- ##src2`"addr" ;
-    LetE cs1Tag : Bool <- ##src1`"tag" ;
     LetE cs2Tag : Bool <- ##src2`"tag" ;
     LetE sealRange : Bool <- ITE (##perms1`"EX")
                                (And [ Sgt #cs2Addr $0; Sle #cs2Addr $7 ])
@@ -1090,9 +1091,11 @@ Section CherIoT_ALU_Formal_Specification.
     LetE AddrBoundsCheck_baseEq : Bool <- ##ComparatorBaseOut`"eq" ;
     LETE AddrBoundsCheckOut : Bool <- AddrBoundsCheck AddrBoundsCheck_tag AddrBoundsCheck_topLt AddrBoundsCheck_baseLt AddrBoundsCheck_baseEq ;
 
+    LetE cs1ECap : ECap <- ##cs1`"ecap" ;
+
     (* SealerUnsealer *)
     LetE SealerUnsealer_isUnseal : Bool <- ##aluControl`"SealerUnsealer_isUnseal" ;
-    LETE SealerUnsealerOut : TagECap <- SealerUnsealer SealerUnsealer_isUnseal AddrBoundsCheckOut cs1 cs2 ;
+    LETE SealerUnsealerOut : TagECap <- SealerUnsealer SealerUnsealer_isUnseal AddrBoundsCheckOut cs1Tag cs1ECap cs2 ;
 
     (* ComparatorGeneral Input Routing *)
     LetE ComparatorGeneral_op1 : Bit Xlen <- #cs1Addr ;
@@ -1115,7 +1118,7 @@ Section CherIoT_ALU_Formal_Specification.
     LETE LogicalOut : Bit Xlen <- Logical Logical_op1 Logical_op2 Logical_opSel ;
 
     (* CAndPerm Input Routing *)
-    LETE CAndPermOut : TagECap <- CAndPerm cs1 cs2Addr ;
+    LETE CAndPermOut : TagECap <- CAndPerm cs1Tag cs1ECap cs2Addr ;
 
     (* Bounds *)
     LetE Bounds_reqLimit : Bit Xlen <-
@@ -1130,7 +1133,6 @@ Section CherIoT_ALU_Formal_Specification.
     LETE CapSubsetOut : Bool <- CapSubset AddrBoundsCheck_topLt AddrBoundsCheck_baseLt cs1Tag cs2Tag cs1Perms cs2Perms ;
 
     (* CapEq *)
-    LetE cs1ECap : ECap <- ##cs1`"ecap" ;
     LetE cs2ECap : ECap <- ##cs2`"ecap" ;
     LetE CapEq_generalEq : Bool <- ##ComparatorGeneralOut`"eq" ;
     LETE CapEqOut : Bool <- CapEq CapEq_generalEq cs1Tag cs2Tag cs1ECap cs2ECap ;
@@ -1158,6 +1160,8 @@ Section CherIoT_ALU_Formal_Specification.
       caseDefault (k := Bool) [ (##aluControl`"Reg_tag_pccTag", #pccTag) ;
                                 (##aluControl`"Reg_tag_cs1Tag", #cs1Tag) ;
                                 (##aluControl`"Reg_tag_AddrBoundsCheck", #AddrBoundsCheckOut) ;
+                                (##aluControl`"Reg_tag_CAndPerm", ##CAndPermOut`"tag") ;
+                                (##aluControl`"Reg_tag_SealerUnsealer", ##SealerUnsealerOut`"tag") ;
                                 (##aluControl`"Reg_tag_specialTag", #specialTag) ]
         (Const ty Bool false) ;
 
