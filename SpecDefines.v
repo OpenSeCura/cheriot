@@ -27,7 +27,8 @@ Local Open Scope Z_scope.
 Local Open Scope guru_scope.
 
 Definition Xlen := 32.
-Definition InstSz   := 32.
+Definition InstSz     := 32.
+Definition CompInstSz := 16.
 
 Definition CapOTypeSz := 3.
 Definition RegIdxSz   := 5.
