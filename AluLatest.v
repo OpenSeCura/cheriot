@@ -1141,9 +1141,17 @@ Section Alu.
     LetE tagsEq : Bool <- Eq #tag1 #tag2;
     @RetE _ Bool (And [ #addrEq; #metaEq; #tagsEq ]).
 
-  Definition ScrSanitizer (cs1 : ty FullECapWithTag) (inst : ty (Bit 32)) : LetExpr ty Bool :=
-    LetE lsbZero : Bool <- Eq (TruncLsb (Xlen - 1) 1 (##cs1`"addr")) (Const ty (Bit 1) Zmod.zero);
-    @RetE _ Bool (And [ ##cs1`"tag"; #lsbZero ]).
+  Definition ScrSanitizer (cs1 : ty FullECapWithTag) (inst : ty Inst)
+  : LetExpr ty Bool :=
+    LetE scrIdx : Bit RegIdxSz <- getScr inst ;
+    LetE isMePcc : Bool <- Eq #scrIdx $MePcc ;
+    LetE isMtcc : Bool <- Eq #scrIdx $Mtcc ;
+    LetE isMePrevPcc : Bool <- Eq #scrIdx $MePrevPcc ;
+    LetE isSpecialPcc : Bool <- Or [ #isMePcc; #isMtcc; #isMePrevPcc ] ;
+    LetE lsbZero : Bool <-
+      Eq (TruncLsb (Xlen - 1) 1 (##cs1`"addr")) (Const ty (Bit 1) Zmod.zero) ;
+    LetE keepTag : Bool <- Or [ Not #isSpecialPcc; #lsbZero ] ;
+    @RetE _ Bool (And [ ##cs1`"tag"; #keepTag ]).
 
   Definition LoadUnitRes := STRUCT_TYPE {
     "Exception" :: Bool ;

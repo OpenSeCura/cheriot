@@ -32,7 +32,12 @@ Definition CompInstSz := 16.
 
 Definition CapOTypeSz := 3.
 Definition RegIdxSz   := 5.
-Definition Cra        := 1.
+Definition Cra       := 1.
+Definition MePrevPcc := 27.
+Definition Mtcc      := 28.
+Definition Mtdc      := 29.
+Definition Mscratchc := 30.
+Definition MePcc     := 31.
 
 Definition LgXlen   := Eval compute in Z.log2_up Xlen.
 Definition Data     := Eval compute in Bit Xlen.
@@ -46,6 +51,7 @@ Definition NumBytesXlen := Eval compute in (Xlen / 8).
 Definition isCompressed ty (inst: ty Inst) : Expr ty (Bit 2) := TruncLsb (InstSz-2) 2 #inst.
 Definition getCd ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[11:7].
 Definition getCs1 ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[19:15].
+Definition getScr ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[24:20].
 
 Definition CapPerms := STRUCT_TYPE { "U0" :: Bool ;
                                      "SE" :: Bool ;
