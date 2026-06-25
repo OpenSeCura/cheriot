@@ -461,8 +461,9 @@ CapEq: Specialized whole capability exact equality testing unit.
 ScrSanitizer: Check if last LSB bit is 0 for certain SCR writes
   - SanitizeTag : Scr
   Outputs: ScrSanitizer (sanitized Boolean tag)
-  inp1: cs1 (Scr)
-  inp2: inst (Scr)
+  inp1: cs1.tag (Scr)
+  inp2: cs1.addr (Scr)
+  inp3: inst (Scr)
 
 LoadUnit: Specialized load operation modifier and exception calculation unit.
   - CalcLoadOpAndException : Load
@@ -1141,7 +1142,7 @@ Section Alu.
     LetE tagsEq : Bool <- Eq #tag1 #tag2;
     @RetE _ Bool (And [ #addrEq; #metaEq; #tagsEq ]).
 
-  Definition ScrSanitizer (cs1 : ty FullECapWithTag) (inst : ty Inst)
+  Definition ScrSanitizer (tag : ty Bool) (addr : ty (Bit Xlen)) (inst : ty Inst)
   : LetExpr ty Bool :=
     LetE scrIdx : Bit RegIdxSz <- getScr inst ;
     LetE isMePcc : Bool <- Eq #scrIdx $MePcc ;
@@ -1149,9 +1150,9 @@ Section Alu.
     LetE isMePrevPcc : Bool <- Eq #scrIdx $MePrevPcc ;
     LetE isSpecialPcc : Bool <- Or [ #isMePcc; #isMtcc; #isMePrevPcc ] ;
     LetE lsbZero : Bool <-
-      Eq (TruncLsb (Xlen - 1) 1 (##cs1`"addr")) (Const ty (Bit 1) Zmod.zero) ;
+      Eq (TruncLsb (Xlen - 1) 1 #addr) (Const ty (Bit 1) Zmod.zero) ;
     LetE keepTag : Bool <- Or [ Not #isSpecialPcc; #lsbZero ] ;
-    @RetE _ Bool (And [ ##cs1`"tag"; #keepTag ]).
+    @RetE _ Bool (And [ #tag; #keepTag ]).
 
   Definition LoadUnitRes := STRUCT_TYPE {
     "Exception" :: Bool ;
@@ -1375,7 +1376,7 @@ Section Alu.
       LETE CapEqOut : Bool <- CapEq CapEq_generalEq cs1Tag cs2Tag cs1ECap cs2ECap ;
 
       (* ScrSanitizer *)
-      LETE ScrSanitizerOut : Bool <- ScrSanitizer cs1 inst ;
+      LETE ScrSanitizerOut : Bool <- ScrSanitizer cs1Tag cs1Addr inst ;
 
       (* LoadUnit & StoreUnit *)
       LETE LoadUnitOut  : LoadUnitRes  <- LoadUnit cs1Tag cs1ECap AddrBoundsCheckOut LoadOp ;
