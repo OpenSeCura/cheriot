@@ -1226,7 +1226,6 @@ Section Alu.
       LetE jimm20 : Bit Xlen <- SignExtendTo Xlen #jimm21 ;
       LetE LoadOp : Bit 3 <- ConstExtract 17 3 12 #inst_val ;
 
-      (* AdderBeforeBoundsCheck Input Routing *)
       LetE AdderBeforeBoundsCheck_base : Bit Xlen <-
         ITE (##aluControl`"AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr") #pccAddr #cs1Addr ;
       LetE AdderBeforeBoundsCheck_offset : Bit Xlen <-
@@ -1239,7 +1238,6 @@ Section Alu.
       LETE AdderBeforeBoundsCheckOut : Bit Xlen <-
         AdderBeforeBoundsCheck AdderBeforeBoundsCheck_base AdderBeforeBoundsCheck_offset ;
 
-      (* AdderToOutput Input Routing *)
       LetE AdderToOutput_base : Bit Xlen <-
         caseDefault (k := Bit Xlen) [
             (##aluControl`"AdderToOutput_base_pccAddr", #pccAddr) ;
@@ -1256,12 +1254,10 @@ Section Alu.
       LETE AdderToOutputOut : Bit Xlen <-
         AdderToOutput AdderToOutput_base AdderToOutput_offset AdderToOutput_isSub ;
 
-      (* Add_CapBSz Input Routing *)
       LetE Add_CapBSz_baseExp : Bit ExpSz <-
         ITE (##aluControl`"Add_CapBSz_baseExp_isPccExpNotCs1Exp") #pccExp #cs1Exp ;
       LETE Add_CapBSzOut : Bit ExpSz <- Add_CapBSz Add_CapBSz_baseExp ;
 
-      (* Shifter *)
       LetE Shifter_data : Bit Xlen <-
         ITE (##aluControl`"Shifter_data_isCs1AddrNotConst1")
             #cs1Addr (Const ty (Bit Xlen) (Zmod.of_Z _ 1)) ;
@@ -1275,14 +1271,12 @@ Section Alu.
       LETE ShifterOut : Bit Xlen <-
         Shifter Shifter_data Shifter_shamt Shifter_isRight Shifter_isArith ;
 
-      (* AdderBeforeRepCheck *)
       LetE AdderBeforeRepCheck_base : Bit (Xlen + 1) <-
         ITE (##aluControl`"AdderBeforeRepCheck_base_isPccBaseNotCs1Base") #pccBase #cs1Base ;
       LetE AdderBeforeRepCheck_shifter : Bit (Xlen + 1) <- ZeroExtendTo (Xlen + 1) #ShifterOut ;
       LETE AdderBeforeRepCheckOut : Bit (Xlen + 1) <-
         AdderBeforeRepCheck AdderBeforeRepCheck_base AdderBeforeRepCheck_shifter ;
 
-      (* ComparatorTopRep *)
       LetE ComparatorTopRep_addr : Bit (Xlen + 1) <-
         caseDefault (k := Bit (Xlen + 1)) [
             (##aluControl`"ComparatorTopRep_addr_AdderBeforeBoundsCheck",
@@ -1299,7 +1293,6 @@ Section Alu.
       LETE ComparatorTopRepOut : ComparatorOut <-
         ComparatorTopRep ComparatorTopRep_addr ComparatorTopRep_topRep ComparatorTopRep_checkLte ;
 
-      (* ComparatorBase *)
       LetE ComparatorBase_addr : Bit (Xlen + 1) <-
         caseDefault (k := Bit (Xlen + 1)) [
             (##aluControl`"ComparatorBase_addr_AdderBeforeBoundsCheck",
@@ -1314,7 +1307,6 @@ Section Alu.
           #cs1Base ;
       LETE ComparatorBaseOut : ComparatorOut <- ComparatorBase ComparatorBase_addr ComparatorBase_base ;
 
-      (* AddrBoundsCheck *)
       LetE AddrBoundsCheck_tag : Bool <-
         ITE (##aluControl`"AddrBoundsCheck_tag_isPccTagNotCs1Tag") #pccTag #cs1Tag ;
       LetE AddrBoundsCheck_topLt : Bool <- ##ComparatorTopRepOut`"lt" ;
@@ -1326,12 +1318,10 @@ Section Alu.
 
       LetE cs1ECap : ECap <- ##cs1`"ecap" ;
 
-      (* SealerUnsealer *)
       LetE SealerUnsealer_isUnseal : Bool <- ##aluControl`"SealerUnsealer_isUnseal" ;
       LETE SealerUnsealerOut : TagECap <-
         SealerUnsealer SealerUnsealer_isUnseal AddrBoundsCheckOut cs1Tag cs1ECap cs2 ;
 
-      (* ComparatorGeneral Input Routing *)
       LetE ComparatorGeneral_op1 : Bit Xlen <- #cs1Addr ;
       LetE ComparatorGeneral_op2 : Bit Xlen <-
         ITE (##aluControl`"ComparatorGeneral_op2_isCs2AddrNotSimm12") #cs2Addr #simm12 ;
@@ -1344,20 +1334,16 @@ Section Alu.
                           ComparatorGeneral_isUnsigned ComparatorGeneral_checkLt
                           ComparatorGeneral_checkEq ComparatorGeneral_invertRes ;
 
-      (* CjalrUnit *)
       LETE CjalrUnitOut : CjalrUnitRes <- CjalrUnit cs1 inst currInterruptStatus ;
 
-      (* Logical Input Routing *)
       LetE Logical_op1 : Bit Xlen <- #cs1Addr ;
       LetE Logical_op2 : Bit Xlen <-
         ITE (##aluControl`"Logical_op2_isCs2AddrNotSimm12") #cs2Addr #simm12 ;
       LetE Logical_opSel : Bit 2 <- ##aluControl`"Logical_opSel" ;
       LETE LogicalOut : Bit Xlen <- Logical Logical_op1 Logical_op2 Logical_opSel ;
 
-      (* CAndPerm Input Routing *)
       LETE CAndPermOut : TagECap <- CAndPerm cs1Tag cs1ECap cs2Addr ;
 
-      (* Bounds *)
       LetE Bounds_reqLimit : Bit Xlen <-
         caseDefault (k := Bit Xlen) [ (##aluControl`"Bounds_reqLimit_cs2Addr", #cs2Addr) ;
                                       (##aluControl`"Bounds_reqLimit_cs1Addr", #cs1Addr) ]
@@ -1366,19 +1352,15 @@ Section Alu.
       LetE Bounds_isRoundDown : Bool <- ##aluControl`"Bounds_isRoundDown" ;
       LETE BoundsOut : BoundsRes <- Bounds cs1Base Bounds_reqLimitExt Bounds_isRoundDown ;
 
-      (* CapSubset *)
       LETE CapSubsetOut : Bool <-
         CapSubset AddrBoundsCheck_topLt AddrBoundsCheck_baseLt cs1Tag cs2Tag cs1Perms cs2Perms ;
 
-      (* CapEq *)
       LetE cs2ECap : ECap <- ##cs2`"ecap" ;
       LetE CapEq_generalEq : Bool <- ##ComparatorGeneralOut`"eq" ;
       LETE CapEqOut : Bool <- CapEq CapEq_generalEq cs1Tag cs2Tag cs1ECap cs2ECap ;
 
-      (* ScrSanitizer *)
       LETE ScrSanitizerOut : Bool <- ScrSanitizer cs1Tag cs1Addr inst ;
 
-      (* LoadUnit & StoreUnit *)
       LETE LoadUnitOut  : LoadUnitRes  <- LoadUnit cs1Tag cs1ECap AddrBoundsCheckOut LoadOp ;
       LETE StoreUnitOut : Bool <- StoreUnit cs1Tag cs1ECap AddrBoundsCheckOut ;
 
