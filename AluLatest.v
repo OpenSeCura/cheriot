@@ -611,8 +611,6 @@ Definition AluControl := STRUCT_TYPE {
   "Shifter_shamt_cs2Addr" :: Bool ;
   "Shifter_shamt_shamt" :: Bool ; (* default option *)
   "Shifter_shamt_AddCapBSz" :: Bool ;
-  "Shifter_isRight" :: Bool ;
-  "Shifter_isArith" :: Bool ;
   "AdderBeforeRepCheck_base_isPccBaseNotCs1Base" :: Bool ;
   "ComparatorTopRep_addr_AdderBeforeBoundsCheck" :: Bool ;
   "ComparatorTopRep_addr_cs1Addr" :: Bool ; (* default option *)
@@ -708,8 +706,6 @@ Section DecodeInstGroup.
       "Shifter_shamt_AddCapBSz" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui"; ##group`"CIncAddr";
              ##group`"CSetAddr" ] ;
-      "Shifter_isRight" ::= ##group`"Shift" ;
-      "Shifter_isArith" ::= ##group`"Shift" ;
       "AdderBeforeRepCheck_base_isPccBaseNotCs1Base" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui" ] ;
       "ComparatorTopRep_addr_AdderBeforeBoundsCheck" ::=
@@ -1275,8 +1271,9 @@ Section Alu.
             (##aluControl`"Shifter_shamt_cs2Addr", TruncLsb (Xlen - RegIdxSz) RegIdxSz #cs2Addr) ;
             (##aluControl`"Shifter_shamt_AddCapBSz", #Add_CapBSzOut) ]
           #shamt ;
-      LetE Shifter_isRight : Bool <- ##aluControl`"Shifter_isRight" ;
-      LetE Shifter_isArith : Bool <- ##aluControl`"Shifter_isArith" ;
+      LetE isShiftInst : Bool <- ##aluControl`"Shifter_data_isCs1AddrNotConst1" ;
+      LetE Shifter_isRight : Bool <- And [ #isShiftInst; Eq (#inst_val`[14:14]) $1 ] ;
+      LetE Shifter_isArith : Bool <- And [ #isShiftInst; Eq (#inst_val`[30:30]) $1 ] ;
       LETE ShifterOut : Bit Xlen <-
         Shifter Shifter_data Shifter_shamt Shifter_isRight Shifter_isArith ;
 
