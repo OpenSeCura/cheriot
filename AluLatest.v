@@ -493,27 +493,26 @@ Reg.tag: 0 (Lui, AddSub, Slt, Shift, Logical, CGet, CGetLen, Cram, Crrl,
             CSub, CSetEqual, CTestSubset, Csr, CSetHigh, CClearTag, Load, Store),
          pcc.tag (Cjal),
          cs1.tag (Cjalr, CMove),
+         cs2.tag (Scr),
          AddrBoundsCheck (Aui, CIncAddr, CSetAddr, CSetBounds),
          CAndPerm.tag (CAndPerm),
-         SealerUnsealer.tag (Seal, Unseal),
-         special.tag (Scr)
+         SealerUnsealer.tag (Seal, Unseal)
 
 Reg.ecap: 0 (Lui, AddSub, Slt, Shift, Logical, CGet, CGetLen, Cram, Crrl,
              CSub, CSetEqual, CTestSubset, Csr, Load, Store),
-          pcc.ecap (Aui, Cjal, Cjalr), c3.ecap (Aui),
+          pcc.ecap (Aui, Cjal, Cjalr),
           cs1.ecap (CIncAddr, CSetAddr, CClearTag, CMove),
-          cs2.addr (CSetHigh), CAndPerm.ecap (CAndPerm),
+          cs2.addr (CSetHigh), cs2.ecap (Scr), CAndPerm.ecap (CAndPerm),
           SealerUnsealer.ecap (Seal, Unseal),
-          {cs1.perms, cs1.otype, Bounds.base, Bounds.top, Bounds.E} (CSetBounds),
-          special.ecap (Scr)
+          {cs1.perms, cs1.otype, Bounds.base, Bounds.top, Bounds.E} (CSetBounds)
 
 Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (Aui, CIncAddr, Load, Store),
           ComparatorGeneral.lt (Slt), Shifter (Shift), Logical (Logical),
           AdderToOutput (Cjal, Cjalr, AddSub, CGetLen, CSub),
-          cs1.fields (CGet), cs2.addr (CSetAddr),
+          cs1.fields (CGet), cs2.addr (CSetAddr, Csr, Scr),
           cs1.addr (CAndPerm, CClearTag, Seal, Unseal, CMove, CSetHigh),
           Bounds.base (CSetBounds), Bounds.cram (Cram), Bounds.crrl (Crrl),
-          CapSubset (CTestSubset), CapEq (CSetEqual), special.addr (Csr, Scr)
+          CapSubset (CTestSubset), CapEq (CSetEqual)
 
 Exception: LoadUnit.Exception (Load), StoreUnit.Exception (Store), 0 (others)
 LoadPostProcess: LoadUnit.LoadPostProcess (Load), 0 (others)
@@ -532,8 +531,9 @@ Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
 (* TODO:
+ - Separate AuiPcc and AuiCgp in InstGroup (AuiCgp needs cs1.ecap where cs1=c3, AuiPcc needs pcc.ecap)
  - Create decoder that produces InstGroup and correct register value routing
-   + It should produce cs1, cs2 and special for consumption by Alu
+   + It should produce cs1 and cs2 (cs2 carries special/CSR/SCR registers for CSR/SCR instructions) for consumption by Alu
    + Take care of compressed instructions also
      * Compressed instruction must create a pseudo expanded instruction
  - Fix CGet
@@ -633,10 +633,10 @@ Definition AluControl := STRUCT_TYPE {
   "Reg_tag_const0" :: Bool ; (* default option *)
   "Reg_tag_pccTag" :: Bool ;
   "Reg_tag_cs1Tag" :: Bool ;
+  "Reg_tag_ecap_cs2" :: Bool ;
   "Reg_tag_AddrBoundsCheck" :: Bool ;
   "Reg_CAndPerm" :: Bool ;
   "Reg_SealerUnsealer" :: Bool ;
-  "Reg_tag_or_ecap_special" :: Bool ;
   "Reg_ecap_const0" :: Bool ; (* default option *)
   "Reg_ecap_pccEcap" :: Bool ;
   "Reg_ecap_cs1Ecap" :: Bool ;
@@ -655,7 +655,6 @@ Definition AluControl := STRUCT_TYPE {
   "Reg_addr_BoundsCrrl" :: Bool ;
   "Reg_addr_CapSubset" :: Bool ;
   "Reg_addr_CapEq" :: Bool ;
-  "Reg_addr_specialAddr" :: Bool ;
   "Exception_isLoadUnitNotStoreUnit" :: Bool }.
 
 Section DecodeInstGroup.
@@ -747,11 +746,11 @@ Section DecodeInstGroup.
              ##group`"Store" ] ;
       "Reg_tag_pccTag" ::= ##group`"Cjal" ;
       "Reg_tag_cs1Tag" ::= Or [ ##group`"Cjalr"; ##group`"CMove" ] ;
+      "Reg_tag_ecap_cs2" ::= ##group`"Scr" ;
       "Reg_tag_AddrBoundsCheck" ::=
         Or [ ##group`"Aui"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds" ] ;
       "Reg_CAndPerm" ::= ##group`"CAndPerm" ;
       "Reg_SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
-      "Reg_tag_or_ecap_special" ::= ##group`"Scr" ;
       "Reg_ecap_const0" ::=
         Or [ ##group`"Lui"; ##group`"AddSub"; ##group`"Slt"; ##group`"Shift";
              ##group`"Logical"; ##group`"CGet"; ##group`"CGetLen"; ##group`"Cram";
@@ -772,7 +771,7 @@ Section DecodeInstGroup.
         Or [ ##group`"Cjal"; ##group`"Cjalr"; ##group`"AddSub"; ##group`"CGetLen";
              ##group`"CSub" ] ;
       "Reg_addr_cs1Fields" ::= ##group`"CGet" ;
-      "Reg_addr_cs2Addr" ::= ##group`"CSetAddr" ;
+      "Reg_addr_cs2Addr" ::= Or [ ##group`"CSetAddr"; ##group`"Csr"; ##group`"Scr" ] ;
       "Reg_addr_cs1Addr" ::=
         Or [ ##group`"CAndPerm"; ##group`"CClearTag"; ##group`"Seal"; ##group`"Unseal";
              ##group`"CMove"; ##group`"CSetHigh" ] ;
@@ -780,7 +779,6 @@ Section DecodeInstGroup.
       "Reg_addr_BoundsCrrl" ::= ##group`"Crrl" ;
       "Reg_addr_CapSubset" ::= ##group`"CTestSubset" ;
       "Reg_addr_CapEq" ::= ##group`"CSetEqual" ;
-      "Reg_addr_specialAddr" ::= Or [ ##group`"Csr"; ##group`"Scr" ] ;
       "Exception_isLoadUnitNotStoreUnit" ::= ##group`"Load"
     }).
 End DecodeInstGroup.
@@ -1184,7 +1182,7 @@ Section Alu.
   }.
 
   Section AluRouting.
-    Variable pcc cs1 cs2 special : ty FullECapWithTag.
+    Variable pcc cs1 cs2 : ty FullECapWithTag.
     Variable inst : ty Inst.
     Variable currInterruptStatus : ty Bool.
     Variable isCompressed : ty Bool.
@@ -1210,9 +1208,6 @@ Section Alu.
       LetE cs2Base : Bit (AddrSz + 1) <- ##cs2`"ecap"`"base" ;
       LetE cs2Top : Bit (AddrSz + 1) <- ##cs2`"ecap"`"top" ;
       LetE cs2Perms : CapPerms <- ##cs2`"ecap"`"perms" ;
-
-      LetE specialAddr : Bit Xlen <- ##special`"addr" ;
-      LetE specialTag : Bool <- ##special`"tag" ;
 
       LetE simm12 : Bit Xlen <- SignExtendTo Xlen (#inst_val`[31:20]) ;
       LetE zimm12 : Bit Xlen <- ZeroExtendTo Xlen (#inst_val`[31:20]) ;
@@ -1387,10 +1382,10 @@ Section Alu.
       LetE Reg_tag : Bool <-
         Or [ And [ ##aluControl`"Reg_tag_pccTag"         ; #pccTag ] ;
              And [ ##aluControl`"Reg_tag_cs1Tag"         ; #cs1Tag ] ;
+             And [ ##aluControl`"Reg_tag_ecap_cs2"       ; #cs2Tag ] ;
              And [ ##aluControl`"Reg_tag_AddrBoundsCheck"; #AddrBoundsCheckOut ] ;
              And [ ##aluControl`"Reg_CAndPerm"           ; ##CAndPermOut`"tag" ] ;
-             And [ ##aluControl`"Reg_SealerUnsealer"     ; ##SealerUnsealerOut`"tag" ] ;
-             And [ ##aluControl`"Reg_tag_or_ecap_special"; #specialTag ] ] ;
+             And [ ##aluControl`"Reg_SealerUnsealer"     ; ##SealerUnsealerOut`"tag" ] ] ;
 
       LetE Bounds_outECap : ECap <-
         (##cs1`"ecap") `{ "base" <- ##BoundsOut`"base" }
@@ -1401,10 +1396,10 @@ Section Alu.
         caseDefault (k := ECap) [ (##aluControl`"Reg_ecap_pccEcap", ##pcc`"ecap") ;
                                   (##aluControl`"Reg_ecap_cs1Ecap", ##cs1`"ecap") ;
                                   (##aluControl`"Reg_ecap_cs2Addr", ##cs2`"ecap") ;
+                                  (##aluControl`"Reg_tag_ecap_cs2", ##cs2`"ecap") ;
                                   (##aluControl`"Reg_CAndPerm", ##CAndPermOut`"ecap") ;
                                   (##aluControl`"Reg_SealerUnsealer", ##SealerUnsealerOut`"ecap") ;
-                                  (##aluControl`"Reg_ecap_or_addr_Bounds", #Bounds_outECap) ;
-                                  (##aluControl`"Reg_tag_or_ecap_special", ##special`"ecap") ]
+                                  (##aluControl`"Reg_ecap_or_addr_Bounds", #Bounds_outECap) ]
           (Const ty ECap (getDefault _)) ;
 
       LetE Reg_addr : Data <-
@@ -1422,8 +1417,7 @@ Section Alu.
             (##aluControl`"Reg_addr_BoundsCram", TruncLsb 1 Xlen (##BoundsOut`"cram")) ;
             (##aluControl`"Reg_addr_BoundsCrrl", TruncLsb 1 Xlen (##BoundsOut`"length")) ;
             (##aluControl`"Reg_addr_CapSubset", ZeroExtendTo Xlen (ToBit #CapSubsetOut)) ;
-            (##aluControl`"Reg_addr_CapEq", ZeroExtendTo Xlen (ToBit #CapEqOut)) ;
-            (##aluControl`"Reg_addr_specialAddr", #specialAddr) ]
+            (##aluControl`"Reg_addr_CapEq", ZeroExtendTo Xlen (ToBit #CapEqOut)) ]
           #uimm20 ;
 
       LetE ExceptionRes : Bool <-
