@@ -532,16 +532,15 @@ Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
 (* TODO:
- - Fix Shift: isArith and isRight
+ - Create decoder that produces InstGroup and correct register value routing
+   + It should produce cs1, cs2 and special for consumption by Alu
+   + Take care of compressed instructions also
+     * Compressed instruction must create a pseudo expanded instruction
  - Fix CGet
  - Create a generic MultiCycleOp as the output for Alu
    + MemOp = (LoadOp | StoreOp) * Size
      * LoadOp = IsSigned * isLM * isLG
    + Future: Mul, Div, Rem
- - Create decoder that produces InstGroup and correct register value routing
-   + It should produce cs1, cs2 and special for consumption by Alu
-   + Take care of compressed instructions also
-     * Compressed instruction must create a pseudo expanded instruction
  *)
 
 Definition InstGroup := STRUCT_TYPE {
