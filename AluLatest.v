@@ -532,6 +532,9 @@ Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
 (* TODO:
+ - Fix Logical_opSel
+ - Fix Shift: isArith and isRight
+ - Fix CGet
  - Create a generic MultiCycleOp as the output for Alu
    + MemOp = (LoadOp | StoreOp) * Size
      * LoadOp = IsSigned * isLM * isLG
@@ -601,7 +604,7 @@ Definition AluControl := STRUCT_TYPE {
   "ComparatorGeneral_checkEq" :: Bool ;
   "ComparatorGeneral_invertRes" :: Bool ;
   "Logical_op2_isCs2AddrNotSimm12" :: Bool ;
-  "Logical_opSel" :: Bit 2 ; (* Options: 0 (2'b00) = AND, 1 (2'b01) = OR, 2 (2'b10) = XOR *)
+  "Logical_opSel" :: Bit 2 ; (* Options: 0 (2'b11) = AND, 1 (2'b10) = OR, 2 (2'b11) = XOR *)
   "SealerUnsealer_isUnseal" :: Bool ;
   "Bounds_reqLimit_cs2Addr" :: Bool ;
   "Bounds_reqLimit_zimm12" :: Bool ; (* default option *)
@@ -873,7 +876,7 @@ Section Alu.
     LetE orRes  : Bit Xlen <- Or [ #op1; #op2 ];
     LetE xorRes : Bit Xlen <- Xor [ #op1; #op2 ];
     LetE selArr : Array 2 Bool <- FromBit _ #opSel;
-    RetE (ITE (#selArr$[1]) #xorRes (ITE (#selArr$[0]) #orRes #andRes)).
+    RetE (ITE (#selArr$[1]) (ITE (#selArr$[0]) #orRes #andRes) #xorRes).
 
   Definition TagECap := STRUCT_TYPE {
     "tag"  :: Bool ;
