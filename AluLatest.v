@@ -532,7 +532,6 @@ Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
 (* TODO:
- - Fix Logical_opSel
  - Fix Shift: isArith and isRight
  - Fix CGet
  - Create a generic MultiCycleOp as the output for Alu
@@ -566,7 +565,6 @@ Definition InstGroup := STRUCT_TYPE {
   "CSetEqual"     :: Bool ;
   "Shift"         :: Bool ;
   "Logical"       :: Bool ;
-  "Logical_opSel" :: Bit 2 ; (* Options: 0 (2'b00) = AND, 1 (2'b01) = OR, 2 (2'b10) = XOR *)
   "Cram"          :: Bool ;
   "Crrl"          :: Bool ;
   "CAndPerm"      :: Bool ;
@@ -604,7 +602,6 @@ Definition AluControl := STRUCT_TYPE {
   "ComparatorGeneral_checkEq" :: Bool ;
   "ComparatorGeneral_invertRes" :: Bool ;
   "Logical_op2_isCs2AddrNotSimm12" :: Bool ;
-  "Logical_opSel" :: Bit 2 ; (* Options: 0 (2'b11) = AND, 1 (2'b10) = OR, 2 (2'b11) = XOR *)
   "SealerUnsealer_isUnseal" :: Bool ;
   "Bounds_reqLimit_cs2Addr" :: Bool ;
   "Bounds_reqLimit_zimm12" :: Bool ; (* default option *)
@@ -700,7 +697,6 @@ Section DecodeInstGroup.
       "ComparatorGeneral_checkEq" ::= Or [ ##group`"Branch"; ##group`"CSetEqual" ] ;
       "ComparatorGeneral_invertRes" ::= ##group`"Branch" ;
       "Logical_op2_isCs2AddrNotSimm12" ::= ##group`"Logical" ;
-      "Logical_opSel" ::= ##group`"Logical_opSel" ;
       "SealerUnsealer_isUnseal" ::= ##group`"Unseal" ;
       "Bounds_reqLimit_cs2Addr" ::= ##group`"CSetBounds" ;
       "Bounds_reqLimit_zimm12" ::= ##group`"CSetBounds" ;
@@ -876,7 +872,7 @@ Section Alu.
     LetE orRes  : Bit Xlen <- Or [ #op1; #op2 ];
     LetE xorRes : Bit Xlen <- Xor [ #op1; #op2 ];
     LetE selArr : Array 2 Bool <- FromBit _ #opSel;
-    RetE (ITE (#selArr$[1]) (ITE (#selArr$[0]) #orRes #andRes) #xorRes).
+    RetE (ITE (#selArr$[1]) (ITE (#selArr$[0]) #andRes #orRes) #xorRes).
 
   Definition TagECap := STRUCT_TYPE {
     "tag"  :: Bool ;
@@ -1352,7 +1348,7 @@ Section Alu.
       LetE Logical_op1 : Bit Xlen <- #cs1Addr ;
       LetE Logical_op2 : Bit Xlen <-
         ITE (##aluControl`"Logical_op2_isCs2AddrNotSimm12") #cs2Addr #simm12 ;
-      LetE Logical_opSel : Bit 2 <- ##aluControl`"Logical_opSel" ;
+      LetE Logical_opSel : Bit 2 <- #inst_val`[13:12] ;
       LETE LogicalOut : Bit Xlen <- Logical Logical_op1 Logical_op2 Logical_opSel ;
 
       LETE CAndPermOut : TagECap <- CAndPerm cs1Tag cs1ECap cs2Addr ;
