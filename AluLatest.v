@@ -324,10 +324,10 @@ Mret
 2. FUNCTIONAL UNIT/RESOURCE MAPPING
 -------------------------------------------------------------------------------
 AdderBeforeBoundsCheck:
-  - ADD : Branch, Cjal, Aui, CIncAddr, CSetAddr, Cjalr, Load, Store
-  inp1: pcc.addr (Branch, Cjal, Aui),
-        cs1.addr (Aui, CIncAddr, CSetAddr, Cjalr, Load, Store)
-  inp2: bimm12 (Branch), jimm20 (Cjal), uimm20_11 (Aui),
+  - ADD : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, Cjalr, Load, Store
+  inp1: pcc.addr (Branch, Cjal, AuiPcc),
+        cs1.addr (AuiCgp, CIncAddr, CSetAddr, Cjalr, Load, Store)
+  inp2: bimm12 (Branch), jimm20 (Cjal), uimm20_11 (AuiPcc, AuiCgp),
         cs2.addr (CIncAddr), simm12 (Cjalr, Load, Store)
 
 AdderToOutput:
@@ -339,9 +339,9 @@ AdderToOutput:
         cs2.addr (AddSub, CSub), simm12 (AddSub), cs1.base (CGetLen)
 
 Add_CapBSz:
-  - ADD : Branch, Cjal, Aui, CIncAddr, CSetAddr
-  inp1: pcc.exp (Branch, Cjal, Aui), cs1.exp (Aui, CIncAddr, CSetAddr)
-  inp2: CapBSz (Branch, Cjal, Aui, CIncAddr, CSetAddr)
+  - ADD : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
+  inp1: pcc.exp (Branch, Cjal, AuiPcc), cs1.exp (AuiCgp, CIncAddr, CSetAddr)
+  inp2: CapBSz (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
 
 ComparatorGeneral:
   - EQ         : Branch (when BEQ/BNE), CSetEqual
@@ -394,49 +394,49 @@ Bounds: Specialized capability bounds calculation, mask and length computation u
   inp2: cs2.addr (CSetBounds), zimm12 (CSetBounds), cs1.addr (Cram, Crrl)
 
 Shifter:
-  - ShiftLeftLogical     : Shift (when SLL/SLLI), Branch, Cjal, Aui, CIncAddr, CSetAddr
+  - ShiftLeftLogical     : Shift (when SLL/SLLI), Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
   - ShiftRightLogical    : Shift (when SRL/SRLI)
   - ShiftRightArithmetic : Shift (when SRA/SRAI)
-  inp1: cs1.addr (Shift), 1 (Branch, Cjal, Aui, CIncAddr, CSetAddr)
+  inp1: cs1.addr (Shift), 1 (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
   inp2: cs2.addr (Shift), shamt (Shift),
-        Add_CapBSz (Branch, Cjal, Aui, CIncAddr, CSetAddr)
+        Add_CapBSz (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
 
 AdderBeforeRepCheck:
-  - ADD : Branch, Cjal, Aui, CIncAddr, CSetAddr
-  inp1: pcc.base (Branch, Cjal, Aui), cs1.base (Aui, CIncAddr, CSetAddr)
-  inp2: Shifter (Branch, Cjal, Aui, CIncAddr, CSetAddr)
+  - ADD : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
+  inp1: pcc.base (Branch, Cjal, AuiPcc), cs1.base (AuiCgp, CIncAddr, CSetAddr)
+  inp2: Shifter (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
 
 ComparatorTopRep: (checking against top or representable limit)
   - LTEUnsigned : CTestSubset
-  - LTUnsigned  : Branch, Cjal, Aui, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal
+  - LTUnsigned  : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal
   Outputs: ComparatorTopRep.lt, ComparatorTopRep.eq
-  inp1: AdderBeforeBoundsCheck (Branch, Cjal, Aui, CIncAddr, CSetAddr, CSetBounds, Load, Store),
+  inp1: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store),
         cs1.addr (Seal, Unseal), cs1.otype (Seal, Unseal), cs1.top (CTestSubset)
-  inp2: AdderBeforeRepCheck (Branch, Cjal, Aui, CIncAddr, CSetAddr),
+  inp2: AdderBeforeRepCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr),
         cs1.top (CSetBounds, Load, Store), cs2.top (Seal, Unseal, CTestSubset)
 
 ComparatorBase: (checking against base)
-  - GTEUnsigned : Branch, Cjal, Aui, CIncAddr, CSetAddr, CSetBounds, Seal, Unseal, Load, Store,
+  - GTEUnsigned : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Seal, Unseal, Load, Store,
                   CTestSubset
   Outputs: ComparatorBase.lt, ComparatorBase.eq
-  inp1: AdderBeforeBoundsCheck (Branch, Cjal, Aui, CIncAddr, CSetAddr, Load, Store),
+  inp1: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, Load, Store),
         cs1.addr (Seal, Unseal, CSetBounds), cs1.otype (Seal, Unseal), cs1.base (CTestSubset)
-  inp2: pcc.base (Branch, Cjal, Aui),
-        cs1.base (Aui, CIncAddr, CSetAddr, CSetBounds, Load, Store),
+  inp2: pcc.base (Branch, Cjal, AuiPcc),
+        cs1.base (AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store),
         cs2.base (Seal, Unseal, CTestSubset)
 
 AddrBoundsCheck: Specialized capability address bounds and representability check unit.
-  - CheckInBounds : Branch, Cjal, Aui, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal
+  - CheckInBounds : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal
                     (validates top > addr >= base)
   Outputs: AddrBoundsCheck (validated Boolean capability/PC tag or in-bounds result)
-  inp1: cs1.tag (Aui, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal),
-        pcc.tag (Branch, Cjal)
+  inp1: cs1.tag (AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal),
+        pcc.tag (Branch, Cjal, AuiPcc)
   inp2: ComparatorTopRep.lt
-        (Branch, Cjal, Aui, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal)
+        (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal)
   inp3: ComparatorBase.lt
-        (Branch, Cjal, Aui, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal)
+        (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal)
   inp4: ComparatorBase.eq
-        (Branch, Cjal, Aui, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal)
+        (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal)
 
 CapSubset: Specialized capability inclusion testing unit.
   - Subset : CTestSubset (validates top >= top2 AND base2 >= base AND permissions subset)
@@ -494,19 +494,19 @@ Reg.tag: 0 (Lui, AddSub, Slt, Shift, Logical, CGet, CGetLen, Cram, Crrl,
          pcc.tag (Cjal),
          cs1.tag (Cjalr, CMove),
          cs2.tag (Scr),
-         AddrBoundsCheck (Aui, CIncAddr, CSetAddr, CSetBounds),
+         AddrBoundsCheck (AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds),
          CAndPerm.tag (CAndPerm),
          SealerUnsealer.tag (Seal, Unseal)
 
 Reg.ecap: 0 (Lui, AddSub, Slt, Shift, Logical, CGet, CGetLen, Cram, Crrl,
              CSub, CSetEqual, CTestSubset, Csr, Load, Store),
-          pcc.ecap (Aui, Cjal, Cjalr),
-          cs1.ecap (CIncAddr, CSetAddr, CClearTag, CMove),
+          pcc.ecap (AuiPcc, Cjal, Cjalr),
+          cs1.ecap (AuiCgp, CIncAddr, CSetAddr, CClearTag, CMove),
           cs2.addr (CSetHigh), cs2.ecap (Scr), CAndPerm.ecap (CAndPerm),
           SealerUnsealer.ecap (Seal, Unseal),
           {cs1.perms, cs1.otype, Bounds.base, Bounds.top, Bounds.E} (CSetBounds)
 
-Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (Aui, CIncAddr, Load, Store),
+Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, Store),
           ComparatorGeneral.lt (Slt), Shifter (Shift), Logical (Logical),
           AdderToOutput (Cjal, Cjalr, AddSub, CGetLen, CSub),
           cs1.fields (CGet), cs2.addr (CSetAddr, Csr, Scr),
@@ -531,7 +531,6 @@ Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
 (* TODO:
- - Separate AuiPcc and AuiCgp in InstGroup (AuiCgp needs cs1.ecap where cs1=c3, AuiPcc needs pcc.ecap)
  - Create decoder that produces InstGroup and correct register value routing
    + It should produce cs1 and cs2 (cs2 carries special/CSR/SCR registers for CSR/SCR instructions) for consumption by Alu
    + Take care of compressed instructions also
@@ -547,7 +546,8 @@ Definition InstGroup := STRUCT_TYPE {
   "isCompressed"  :: Bool ;
   "Branch"        :: Bool ;
   "Cjal"          :: Bool ;
-  "Aui"           :: Bool ;
+  "AuiPcc"        :: Bool ;
+  "AuiCgp"        :: Bool ;
   "CIncAddr"      :: Bool ;
   "CSetAddr"      :: Bool ;
   "Cjalr"         :: Bool ;
@@ -664,10 +664,10 @@ Section DecodeInstGroup.
   Definition decodeInstGroup : LetExpr ty AluControl :=
     RetE (STRUCT {
       "AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui" ] ;
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "AdderBeforeBoundsCheck_offset_bimm12" ::= ##group`"Branch" ;
       "AdderBeforeBoundsCheck_offset_jimm20" ::= ##group`"Cjal" ;
-      "AdderBeforeBoundsCheck_offset_uimm20_11" ::= ##group`"Aui" ;
+      "AdderBeforeBoundsCheck_offset_uimm20_11" ::= Or [ ##group`"AuiPcc"; ##group`"AuiCgp" ] ;
       "AdderBeforeBoundsCheck_offset_cs2Addr" ::= ##group`"CIncAddr" ;
       "AdderBeforeBoundsCheck_offset_simm12" ::=
         Or [ ##group`"Cjalr"; ##group`"Load"; ##group`"Store"; ##group`"CIncAddr" ] ;
@@ -685,7 +685,7 @@ Section DecodeInstGroup.
       "AdderToOutput_offset_cs1Base" ::= ##group`"CGetLen" ;
       "AdderToOutput_isSub" ::= Or [ ##group`"CSub"; ##group`"CGetLen" ] ;
       "Add_CapBSz_baseExp_isPccExpNotCs1Exp" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui" ] ;
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "ComparatorGeneral_op2_isCs2AddrNotSimm12" ::=
         Or [ ##group`"Branch"; ##group`"CSetEqual"; ##group`"Slt" ] ;
       "ComparatorGeneral_isUnsigned" ::= Or [ ##group`"Branch"; ##group`"Slt" ] ;
@@ -702,34 +702,35 @@ Section DecodeInstGroup.
       "Shifter_shamt_cs2Addr" ::= ##group`"Shift" ;
       "Shifter_shamt_shamt" ::= ##group`"Shift" ;
       "Shifter_shamt_AddCapBSz" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui"; ##group`"CIncAddr";
-             ##group`"CSetAddr" ] ;
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
+             ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
       "AdderBeforeRepCheck_base_isPccBaseNotCs1Base" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui" ] ;
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "ComparatorTopRep_addr_AdderBeforeBoundsCheck" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui"; ##group`"CIncAddr";
-             ##group`"CSetAddr"; ##group`"CSetBounds"; ##group`"Load"; ##group`"Store" ] ;
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
+             ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds"; ##group`"Load";
+             ##group`"Store" ] ;
       "ComparatorTopRep_addr_cs1Addr" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
       "ComparatorTopRep_addr_cs1OType" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
       "ComparatorTopRep_addr_cs1Top" ::= ##group`"CTestSubset" ;
       "ComparatorTopRep_topRep_AdderBeforeRepCheck" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui"; ##group`"CIncAddr";
-             ##group`"CSetAddr" ] ;
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
+             ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
       "ComparatorTopRep_topRep_cs1Top" ::=
         Or [ ##group`"CSetBounds"; ##group`"Load"; ##group`"Store" ] ;
       "ComparatorTopRep_topRep_cs2Top" ::=
         Or [ ##group`"CTestSubset"; ##group`"Seal"; ##group`"Unseal" ] ;
       "ComparatorTopRep_checkLte" ::= ##group`"CTestSubset" ;
       "ComparatorBase_addr_AdderBeforeBoundsCheck" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui"; ##group`"CIncAddr";
-             ##group`"CSetAddr"; ##group`"Load"; ##group`"Store" ] ;
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
+             ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"Load"; ##group`"Store" ] ;
       "ComparatorBase_addr_cs1Addr" ::=
         Or [ ##group`"Seal"; ##group`"Unseal"; ##group`"CSetBounds" ] ;
       "ComparatorBase_addr_cs1OType" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
       "ComparatorBase_addr_cs1Base" ::= ##group`"CTestSubset" ;
-      "ComparatorBase_base_pccBase" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Aui" ] ;
+      "ComparatorBase_base_pccBase" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "ComparatorBase_base_cs1Base" ::=
-        Or [ ##group`"Aui"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds";
+        Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds";
              ##group`"Load"; ##group`"Store" ] ;
       "ComparatorBase_base_cs2Base" ::=
         Or [ ##group`"CTestSubset"; ##group`"Seal"; ##group`"Unseal" ] ;
@@ -748,7 +749,8 @@ Section DecodeInstGroup.
       "Reg_tag_cs1Tag" ::= Or [ ##group`"Cjalr"; ##group`"CMove" ] ;
       "Reg_tag_ecap_cs2" ::= ##group`"Scr" ;
       "Reg_tag_AddrBoundsCheck" ::=
-        Or [ ##group`"Aui"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds" ] ;
+        Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr";
+             ##group`"CSetBounds" ] ;
       "Reg_CAndPerm" ::= ##group`"CAndPerm" ;
       "Reg_SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
       "Reg_ecap_const0" ::=
@@ -756,14 +758,16 @@ Section DecodeInstGroup.
              ##group`"Logical"; ##group`"CGet"; ##group`"CGetLen"; ##group`"Cram";
              ##group`"Crrl"; ##group`"CSub"; ##group`"CSetEqual"; ##group`"CTestSubset";
              ##group`"Csr"; ##group`"Load"; ##group`"Store" ] ;
-      "Reg_ecap_pccEcap" ::= Or [ ##group`"Aui"; ##group`"Cjal"; ##group`"Cjalr" ] ;
+      "Reg_ecap_pccEcap" ::= Or [ ##group`"AuiPcc"; ##group`"Cjal"; ##group`"Cjalr" ] ;
       "Reg_ecap_cs1Ecap" ::=
-        Or [ ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CClearTag"; ##group`"CMove" ] ;
+        Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CClearTag";
+             ##group`"CMove" ] ;
       "Reg_ecap_cs2Addr" ::= ##group`"CSetHigh" ;
       "Reg_ecap_or_addr_Bounds" ::= ##group`"CSetBounds" ;
       "Reg_addr_uimm20" ::= ##group`"Lui" ;
       "Reg_addr_AdderBeforeBoundsCheck" ::=
-        Or [ ##group`"Aui"; ##group`"CIncAddr"; ##group`"Load"; ##group`"Store" ] ;
+        Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"Load";
+             ##group`"Store" ] ;
       "Reg_addr_ComparatorGeneralLt" ::= ##group`"Slt" ;
       "Reg_addr_Shifter" ::= ##group`"Shift" ;
       "Reg_addr_Logical" ::= ##group`"Logical" ;
