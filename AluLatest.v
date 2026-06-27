@@ -439,7 +439,6 @@ ComparatorTopRep: (checking against top or representable limit)
 ComparatorBase: (checking against base)
   - GTEUnsigned : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Seal, Unseal, Load, Store,
                   CTestSubset
-  Outputs: lt, eq
   addr: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, Load, Store),
         cs2.addr (Seal), cs1.otype (Unseal), cs1.addr (CSetBounds), cs1.base (CTestSubset)
   base: pcc.base (Branch, Cjal, AuiPcc),
@@ -453,15 +452,13 @@ AddrBoundsCheck: Specialized capability address bounds and representability chec
         pcc.tag (Branch, Cjal, AuiPcc)
   topLt: ComparatorTopRep.lt
         (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal)
-  baseLt: ComparatorBase.lt
-        (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal)
-  baseEq: ComparatorBase.eq
+  baseGe: ComparatorBase
         (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal)
 
 CapSubset: Specialized capability inclusion testing unit.
   - Subset : CTestSubset (validates top >= top2 AND base2 >= base AND permissions subset)
   topLe: ComparatorTopRep.lt (CTestSubset), ComparatorTopRep.eq (CTestSubset)
-  baseGe: ComparatorBase.lt (CTestSubset)
+  baseGe: ComparatorBase (CTestSubset)
   perms1: cs1.perms (CTestSubset)
   perms2: cs2.perms (CTestSubset)
   tag1: cs1.tag (CTestSubset)
@@ -1183,13 +1180,12 @@ Section Alu.
     LetE outLt : Bool <- ITE #checkLte #lteRes #ltRes;
     @RetE _ ComparatorOut (STRUCT { "lt" ::= #outLt; "eq" ::= #eqRes }).
 
-  Definition ComparatorBase (addr base : ty (Bit (Xlen + 1))) : LetExpr ty ComparatorOut :=
-    LetE ltRes : Bool <- Slt #addr #base;
-    LetE eqRes : Bool <- Eq #addr #base;
-    @RetE _ ComparatorOut (STRUCT { "lt" ::= #ltRes; "eq" ::= #eqRes }).
+  Definition ComparatorBase (addr base : ty (Bit (Xlen + 1))) : LetExpr ty Bool :=
+    LetE geRes : Bool <- Sge #addr #base;
+    RetE #geRes.
 
-  Definition AddrBoundsCheck (tag topLt baseLt baseEq : ty Bool) : LetExpr ty Bool :=
-    LetE inBounds : Bool <- And [ #topLt; Or [ (Not #baseLt); #baseEq ] ];
+  Definition AddrBoundsCheck (tag topLt baseGe : ty Bool) : LetExpr ty Bool :=
+    LetE inBounds : Bool <- And [ #topLt; #baseGe ];
     @RetE _ Bool (And [ #tag; #inBounds ]).
 
   Definition CapSubset (topLe baseGe tag1 tag2 : ty Bool) (perms1 perms2 : ty CapPerms) : LetExpr ty Bool :=
@@ -1385,16 +1381,15 @@ Section Alu.
             (##aluControl`"ComparatorBase_base_pccBase", #pccBase) ;
             (#ComparatorBase_base_cs2Base, #cs2Base) ]
           #cs1Base ;
-      LETE ComparatorBaseOut : ComparatorOut <- ComparatorBase ComparatorBase_addr ComparatorBase_base ;
+      LETE ComparatorBaseOut : Bool <- ComparatorBase ComparatorBase_addr ComparatorBase_base ;
 
       LetE AddrBoundsCheck_tag : Bool <-
         ITE (##aluControl`"AddrBoundsCheck_tag_isPccTagNotCs1Tag") #pccTag #cs1Tag ;
       LetE AddrBoundsCheck_topLt : Bool <- ##ComparatorTopRepOut`"lt" ;
-      LetE AddrBoundsCheck_baseLt : Bool <- ##ComparatorBaseOut`"lt" ;
-      LetE AddrBoundsCheck_baseEq : Bool <- ##ComparatorBaseOut`"eq" ;
+      LetE AddrBoundsCheck_baseGe : Bool <- ##ComparatorBaseOut ;
       LETE AddrBoundsCheckOut : Bool <-
         AddrBoundsCheck AddrBoundsCheck_tag AddrBoundsCheck_topLt
-                        AddrBoundsCheck_baseLt AddrBoundsCheck_baseEq ;
+                        AddrBoundsCheck_baseGe ;
 
       LetE cs1ECap : ECap <- ##cs1`"ecap" ;
 
@@ -1433,7 +1428,7 @@ Section Alu.
       LETE BoundsOut : BoundsRes <- Bounds cs1Base Bounds_reqLimitExt Bounds_isRoundDown ;
 
       LETE CapSubsetOut : Bool <-
-        CapSubset AddrBoundsCheck_topLt AddrBoundsCheck_baseLt cs1Tag cs2Tag cs1Perms cs2Perms ;
+        CapSubset AddrBoundsCheck_topLt AddrBoundsCheck_baseGe cs1Tag cs2Tag cs1Perms cs2Perms ;
 
       LetE cs2ECap : ECap <- ##cs2`"ecap" ;
       LetE CapEq_generalEq : Bool <- ##ComparatorGeneralOut`"eq" ;
