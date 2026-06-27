@@ -52,8 +52,8 @@ Branch
       a) AdderBeforeBoundsCheck (computing branch target address PC + bimm12)
       b) AdderToOutput (computing sequential next PC PC + 2 / PC + 4)
       c) ComparatorGeneral (evaluating branch condition)
-      d) Add_CapBSz (computing representable limit exponent)
-      e) Shifter (computing representable limit shift mask 1 << Add_CapBSz)
+      d) AddCapBSz (computing representable limit exponent)
+      e) Shifter (computing representable limit shift mask 1 << AddCapBSz)
       f) AdderBeforeRepCheck (computing representable upper limit address pcc.base + Shifter)
       g) ComparatorTopRep (checking representable upper limit
                            AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
@@ -67,8 +67,8 @@ Cjal
     Functional Units:
       a) AdderBeforeBoundsCheck (computing jump target address PC + jimm20)
       b) AdderToOutput (computing return link address PC + 2 / PC + 4)
-      c) Add_CapBSz (computing representable limit exponent)
-      d) Shifter (computing representable limit shift mask 1 << Add_CapBSz)
+      c) AddCapBSz (computing representable limit exponent)
+      d) Shifter (computing representable limit shift mask 1 << AddCapBSz)
       e) AdderBeforeRepCheck (computing representable upper limit address pcc.base + Shifter)
       f) ComparatorTopRep (checking representable upper limit
                            AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
@@ -82,8 +82,8 @@ Aui
     Implicit Read : pcc
     Functional Units:
       a) AdderBeforeBoundsCheck (address calculation pcc.addr / cs1.addr + uimm20_11)
-      b) Add_CapBSz (computing representable limit exponent)
-      c) Shifter (computing representable limit shift mask 1 << Add_CapBSz)
+      b) AddCapBSz (computing representable limit exponent)
+      c) Shifter (computing representable limit shift mask 1 << AddCapBSz)
       d) AdderBeforeRepCheck (computing representable upper limit address base + Shifter)
       e) ComparatorTopRep (checking representable upper limit
                            AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
@@ -95,8 +95,8 @@ CIncAddr
 * CIncAddrImm cd, cs1, simm12
     Functional Units:
       a) AdderBeforeBoundsCheck (address calculation cs1.addr + rs2 / simm12)
-      b) Add_CapBSz (computing representable limit exponent)
-      c) Shifter (computing representable limit shift mask 1 << Add_CapBSz)
+      b) AddCapBSz (computing representable limit exponent)
+      c) Shifter (computing representable limit shift mask 1 << AddCapBSz)
       d) AdderBeforeRepCheck (computing representable upper limit address cs1.base + Shifter)
       e) ComparatorTopRep (checking representable upper limit
                            AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
@@ -106,8 +106,8 @@ CIncAddr
 CSetAddr
 * CSetAddr cd, cs1, rs2
     Functional Units:
-      a) Add_CapBSz (computing representable limit exponent)
-      b) Shifter (computing representable limit shift mask 1 << Add_CapBSz)
+      a) AddCapBSz (computing representable limit exponent)
+      b) Shifter (computing representable limit shift mask 1 << AddCapBSz)
       c) AdderBeforeRepCheck (computing representable upper limit address cs1.base + Shifter)
       d) ComparatorTopRep (checking representable upper limit cs2.addr <= AdderBeforeRepCheck)
       e) ComparatorBase (checking representable lower limit cs2.addr >= cs1.base)
@@ -338,7 +338,7 @@ AdderToOutput:
   inp2: 2 (compressed {Branch, Cjal, Cjalr}), 4 (uncompressed {Branch, Cjal, Cjalr}),
         cs2.addr (AddSub & !isImm, CSub), simm12 (AddSub & isImm), cs1.base (CGetLen)
 
-Add_CapBSz:
+AddCapBSz:
   - ADD : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
   inp1: pcc.exp (Branch, Cjal, AuiPcc), cs1.exp (AuiCgp, CIncAddr, CSetAddr)
   inp2: CapBSz (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
@@ -399,7 +399,7 @@ Shifter:
   - ShiftRightArithmetic : Shift (when SRA/SRAI)
   inp1: cs1.addr (Shift), 1 (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
   inp2: cs2.addr (Shift & !isImm), shamt (Shift & isImm),
-        Add_CapBSz (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
+        AddCapBSz (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
 
 AdderBeforeRepCheck:
   - ADD : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
@@ -595,7 +595,7 @@ Definition AluControl := STRUCT_TYPE {
   "AdderToOutput_offset_simm12" :: Bool ;
   "AdderToOutput_offset_cs1Base" :: Bool ;
   "AdderToOutput_isSub" :: Bool ;
-  "Add_CapBSz_baseExp_isPccExpNotCs1Exp" :: Bool ;
+  "AddCapBSz_baseExp_isPccExpNotCs1Exp" :: Bool ;
   "ComparatorGeneral_op2_isCs2AddrNotSimm12" :: Bool ;
   "ComparatorGeneral_isUnsigned" :: Bool ;
   "ComparatorGeneral_checkLt" :: Bool ;
@@ -688,7 +688,7 @@ Section DecodeInstGroup.
       "AdderToOutput_offset_simm12" ::= And [ ##group`"AddSub"; ##group`"isImm" ] ;
       "AdderToOutput_offset_cs1Base" ::= ##group`"CGetLen" ;
       "AdderToOutput_isSub" ::= Or [ ##group`"CSub"; ##group`"CGetLen" ] ;
-      "Add_CapBSz_baseExp_isPccExpNotCs1Exp" ::=
+      "AddCapBSz_baseExp_isPccExpNotCs1Exp" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "ComparatorGeneral_op2_isCs2AddrNotSimm12" ::=
         Or [ ##group`"Branch"; ##group`"CSetEqual";
@@ -808,7 +808,7 @@ Section Alu.
     LetE sum : Bit Xlen <- Add [ #base; #op2; #cin ];
     RetE #sum.
 
-  Definition Add_CapBSz (baseExp : ty (Bit ExpSz)) : LetExpr ty (Bit ExpSz) :=
+  Definition AddCapBSz (baseExp : ty (Bit ExpSz)) : LetExpr ty (Bit ExpSz) :=
     LetE sum : Bit ExpSz <- Add [ #baseExp; $CapBSz ];
     RetE #sum.
 
@@ -1262,9 +1262,9 @@ Section Alu.
       LETE AdderToOutputOut : Bit Xlen <-
         AdderToOutput AdderToOutput_base AdderToOutput_offset AdderToOutput_isSub ;
 
-      LetE Add_CapBSz_baseExp : Bit ExpSz <-
-        ITE (##aluControl`"Add_CapBSz_baseExp_isPccExpNotCs1Exp") #pccExp #cs1Exp ;
-      LETE Add_CapBSzOut : Bit ExpSz <- Add_CapBSz Add_CapBSz_baseExp ;
+      LetE AddCapBSz_baseExp : Bit ExpSz <-
+        ITE (##aluControl`"AddCapBSz_baseExp_isPccExpNotCs1Exp") #pccExp #cs1Exp ;
+      LETE AddCapBSzOut : Bit ExpSz <- AddCapBSz AddCapBSz_baseExp ;
 
       LetE Shifter_data : Bit Xlen <-
         ITE (##aluControl`"Shifter_data_isCs1AddrNotConst1")
@@ -1272,7 +1272,7 @@ Section Alu.
       LetE Shifter_shamt : Bit RegIdxSz <-
         caseDefault (k := Bit RegIdxSz) [
             (##aluControl`"Shifter_shamt_cs2Addr", TruncLsb (Xlen - RegIdxSz) RegIdxSz #cs2Addr) ;
-            (##aluControl`"Shifter_shamt_AddCapBSz", #Add_CapBSzOut) ]
+            (##aluControl`"Shifter_shamt_AddCapBSz", #AddCapBSzOut) ]
           #shamt ;
       LetE isShiftInst : Bool <- ##aluControl`"Shifter_data_isCs1AddrNotConst1" ;
       LetE Shifter_isRight : Bool <- And [ #isShiftInst; Eq (#inst_val`[14:14]) $1 ] ;
