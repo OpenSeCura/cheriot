@@ -377,7 +377,8 @@ ComparatorGeneral:
 
 CjalrUnit: Specialized sentry legality and unsealing check unit for indirect jumps (CJALR).
   - CheckSentryAndUnseal : Cjalr
-  Outputs: tag (unsealed sentry tag), ecap (unsealed capability metadata), interruptStatus (updated interrupt status)
+  Outputs: tag (unsealed sentry tag), ecap (unsealed capability metadata),
+           interruptStatus (updated interrupt status)
   cs1: cs1 (Cjalr)
   inst: simm12 (Cjalr)
   currIntStatus: currInterruptStatus (Cjalr)
