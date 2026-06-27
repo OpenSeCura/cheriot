@@ -634,15 +634,18 @@ Definition AluControl := STRUCT_TYPE {
   "Reg_tag_const0" :: Bool ; (* default option *)
   "Reg_tag_pccTag" :: Bool ;
   "Reg_tag_cs1Tag" :: Bool ;
-  "Reg_tag_ecap_cs2" :: Bool ;
+  "Reg_tag_cs2Tag" :: Bool ;
   "Reg_tag_AddrBoundsCheck" :: Bool ;
-  "Reg_CAndPerm" :: Bool ;
-  "Reg_SealerUnsealer" :: Bool ;
+  "Reg_tag_CAndPerm" :: Bool ;
+  "Reg_tag_SealerUnsealer" :: Bool ;
   "Reg_ecap_const0" :: Bool ; (* default option *)
   "Reg_ecap_pccEcap" :: Bool ;
   "Reg_ecap_cs1Ecap" :: Bool ;
+  "Reg_ecap_cs2Ecap" :: Bool ;
   "Reg_ecap_cs2Addr" :: Bool ;
-  "Reg_ecap_or_addr_Bounds" :: Bool ;
+  "Reg_ecap_CAndPerm" :: Bool ;
+  "Reg_ecap_SealerUnsealer" :: Bool ;
+  "Reg_ecap_Bounds" :: Bool ;
   "Reg_addr_uimm20" :: Bool ; (* default option *)
   "Reg_addr_AdderBeforeBoundsCheck" :: Bool ;
   "Reg_addr_ComparatorGeneralLt" :: Bool ;
@@ -652,6 +655,9 @@ Definition AluControl := STRUCT_TYPE {
   "Reg_addr_cs1Fields" :: Bool ;
   "Reg_addr_cs2Addr" :: Bool ;
   "Reg_addr_cs1Addr" :: Bool ;
+  "Reg_addr_CAndPerm" :: Bool ;
+  "Reg_addr_SealerUnsealer" :: Bool ;
+  "Reg_addr_BoundsBase" :: Bool ;
   "Reg_addr_BoundsCram" :: Bool ;
   "Reg_addr_BoundsCrrl" :: Bool ;
   "Reg_addr_CapSubset" :: Bool ;
@@ -752,12 +758,12 @@ Section DecodeInstGroup.
              ##group`"Store" ] ;
       "Reg_tag_pccTag" ::= ##group`"Cjal" ;
       "Reg_tag_cs1Tag" ::= Or [ ##group`"Cjalr"; ##group`"CMove" ] ;
-      "Reg_tag_ecap_cs2" ::= ##group`"Scr" ;
+      "Reg_tag_cs2Tag" ::= ##group`"Scr" ;
       "Reg_tag_AddrBoundsCheck" ::=
         Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr";
              ##group`"CSetBounds" ] ;
-      "Reg_CAndPerm" ::= ##group`"CAndPerm" ;
-      "Reg_SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
+      "Reg_tag_CAndPerm" ::= ##group`"CAndPerm" ;
+      "Reg_tag_SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
       "Reg_ecap_const0" ::=
         Or [ ##group`"Lui"; ##group`"AddSub"; ##group`"Slt"; ##group`"Shift";
              ##group`"Logical"; ##group`"CGet"; ##group`"CGetLen"; ##group`"Cram";
@@ -767,8 +773,11 @@ Section DecodeInstGroup.
       "Reg_ecap_cs1Ecap" ::=
         Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CClearTag";
              ##group`"CMove" ] ;
+      "Reg_ecap_cs2Ecap" ::= ##group`"Scr" ;
       "Reg_ecap_cs2Addr" ::= ##group`"CSetHigh" ;
-      "Reg_ecap_or_addr_Bounds" ::= ##group`"CSetBounds" ;
+      "Reg_ecap_CAndPerm" ::= ##group`"CAndPerm" ;
+      "Reg_ecap_SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
+      "Reg_ecap_Bounds" ::= ##group`"CSetBounds" ;
       "Reg_addr_uimm20" ::= ##group`"Lui" ;
       "Reg_addr_AdderBeforeBoundsCheck" ::=
         Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"Load";
@@ -782,8 +791,10 @@ Section DecodeInstGroup.
       "Reg_addr_cs1Fields" ::= ##group`"CGet" ;
       "Reg_addr_cs2Addr" ::= Or [ ##group`"CSetAddr"; ##group`"Csr"; ##group`"Scr" ] ;
       "Reg_addr_cs1Addr" ::=
-        Or [ ##group`"CAndPerm"; ##group`"CClearTag"; ##group`"Seal"; ##group`"Unseal";
-             ##group`"CMove"; ##group`"CSetHigh" ] ;
+        Or [ ##group`"CClearTag"; ##group`"CMove"; ##group`"CSetHigh" ] ;
+      "Reg_addr_CAndPerm" ::= ##group`"CAndPerm" ;
+      "Reg_addr_SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
+      "Reg_addr_BoundsBase" ::= ##group`"CSetBounds" ;
       "Reg_addr_BoundsCram" ::= ##group`"Cram" ;
       "Reg_addr_BoundsCrrl" ::= ##group`"Crrl" ;
       "Reg_addr_CapSubset" ::= ##group`"CTestSubset" ;
@@ -1391,10 +1402,10 @@ Section Alu.
       LetE Reg_tag : Bool <-
         Or [ And [ ##aluControl`"Reg_tag_pccTag"         ; #pccTag ] ;
              And [ ##aluControl`"Reg_tag_cs1Tag"         ; #cs1Tag ] ;
-             And [ ##aluControl`"Reg_tag_ecap_cs2"       ; #cs2Tag ] ;
+             And [ ##aluControl`"Reg_tag_cs2Tag"         ; #cs2Tag ] ;
              And [ ##aluControl`"Reg_tag_AddrBoundsCheck"; #AddrBoundsCheckOut ] ;
-             And [ ##aluControl`"Reg_CAndPerm"           ; ##CAndPermOut`"tag" ] ;
-             And [ ##aluControl`"Reg_SealerUnsealer"     ; ##SealerUnsealerOut`"tag" ] ] ;
+             And [ ##aluControl`"Reg_tag_CAndPerm"       ; ##CAndPermOut`"tag" ] ;
+             And [ ##aluControl`"Reg_tag_SealerUnsealer" ; ##SealerUnsealerOut`"tag" ] ] ;
 
       LetE Bounds_outECap : ECap <-
         (##cs1`"ecap") `{ "base" <- ##BoundsOut`"base" }
@@ -1404,11 +1415,11 @@ Section Alu.
       LetE Reg_ecap : ECap <-
         caseDefault (k := ECap) [ (##aluControl`"Reg_ecap_pccEcap", ##pcc`"ecap") ;
                                   (##aluControl`"Reg_ecap_cs1Ecap", ##cs1`"ecap") ;
+                                  (##aluControl`"Reg_ecap_cs2Ecap", ##cs2`"ecap") ;
                                   (##aluControl`"Reg_ecap_cs2Addr", ##cs2`"ecap") ;
-                                  (##aluControl`"Reg_tag_ecap_cs2", ##cs2`"ecap") ;
-                                  (##aluControl`"Reg_CAndPerm", ##CAndPermOut`"ecap") ;
-                                  (##aluControl`"Reg_SealerUnsealer", ##SealerUnsealerOut`"ecap") ;
-                                  (##aluControl`"Reg_ecap_or_addr_Bounds", #Bounds_outECap) ]
+                                  (##aluControl`"Reg_ecap_CAndPerm", ##CAndPermOut`"ecap") ;
+                                  (##aluControl`"Reg_ecap_SealerUnsealer", ##SealerUnsealerOut`"ecap") ;
+                                  (##aluControl`"Reg_ecap_Bounds", #Bounds_outECap) ]
           (Const ty ECap (getDefault _)) ;
 
       LetE Reg_addr : Data <-
@@ -1422,7 +1433,9 @@ Section Alu.
             (##aluControl`"Reg_addr_cs1Fields", #cs1Addr) ;
             (##aluControl`"Reg_addr_cs2Addr", #cs2Addr) ;
             (##aluControl`"Reg_addr_cs1Addr", #cs1Addr) ;
-            (##aluControl`"Reg_ecap_or_addr_Bounds", TruncLsb 1 Xlen (##BoundsOut`"base")) ;
+            (##aluControl`"Reg_addr_CAndPerm", #cs1Addr) ;
+            (##aluControl`"Reg_addr_SealerUnsealer", #cs1Addr) ;
+            (##aluControl`"Reg_addr_BoundsBase", TruncLsb 1 Xlen (##BoundsOut`"base")) ;
             (##aluControl`"Reg_addr_BoundsCram", TruncLsb 1 Xlen (##BoundsOut`"cram")) ;
             (##aluControl`"Reg_addr_BoundsCrrl", TruncLsb 1 Xlen (##BoundsOut`"length")) ;
             (##aluControl`"Reg_addr_CapSubset", ZeroExtendTo Xlen (ToBit #CapSubsetOut)) ;
