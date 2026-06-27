@@ -1214,7 +1214,7 @@ Section Alu.
       LetE uimm20 : Bit Xlen <- ({< #inst_val`[31:12], Const ty (Bit 12) Zmod.zero >}) ;
       LetE uimm20_11 : Bit Xlen <-
         ({< #inst_val`[31:31], #inst_val`[31:12], Const ty (Bit 11) Zmod.zero >}) ;
-      LetE shamt : Bit 5 <- ConstExtract 7 5 20 #inst_val ;
+      LetE shamt <- #inst_val`[24:20] ;
       LetE bimm13 : Bit 13 <-
         ({< #inst_val`[31:31], #inst_val`[7:7], #inst_val`[30:25], #inst_val`[11:8],
             Const _ (Bit 1) Zmod.zero >}) ;
