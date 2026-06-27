@@ -1305,7 +1305,6 @@ Section Alu.
         caseDefault (k := Bit (Xlen + 1)) [
             (##aluControl`"ComparatorTopRep_addr_AdderBeforeBoundsCheck",
              ZeroExtendTo (Xlen + 1) #AdderBeforeBoundsCheckOut) ;
-            (##aluControl`"ComparatorTopRep_addr_cs1Addr", ZeroExtendTo (Xlen + 1) #cs1Addr) ;
             (##aluControl`"ComparatorTopRep_addr_cs2Addr", ZeroExtendTo (Xlen + 1) #cs2Addr) ;
             (##aluControl`"ComparatorTopRep_addr_cs1OType", ZeroExtendTo (Xlen + 1) #cs1OType) ;
             (##aluControl`"ComparatorTopRep_addr_cs1Top", #cs1Top) ]
