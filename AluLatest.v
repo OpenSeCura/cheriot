@@ -411,7 +411,7 @@ ComparatorTopRep: (checking against top or representable limit)
   - LTUnsigned  : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal
   Outputs: ComparatorTopRep.lt, ComparatorTopRep.eq
   inp1: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store),
-        cs1.addr (Seal, Unseal), cs1.otype (Seal, Unseal), cs1.top (CTestSubset)
+        cs2.addr (Seal), cs1.otype (Unseal), cs1.top (CTestSubset)
   inp2: AdderBeforeRepCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr),
         cs1.top (CSetBounds, Load, Store), cs2.top (Seal, Unseal, CTestSubset)
 
@@ -420,7 +420,7 @@ ComparatorBase: (checking against base)
                   CTestSubset
   Outputs: ComparatorBase.lt, ComparatorBase.eq
   inp1: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, Load, Store),
-        cs1.addr (Seal, Unseal, CSetBounds), cs1.otype (Seal, Unseal), cs1.base (CTestSubset)
+        cs2.addr (Seal), cs1.otype (Unseal), cs1.addr (CSetBounds), cs1.base (CTestSubset)
   inp2: pcc.base (Branch, Cjal, AuiPcc),
         cs1.base (AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store),
         cs2.base (Seal, Unseal, CTestSubset)
@@ -614,6 +614,7 @@ Definition AluControl := STRUCT_TYPE {
   "AdderBeforeRepCheck_base_isPccBaseNotCs1Base" :: Bool ;
   "ComparatorTopRep_addr_AdderBeforeBoundsCheck" :: Bool ;
   "ComparatorTopRep_addr_cs1Addr" :: Bool ; (* default option *)
+  "ComparatorTopRep_addr_cs2Addr" :: Bool ;
   "ComparatorTopRep_addr_cs1OType" :: Bool ;
   "ComparatorTopRep_addr_cs1Top" :: Bool ;
   "ComparatorTopRep_topRep_AdderBeforeRepCheck" :: Bool ;
@@ -621,6 +622,7 @@ Definition AluControl := STRUCT_TYPE {
   "ComparatorTopRep_topRep_cs2Top" :: Bool ;
   "ComparatorTopRep_checkLte" :: Bool ;
   "ComparatorBase_addr_AdderBeforeBoundsCheck" :: Bool ;
+  "ComparatorBase_addr_cs2Addr" :: Bool ;
   "ComparatorBase_addr_cs1Addr" :: Bool ; (* default option *)
   "ComparatorBase_addr_cs1OType" :: Bool ;
   "ComparatorBase_addr_cs1Base" :: Bool ;
@@ -721,8 +723,9 @@ Section DecodeInstGroup.
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
              ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds"; ##group`"Load";
              ##group`"Store" ] ;
-      "ComparatorTopRep_addr_cs1Addr" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
-      "ComparatorTopRep_addr_cs1OType" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
+      "ComparatorTopRep_addr_cs1Addr" ::= ConstTBool false ;
+      "ComparatorTopRep_addr_cs2Addr" ::= ##group`"Seal" ;
+      "ComparatorTopRep_addr_cs1OType" ::= ##group`"Unseal" ;
       "ComparatorTopRep_addr_cs1Top" ::= ##group`"CTestSubset" ;
       "ComparatorTopRep_topRep_AdderBeforeRepCheck" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
@@ -735,9 +738,9 @@ Section DecodeInstGroup.
       "ComparatorBase_addr_AdderBeforeBoundsCheck" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
              ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"Load"; ##group`"Store" ] ;
-      "ComparatorBase_addr_cs1Addr" ::=
-        Or [ ##group`"Seal"; ##group`"Unseal"; ##group`"CSetBounds" ] ;
-      "ComparatorBase_addr_cs1OType" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
+      "ComparatorBase_addr_cs2Addr" ::= ##group`"Seal" ;
+      "ComparatorBase_addr_cs1Addr" ::= ##group`"CSetBounds" ;
+      "ComparatorBase_addr_cs1OType" ::= ##group`"Unseal" ;
       "ComparatorBase_addr_cs1Base" ::= ##group`"CTestSubset" ;
       "ComparatorBase_base_pccBase" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "ComparatorBase_base_cs1Base" ::=
@@ -745,7 +748,8 @@ Section DecodeInstGroup.
              ##group`"Load"; ##group`"Store" ] ;
       "ComparatorBase_base_cs2Base" ::=
         Or [ ##group`"CTestSubset"; ##group`"Seal"; ##group`"Unseal" ] ;
-      "AddrBoundsCheck_tag_isPccTagNotCs1Tag" ::= Or [ ##group`"Branch"; ##group`"Cjal" ] ;
+      "AddrBoundsCheck_tag_isPccTagNotCs1Tag" ::=
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "NewPcc_tag_isAddrBoundsCheckNotCjalrUnitTag" ::= Or [ ##group`"Branch"; ##group`"Cjal" ] ;
       "NewPcc_ecap_isCjalrUnitEcapNotPccEcap" ::= ##group`"Cjalr" ;
       "NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput" ::=
@@ -1301,6 +1305,8 @@ Section Alu.
         caseDefault (k := Bit (Xlen + 1)) [
             (##aluControl`"ComparatorTopRep_addr_AdderBeforeBoundsCheck",
              ZeroExtendTo (Xlen + 1) #AdderBeforeBoundsCheckOut) ;
+            (##aluControl`"ComparatorTopRep_addr_cs1Addr", ZeroExtendTo (Xlen + 1) #cs1Addr) ;
+            (##aluControl`"ComparatorTopRep_addr_cs2Addr", ZeroExtendTo (Xlen + 1) #cs2Addr) ;
             (##aluControl`"ComparatorTopRep_addr_cs1OType", ZeroExtendTo (Xlen + 1) #cs1OType) ;
             (##aluControl`"ComparatorTopRep_addr_cs1Top", #cs1Top) ]
           (ZeroExtendTo (Xlen + 1) #cs1Addr) ;
@@ -1317,6 +1323,7 @@ Section Alu.
         caseDefault (k := Bit (Xlen + 1)) [
             (##aluControl`"ComparatorBase_addr_AdderBeforeBoundsCheck",
              ZeroExtendTo (Xlen + 1) #AdderBeforeBoundsCheckOut) ;
+            (##aluControl`"ComparatorBase_addr_cs2Addr", ZeroExtendTo (Xlen + 1) #cs2Addr) ;
             (##aluControl`"ComparatorBase_addr_cs1OType", ZeroExtendTo (Xlen + 1) #cs1OType) ;
             (##aluControl`"ComparatorBase_addr_cs1Base", #cs1Base) ]
           (ZeroExtendTo (Xlen + 1) #cs1Addr) ;
