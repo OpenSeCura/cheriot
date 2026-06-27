@@ -557,7 +557,7 @@ Local Open Scope string_scope.
 Definition InstGroup := STRUCT_TYPE {
   "isCompressed"  :: Bool ;
   "isImm"         :: Bool ;
-  "isUnsigned"    :: Bool ;
+  "isUnsigned"    :: Bool ; (* Should be set for Branch, Slt and Load *)
   "Branch"        :: Bool ;
   "Cjal"          :: Bool ;
   "AuiPcc"        :: Bool ;
@@ -598,9 +598,9 @@ Definition InstGroup := STRUCT_TYPE {
   "CMove"         :: Bool ;
   "Trap"          :: Bool ;
   "Mret"          :: Bool ;
-  "ComparatorGeneral_checkLt"   :: Bool ;
-  "ComparatorGeneral_checkEq"   :: Bool ;
-  "ComparatorGeneral_invertRes" :: Bool
+  "ComparatorGeneral_checkLt"   :: Bool ; (* Should be set only for Branch and Slt *)
+  "ComparatorGeneral_checkEq"   :: Bool ; (* Should be set only for Branch and CSetEqual *)
+  "ComparatorGeneral_invertRes" :: Bool   (* Should be set only for Branch *)
 }.
 
 Definition AluControl := STRUCT_TYPE {
