@@ -560,6 +560,7 @@ Local Open Scope string_scope.
 Definition InstGroup := STRUCT_TYPE {
   "isCompressed"  :: Bool ;
   "isImm"         :: Bool ;
+  "isUnsigned"    :: Bool ;
   "Branch"        :: Bool ;
   "Cjal"          :: Bool ;
   "AuiPcc"        :: Bool ;
@@ -599,7 +600,10 @@ Definition InstGroup := STRUCT_TYPE {
   "CClearTag"     :: Bool ;
   "CMove"         :: Bool ;
   "Trap"          :: Bool ;
-  "Mret"          :: Bool
+  "Mret"          :: Bool ;
+  "ComparatorGeneral_checkLt"   :: Bool ;
+  "ComparatorGeneral_checkEq"   :: Bool ;
+  "ComparatorGeneral_invertRes" :: Bool
 }.
 
 Definition AluControl := STRUCT_TYPE {
@@ -732,10 +736,10 @@ Section DecodeInstGroup.
       "ComparatorGeneral_op2_isCs2AddrNotSimm12" ::=
         Or [ ##group`"Branch"; ##group`"CSetEqual";
              And [ ##group`"Slt"; Not ##group`"isImm" ] ] ;
-      "ComparatorGeneral_isUnsigned" ::= Or [ ##group`"Branch"; ##group`"Slt" ] ;
-      "ComparatorGeneral_checkLt" ::= Or [ ##group`"Branch"; ##group`"Slt" ] ;
-      "ComparatorGeneral_checkEq" ::= Or [ ##group`"Branch"; ##group`"CSetEqual" ] ;
-      "ComparatorGeneral_invertRes" ::= ##group`"Branch" ;
+      "ComparatorGeneral_isUnsigned" ::= ##group`"isUnsigned" ;
+      "ComparatorGeneral_checkLt" ::= ##group`"ComparatorGeneral_checkLt" ;
+      "ComparatorGeneral_checkEq" ::= ##group`"ComparatorGeneral_checkEq" ;
+      "ComparatorGeneral_invertRes" ::= ##group`"ComparatorGeneral_invertRes" ;
       "Logical_op2_isCs2AddrNotSimm12" ::= And [ ##group`"Logical"; Not ##group`"isImm" ] ;
       "SealerUnsealer_isUnseal" ::= ##group`"Unseal" ;
       "Bounds_reqLimit_cs2Addr" ::= And [ ##group`"CSetBounds"; Not ##group`"isImm" ] ;
