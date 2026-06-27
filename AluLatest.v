@@ -277,13 +277,37 @@ Lui
     Functional Units:
       None (direct immediate routing)
 
-CGet
+CGetPerm
 * CGetPerm rd, cs1
+    Functional Units:
+      None (direct field extraction)
+
+CGetType
 * CGetType rd, cs1
+    Functional Units:
+      None (direct field extraction)
+
+CGetBase
 * CGetBase rd, cs1
+    Functional Units:
+      None (direct field extraction)
+
+CGetTag
 * CGetTag rd, cs1
+    Functional Units:
+      None (direct field extraction)
+
+CGetAddr
 * CGetAddr rd, cs1
+    Functional Units:
+      None (direct field extraction)
+
+CGetHigh
 * CGetHigh rd, cs1
+    Functional Units:
+      None (direct field extraction)
+
+CGetTop
 * CGetTop rd, cs1
     Functional Units:
       None (direct field extraction)
@@ -489,7 +513,7 @@ NewSpecial.tag: ScrSanitizer (Scr)
 NewSpecial.ecap: cs1.ecap (Scr)
 NewSpecial.addr: cs1.addr (Scr)
 
-Reg.tag: 0 (Lui, AddSub, Slt, Shift, Logical, CGet, CGetLen, Cram, Crrl,
+Reg.tag: 0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGetTag, CGetAddr, CGetHigh, CGetTop, CGetLen, Cram, Crrl,
             CSub, CSetEqual, CTestSubset, Csr, CSetHigh, CClearTag, Load, Store),
          pcc.tag (Cjal),
          cs1.tag (Cjalr, CMove),
@@ -498,7 +522,7 @@ Reg.tag: 0 (Lui, AddSub, Slt, Shift, Logical, CGet, CGetLen, Cram, Crrl,
          CAndPerm.tag (CAndPerm),
          SealerUnsealer.tag (Seal, Unseal)
 
-Reg.ecap: 0 (Lui, AddSub, Slt, Shift, Logical, CGet, CGetLen, Cram, Crrl,
+Reg.ecap: 0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGetTag, CGetAddr, CGetHigh, CGetTop, CGetLen, Cram, Crrl,
              CSub, CSetEqual, CTestSubset, Csr, Load, Store),
           pcc.ecap (AuiPcc, Cjal, Cjalr),
           cs1.ecap (AuiCgp, CIncAddr, CSetAddr, CClearTag, CMove),
@@ -509,8 +533,8 @@ Reg.ecap: 0 (Lui, AddSub, Slt, Shift, Logical, CGet, CGetLen, Cram, Crrl,
 Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, Store),
           ComparatorGeneral.lt (Slt), Shifter (Shift), Logical (Logical),
           AdderToOutput (Cjal, Cjalr, AddSub, CGetLen, CSub),
-          cs1.fields (CGet), cs2.addr (CSetAddr, Csr, Scr),
-          cs1.addr (CAndPerm, CClearTag, Seal, Unseal, CMove, CSetHigh),
+          cs1.perms (CGetPerm), cs1.otype (CGetType), cs1.base (CGetBase), cs1.tag (CGetTag), cs1.addr (CGetAddr), cs1.high (CGetHigh), cs1.top (CGetTop),
+          cs2.addr (CSetAddr, Csr, Scr), cs1.addr (CAndPerm, CClearTag, Seal, Unseal, CMove, CSetHigh),
           Bounds.base (CSetBounds), Bounds.cram (Cram), Bounds.crrl (Crrl),
           CapSubset (CTestSubset), CapEq (CSetEqual)
 
@@ -535,7 +559,6 @@ Local Open Scope string_scope.
    + It should produce cs1 and cs2 (cs2 carries special/CSR/SCR registers for CSR/SCR instructions) for consumption by Alu
    + Take care of compressed instructions also
      * Compressed instruction must create a pseudo expanded instruction
- - Fix CGet
  - Create a generic MultiCycleOp as the output for Alu
    + MemOp = (LoadOp | StoreOp) * Size
      * LoadOp = IsSigned * isLM * isLG
@@ -571,7 +594,13 @@ Definition InstGroup := STRUCT_TYPE {
   "Csr"           :: Bool ;
   "Scr"           :: Bool ;
   "Lui"           :: Bool ;
-  "CGet"          :: Bool ;
+  "CGetPerm"      :: Bool ;
+  "CGetType"      :: Bool ;
+  "CGetBase"      :: Bool ;
+  "CGetTag"       :: Bool ;
+  "CGetAddr"      :: Bool ;
+  "CGetHigh"      :: Bool ;
+  "CGetTop"       :: Bool ;
   "CSetHigh"      :: Bool ;
   "CClearTag"     :: Bool ;
   "CMove"         :: Bool ;
@@ -654,7 +683,13 @@ Definition AluControl := STRUCT_TYPE {
   "Reg_addr_Shifter" :: Bool ;
   "Reg_addr_Logical" :: Bool ;
   "Reg_addr_AdderToOutput" :: Bool ;
-  "Reg_addr_cs1Fields" :: Bool ;
+  "Reg_addr_CGetPerm" :: Bool ;
+  "Reg_addr_CGetType" :: Bool ;
+  "Reg_addr_CGetBase" :: Bool ;
+  "Reg_addr_CGetTag" :: Bool ;
+  "Reg_addr_CGetAddr" :: Bool ;
+  "Reg_addr_CGetHigh" :: Bool ;
+  "Reg_addr_CGetTop" :: Bool ;
   "Reg_addr_cs2Addr" :: Bool ;
   "Reg_addr_cs1Addr" :: Bool ;
   "Reg_addr_CAndPerm" :: Bool ;
@@ -756,7 +791,9 @@ Section DecodeInstGroup.
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Cjalr" ] ;
       "Reg_tag_const0" ::=
         Or [ ##group`"Lui"; ##group`"AddSub"; ##group`"Slt"; ##group`"Shift";
-             ##group`"Logical"; ##group`"CGet"; ##group`"CGetLen"; ##group`"Cram";
+             ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
+             ##group`"CGetTag"; ##group`"CGetAddr"; ##group`"CGetHigh"; ##group`"CGetTop";
+             ##group`"CGetLen"; ##group`"Cram";
              ##group`"Crrl"; ##group`"CSub"; ##group`"CSetEqual"; ##group`"CTestSubset";
              ##group`"Csr"; ##group`"CSetHigh"; ##group`"CClearTag"; ##group`"Load";
              ##group`"Store" ] ;
@@ -770,7 +807,9 @@ Section DecodeInstGroup.
       "Reg_tag_SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
       "Reg_ecap_const0" ::=
         Or [ ##group`"Lui"; ##group`"AddSub"; ##group`"Slt"; ##group`"Shift";
-             ##group`"Logical"; ##group`"CGet"; ##group`"CGetLen"; ##group`"Cram";
+             ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
+             ##group`"CGetTag"; ##group`"CGetAddr"; ##group`"CGetHigh"; ##group`"CGetTop";
+             ##group`"CGetLen"; ##group`"Cram";
              ##group`"Crrl"; ##group`"CSub"; ##group`"CSetEqual"; ##group`"CTestSubset";
              ##group`"Csr"; ##group`"Load"; ##group`"Store" ] ;
       "Reg_ecap_pccEcap" ::= Or [ ##group`"AuiPcc"; ##group`"Cjal"; ##group`"Cjalr" ] ;
@@ -792,7 +831,13 @@ Section DecodeInstGroup.
       "Reg_addr_AdderToOutput" ::=
         Or [ ##group`"Cjal"; ##group`"Cjalr"; ##group`"AddSub"; ##group`"CGetLen";
              ##group`"CSub" ] ;
-      "Reg_addr_cs1Fields" ::= ##group`"CGet" ;
+      "Reg_addr_CGetPerm" ::= ##group`"CGetPerm" ;
+      "Reg_addr_CGetType" ::= ##group`"CGetType" ;
+      "Reg_addr_CGetBase" ::= ##group`"CGetBase" ;
+      "Reg_addr_CGetTag"  ::= ##group`"CGetTag" ;
+      "Reg_addr_CGetAddr" ::= ##group`"CGetAddr" ;
+      "Reg_addr_CGetHigh" ::= ##group`"CGetHigh" ;
+      "Reg_addr_CGetTop"  ::= ##group`"CGetTop" ;
       "Reg_addr_cs2Addr" ::= Or [ ##group`"CSetAddr"; ##group`"Csr"; ##group`"Scr" ] ;
       "Reg_addr_cs1Addr" ::=
         Or [ ##group`"CClearTag"; ##group`"CMove"; ##group`"CSetHigh" ] ;
@@ -1436,7 +1481,13 @@ Section Alu.
             (##aluControl`"Reg_addr_Shifter", #ShifterOut) ;
             (##aluControl`"Reg_addr_Logical", #LogicalOut) ;
             (##aluControl`"Reg_addr_AdderToOutput", #AdderToOutputOut) ;
-            (##aluControl`"Reg_addr_cs1Fields", #cs1Addr) ;
+            (##aluControl`"Reg_addr_CGetPerm", #cs1Addr) ;
+            (##aluControl`"Reg_addr_CGetType", ZeroExtendTo Xlen #cs1OType) ;
+            (##aluControl`"Reg_addr_CGetBase", TruncLsb 1 Xlen #cs1Base) ;
+            (##aluControl`"Reg_addr_CGetTag",  ZeroExtendTo Xlen (ToBit #cs1Tag)) ;
+            (##aluControl`"Reg_addr_CGetAddr", #cs1Addr) ;
+            (##aluControl`"Reg_addr_CGetHigh", #cs1Addr) ;
+            (##aluControl`"Reg_addr_CGetTop",  TruncLsb 1 Xlen #cs1Top) ;
             (##aluControl`"Reg_addr_cs2Addr", #cs2Addr) ;
             (##aluControl`"Reg_addr_cs1Addr", #cs1Addr) ;
             (##aluControl`"Reg_addr_CAndPerm", #cs1Addr) ;
