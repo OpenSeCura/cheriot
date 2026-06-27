@@ -371,14 +371,13 @@ ComparatorGeneral:
   - LTSigned   : Branch (when BLT/BGE), Slt (when SLT/SLTI)
   - LTUnsigned : Branch (when BLTU/BGEU), Slt (when SLTU/SLTIU)
   - Invert     : Branch (when BNE, BGE, BGEU to invert EQ/LT result)
-  Outputs: ComparatorGeneral.lt, ComparatorGeneral.eq
+  Outputs: lt, eq
   op1: cs1.addr (Branch, Slt, CSetEqual)
   op2: cs2.addr (Branch, Slt & !isImm, CSetEqual), simm12 (Slt & isImm)
 
 CjalrUnit: Specialized sentry legality and unsealing check unit for indirect jumps (CJALR).
   - CheckSentryAndUnseal : Cjalr
-  Outputs: CjalrUnit.tag (unsealed sentry tag), CjalrUnit.ecap (unsealed capability metadata),
-           CjalrUnit.interruptStatus (updated interrupt status)
+  Outputs: tag (unsealed sentry tag), ecap (unsealed capability metadata), interruptStatus (updated interrupt status)
   cs1: cs1 (Cjalr)
   inst: simm12 (Cjalr)
   currIntStatus: currInterruptStatus (Cjalr)
@@ -392,8 +391,7 @@ Logical:
 
 CAndPerm: Specialized bitwise permission masking unit.
   - MaskPerms : CAndPerm
-  Outputs: CAndPerm.tag, CAndPerm.ecap
-           (updated tag and capability metadata word with masked permissions)
+  Outputs: tag, ecap (updated tag and capability metadata word with masked permissions)
   tag: cs1.tag (CAndPerm)
   ecap: cs1.ecap (CAndPerm)
   cs2Addr: cs2.addr (CAndPerm)
@@ -401,8 +399,7 @@ CAndPerm: Specialized bitwise permission masking unit.
 SealerUnsealer: Specialized capability sealing and unsealing verification unit.
   - Seal   : Seal
   - Unseal : Unseal
-  Outputs: SealerUnsealer.tag, SealerUnsealer.ecap
-           (sealed or unsealed tag and capability metadata word)
+  Outputs: tag, ecap (sealed or unsealed tag and capability metadata word)
   tag: cs1.tag (Seal, Unseal)
   ecap: cs1.ecap (Seal, Unseal)
   cs2: cs2 (Seal, Unseal)
@@ -412,7 +409,7 @@ Bounds: Specialized capability bounds calculation, mask and length computation u
   - SetBounds   : CSetBounds
   - ComputeMask : Cram
   - ComputeLen  : Crrl
-  Outputs: Bounds.base, Bounds.length, Bounds.top, Bounds.E, Bounds.cram, Bounds.crrl
+  Outputs: base, length, top, E, cram, crrl
   cs1: cs1 (CSetBounds, Cram, Crrl)
   reqLimit: cs2.addr (CSetBounds & !isImm), zimm12 (CSetBounds & isImm), cs1.addr (Cram, Crrl)
 
@@ -432,7 +429,7 @@ AdderBeforeRepCheck:
 ComparatorTopRep: (checking against top or representable limit)
   - LTEUnsigned : CTestSubset
   - LTUnsigned  : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal
-  Outputs: ComparatorTopRep.lt, ComparatorTopRep.eq
+  Outputs: lt, eq
   addr: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store),
         cs2.addr (Seal), cs1.otype (Unseal), cs1.top (CTestSubset)
   topRep: AdderBeforeRepCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr),
@@ -441,7 +438,7 @@ ComparatorTopRep: (checking against top or representable limit)
 ComparatorBase: (checking against base)
   - GTEUnsigned : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Seal, Unseal, Load, Store,
                   CTestSubset
-  Outputs: ComparatorBase.lt, ComparatorBase.eq
+  Outputs: lt, eq
   addr: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, Load, Store),
         cs2.addr (Seal), cs1.otype (Unseal), cs1.addr (CSetBounds), cs1.base (CTestSubset)
   base: pcc.base (Branch, Cjal, AuiPcc),
@@ -485,7 +482,7 @@ ScrSanitizer: Check if last LSB bit is 0 for certain SCR writes
 
 LoadUnit: Specialized load operation modifier and exception calculation unit.
   - CalcLoadOpAndException : Load
-  Outputs: LoadUnit.Exception, LoadUnit.LoadPostProcess
+  Outputs: Exception, LoadPostProcess
   tag: cs1.tag (Load)
   ecap: cs1.ecap (Load)
   inBounds: AddrBoundsCheck (Load)
