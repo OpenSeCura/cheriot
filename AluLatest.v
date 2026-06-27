@@ -613,7 +613,7 @@ Definition AluControl := STRUCT_TYPE {
   "AdderBeforeBoundsCheck_offset_uimm20_11" :: Bool ;
   "AdderBeforeBoundsCheck_offset_cs2Addr" :: Bool ;
   "AdderBeforeBoundsCheck_offset_simm12" :: Bool ; (* default option *)
-  "AdderToOutput_base_pccAddr" :: Bool ;
+  "AdderToOutput_base_pccAddr_NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput" :: Bool ;
   "AdderToOutput_base_cs1Addr" :: Bool ; (* default option *)
   "AdderToOutput_base_cs1Top" :: Bool ;
   "AdderToOutput_offset_const2" :: Bool ;
@@ -659,7 +659,6 @@ Definition AluControl := STRUCT_TYPE {
   "AddrBoundsCheck_tag_isPccTagNotCs1Tag" :: Bool ;
   "NewPcc_tag_isAddrBoundsCheckNotCjalrUnitTag" :: Bool ;
   "NewPcc_ecap_isCjalrUnitEcapNotPccEcap" :: Bool ;
-  "NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput" :: Bool ;
   "Reg_tag_const0" :: Bool ; (* default option *)
   "Reg_tag_pccTag" :: Bool ;
   "Reg_tag_cs1Tag" :: Bool ;
@@ -710,10 +709,11 @@ Section DecodeInstGroup.
       "AdderBeforeBoundsCheck_offset_uimm20_11" ::= Or [ ##group`"AuiPcc"; ##group`"AuiCgp" ] ;
       "AdderBeforeBoundsCheck_offset_cs2Addr" ::=
         And [ ##group`"CIncAddr"; Not ##group`"isImm" ] ;
-      "AdderBeforeBoundsCheck_offset_simm12" ::=
+       "AdderBeforeBoundsCheck_offset_simm12" ::=
         Or [ ##group`"Cjalr"; ##group`"Load"; ##group`"Store";
              And [ ##group`"CIncAddr"; ##group`"isImm" ] ] ;
-      "AdderToOutput_base_pccAddr" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Cjalr" ] ;
+      "AdderToOutput_base_pccAddr_NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput" ::=
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Cjalr" ] ;
       "AdderToOutput_base_cs1Addr" ::= Or [ ##group`"AddSub"; ##group`"CSub" ] ;
       "AdderToOutput_base_cs1Top" ::= ##group`"CGetLen" ;
       "AdderToOutput_offset_const2" ::=
@@ -780,8 +780,6 @@ Section DecodeInstGroup.
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "NewPcc_tag_isAddrBoundsCheckNotCjalrUnitTag" ::= Or [ ##group`"Branch"; ##group`"Cjal" ] ;
       "NewPcc_ecap_isCjalrUnitEcapNotPccEcap" ::= ##group`"Cjalr" ;
-      "NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Cjalr" ] ;
       "Reg_tag_const0" ::=
         Or [ ##group`"Lui"; ##group`"AddSub"; ##group`"Slt"; ##group`"Shift";
              ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
@@ -1245,7 +1243,6 @@ Section Alu.
     Variable pcc cs1 cs2 : ty FullECapWithTag.
     Variable inst : ty Inst.
     Variable currInterruptStatus : ty Bool.
-    Variable isCompressed : ty Bool.
 
     Definition Alu (aluControl : ty AluControl) : LetExpr ty AluOut :=
       LetE inst_val : Inst <- ##inst ;
@@ -1302,6 +1299,11 @@ Section Alu.
       LetE Reg_addr_SealerUnsealer : Bool <-
         ##aluControl`"Reg_tag_ecap_addr_SealerUnsealer" ;
 
+      LetE AdderToOutput_base_pccAddr : Bool <-
+        ##aluControl`"AdderToOutput_base_pccAddr_NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput" ;
+      LetE NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput : Bool <-
+        ##aluControl`"AdderToOutput_base_pccAddr_NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput" ;
+
       LetE AdderBeforeBoundsCheck_base : Bit Xlen <-
         ITE (##aluControl`"AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr") #pccAddr #cs1Addr ;
       LetE AdderBeforeBoundsCheck_offset : Bit Xlen <-
@@ -1316,7 +1318,7 @@ Section Alu.
 
       LetE AdderToOutput_base : Bit Xlen <-
         caseDefault (k := Bit Xlen) [
-            (##aluControl`"AdderToOutput_base_pccAddr", #pccAddr) ;
+            (#AdderToOutput_base_pccAddr, #pccAddr) ;
             (##aluControl`"AdderToOutput_base_cs1Top", TruncLsb 1 Xlen #cs1Top) ]
           #cs1Addr ;
       LetE AdderToOutput_offset : Bit Xlen <-
@@ -1452,7 +1454,7 @@ Section Alu.
         ITE (##aluControl`"NewPcc_ecap_isCjalrUnitEcapNotPccEcap")
             (##CjalrUnitOut`"ecap") (##pcc`"ecap") ;
       LetE NewPcc_addr : Addr <-
-        ITE (##aluControl`"NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput")
+        ITE (#NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput)
             #AdderBeforeBoundsCheckOut #AdderToOutputOut ;
 
       LetE NewSpecial_tag : Bool <- #ScrSanitizerOut ;
