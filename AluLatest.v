@@ -328,7 +328,7 @@ AdderBeforeBoundsCheck:
   inp1: pcc.addr (Branch, Cjal, AuiPcc),
         cs1.addr (AuiCgp, CIncAddr, CSetAddr, Cjalr, Load, Store)
   inp2: bimm12 (Branch), jimm20 (Cjal), uimm20_11 (AuiPcc, AuiCgp),
-        cs2.addr (CIncAddr), simm12 (Cjalr, Load, Store)
+        cs2.addr (CIncAddr & !isImm), simm12 (Cjalr, Load, Store, CIncAddr & isImm)
 
 AdderToOutput:
   - ADD : Branch, Cjal, Cjalr, AddSub (when ADD/ADDI)
@@ -336,7 +336,7 @@ AdderToOutput:
   inp1: pcc.addr (Branch, Cjal, Cjalr), cs1.addr (AddSub, CSub),
         cs1.top (CGetLen)
   inp2: 2 (compressed {Branch, Cjal, Cjalr}), 4 (uncompressed {Branch, Cjal, Cjalr}),
-        cs2.addr (AddSub, CSub), simm12 (AddSub), cs1.base (CGetLen)
+        cs2.addr (AddSub & !isImm, CSub), simm12 (AddSub & isImm), cs1.base (CGetLen)
 
 Add_CapBSz:
   - ADD : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
@@ -350,7 +350,7 @@ ComparatorGeneral:
   - Invert     : Branch (when BNE, BGE, BGEU to invert EQ/LT result)
   Outputs: ComparatorGeneral.lt, ComparatorGeneral.eq
   inp1: cs1.addr (Branch, Slt, CSetEqual)
-  inp2: cs2.addr (Branch, Slt, CSetEqual), simm12 (Slt)
+  inp2: cs2.addr (Branch, Slt & !isImm, CSetEqual), simm12 (Slt & isImm)
 
 CjalrUnit: Specialized sentry legality and unsealing check unit for indirect jumps (CJALR).
   - CheckSentryAndUnseal : Cjalr
@@ -365,7 +365,7 @@ Logical:
   - OR  : Logical (when OR/ORI)
   - XOR : Logical (when XOR/XORI)
   inp1: cs1.addr (Logical)
-  inp2: cs2.addr (Logical), simm12 (Logical)
+  inp2: cs2.addr (Logical & !isImm), simm12 (Logical & isImm)
 
 CAndPerm: Specialized bitwise permission masking unit.
   - MaskPerms : CAndPerm
@@ -391,14 +391,14 @@ Bounds: Specialized capability bounds calculation, mask and length computation u
   - ComputeLen  : Crrl
   Outputs: Bounds.base, Bounds.length, Bounds.top, Bounds.E, Bounds.cram, Bounds.crrl
   inp1: cs1 (CSetBounds, Cram, Crrl)
-  inp2: cs2.addr (CSetBounds), zimm12 (CSetBounds), cs1.addr (Cram, Crrl)
+  inp2: cs2.addr (CSetBounds & !isImm), zimm12 (CSetBounds & isImm), cs1.addr (Cram, Crrl)
 
 Shifter:
   - ShiftLeftLogical     : Shift (when SLL/SLLI), Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
   - ShiftRightLogical    : Shift (when SRL/SRLI)
   - ShiftRightArithmetic : Shift (when SRA/SRAI)
   inp1: cs1.addr (Shift), 1 (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
-  inp2: cs2.addr (Shift), shamt (Shift),
+  inp2: cs2.addr (Shift & !isImm), shamt (Shift & isImm),
         Add_CapBSz (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
 
 AdderBeforeRepCheck:
@@ -544,6 +544,7 @@ Local Open Scope string_scope.
 
 Definition InstGroup := STRUCT_TYPE {
   "isCompressed"  :: Bool ;
+  "isImm"         :: Bool ;
   "Branch"        :: Bool ;
   "Cjal"          :: Bool ;
   "AuiPcc"        :: Bool ;
@@ -668,9 +669,11 @@ Section DecodeInstGroup.
       "AdderBeforeBoundsCheck_offset_bimm12" ::= ##group`"Branch" ;
       "AdderBeforeBoundsCheck_offset_jimm20" ::= ##group`"Cjal" ;
       "AdderBeforeBoundsCheck_offset_uimm20_11" ::= Or [ ##group`"AuiPcc"; ##group`"AuiCgp" ] ;
-      "AdderBeforeBoundsCheck_offset_cs2Addr" ::= ##group`"CIncAddr" ;
+      "AdderBeforeBoundsCheck_offset_cs2Addr" ::=
+        And [ ##group`"CIncAddr"; Not ##group`"isImm" ] ;
       "AdderBeforeBoundsCheck_offset_simm12" ::=
-        Or [ ##group`"Cjalr"; ##group`"Load"; ##group`"Store"; ##group`"CIncAddr" ] ;
+        Or [ ##group`"Cjalr"; ##group`"Load"; ##group`"Store";
+             And [ ##group`"CIncAddr"; ##group`"isImm" ] ] ;
       "AdderToOutput_base_pccAddr" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Cjalr" ] ;
       "AdderToOutput_base_cs1Addr" ::= Or [ ##group`"AddSub"; ##group`"CSub" ] ;
       "AdderToOutput_base_cs1Top" ::= ##group`"CGetLen" ;
@@ -680,27 +683,29 @@ Section DecodeInstGroup.
       "AdderToOutput_offset_const4" ::=
         And [ Not ##group`"isCompressed";
               Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Cjalr" ] ] ;
-      "AdderToOutput_offset_cs2Addr" ::= Or [ ##group`"AddSub"; ##group`"CSub" ] ;
-      "AdderToOutput_offset_simm12" ::= ##group`"AddSub" ;
+      "AdderToOutput_offset_cs2Addr" ::=
+        Or [ And [ ##group`"AddSub"; Not ##group`"isImm" ]; ##group`"CSub" ] ;
+      "AdderToOutput_offset_simm12" ::= And [ ##group`"AddSub"; ##group`"isImm" ] ;
       "AdderToOutput_offset_cs1Base" ::= ##group`"CGetLen" ;
       "AdderToOutput_isSub" ::= Or [ ##group`"CSub"; ##group`"CGetLen" ] ;
       "Add_CapBSz_baseExp_isPccExpNotCs1Exp" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "ComparatorGeneral_op2_isCs2AddrNotSimm12" ::=
-        Or [ ##group`"Branch"; ##group`"CSetEqual"; ##group`"Slt" ] ;
+        Or [ ##group`"Branch"; ##group`"CSetEqual";
+             And [ ##group`"Slt"; Not ##group`"isImm" ] ] ;
       "ComparatorGeneral_isUnsigned" ::= Or [ ##group`"Branch"; ##group`"Slt" ] ;
       "ComparatorGeneral_checkLt" ::= Or [ ##group`"Branch"; ##group`"Slt" ] ;
       "ComparatorGeneral_checkEq" ::= Or [ ##group`"Branch"; ##group`"CSetEqual" ] ;
       "ComparatorGeneral_invertRes" ::= ##group`"Branch" ;
-      "Logical_op2_isCs2AddrNotSimm12" ::= ##group`"Logical" ;
+      "Logical_op2_isCs2AddrNotSimm12" ::= And [ ##group`"Logical"; Not ##group`"isImm" ] ;
       "SealerUnsealer_isUnseal" ::= ##group`"Unseal" ;
-      "Bounds_reqLimit_cs2Addr" ::= ##group`"CSetBounds" ;
-      "Bounds_reqLimit_zimm12" ::= ##group`"CSetBounds" ;
+      "Bounds_reqLimit_cs2Addr" ::= And [ ##group`"CSetBounds"; Not ##group`"isImm" ] ;
+      "Bounds_reqLimit_zimm12" ::= And [ ##group`"CSetBounds"; ##group`"isImm" ] ;
       "Bounds_reqLimit_cs1Addr" ::= Or [ ##group`"Cram"; ##group`"Crrl" ] ;
       "Bounds_isRoundDown" ::= ##group`"CSetBounds" ;
       "Shifter_data_isCs1AddrNotConst1" ::= ##group`"Shift" ;
-      "Shifter_shamt_cs2Addr" ::= ##group`"Shift" ;
-      "Shifter_shamt_shamt" ::= ##group`"Shift" ;
+      "Shifter_shamt_cs2Addr" ::= And [ ##group`"Shift"; Not ##group`"isImm" ] ;
+      "Shifter_shamt_shamt" ::= And [ ##group`"Shift"; ##group`"isImm" ] ;
       "Shifter_shamt_AddCapBSz" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
              ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
