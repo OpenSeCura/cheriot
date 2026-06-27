@@ -36,7 +36,7 @@ Immediate Formats:
 
 Miscellaneous:
   * LoadOp          : generic load modifier (determines size and sign/zero extension)
-  * interruptStatus : Current interruptm status
+  * interruptStatus : Current interrupt status
   * isCompressed    : Whether the current instruction is compressed or not
 
 Branch
@@ -349,23 +349,22 @@ Mret
 -------------------------------------------------------------------------------
 AdderBeforeBoundsCheck:
   - ADD : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, Cjalr, Load, Store
-  inp1: pcc.addr (Branch, Cjal, AuiPcc),
+  base: pcc.addr (Branch, Cjal, AuiPcc),
         cs1.addr (AuiCgp, CIncAddr, CSetAddr, Cjalr, Load, Store)
-  inp2: bimm12 (Branch), jimm20 (Cjal), uimm20_11 (AuiPcc, AuiCgp),
+  offset: bimm12 (Branch), jimm20 (Cjal), uimm20_11 (AuiPcc, AuiCgp),
         cs2.addr (CIncAddr & !isImm), simm12 (Cjalr, Load, Store, CIncAddr & isImm)
 
 AdderToOutput:
   - ADD : Branch, Cjal, Cjalr, AddSub (when ADD/ADDI)
   - SUB : AddSub (when SUB), CSub, CGetLen
-  inp1: pcc.addr (Branch, Cjal, Cjalr), cs1.addr (AddSub, CSub),
+  base: pcc.addr (Branch, Cjal, Cjalr), cs1.addr (AddSub, CSub),
         cs1.top (CGetLen)
-  inp2: 2 (compressed {Branch, Cjal, Cjalr}), 4 (uncompressed {Branch, Cjal, Cjalr}),
+  offset: 2 (compressed {Branch, Cjal, Cjalr}), 4 (uncompressed {Branch, Cjal, Cjalr}),
         cs2.addr (AddSub & !isImm, CSub), simm12 (AddSub & isImm), cs1.base (CGetLen)
 
 AddCapBSz:
-  - ADD : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
-  inp1: pcc.exp (Branch, Cjal, AuiPcc), cs1.exp (AuiCgp, CIncAddr, CSetAddr)
-  inp2: CapBSz (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
+  - ADD_CapBSz : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
+  baseExp: pcc.exp (Branch, Cjal, AuiPcc), cs1.exp (AuiCgp, CIncAddr, CSetAddr)
 
 ComparatorGeneral:
   - EQ         : Branch (when BEQ/BNE), CSetEqual
@@ -373,79 +372,79 @@ ComparatorGeneral:
   - LTUnsigned : Branch (when BLTU/BGEU), Slt (when SLTU/SLTIU)
   - Invert     : Branch (when BNE, BGE, BGEU to invert EQ/LT result)
   Outputs: ComparatorGeneral.lt, ComparatorGeneral.eq
-  inp1: cs1.addr (Branch, Slt, CSetEqual)
-  inp2: cs2.addr (Branch, Slt & !isImm, CSetEqual), simm12 (Slt & isImm)
+  op1: cs1.addr (Branch, Slt, CSetEqual)
+  op2: cs2.addr (Branch, Slt & !isImm, CSetEqual), simm12 (Slt & isImm)
 
 CjalrUnit: Specialized sentry legality and unsealing check unit for indirect jumps (CJALR).
   - CheckSentryAndUnseal : Cjalr
   Outputs: CjalrUnit.tag (unsealed sentry tag), CjalrUnit.ecap (unsealed capability metadata),
            CjalrUnit.interruptStatus (updated interrupt status)
-  inp1: cs1 (Cjalr)
-  inp2: simm12 (Cjalr)
-  inp3: currInterruptStatus (Cjalr)
+  cs1: cs1 (Cjalr)
+  inst: simm12 (Cjalr)
+  currIntStatus: currInterruptStatus (Cjalr)
 
 Logical:
   - AND : Logical (when AND/ANDI)
   - OR  : Logical (when OR/ORI)
   - XOR : Logical (when XOR/XORI)
-  inp1: cs1.addr (Logical)
-  inp2: cs2.addr (Logical & !isImm), simm12 (Logical & isImm)
+  op1: cs1.addr (Logical)
+  op2: cs2.addr (Logical & !isImm), simm12 (Logical & isImm)
 
 CAndPerm: Specialized bitwise permission masking unit.
   - MaskPerms : CAndPerm
   Outputs: CAndPerm.tag, CAndPerm.ecap
            (updated tag and capability metadata word with masked permissions)
-  inp1: cs1.tag (CAndPerm)
-  inp2: cs1.ecap (CAndPerm)
-  inp3: cs2.addr (CAndPerm)
+  tag: cs1.tag (CAndPerm)
+  ecap: cs1.ecap (CAndPerm)
+  cs2Addr: cs2.addr (CAndPerm)
 
 SealerUnsealer: Specialized capability sealing and unsealing verification unit.
   - Seal   : Seal (when CSeal)
   - Unseal : Unseal (when CUnseal)
   Outputs: SealerUnsealer.tag, SealerUnsealer.ecap
            (sealed or unsealed tag and capability metadata word)
-  inp1: cs1.tag (Seal, Unseal)
-  inp2: cs1.ecap (Seal, Unseal)
-  inp3: cs2 (Seal, Unseal)
-  inp4: AddrBoundsCheck (Seal, Unseal)
+  tag: cs1.tag (Seal, Unseal)
+  ecap: cs1.ecap (Seal, Unseal)
+  cs2: cs2 (Seal, Unseal)
+  inBounds: AddrBoundsCheck (Seal, Unseal)
 
 Bounds: Specialized capability bounds calculation, mask and length computation unit.
   - SetBounds   : CSetBounds
   - ComputeMask : Cram
   - ComputeLen  : Crrl
   Outputs: Bounds.base, Bounds.length, Bounds.top, Bounds.E, Bounds.cram, Bounds.crrl
-  inp1: cs1 (CSetBounds, Cram, Crrl)
-  inp2: cs2.addr (CSetBounds & !isImm), zimm12 (CSetBounds & isImm), cs1.addr (Cram, Crrl)
+  cs1: cs1 (CSetBounds, Cram, Crrl)
+  reqLimit: cs2.addr (CSetBounds & !isImm), zimm12 (CSetBounds & isImm), cs1.addr (Cram, Crrl)
 
 Shifter:
   - ShiftLeftLogical     : Shift (when SLL/SLLI), Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
   - ShiftRightLogical    : Shift (when SRL/SRLI)
   - ShiftRightArithmetic : Shift (when SRA/SRAI)
-  inp1: cs1.addr (Shift), 1 (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
-  inp2: cs2.addr (Shift & !isImm), shamt (Shift & isImm),
+  data: cs1.addr (Shift), 1 (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
+  shamt: cs2.addr (Shift & !isImm), shamt (Shift & isImm),
         AddCapBSz (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
 
 AdderBeforeRepCheck:
   - ADD : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
-  inp1: pcc.base (Branch, Cjal, AuiPcc), cs1.base (AuiCgp, CIncAddr, CSetAddr)
-  inp2: Shifter (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
+  base: pcc.base (Branch, Cjal, AuiPcc), cs1.base (AuiCgp, CIncAddr, CSetAddr)
+  shifter: Shifter (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
 
 ComparatorTopRep: (checking against top or representable limit)
   - LTEUnsigned : CTestSubset
   - LTUnsigned  : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal
   Outputs: ComparatorTopRep.lt, ComparatorTopRep.eq
-  inp1: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store),
+  addr: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store),
         cs2.addr (Seal), cs1.otype (Unseal), cs1.top (CTestSubset)
-  inp2: AdderBeforeRepCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr),
+  topRep: AdderBeforeRepCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr),
         cs1.top (CSetBounds, Load, Store), cs2.top (Seal, Unseal, CTestSubset)
 
 ComparatorBase: (checking against base)
   - GTEUnsigned : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Seal, Unseal, Load, Store,
                   CTestSubset
   Outputs: ComparatorBase.lt, ComparatorBase.eq
-  inp1: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, Load, Store),
+  addr: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, Load, Store),
         cs2.addr (Seal), cs1.otype (Unseal), cs1.addr (CSetBounds), cs1.base (CTestSubset)
-  inp2: pcc.base (Branch, Cjal, AuiPcc),
+  base: pcc.base (Branch, Cjal, AuiPcc),
         cs1.base (AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store),
         cs2.base (Seal, Unseal, CTestSubset)
 
@@ -453,55 +452,55 @@ AddrBoundsCheck: Specialized capability address bounds and representability chec
   - CheckInBounds : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal
                     (validates top > addr >= base)
   Outputs: AddrBoundsCheck (validated Boolean capability/PC tag or in-bounds result)
-  inp1: cs1.tag (AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal),
+  tag: cs1.tag (AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal),
         pcc.tag (Branch, Cjal, AuiPcc)
-  inp2: ComparatorTopRep.lt
+  topLt: ComparatorTopRep.lt
         (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal)
-  inp3: ComparatorBase.lt
+  baseLt: ComparatorBase.lt
         (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal)
-  inp4: ComparatorBase.eq
+  baseEq: ComparatorBase.eq
         (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal)
 
 CapSubset: Specialized capability inclusion testing unit.
   - Subset : CTestSubset (validates top >= top2 AND base2 >= base AND permissions subset)
   Outputs: CapSubset (Boolean inclusion verification result)
-  inp1: ComparatorTopRep.lt (CTestSubset), ComparatorTopRep.eq (CTestSubset)
-  inp2: ComparatorBase.lt (CTestSubset)
-  inp3: cs1.perms (CTestSubset)
-  inp4: cs2.perms (CTestSubset)
-  inp5: cs1.tag (CTestSubset)
-  inp6: cs2.tag (CTestSubset)
+  topLe: ComparatorTopRep.lt (CTestSubset), ComparatorTopRep.eq (CTestSubset)
+  baseGe: ComparatorBase.lt (CTestSubset)
+  perms1: cs1.perms (CTestSubset)
+  perms2: cs2.perms (CTestSubset)
+  tag1: cs1.tag (CTestSubset)
+  tag2: cs2.tag (CTestSubset)
 
 CapEq: Specialized whole capability exact equality testing unit.
   - Eq : CSetEqual (validates addr == addr2 AND ecap == ecap2 AND tag equal)
   Outputs: CapEq (Boolean exact capability equality result)
-  inp1: ComparatorGeneral.eq (CSetEqual)
-  inp2: cs1.tag (CSetEqual)
-  inp3: cs2.tag (CSetEqual)
-  inp4: cs1.ecap (CSetEqual)
-  inp5: cs2.ecap (CSetEqual)
+  generalEq: ComparatorGeneral.eq (CSetEqual)
+  tag1: cs1.tag (CSetEqual)
+  tag2: cs2.tag (CSetEqual)
+  ecap1: cs1.ecap (CSetEqual)
+  ecap2: cs2.ecap (CSetEqual)
 
 ScrSanitizer: Check if last LSB bit is 0 for certain SCR writes
   - SanitizeTag : Scr
   Outputs: ScrSanitizer (sanitized Boolean tag)
-  inp1: cs1.tag (Scr)
-  inp2: cs1.addr (Scr)
-  inp3: inst (Scr)
+  tag: cs1.tag (Scr)
+  addr: cs1.addr (Scr)
+  inst: inst (Scr)
 
 LoadUnit: Specialized load operation modifier and exception calculation unit.
   - CalcLoadOpAndException : Load
   Outputs: LoadUnit.Exception, LoadUnit.LoadPostProcess
-  inp1: cs1.tag (Load)
-  inp2: cs1.ecap (Load)
-  inp3: AddrBoundsCheck (Load)
-  inp4: LoadOp (Load)
+  tag: cs1.tag (Load)
+  ecap: cs1.ecap (Load)
+  inBounds: AddrBoundsCheck (Load)
+  loadOp: LoadOp (Load)
 
 StoreUnit: Specialized store exception calculation unit.
   - CalcStoreException : Store
   Outputs: StoreUnit.Exception
-  inp1: cs1.tag (Store)
-  inp2: cs1.ecap (Store)
-  inp3: AddrBoundsCheck (Store)
+  tag: cs1.tag (Store)
+  ecap: cs1.ecap (Store)
+  inBounds: AddrBoundsCheck (Store)
 
 NewPcc.tag: AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
 NewPcc.ecap: CjalrUnit.ecap (Cjalr), pcc.ecap (others)
