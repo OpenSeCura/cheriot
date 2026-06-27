@@ -637,7 +637,7 @@ Definition AluControl := STRUCT_TYPE {
   "Shifter_data_isCs1AddrNotConst1" :: Bool ;
   "Shifter_shamt_cs2Addr" :: Bool ;
   "Shifter_shamt_shamt" :: Bool ; (* default option *)
-  "Shifter_shamt_AddCapBSz" :: Bool ;
+  "Shifter_shamt_AddCapBSz_ComparatorTopRep_topRep_AdderBeforeRepCheck" :: Bool ;
   "Shifter_isArith" :: Bool ;
   "Shifter_isRight" :: Bool ;
   "AdderBeforeRepCheck_base_isPccBaseNotCs1Base" :: Bool ;
@@ -646,9 +646,8 @@ Definition AluControl := STRUCT_TYPE {
   "ComparatorTopRep_addr_cs2Addr" :: Bool ;
   "ComparatorTopRep_addr_cs1OType" :: Bool ;
   "ComparatorTopRep_addr_cs1Top" :: Bool ;
-  "ComparatorTopRep_topRep_AdderBeforeRepCheck" :: Bool ;
   "ComparatorTopRep_topRep_cs1Top" :: Bool ; (* default option *)
-  "ComparatorTopRep_topRep_cs2Top" :: Bool ;
+  "ComparatorTopRep_topRep_cs2Top_ComparatorBase_base_cs2Base" :: Bool ;
   "ComparatorTopRep_checkLte" :: Bool ;
   "ComparatorBase_addr_AdderBeforeBoundsCheck" :: Bool ;
   "ComparatorBase_addr_cs2Addr" :: Bool ;
@@ -657,7 +656,6 @@ Definition AluControl := STRUCT_TYPE {
   "ComparatorBase_addr_cs1Base" :: Bool ;
   "ComparatorBase_base_pccBase" :: Bool ;
   "ComparatorBase_base_cs1Base" :: Bool ; (* default option *)
-  "ComparatorBase_base_cs2Base" :: Bool ;
   "AddrBoundsCheck_tag_isPccTagNotCs1Tag" :: Bool ;
   "NewPcc_tag_isAddrBoundsCheckNotCjalrUnitTag" :: Bool ;
   "NewPcc_ecap_isCjalrUnitEcapNotPccEcap" :: Bool ;
@@ -668,14 +666,12 @@ Definition AluControl := STRUCT_TYPE {
   "Reg_tag_cs2Tag" :: Bool ;
   "Reg_tag_AddrBoundsCheck" :: Bool ;
   "Reg_tag_CAndPerm" :: Bool ;
-  "Reg_tag_SealerUnsealer" :: Bool ;
   "Reg_ecap_const0" :: Bool ; (* default option *)
   "Reg_ecap_pccEcap" :: Bool ;
   "Reg_ecap_cs1Ecap" :: Bool ;
   "Reg_ecap_cs2Ecap" :: Bool ;
   "Reg_ecap_cs2Addr" :: Bool ;
   "Reg_ecap_CAndPerm" :: Bool ;
-  "Reg_ecap_SealerUnsealer" :: Bool ;
   "Reg_ecap_Bounds" :: Bool ;
   "Reg_addr_uimm20" :: Bool ; (* default option *)
   "Reg_addr_AdderBeforeBoundsCheck" :: Bool ;
@@ -693,7 +689,7 @@ Definition AluControl := STRUCT_TYPE {
   "Reg_addr_cs2Addr" :: Bool ;
   "Reg_addr_cs1Addr" :: Bool ;
   "Reg_addr_CAndPerm" :: Bool ;
-  "Reg_addr_SealerUnsealer" :: Bool ;
+  "Reg_tag_ecap_addr_SealerUnsealer" :: Bool ;
   "Reg_addr_BoundsBase" :: Bool ;
   "Reg_addr_BoundsCram" :: Bool ;
   "Reg_addr_BoundsCrrl" :: Bool ;
@@ -749,7 +745,7 @@ Section DecodeInstGroup.
       "Shifter_data_isCs1AddrNotConst1" ::= ##group`"Shift" ;
       "Shifter_shamt_cs2Addr" ::= And [ ##group`"Shift"; Not ##group`"isImm" ] ;
       "Shifter_shamt_shamt" ::= And [ ##group`"Shift"; ##group`"isImm" ] ;
-      "Shifter_shamt_AddCapBSz" ::=
+      "Shifter_shamt_AddCapBSz_ComparatorTopRep_topRep_AdderBeforeRepCheck" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
              ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
       "Shifter_isArith" ::= ##group`"Shift_isArith" ;
@@ -764,12 +760,9 @@ Section DecodeInstGroup.
       "ComparatorTopRep_addr_cs2Addr" ::= ##group`"Seal" ;
       "ComparatorTopRep_addr_cs1OType" ::= ##group`"Unseal" ;
       "ComparatorTopRep_addr_cs1Top" ::= ##group`"CTestSubset" ;
-      "ComparatorTopRep_topRep_AdderBeforeRepCheck" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
-             ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
       "ComparatorTopRep_topRep_cs1Top" ::=
         Or [ ##group`"CSetBounds"; ##group`"Load"; ##group`"Store" ] ;
-      "ComparatorTopRep_topRep_cs2Top" ::=
+      "ComparatorTopRep_topRep_cs2Top_ComparatorBase_base_cs2Base" ::=
         Or [ ##group`"CTestSubset"; ##group`"Seal"; ##group`"Unseal" ] ;
       "ComparatorTopRep_checkLte" ::= ##group`"CTestSubset" ;
       "ComparatorBase_addr_AdderBeforeBoundsCheck" ::=
@@ -783,8 +776,6 @@ Section DecodeInstGroup.
       "ComparatorBase_base_cs1Base" ::=
         Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds";
              ##group`"Load"; ##group`"Store" ] ;
-      "ComparatorBase_base_cs2Base" ::=
-        Or [ ##group`"CTestSubset"; ##group`"Seal"; ##group`"Unseal" ] ;
       "AddrBoundsCheck_tag_isPccTagNotCs1Tag" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "NewPcc_tag_isAddrBoundsCheckNotCjalrUnitTag" ::= Or [ ##group`"Branch"; ##group`"Cjal" ] ;
@@ -806,7 +797,6 @@ Section DecodeInstGroup.
         Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr";
              ##group`"CSetBounds" ] ;
       "Reg_tag_CAndPerm" ::= ##group`"CAndPerm" ;
-      "Reg_tag_SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
       "Reg_ecap_const0" ::=
         Or [ ##group`"Lui"; ##group`"AddSub"; ##group`"Slt"; ##group`"Shift";
              ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
@@ -821,7 +811,6 @@ Section DecodeInstGroup.
       "Reg_ecap_cs2Ecap" ::= ##group`"Scr" ;
       "Reg_ecap_cs2Addr" ::= ##group`"CSetHigh" ;
       "Reg_ecap_CAndPerm" ::= ##group`"CAndPerm" ;
-      "Reg_ecap_SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
       "Reg_ecap_Bounds" ::= ##group`"CSetBounds" ;
       "Reg_addr_uimm20" ::= ##group`"Lui" ;
       "Reg_addr_AdderBeforeBoundsCheck" ::=
@@ -844,7 +833,7 @@ Section DecodeInstGroup.
       "Reg_addr_cs1Addr" ::=
         Or [ ##group`"CClearTag"; ##group`"CMove"; ##group`"CSetHigh" ] ;
       "Reg_addr_CAndPerm" ::= ##group`"CAndPerm" ;
-      "Reg_addr_SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
+      "Reg_tag_ecap_addr_SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
       "Reg_addr_BoundsBase" ::= ##group`"CSetBounds" ;
       "Reg_addr_BoundsCram" ::= ##group`"Cram" ;
       "Reg_addr_BoundsCrrl" ::= ##group`"Crrl" ;
@@ -1296,6 +1285,23 @@ Section Alu.
       LetE jimm20 : Bit Xlen <- SignExtendTo Xlen #jimm21 ;
       LetE LoadOp : Bit 3 <- ConstExtract 17 3 12 #inst_val ;
 
+      LetE Shifter_shamt_AddCapBSz : Bool <-
+        ##aluControl`"Shifter_shamt_AddCapBSz_ComparatorTopRep_topRep_AdderBeforeRepCheck" ;
+      LetE ComparatorTopRep_topRep_AdderBeforeRepCheck : Bool <-
+        ##aluControl`"Shifter_shamt_AddCapBSz_ComparatorTopRep_topRep_AdderBeforeRepCheck" ;
+
+      LetE ComparatorTopRep_topRep_cs2Top : Bool <-
+        ##aluControl`"ComparatorTopRep_topRep_cs2Top_ComparatorBase_base_cs2Base" ;
+      LetE ComparatorBase_base_cs2Base : Bool <-
+        ##aluControl`"ComparatorTopRep_topRep_cs2Top_ComparatorBase_base_cs2Base" ;
+
+      LetE Reg_tag_SealerUnsealer : Bool <-
+        ##aluControl`"Reg_tag_ecap_addr_SealerUnsealer" ;
+      LetE Reg_ecap_SealerUnsealer : Bool <-
+        ##aluControl`"Reg_tag_ecap_addr_SealerUnsealer" ;
+      LetE Reg_addr_SealerUnsealer : Bool <-
+        ##aluControl`"Reg_tag_ecap_addr_SealerUnsealer" ;
+
       LetE AdderBeforeBoundsCheck_base : Bit Xlen <-
         ITE (##aluControl`"AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr") #pccAddr #cs1Addr ;
       LetE AdderBeforeBoundsCheck_offset : Bit Xlen <-
@@ -1334,7 +1340,7 @@ Section Alu.
       LetE Shifter_shamt : Bit RegIdxSz <-
         caseDefault (k := Bit RegIdxSz) [
             (##aluControl`"Shifter_shamt_cs2Addr", TruncLsb (Xlen - RegIdxSz) RegIdxSz #cs2Addr) ;
-            (##aluControl`"Shifter_shamt_AddCapBSz", #AddCapBSzOut) ]
+            (#Shifter_shamt_AddCapBSz, #AddCapBSzOut) ]
           #shamt ;
       LetE Shifter_isRight : Bool <- ##aluControl`"Shifter_isRight" ;
       LetE Shifter_isArith : Bool <- ##aluControl`"Shifter_isArith" ;
@@ -1357,8 +1363,8 @@ Section Alu.
           (ZeroExtendTo (Xlen + 1) #cs1Addr) ;
       LetE ComparatorTopRep_topRep : Bit (Xlen + 1) <-
         caseDefault (k := Bit (Xlen + 1)) [
-            (##aluControl`"ComparatorTopRep_topRep_AdderBeforeRepCheck", #AdderBeforeRepCheckOut) ;
-            (##aluControl`"ComparatorTopRep_topRep_cs2Top", #cs2Top) ]
+            (#ComparatorTopRep_topRep_AdderBeforeRepCheck, #AdderBeforeRepCheckOut) ;
+            (#ComparatorTopRep_topRep_cs2Top, #cs2Top) ]
           #cs1Top ;
       LetE ComparatorTopRep_checkLte : Bool <- ##aluControl`"ComparatorTopRep_checkLte" ;
       LETE ComparatorTopRepOut : ComparatorOut <-
@@ -1375,7 +1381,7 @@ Section Alu.
       LetE ComparatorBase_base : Bit (Xlen + 1) <-
         caseDefault (k := Bit (Xlen + 1)) [
             (##aluControl`"ComparatorBase_base_pccBase", #pccBase) ;
-            (##aluControl`"ComparatorBase_base_cs2Base", #cs2Base) ]
+            (#ComparatorBase_base_cs2Base, #cs2Base) ]
           #cs1Base ;
       LETE ComparatorBaseOut : ComparatorOut <- ComparatorBase ComparatorBase_addr ComparatorBase_base ;
 
@@ -1457,7 +1463,7 @@ Section Alu.
              And [ ##aluControl`"Reg_tag_cs2Tag"         ; #cs2Tag ] ;
              And [ ##aluControl`"Reg_tag_AddrBoundsCheck"; #AddrBoundsCheckOut ] ;
              And [ ##aluControl`"Reg_tag_CAndPerm"       ; ##CAndPermOut`"tag" ] ;
-             And [ ##aluControl`"Reg_tag_SealerUnsealer" ; ##SealerUnsealerOut`"tag" ] ] ;
+             And [ #Reg_tag_SealerUnsealer               ; ##SealerUnsealerOut`"tag" ] ] ;
 
       LetE Bounds_outECap : ECap <-
         (##cs1`"ecap") `{ "base" <- ##BoundsOut`"base" }
@@ -1470,7 +1476,7 @@ Section Alu.
                                   (##aluControl`"Reg_ecap_cs2Ecap", ##cs2`"ecap") ;
                                   (##aluControl`"Reg_ecap_cs2Addr", ##cs2`"ecap") ;
                                   (##aluControl`"Reg_ecap_CAndPerm", ##CAndPermOut`"ecap") ;
-                                  (##aluControl`"Reg_ecap_SealerUnsealer", ##SealerUnsealerOut`"ecap") ;
+                                  (#Reg_ecap_SealerUnsealer, ##SealerUnsealerOut`"ecap") ;
                                   (##aluControl`"Reg_ecap_Bounds", #Bounds_outECap) ]
           (Const ty ECap (getDefault _)) ;
 
@@ -1492,7 +1498,7 @@ Section Alu.
             (##aluControl`"Reg_addr_cs2Addr", #cs2Addr) ;
             (##aluControl`"Reg_addr_cs1Addr", #cs1Addr) ;
             (##aluControl`"Reg_addr_CAndPerm", #cs1Addr) ;
-            (##aluControl`"Reg_addr_SealerUnsealer", #cs1Addr) ;
+            (#Reg_addr_SealerUnsealer, #cs1Addr) ;
             (##aluControl`"Reg_addr_BoundsBase", TruncLsb 1 Xlen (##BoundsOut`"base")) ;
             (##aluControl`"Reg_addr_BoundsCram", TruncLsb 1 Xlen (##BoundsOut`"cram")) ;
             (##aluControl`"Reg_addr_BoundsCrrl", TruncLsb 1 Xlen (##BoundsOut`"length")) ;
