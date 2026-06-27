@@ -604,7 +604,12 @@ Definition InstGroup := STRUCT_TYPE {
 }.
 
 Definition AluControl := STRUCT_TYPE {
-  "AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr" :: Bool ;
+  "Alu_usePccMetadataNotCs1" :: Bool ; (* Encompasses:
+                                          AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr
+                                          AddCapBSz_baseExp_isPccExpNotCs1Exp
+                                          AdderBeforeRepCheck_base_isPccBaseNotCs1Base
+                                          ComparatorBase_base_pccBase
+                                          AddrBoundsCheck_tag_isPccTagNotCs1Tag *)
   "AdderBeforeBoundsCheck_offset_bimm12" :: Bool ;
   "AdderBeforeBoundsCheck_offset_jimm20" :: Bool ;
   "AdderBeforeBoundsCheck_offset_uimm20_11" :: Bool ;
@@ -619,7 +624,6 @@ Definition AluControl := STRUCT_TYPE {
   "AdderToOutput_offset_simm12" :: Bool ;
   "AdderToOutput_offset_cs1Base" :: Bool ;
   "AdderToOutput_isSub" :: Bool ;
-  "AddCapBSz_baseExp_isPccExpNotCs1Exp" :: Bool ;
   "ComparatorGeneral_op2_isCs2AddrNotSimm12" :: Bool ;
   "ComparatorGeneral_isUnsigned" :: Bool ;
   "ComparatorGeneral_checkLt" :: Bool ;
@@ -637,7 +641,6 @@ Definition AluControl := STRUCT_TYPE {
   "Shifter_shamt_AddCapBSz_ComparatorTopRep_topRep_AdderBeforeRepCheck" :: Bool ;
   "Shifter_isArith" :: Bool ;
   "Shifter_isRight" :: Bool ;
-  "AdderBeforeRepCheck_base_isPccBaseNotCs1Base" :: Bool ;
   "ComparatorTopRep_addr_AdderBeforeBoundsCheck" :: Bool ;
   "ComparatorTopRep_addr_cs1Addr" :: Bool ; (* default option *)
   "ComparatorTopRep_addr_cs2Addr" :: Bool ;
@@ -651,9 +654,7 @@ Definition AluControl := STRUCT_TYPE {
   "ComparatorBase_addr_cs1Addr" :: Bool ; (* default option *)
   "ComparatorBase_addr_cs1OType" :: Bool ;
   "ComparatorBase_addr_cs1Base" :: Bool ;
-  "ComparatorBase_base_pccBase" :: Bool ;
   "ComparatorBase_base_cs1Base" :: Bool ; (* default option *)
-  "AddrBoundsCheck_tag_isPccTagNotCs1Tag" :: Bool ;
   "NewPcc_tag_isAddrBoundsCheckNotCjalrUnitTag" :: Bool ;
   "NewPcc_ecap_isCjalrUnitEcapNotPccEcap" :: Bool ;
   "Reg_tag_const0" :: Bool ; (* default option *)
@@ -699,7 +700,7 @@ Section DecodeInstGroup.
 
   Definition decodeInstGroup : LetExpr ty AluControl :=
     RetE (STRUCT {
-      "AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr" ::=
+      "Alu_usePccMetadataNotCs1" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "AdderBeforeBoundsCheck_offset_bimm12" ::= ##group`"Branch" ;
       "AdderBeforeBoundsCheck_offset_jimm20" ::= ##group`"Cjal" ;
@@ -724,8 +725,6 @@ Section DecodeInstGroup.
       "AdderToOutput_offset_simm12" ::= And [ ##group`"AddSub"; ##group`"isImm" ] ;
       "AdderToOutput_offset_cs1Base" ::= ##group`"CGetLen" ;
       "AdderToOutput_isSub" ::= Or [ ##group`"CSub"; ##group`"CGetLen" ] ;
-      "AddCapBSz_baseExp_isPccExpNotCs1Exp" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "ComparatorGeneral_op2_isCs2AddrNotSimm12" ::=
         Or [ ##group`"Branch"; ##group`"CSetEqual";
              And [ ##group`"Slt"; Not ##group`"isImm" ] ] ;
@@ -747,8 +746,6 @@ Section DecodeInstGroup.
              ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
       "Shifter_isArith" ::= ##group`"Shift_isArith" ;
       "Shifter_isRight" ::= ##group`"Shift_isRight" ;
-      "AdderBeforeRepCheck_base_isPccBaseNotCs1Base" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "ComparatorTopRep_addr_AdderBeforeBoundsCheck" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
              ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds"; ##group`"Load";
@@ -769,12 +766,9 @@ Section DecodeInstGroup.
       "ComparatorBase_addr_cs1Addr" ::= ##group`"CSetBounds" ;
       "ComparatorBase_addr_cs1OType" ::= ##group`"Unseal" ;
       "ComparatorBase_addr_cs1Base" ::= ##group`"CTestSubset" ;
-      "ComparatorBase_base_pccBase" ::= Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "ComparatorBase_base_cs1Base" ::=
         Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds";
              ##group`"Load"; ##group`"Store" ] ;
-      "AddrBoundsCheck_tag_isPccTagNotCs1Tag" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "NewPcc_tag_isAddrBoundsCheckNotCjalrUnitTag" ::= Or [ ##group`"Branch"; ##group`"Cjal" ] ;
       "NewPcc_ecap_isCjalrUnitEcapNotPccEcap" ::= ##group`"Cjalr" ;
       "Reg_tag_const0" ::=
@@ -1300,8 +1294,14 @@ Section Alu.
       LetE NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput : Bool <-
         ##aluControl`"AdderToOutput_base_pccAddr_NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput" ;
 
+      LetE AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr : Bool <- ##aluControl`"Alu_usePccMetadataNotCs1" ;
+      LetE AddCapBSz_baseExp_isPccExpNotCs1Exp : Bool <- ##aluControl`"Alu_usePccMetadataNotCs1" ;
+      LetE AdderBeforeRepCheck_base_isPccBaseNotCs1Base : Bool <- ##aluControl`"Alu_usePccMetadataNotCs1" ;
+      LetE ComparatorBase_base_pccBase : Bool <- ##aluControl`"Alu_usePccMetadataNotCs1" ;
+      LetE AddrBoundsCheck_tag_isPccTagNotCs1Tag : Bool <- ##aluControl`"Alu_usePccMetadataNotCs1" ;
+
       LetE AdderBeforeBoundsCheck_base : Bit Xlen <-
-        ITE (##aluControl`"AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr") #pccAddr #cs1Addr ;
+        ITE (#AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr) #pccAddr #cs1Addr ;
       LetE AdderBeforeBoundsCheck_offset : Bit Xlen <-
         caseDefault (k := Bit Xlen) [
             (##aluControl`"AdderBeforeBoundsCheck_offset_bimm12", #bimm12) ;
@@ -1329,7 +1329,7 @@ Section Alu.
         AdderToOutput AdderToOutput_base AdderToOutput_offset AdderToOutput_isSub ;
 
       LetE AddCapBSz_baseExp : Bit ExpSz <-
-        ITE (##aluControl`"AddCapBSz_baseExp_isPccExpNotCs1Exp") #pccExp #cs1Exp ;
+        ITE (#AddCapBSz_baseExp_isPccExpNotCs1Exp) #pccExp #cs1Exp ;
       LETE AddCapBSzOut : Bit ExpSz <- AddCapBSz AddCapBSz_baseExp ;
 
       LetE Shifter_data : Bit Xlen <-
@@ -1346,7 +1346,7 @@ Section Alu.
         Shifter Shifter_data Shifter_shamt Shifter_isRight Shifter_isArith ;
 
       LetE AdderBeforeRepCheck_base : Bit (Xlen + 1) <-
-        ITE (##aluControl`"AdderBeforeRepCheck_base_isPccBaseNotCs1Base") #pccBase #cs1Base ;
+        ITE (#AdderBeforeRepCheck_base_isPccBaseNotCs1Base) #pccBase #cs1Base ;
       LetE AdderBeforeRepCheck_shifter : Bit (Xlen + 1) <- ZeroExtendTo (Xlen + 1) #ShifterOut ;
       LETE AdderBeforeRepCheckOut : Bit (Xlen + 1) <-
         AdderBeforeRepCheck AdderBeforeRepCheck_base AdderBeforeRepCheck_shifter ;
@@ -1378,13 +1378,13 @@ Section Alu.
           (ZeroExtendTo (Xlen + 1) #cs1Addr) ;
       LetE ComparatorBase_base : Bit (Xlen + 1) <-
         caseDefault (k := Bit (Xlen + 1)) [
-            (##aluControl`"ComparatorBase_base_pccBase", #pccBase) ;
+            (#ComparatorBase_base_pccBase, #pccBase) ;
             (#ComparatorBase_base_cs2Base, #cs2Base) ]
           #cs1Base ;
       LETE ComparatorBaseOut : Bool <- ComparatorBase ComparatorBase_addr ComparatorBase_base ;
 
       LetE AddrBoundsCheck_tag : Bool <-
-        ITE (##aluControl`"AddrBoundsCheck_tag_isPccTagNotCs1Tag") #pccTag #cs1Tag ;
+        ITE (#AddrBoundsCheck_tag_isPccTagNotCs1Tag) #pccTag #cs1Tag ;
       LetE AddrBoundsCheck_topLt : Bool <- ##ComparatorTopRepOut`"lt" ;
       LetE AddrBoundsCheck_baseGe : Bool <- ##ComparatorBaseOut ;
       LETE AddrBoundsCheckOut : Bool <-
