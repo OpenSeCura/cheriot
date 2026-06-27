@@ -1327,8 +1327,8 @@ Section Alu.
             (##aluControl`"Shifter_shamt_AddCapBSz", #AddCapBSzOut) ]
           #shamt ;
       LetE isShiftInst : Bool <- ##aluControl`"Shifter_data_isCs1AddrNotConst1" ;
-      LetE Shifter_isRight : Bool <- And [ #isShiftInst; Eq (#inst_val`[14:14]) $1 ] ;
-      LetE Shifter_isArith : Bool <- And [ #isShiftInst; Eq (#inst_val`[30:30]) $1 ] ;
+      LetE Shifter_isRight : Bool <- And [ #isShiftInst; FromBit Bool (#inst_val`[14:14]) ] ;
+      LetE Shifter_isArith : Bool <- And [ #isShiftInst; FromBit Bool (#inst_val`[30:30]) ] ;
       LETE ShifterOut : Bit Xlen <-
         Shifter Shifter_data Shifter_shamt Shifter_isRight Shifter_isArith ;
 
