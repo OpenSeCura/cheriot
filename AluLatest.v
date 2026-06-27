@@ -399,8 +399,8 @@ CAndPerm: Specialized bitwise permission masking unit.
   cs2Addr: cs2.addr (CAndPerm)
 
 SealerUnsealer: Specialized capability sealing and unsealing verification unit.
-  - Seal   : Seal (when CSeal)
-  - Unseal : Unseal (when CUnseal)
+  - Seal   : Seal
+  - Unseal : Unseal
   Outputs: SealerUnsealer.tag, SealerUnsealer.ecap
            (sealed or unsealed tag and capability metadata word)
   tag: cs1.tag (Seal, Unseal)
@@ -451,7 +451,6 @@ ComparatorBase: (checking against base)
 AddrBoundsCheck: Specialized capability address bounds and representability check unit.
   - CheckInBounds : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal
                     (validates top > addr >= base)
-  Outputs: AddrBoundsCheck (validated Boolean capability/PC tag or in-bounds result)
   tag: cs1.tag (AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal),
         pcc.tag (Branch, Cjal, AuiPcc)
   topLt: ComparatorTopRep.lt
@@ -463,7 +462,6 @@ AddrBoundsCheck: Specialized capability address bounds and representability chec
 
 CapSubset: Specialized capability inclusion testing unit.
   - Subset : CTestSubset (validates top >= top2 AND base2 >= base AND permissions subset)
-  Outputs: CapSubset (Boolean inclusion verification result)
   topLe: ComparatorTopRep.lt (CTestSubset), ComparatorTopRep.eq (CTestSubset)
   baseGe: ComparatorBase.lt (CTestSubset)
   perms1: cs1.perms (CTestSubset)
@@ -473,7 +471,6 @@ CapSubset: Specialized capability inclusion testing unit.
 
 CapEq: Specialized whole capability exact equality testing unit.
   - Eq : CSetEqual (validates addr == addr2 AND ecap == ecap2 AND tag equal)
-  Outputs: CapEq (Boolean exact capability equality result)
   generalEq: ComparatorGeneral.eq (CSetEqual)
   tag1: cs1.tag (CSetEqual)
   tag2: cs2.tag (CSetEqual)
@@ -482,7 +479,6 @@ CapEq: Specialized whole capability exact equality testing unit.
 
 ScrSanitizer: Check if last LSB bit is 0 for certain SCR writes
   - SanitizeTag : Scr
-  Outputs: ScrSanitizer (sanitized Boolean tag)
   tag: cs1.tag (Scr)
   addr: cs1.addr (Scr)
   inst: inst (Scr)
@@ -497,7 +493,6 @@ LoadUnit: Specialized load operation modifier and exception calculation unit.
 
 StoreUnit: Specialized store exception calculation unit.
   - CalcStoreException : Store
-  Outputs: StoreUnit.Exception
   tag: cs1.tag (Store)
   ecap: cs1.ecap (Store)
   inBounds: AddrBoundsCheck (Store)
