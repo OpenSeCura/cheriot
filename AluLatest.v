@@ -552,6 +552,7 @@ Local Open Scope string_scope.
    + MemOp = (LoadOp | StoreOp) * Size
      * LoadOp = IsSigned * isLM * isLG
    + Future: Mul, Div, Rem
+ - Fence.I instruction
  *)
 
 Definition InstGroup := STRUCT_TYPE {
@@ -1234,7 +1235,7 @@ Section Alu.
     Variable inst : ty Inst.
     Variable currInterruptStatus : ty Bool.
 
-    Definition Alu (aluControl : ty AluControl) : LetExpr ty AluOut :=
+    Definition AluRouting (aluControl : ty AluControl) : LetExpr ty AluOut :=
       LetE inst_val : Inst <- ##inst ;
 
       LetE pccAddr : Bit Xlen <- ##pcc`"addr" ;
