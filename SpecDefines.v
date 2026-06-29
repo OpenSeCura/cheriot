@@ -33,11 +33,6 @@ Definition CompInstSz := 16.
 Definition CapOTypeSz := 3.
 Definition RegIdxSz   := 5.
 Definition Cra       := 1.
-Definition MePrevPcc := 27.
-Definition Mtcc      := 28.
-Definition Mtdc      := 29.
-Definition Mscratchc := 30.
-Definition MePcc     := 31.
 
 Definition LgXlen   := Eval compute in Z.log2_up Xlen.
 Definition Data     := Eval compute in Bit Xlen.
@@ -154,3 +149,212 @@ Definition isSentryId ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
   Or [ Eq #oType $CallSentryId; Eq #oType $RetSentryId ].
 Definition isSentryIh ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
   Eq #oType $CallSentryIh.
+
+Definition RegIdxSzReal := 4.
+
+Definition InstGroup := STRUCT_TYPE {
+  "isCompressed"                :: Bool ;
+  "isImm"                       :: Bool ;
+  "isUnsigned"                  :: Bool ; (* Should be set only for Branch, Slt and Load *)
+  "Branch"                      :: Bool ;
+  "Cjal"                        :: Bool ;
+  "AuiPcc"                      :: Bool ;
+  "AuiCgp"                      :: Bool ;
+  "CIncAddr"                    :: Bool ;
+  "CSetAddr"                    :: Bool ;
+  "Cjalr"                       :: Bool ;
+  "CTestSubset"                 :: Bool ;
+  "CSetBounds"                  :: Bool ;
+  "CSetBounds_isExact"          :: Bool ; (* This also captures CSetBounds *)
+  "CSetBounds_isRoundDown"      :: Bool ; (* This also captures CSetBounds *)
+  "Seal"                        :: Bool ;
+  "Unseal"                      :: Bool ;
+  "Load"                        :: Bool ;
+  "Store"                       :: Bool ;
+  "AddSub"                      :: Bool ;
+  "CSub"                        :: Bool ;
+  "CGetLen"                     :: Bool ;
+  "Slt"                         :: Bool ;
+  "CSetEqual"                   :: Bool ;
+  "Shift"                       :: Bool ;
+  "Shift_isArith"               :: Bool ; (* This also captures Shift *)
+  "Shift_isRight"               :: Bool ; (* This also captures Shift *)
+  "Logical"                     :: Bool ;
+  "Cram"                        :: Bool ;
+  "Crrl"                        :: Bool ;
+  "CAndPerm"                    :: Bool ;
+  "Csr"                         :: Bool ;
+  "Scr"                         :: Bool ;
+  "Lui"                         :: Bool ;
+  "CGetPerm"                    :: Bool ;
+  "CGetType"                    :: Bool ;
+  "CGetBase"                    :: Bool ;
+  "CGetTag"                     :: Bool ;
+  "CGetAddr"                    :: Bool ;
+  "CGetHigh"                    :: Bool ;
+  "CGetTop"                     :: Bool ;
+  "CSetHigh"                    :: Bool ;
+  "CClearTag"                   :: Bool ;
+  "CMove"                       :: Bool ;
+  "ECall"                       :: Bool ;
+  "EBreak"                      :: Bool ;
+  "Mret"                        :: Bool ;
+  "ComparatorGeneral_checkLt"   :: Bool ; (* Should be set only for Branch and Slt *)
+  "ComparatorGeneral_checkEq"   :: Bool ; (* Should be set only for Branch and CSetEqual *)
+  "ComparatorGeneral_invertRes" :: Bool   (* Should be set only for Branch *)
+}.
+
+(* ===========================================================================
+   CSR & SCR DEFINITIONS, TABLES, MAPPINGS, AND DECODERS
+   =========================================================================== *)
+
+(* CSR Table: List of 5-tuples ("name", 12-bit address, mapped index, allowReadNoAsr, allowWriteNoAsr) *)
+Definition CsrTable := [
+  ("mcycle"%string,    0xc00, 0,  true,  false) ;
+  ("mcycleh"%string,   0xc80, 1,  true,  false) ;
+  ("mtime"%string,     0xc01, 2,  true,  false) ;
+  ("mtimeh"%string,    0xc81, 3,  true,  false) ;
+  ("minstret"%string,  0xc02, 4,  true,  false) ;
+  ("minstreth"%string, 0xc82, 5,  true,  false) ;
+  ("mstatus"%string,   0x300, 6,  false, false) ;
+  ("mie"%string,       0x304, 7,  false, false) ;
+  ("mcause"%string,    0x342, 8,  false, false) ;
+  ("mtval"%string,     0x343, 9,  false, false) ;
+  ("mshwm"%string,     0xbc1, 10, true,  true) ;
+  ("mshwmb"%string,    0xbc2, 11, true,  true)
+].
+
+(* Lookup Functions by Name for CsrTable *)
+Fixpoint getCsrEntryFromList (s : string) (table : list (string * Z * Z * bool * bool)) :=
+  match table with
+  | [] => None
+  | (name, addr, idx, r_no_asr, w_no_asr) :: rest =>
+      if String.eqb s name then Some (addr, idx, r_no_asr, w_no_asr)
+      else getCsrEntryFromList s rest
+  end.
+
+Definition getCsrEntryByName (s : string) := getCsrEntryFromList s CsrTable.
+
+Definition getCsrAddrByName (s : string) : option Z :=
+  match getCsrEntryByName s with
+  | Some (addr, _, _, _) => Some addr
+  | None => None
+  end.
+
+Definition getCsrIdxByName (s : string) : option Z :=
+  match getCsrEntryByName s with
+  | Some (_, idx, _, _) => Some idx
+  | None => None
+  end.
+
+Definition getCsrAllowReadNoAsrByName (s : string) : option bool :=
+  match getCsrEntryByName s with
+  | Some (_, _, r, _) => Some r
+  | None => None
+  end.
+
+Definition getCsrAllowWriteNoAsrByName (s : string) : option bool :=
+  match getCsrEntryByName s with
+  | Some (_, _, _, w) => Some w
+  | None => None
+  end.
+
+Definition getCsrAddr (s : string) := forceOption (getCsrAddrByName s).
+Definition getCsrIdx (s : string) := forceOption (getCsrIdxByName s).
+Definition getCsrAllowReadNoAsr (s : string) := forceOption (getCsrAllowReadNoAsrByName s).
+Definition getCsrAllowWriteNoAsr (s : string) := forceOption (getCsrAllowWriteNoAsrByName s).
+
+(* SCR Table: List of 3-tuples ("name", 5-bit address, 5-bit mapped index starting at 0) *)
+Definition ScrTable := [
+  ("MePrevPcc"%string, 27, 0) ;
+  ("Mtcc"%string,      28, 1) ;
+  ("Mtdc"%string,      29, 2) ;
+  ("Mscratchc"%string, 30, 3) ;
+  ("MePcc"%string,     31, 4)
+].
+
+(* Lookup Functions by Name for ScrTable *)
+Fixpoint getScrEntryFromList (s : string) (table : list (string * Z * Z)) :=
+  match table with
+  | [] => None
+  | (name, addr, idx) :: rest =>
+      if String.eqb s name then Some (addr, idx)
+      else getScrEntryFromList s rest
+  end.
+
+Definition getScrEntryByName (s : string) := getScrEntryFromList s ScrTable.
+
+Definition getScrAddrByName (s : string) : option Z :=
+  match getScrEntryByName s with
+  | Some (addr, _) => Some addr
+  | None => None
+  end.
+
+Definition getScrIdxByName (s : string) : option Z :=
+  match getScrEntryByName s with
+  | Some (_, idx) => Some idx
+  | None => None
+  end.
+
+Definition getScrAddr (s : string) := forceOption (getScrAddrByName s).
+Definition getScrIdx (s : string) := forceOption (getScrIdxByName s).
+
+Definition CsrIdxSz := Z.log2_up (Z.of_nat (length CsrTable)).
+Definition ScrIdxSz := Z.log2_up (Z.of_nat (length ScrTable)).
+
+(* TaggedUnion with 3 distinct sources: Reg (4-bit GPR), Csr (CsrIdxSz CSR), Scr (ScrIdxSz SCR) *)
+Definition Cs2Source := [
+  ("Reg"%string, Bit RegIdxSzReal) ;
+  ("Csr"%string, Bit CsrIdxSz) ;
+  ("Scr"%string, Bit ScrIdxSz)
+].
+
+Section Cs2Constructors.
+  Variable ty : Kind -> Type.
+  Definition mkCs2Reg (idx : Expr ty (Bit RegIdxSzReal)) : Expr ty (TaggedUnion Cs2Source) :=
+    BuildUnion (ls := Cs2Source) (@Build_FinType 3 0 I) idx.
+
+  Definition mkCs2Csr (idx : Expr ty (Bit CsrIdxSz)) : Expr ty (TaggedUnion Cs2Source) :=
+    BuildUnion (ls := Cs2Source) (@Build_FinType 3 1 I) idx.
+
+  Definition mkCs2Scr (idx : Expr ty (Bit ScrIdxSz)) : Expr ty (TaggedUnion Cs2Source) :=
+    BuildUnion (ls := Cs2Source) (@Build_FinType 3 2 I) idx.
+End Cs2Constructors.
+
+Section Decoders.
+  Variable ty : Kind -> Type.
+
+  (* Decodes 12-bit architectural CSR address to Option (Bit CsrIdxSz) *)
+  Definition csrAddrDecoder (csrAddr : ty (Bit 12)) : Expr ty (Option (Bit CsrIdxSz)) :=
+    caseDefault (k := Option (Bit CsrIdxSz)) [
+      (Eq #csrAddr $0xc00, mkSome $0) ;
+      (Eq #csrAddr $0xc80, mkSome $1) ;
+      (Eq #csrAddr $0xc01, mkSome $2) ;
+      (Eq #csrAddr $0xc81, mkSome $3) ;
+      (Eq #csrAddr $0xc02, mkSome $4) ;
+      (Eq #csrAddr $0xc82, mkSome $5) ;
+      (Eq #csrAddr $0x300, mkSome $6) ;
+      (Eq #csrAddr $0x304, mkSome $7) ;
+      (Eq #csrAddr $0x342, mkSome $8) ;
+      (Eq #csrAddr $0x343, mkSome $9) ;
+      (Eq #csrAddr $0xbc1, mkSome $10) ;
+      (Eq #csrAddr $0xbc2, mkSome $11)
+    ] (mkNone ty).
+
+  (* Decodes 5-bit architectural SCR address to Option (Bit ScrIdxSz) *)
+  Definition scrAddrDecoder (scrAddr : ty (Bit RegIdxSz)) : Expr ty (Option (Bit ScrIdxSz)) :=
+    caseDefault (k := Option (Bit ScrIdxSz)) [
+      (Eq #scrAddr $27, mkSome $0) ;
+      (Eq #scrAddr $28, mkSome $1) ;
+      (Eq #scrAddr $29, mkSome $2) ;
+      (Eq #scrAddr $30, mkSome $3) ;
+      (Eq #scrAddr $31, mkSome $4)
+    ] (mkNone ty).
+
+  Definition csrAllowReadNoAsrDecoder (csrAddr : ty (Bit 12)) : Expr ty Bool :=
+    Or [ Eq #csrAddr $0xc00 ; Eq #csrAddr $0xc80 ; Eq #csrAddr $0xc01 ; Eq #csrAddr $0xc81 ;
+         Eq #csrAddr $0xc02 ; Eq #csrAddr $0xc82 ; Eq #csrAddr $0xbc1 ; Eq #csrAddr $0xbc2 ].
+
+  Definition csrAllowWriteNoAsrDecoder (csrAddr : ty (Bit 12)) : Expr ty Bool :=
+    Or [ Eq #csrAddr $0xbc1 ; Eq #csrAddr $0xbc2 ].
+End Decoders.

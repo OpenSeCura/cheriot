@@ -327,11 +327,18 @@ CMove
     Functional Units:
       None (direct register copy)
 
-Trap
+ECall
 * ECALL
+    Implicit Read : MTCC, pcc
+    Implicit Write: MEPCC, pcc, mcause (8)
+    Note: Will cause exception
+    Functional Units:
+      a) None (direct register copy)
+
+EBreak
 * EBREAK
     Implicit Read : MTCC, pcc
-    Implicit Write: MEPCC, pcc, mcause
+    Implicit Write: MEPCC, pcc, mcause (3)
     Note: Will cause exception
     Functional Units:
       a) None (direct register copy)
@@ -492,6 +499,12 @@ StoreUnit: Specialized store exception calculation unit.
   ecap: cs1.ecap (Store)
   inBounds: AddrBoundsCheck (Store)
 
+BoundsExact: Specialized tag calculation unit for CSetBounds.
+  - CalcBoundsExactTag : CSetBounds
+  inBounds: AddrBoundsCheck (CSetBounds)
+  exact: Bounds.exact (CSetBounds)
+  isExact: Bounds_isExact (CSetBounds)
+
 NewPcc.tag: AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
 NewPcc.ecap: CjalrUnit.ecap (Cjalr), pcc.ecap (others)
 NewPcc.addr: AdderBeforeBoundsCheck (Branch taken, Cjal, Cjalr),
@@ -507,7 +520,8 @@ Reg.tag: 0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGet
          pcc.tag (Cjal),
          cs1.tag (Cjalr, CMove),
          cs2.tag (Scr),
-         AddrBoundsCheck (AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds),
+         AddrBoundsCheck (AuiPcc, AuiCgp, CIncAddr, CSetAddr),
+         BoundsExact (CSetBounds),
          CAndPerm.tag (CAndPerm),
          SealerUnsealer.tag (Seal, Unseal)
 
@@ -544,6 +558,7 @@ Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
 (* TODO:
+ - CSetHigh and CGetHigh are wrong - we need caps encoder, decoder
  - Create decoder that produces InstGroup and correct register value routing
    + It should produce cs1 and cs2 (cs2 carries special/CSR/SCR registers for CSR/SCR instructions) for consumption by Alu
    + Take care of compressed instructions also
@@ -552,57 +567,12 @@ Local Open Scope string_scope.
    + MemOp = (LoadOp | StoreOp) * Size
      * LoadOp = IsSigned * isLM * isLG
    + Future: Mul, Div, Rem
- - Fence.I instruction
+ - Fence.I, WFI instructions
+ - Deal with ECall, EBreak correctly
  *)
 
-Definition InstGroup := STRUCT_TYPE {
-  "isCompressed"  :: Bool ;
-  "isImm"         :: Bool ;
-  "isUnsigned"    :: Bool ; (* Should be set for Branch, Slt and Load *)
-  "Branch"        :: Bool ;
-  "Cjal"          :: Bool ;
-  "AuiPcc"        :: Bool ;
-  "AuiCgp"        :: Bool ;
-  "CIncAddr"      :: Bool ;
-  "CSetAddr"      :: Bool ;
-  "Cjalr"         :: Bool ;
-  "CTestSubset"   :: Bool ;
-  "CSetBounds"    :: Bool ;
-  "Seal"          :: Bool ;
-  "Unseal"        :: Bool ;
-  "Load"          :: Bool ;
-  "Store"         :: Bool ;
-  "AddSub"        :: Bool ;
-  "CSub"          :: Bool ;
-  "CGetLen"       :: Bool ;
-  "Slt"           :: Bool ;
-  "CSetEqual"     :: Bool ;
-  "Shift"         :: Bool ;
-  "Shift_isArith" :: Bool ;
-  "Shift_isRight" :: Bool ;
-  "Logical"       :: Bool ;
-  "Cram"          :: Bool ;
-  "Crrl"          :: Bool ;
-  "CAndPerm"      :: Bool ;
-  "Csr"           :: Bool ;
-  "Scr"           :: Bool ;
-  "Lui"           :: Bool ;
-  "CGetPerm"      :: Bool ;
-  "CGetType"      :: Bool ;
-  "CGetBase"      :: Bool ;
-  "CGetTag"       :: Bool ;
-  "CGetAddr"      :: Bool ;
-  "CGetHigh"      :: Bool ;
-  "CGetTop"       :: Bool ;
-  "CSetHigh"      :: Bool ;
-  "CClearTag"     :: Bool ;
-  "CMove"         :: Bool ;
-  "Trap"          :: Bool ;
-  "Mret"          :: Bool ;
-  "ComparatorGeneral_checkLt"   :: Bool ; (* Should be set only for Branch and Slt *)
-  "ComparatorGeneral_checkEq"   :: Bool ; (* Should be set only for Branch and CSetEqual *)
-  "ComparatorGeneral_invertRes" :: Bool   (* Should be set only for Branch *)
-}.
+(* InstGroup is defined in SpecDefines.v *)
+
 
 Definition AluControl := STRUCT_TYPE {
   "Alu_usePccMetadataNotCs1" :: Bool ; (* Encompasses:
@@ -636,6 +606,7 @@ Definition AluControl := STRUCT_TYPE {
   "Bounds_reqLimit_zimm12" :: Bool ; (* default option *)
   "Bounds_reqLimit_cs1Addr" :: Bool ;
   "Bounds_isRoundDown" :: Bool ;
+  "Bounds_isExact" :: Bool ;
   "Shifter_data_isCs1AddrNotConst1" :: Bool ;
   "Shifter_shamt_cs2Addr" :: Bool ;
   "Shifter_shamt_shamt" :: Bool ; (* default option *)
@@ -663,6 +634,7 @@ Definition AluControl := STRUCT_TYPE {
   "Reg_tag_cs1Tag" :: Bool ;
   "Reg_tag_cs2Tag" :: Bool ;
   "Reg_tag_AddrBoundsCheck" :: Bool ;
+  "Reg_tag_BoundsExact" :: Bool ;
   "Reg_tag_CAndPerm" :: Bool ;
   "Reg_ecap_const0" :: Bool ; (* default option *)
   "Reg_ecap_pccEcap" :: Bool ;
@@ -738,7 +710,8 @@ Section DecodeInstGroup.
       "Bounds_reqLimit_cs2Addr" ::= And [ ##group`"CSetBounds"; Not ##group`"isImm" ] ;
       "Bounds_reqLimit_zimm12" ::= And [ ##group`"CSetBounds"; ##group`"isImm" ] ;
       "Bounds_reqLimit_cs1Addr" ::= Or [ ##group`"Cram"; ##group`"Crrl" ] ;
-      "Bounds_isRoundDown" ::= ##group`"CSetBounds" ;
+      "Bounds_isRoundDown" ::= ##group`"CSetBounds_isRoundDown" ;
+      "Bounds_isExact" ::= ##group`"CSetBounds_isExact" ;
       "Shifter_data_isCs1AddrNotConst1" ::= ##group`"Shift" ;
       "Shifter_shamt_cs2Addr" ::= And [ ##group`"Shift"; Not ##group`"isImm" ] ;
       "Shifter_shamt_shamt" ::= And [ ##group`"Shift"; ##group`"isImm" ] ;
@@ -784,8 +757,8 @@ Section DecodeInstGroup.
       "Reg_tag_cs1Tag" ::= Or [ ##group`"Cjalr"; ##group`"CMove" ] ;
       "Reg_tag_cs2Tag" ::= ##group`"Scr" ;
       "Reg_tag_AddrBoundsCheck" ::=
-        Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr";
-             ##group`"CSetBounds" ] ;
+        Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
+      "Reg_tag_BoundsExact" ::= ##group`"CSetBounds" ;
       "Reg_tag_CAndPerm" ::= ##group`"CAndPerm" ;
       "Reg_ecap_const0" ::=
         Or [ ##group`"Lui"; ##group`"AddSub"; ##group`"Slt"; ##group`"Shift";
@@ -1183,6 +1156,9 @@ Section Alu.
     LetE inBounds : Bool <- And [ #topLt; #baseGe ];
     @RetE _ Bool (And [ #tag; #inBounds ]).
 
+  Definition BoundsExact (inBounds boundsExact instIsExact : ty Bool) : LetExpr ty Bool :=
+    @RetE _ Bool (And [ #inBounds; Or [ Not #instIsExact; #boundsExact ] ]).
+
   Definition CapSubset (topLe baseGe tag1 tag2 : ty Bool) (perms1 perms2 : ty CapPerms) : LetExpr ty Bool :=
     LetE pAnd : CapPerms <- And [ #perms1; #perms2 ];
     LetE pEq : Bool <- Eq #pAnd #perms2;
@@ -1196,9 +1172,9 @@ Section Alu.
   Definition ScrSanitizer (tag : ty Bool) (addr : ty (Bit Xlen)) (inst : ty Inst)
   : LetExpr ty Bool :=
     LetE scrIdx : Bit RegIdxSz <- getScr inst ;
-    LetE isMePcc : Bool <- Eq #scrIdx $MePcc ;
-    LetE isMtcc : Bool <- Eq #scrIdx $Mtcc ;
-    LetE isMePrevPcc : Bool <- Eq #scrIdx $MePrevPcc ;
+    LetE isMePcc : Bool <- Eq #scrIdx $(getScrAddr "MePcc"%string) ;
+    LetE isMtcc : Bool <- Eq #scrIdx $(getScrAddr "Mtcc"%string) ;
+    LetE isMePrevPcc : Bool <- Eq #scrIdx $(getScrAddr "MePrevPcc"%string) ;
     LetE isSpecialPcc : Bool <- Or [ #isMePcc; #isMtcc; #isMePrevPcc ] ;
     LetE lsbZero : Bool <-
       Eq (TruncLsb (Xlen - 1) 1 #addr) (Const ty (Bit 1) Zmod.zero) ;
@@ -1428,6 +1404,10 @@ Section Alu.
       LetE Bounds_isRoundDown : Bool <- ##aluControl`"Bounds_isRoundDown" ;
       LETE BoundsOut : BoundsRes <- Bounds cs1Base Bounds_reqLimitExt Bounds_isRoundDown ;
 
+      LetE Bounds_boundsExact : Bool <- ##BoundsOut`"exact" ;
+      LetE Bounds_instIsExact : Bool <- ##aluControl`"Bounds_isExact" ;
+      LETE BoundsExactOut : Bool <- BoundsExact AddrBoundsCheckOut Bounds_boundsExact Bounds_instIsExact ;
+
       LETE CapSubsetOut : Bool <-
         CapSubset AddrBoundsCheck_topLt AddrBoundsCheck_baseGe cs1Tag cs2Tag cs1Perms cs2Perms ;
 
@@ -1460,6 +1440,7 @@ Section Alu.
              And [ ##aluControl`"Reg_tag_cs1Tag"         ; #cs1Tag ] ;
              And [ ##aluControl`"Reg_tag_cs2Tag"         ; #cs2Tag ] ;
              And [ ##aluControl`"Reg_tag_AddrBoundsCheck"; #AddrBoundsCheckOut ] ;
+             And [ ##aluControl`"Reg_tag_BoundsExact"    ; #BoundsExactOut ] ;
              And [ ##aluControl`"Reg_tag_CAndPerm"       ; ##CAndPermOut`"tag" ] ;
              And [ #Reg_tag_SealerUnsealer               ; ##SealerUnsealerOut`"tag" ] ] ;
 

@@ -65,8 +65,8 @@ def verify_alu(file_path):
                     else:
                         reachability[tok]["units"].add(dest)
 
-    # Implicit Trap/Mret handling
-    for implicit_grp in ["Trap", "Mret"]:
+    # Implicit ECall/EBreak/Mret handling
+    for implicit_grp in ["ECall", "EBreak", "Mret"]:
         if implicit_grp in reachability:
             section2_tags.add(implicit_grp)
             reachability[implicit_grp]["writebacks"].add("NewPcc (Implicit direct copy)")
