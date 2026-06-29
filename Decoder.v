@@ -272,10 +272,10 @@ Section DecodeCompressed.
     LetE pseudoSW : Bit 32 <- {< #lwOff`[11:5], #cd5, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 2), #lwOff`[4:0], Const _ (Bit 5) (Zmod.of_Z _ 8), Const _ (Bit 2) Zmod.zero >} ;
     LetE pseudoSC : Bit 32 <- {< #lcOff`[11:5], #cd5, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 3), #lcOff`[4:0], Const _ (Bit 5) (Zmod.of_Z _ 8), Const _ (Bit 2) Zmod.zero >} ;
 
-    LetE pseudoInst : Bit 32 <- caseDefault [(Eq #f3 $2, #pseudoLW);
-                                             (Eq #f3 $3, #pseudoLC);
-                                             (Eq #f3 $6, #pseudoSW);
-                                             (Eq #f3 $7, #pseudoSC)] $0 ;
+    LetE pseudoInst : Bit 32 <- Or [ITE0 (Eq #f3 $2) #pseudoLW;
+                                    ITE0 (Eq #f3 $3) #pseudoLC;
+                                    ITE0 (Eq #f3 $6) #pseudoSW;
+                                    ITE0 (Eq #f3 $7) #pseudoSC] ;
     decodeUncompressed pseudoInst pcc.
 
   Definition decodeQuadrant1 : LetExpr ty DecodeOut :=
@@ -308,8 +308,8 @@ Section DecodeCompressed.
     LetE pseudoXOR : Bit 32 <- {< Const _ (Bit 7) Zmod.zero, #cs25, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 4), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 12), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
     LetE pseudoOR  : Bit 32 <- {< Const _ (Bit 7) Zmod.zero, #cs25, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 6), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 12), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
     LetE pseudoAND : Bit 32 <- {< Const _ (Bit 7) Zmod.zero, #cs25, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 7), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 12), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
-    LetE pseudoRegOp : Bit 32 <- caseDefault [(Eq #func2 $0, #pseudoSUB); (Eq #func2 $1, #pseudoXOR); (Eq #func2 $2, #pseudoOR); (Eq #func2 $3, #pseudoAND)] $0 ;
-    LetE pseudoFunct4 : Bit 32 <- caseDefault [(Eq #subop $0, #pseudoSRLI); (Eq #subop $1, #pseudoSRAI); (Eq #subop $2, #pseudoANDI); (Eq #subop $3, #pseudoRegOp)] $0 ;
+    LetE pseudoRegOp : Bit 32 <- Or [ITE0 (Eq #func2 $0) #pseudoSUB; ITE0 (Eq #func2 $1) #pseudoXOR; ITE0 (Eq #func2 $2) #pseudoOR; ITE0 (Eq #func2 $3) #pseudoAND] ;
+    LetE pseudoFunct4 : Bit 32 <- Or [ITE0 (Eq #subop $0) #pseudoSRLI; ITE0 (Eq #subop $1) #pseudoSRAI; ITE0 (Eq #subop $2) #pseudoANDI; ITE0 (Eq #subop $3) #pseudoRegOp] ;
 
     LetE pseudoCJ : Bit 32 <- {< #cjalImm`[19:19], #cjalImm`[9:0], #cjalImm`[10:10], #cjalImm`[18:11], Const _ (Bit 5) Zmod.zero, Const _ (Bit 5) (Zmod.of_Z _ 27), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
 
@@ -319,14 +319,14 @@ Section DecodeCompressed.
     LetE pseudoBEQZ : Bit 32 <- {< #beqHi, Const _ (Bit 5) Zmod.zero, #cs15, Const _ (Bit 3) Zmod.zero, #beqLo, Const _ (Bit 5) (Zmod.of_Z _ 24), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
     LetE pseudoBNEZ : Bit 32 <- {< #beqHi, Const _ (Bit 5) Zmod.zero, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 1), #beqLo, Const _ (Bit 5) (Zmod.of_Z _ 24), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
 
-    LetE pseudoInst : Bit 32 <- caseDefault [(Eq #f3 $0, #pseudoADDI);
-                                             (Eq #f3 $1, #pseudoCJAL);
-                                             (Eq #f3 $2, #pseudoLI);
-                                             (Eq #f3 $3, #pseudoFunct3_3);
-                                             (Eq #f3 $4, #pseudoFunct4);
-                                             (Eq #f3 $5, #pseudoCJ);
-                                             (Eq #f3 $6, #pseudoBEQZ);
-                                             (Eq #f3 $7, #pseudoBNEZ)] $0 ;
+    LetE pseudoInst : Bit 32 <- Or [ITE0 (Eq #f3 $0) #pseudoADDI;
+                                    ITE0 (Eq #f3 $1) #pseudoCJAL;
+                                    ITE0 (Eq #f3 $2) #pseudoLI;
+                                    ITE0 (Eq #f3 $3) #pseudoFunct3_3;
+                                    ITE0 (Eq #f3 $4) #pseudoFunct4;
+                                    ITE0 (Eq #f3 $5) #pseudoCJ;
+                                    ITE0 (Eq #f3 $6) #pseudoBEQZ;
+                                    ITE0 (Eq #f3 $7) #pseudoBNEZ] ;
     decodeUncompressed pseudoInst pcc.
 
   Definition decodeQuadrant2 : LetExpr ty DecodeOut :=
@@ -358,12 +358,12 @@ Section DecodeCompressed.
     LetE cscspOff : Bit 12 <- {< Const _ (Bit 3) Zmod.zero, #inst`[9:7], #inst`[12:10], Const _ (Bit 3) Zmod.zero >} ;
     LetE pseudoCSCSP : Bit 32 <- {< #cscspOff`[11:5], #rs25, Const _ (Bit 5) (Zmod.of_Z _ 2), Const _ (Bit 3) (Zmod.of_Z _ 3), #cscspOff`[4:0], Const _ (Bit 5) (Zmod.of_Z _ 8), Const _ (Bit 2) (Zmod.of_Z _ 2) >} ;
 
-    LetE pseudoInst : Bit 32 <- caseDefault [(Eq #f3 $0, #pseudoSLLI);
-                                             (Eq #f3 $2, #pseudoLWSP);
-                                             (Eq #f3 $3, #pseudoCLCSP);
-                                             (Eq #f3 $4, #pseudoFunct4Q2);
-                                             (Eq #f3 $6, #pseudoSWSP);
-                                             (Eq #f3 $7, #pseudoCSCSP)] $0 ;
+    LetE pseudoInst : Bit 32 <- Or [ITE0 (Eq #f3 $0) #pseudoSLLI;
+                                    ITE0 (Eq #f3 $2) #pseudoLWSP;
+                                    ITE0 (Eq #f3 $3) #pseudoCLCSP;
+                                    ITE0 (Eq #f3 $4) #pseudoFunct4Q2;
+                                    ITE0 (Eq #f3 $6) #pseudoSWSP;
+                                    ITE0 (Eq #f3 $7) #pseudoCSCSP] ;
     decodeUncompressed pseudoInst pcc.
 
   Definition decode : LetExpr ty DecodeOut :=
