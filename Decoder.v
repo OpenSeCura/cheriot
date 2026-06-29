@@ -41,7 +41,7 @@ Section DecodeUncompressed.
   Variable pcc : ty FullECapWithTag.
 
   Definition decodeUncompressed : LetExpr ty DecodeOut :=
-    LetE isComp    : Bool   <- Not (IsAllOnes (#inst`[1:0])) ;
+    LetE isComp    : Bool   <- Not (isAllOnes (#inst`[1:0])) ;
     LetE opcode    : Bit 5  <- #inst`[6:2] ;
     LetE rd        : Bit 5  <- #inst`[11:7] ;
     LetE funct3    : Bit 3  <- #inst`[14:12] ;
