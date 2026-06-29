@@ -1,0 +1,391 @@
+(*
+ * Copyright 2026 Google LLC (Cherified Team)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *)
+
+From Stdlib Require Import String List ZArith Zmod.
+From Guru Require Import Library Syntax Notations.
+From Cheriot Require Import SpecDefines.
+
+Set Implicit Arguments.
+Unset Strict Implicit.
+Set Asymmetric Patterns.
+
+Import ListNotations.
+Local Open Scope guru_scope.
+Local Open Scope string_scope.
+
+Definition DecodeOut := STRUCT_TYPE {
+  "instGroup"    :: InstGroup ;
+  "cs1Idx"       :: Bit RegIdxSzReal ;
+  "cs2Idx"       :: TaggedUnion Cs2Source ;
+  "instBits"     :: Inst ;
+  "illegalInst"  :: Bool ;
+  "asrViolation" :: Bool
+}.
+
+Section DecodeUncompressed.
+  Variable ty : Kind -> Type.
+  Variable inst : ty Inst.
+  Variable pcc : ty FullECapWithTag.
+
+  Definition decodeUncompressed : LetExpr ty DecodeOut :=
+    LetE opcode    : Bit 5  <- #inst`[6:2] ;
+    LetE rd        : Bit 5  <- #inst`[11:7] ;
+    LetE funct3    : Bit 3  <- #inst`[14:12] ;
+    LetE rs1       : Bit 5  <- #inst`[19:15] ;
+    LetE rs2       : Bit 5  <- #inst`[24:20] ;
+    LetE funct7    : Bit 7  <- #inst`[31:25] ;
+    LetE csrAddr   : Bit 12 <- #inst`[31:20] ;
+
+    LetE cs1Real : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal #rs1 ;
+    LetE cs2Real : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal #rs2 ;
+
+    (* CSR & SCR Decoders *)
+    LetE csrOpt : Option (Bit CsrIdxSz) <- csrAddrDecoder csrAddr ;
+    LetE isValidCsr : Bool <- isValid #csrOpt ;
+    LetE csrMappedIdx : Bit CsrIdxSz <- getData #csrOpt ;
+
+    LetE scrOpt : Option (Bit ScrIdxSz) <- scrAddrDecoder rs2 ;
+    LetE isValidScr : Bool <- isValid #scrOpt ;
+    LetE scrMappedIdx : Bit ScrIdxSz <- getData #scrOpt ;
+
+    (* 5-Bit Major Opcode Decodes (inst[6:2]) *)
+    LetE isLui    : Bool <- Eq #opcode $(Z.shiftr 0x37 2) ;
+    LetE isAuiPcc : Bool <- Eq #opcode $(Z.shiftr 0x17 2) ;
+    LetE isCjal   : Bool <- Eq #opcode $(Z.shiftr 0x6f 2) ;
+    LetE isCjalr  : Bool <- And [Eq #opcode $(Z.shiftr 0x67 2); isZero #funct3 ] ;
+    LetE isBranch : Bool <- And [ Eq #opcode $(Z.shiftr 0x63 2); Not (Eq (#funct3`[2:1]) $1) ] ;
+    LetE isLoad   : Bool <- And [ Eq #opcode $(Z.shiftr 0x03 2); Not (Eq (#funct3`[2:1]) $3) ] ;
+    LetE isStore  : Bool <- And [ Eq #opcode $(Z.shiftr 0x23 2); Not (FromBit Bool (#funct3`[2:2])) ] ;
+    LetE isOpImm  : Bool <- Eq #opcode $(Z.shiftr 0x13 2) ;
+    LetE isOp     : Bool <- Eq #opcode $(Z.shiftr 0x33 2) ;
+    LetE isSystem : Bool <- Eq #opcode $(Z.shiftr 0x73 2) ;
+    LetE isCheri  : Bool <- Eq #opcode $(Z.shiftr 0x5b 2) ;
+    LetE isAuiCgp : Bool <- Eq #opcode $(Z.shiftr 0x7b 2) ;
+
+    LetE isAlu : Bool <- Or [ #isOp; #isOpImm ] ;
+
+    (* ALU Operations *)
+    LetE isAdd : Bool <- And [isZero #funct3; Or [And [#isOp; isZero #funct7]; #isOpImm]];
+    LetE isSub : Bool <- And [#isOp; isZero #funct3; Eq #funct7 $0x20];
+    LetE isAddSub : Bool <- Or [#isAdd; #isSub] ;
+
+    LetE isSlt   : Bool <- And [ Eq (#funct3`[2:1]) $1; Or [And [#isOp; isZero #funct7]; #isOpImm] ] ;
+
+    LetE isShiftLeft : Bool <- And [ #isAlu; Eq #funct3 $1; isZero #funct7 ] ;
+    LetE isShiftRight : Bool <- And [ #isAlu; Eq #funct3 $5; Or [ isZero #funct7; Eq #funct7 $0x20 ] ] ;
+    LetE isShift : Bool <- Or [ #isShiftLeft; #isShiftRight ] ;
+    LetE isShiftArith: Bool <- And [ #isShift; FromBit Bool (#funct7`[5:5]) ] ;
+
+    LetE isLogical: Bool <- And [ Or [ Eq #funct3 $4; Eq #funct3 $6; Eq #funct3 $7 ];
+                                  Or [And [#isOp; isZero #funct7]; #isOpImm] ] ;
+
+    (* Unsignedness Bit Analysis *)
+    LetE isBranchUnsigned : Bool <- And [ #isBranch; FromBit Bool (#funct3`[1:1]) ] ;
+    LetE isSltUnsigned    : Bool <- And [ #isSlt; FromBit Bool (#funct3`[0:0]) ] ;
+    LetE isLoadUnsigned   : Bool <- And [ #isLoad; FromBit Bool (#funct3`[2:2]) ] ;
+    LetE isUnsignedOp     : Bool <- Or [ #isBranchUnsigned; #isSltUnsigned; #isLoadUnsigned ] ;
+
+    (* PCC Permissions Extraction *)
+    LetE pccEcap  : ECap     <- ##pcc`"ecap" ;
+    LetE pccPerms : CapPerms  <- ##pccEcap`"perms" ;
+    LetE hasAsr   : Bool      <- ##pccPerms`"SR" ;
+
+    (* System Operations & CSR Validation *)
+    LetE isCsrOp: Bool <- And [ #isSystem; isNotZero (#funct3`[1:0]) ] ;
+    LetE csrAllowRead  : Bool <- Or [ csrAllowReadNoAsrDecoder csrAddr; #hasAsr ] ;
+    LetE csrAllowWrite : Bool <- Or [ csrAllowWriteNoAsrDecoder csrAddr; #hasAsr ] ;
+
+    LetE isCsrWriteAlways : Bool <- Or [ Eq #funct3 $1; Eq #funct3 $5 ] ; (* CSRRW / CSRRWI *)
+    LetE isCsrBitMod      : Bool <- Or [ Eq #funct3 $2; Eq #funct3 $3; Eq #funct3 $6; Eq #funct3 $7 ] ; (* CSRRS/RC/RSI/RCI *)
+    LetE isCsrWrite       : Bool <- Or [ #isCsrWriteAlways; And [ #isCsrBitMod; isNotZero #rs1 ] ] ;
+
+    LetE csrReadPermitted  : Bool <- Or [ isZero #rd; #csrAllowRead ] ;
+    LetE csrWritePermitted : Bool <- Or [ Not #isCsrWrite; #csrAllowWrite ] ;
+    LetE csrPermitted      : Bool <- And [ #csrReadPermitted; #csrWritePermitted ] ;
+
+    LetE isCsr  : Bool <- And [ #isCsrOp; #isValidCsr ] ;
+    LetE isCsrImm: Bool <- And [ #isCsr; FromBit Bool (#funct3`[2:2]) ] ;
+
+    LetE isSysZero: Bool <- And [ #isSystem; isZero #funct3 ] ;
+    LetE isMret   : Bool <- And [ #isSysZero; Eq #csrAddr $0x302 ] ;
+    LetE isECall  : Bool <- And [ #isSysZero; isZero #csrAddr ] ;
+    LetE isEBreak : Bool <- And [ #isSysZero; Eq #csrAddr $1 ] ;
+
+    (* CHERIoT Operations (Opcode 0x5B) *)
+    LetE isCheriFunct0      : Bool <- And [ #isCheri; Eq #funct3 $0 ] ;
+    LetE isCheriFunct0TwoArg: Bool <- And [ #isCheriFunct0; Eq #funct7 $0x7f ] ;
+
+    LetE isCIncAddrImm : Bool <- And [ #isCheri; Eq #funct3 $1 ] ;
+    LetE isCSetBoundsImm: Bool <- And [ #isCheri; Eq #funct3 $2 ] ;
+
+    (* Two-argument instructions (funct7 == 0x7F, opcode in rs2 / inst[24:20]) *)
+    LetE isCGetPerm  : Bool <- And [ #isCheriFunct0TwoArg; Eq #rs2 $0x00 ] ;
+    LetE isCGetType  : Bool <- And [ #isCheriFunct0TwoArg; Eq #rs2 $0x01 ] ;
+    LetE isCGetBase  : Bool <- And [ #isCheriFunct0TwoArg; Eq #rs2 $0x02 ] ;
+    LetE isCGetLen   : Bool <- And [ #isCheriFunct0TwoArg; Eq #rs2 $0x03 ] ;
+    LetE isCGetTag   : Bool <- And [ #isCheriFunct0TwoArg; Eq #rs2 $0x04 ] ;
+    LetE isCrrl      : Bool <- And [ #isCheriFunct0TwoArg; Eq #rs2 $0x08 ] ;
+    LetE isCram      : Bool <- And [ #isCheriFunct0TwoArg; Eq #rs2 $0x09 ] ;
+    LetE isCMove     : Bool <- And [ #isCheriFunct0TwoArg; Eq #rs2 $0x0a ] ;
+    LetE isCClearTag : Bool <- And [ #isCheriFunct0TwoArg; Eq #rs2 $0x0b ] ;
+    LetE isCGetAddr  : Bool <- And [ #isCheriFunct0TwoArg; Eq #rs2 $0x0f ] ;
+    LetE isCGetHigh  : Bool <- And [ #isCheriFunct0TwoArg; Eq #rs2 $0x17 ] ;
+    LetE isCGetTop   : Bool <- And [ #isCheriFunct0TwoArg; Eq #rs2 $0x18 ] ;
+
+    (* Three-argument and Special instructions (opcode in funct7) *)
+    LetE isScrOp              : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x01 ] ;
+    LetE isScr                : Bool <- And [ #isScrOp; #isValidScr ] ;
+    LetE isCSetBoundsReg      : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x08 ] ;
+    LetE isCSetBoundsExact    : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x09 ] ;
+    LetE isCSetBoundsRoundDown: Bool <- And [ #isCheriFunct0; Eq #funct7 $0x0a ] ;
+    LetE isSeal               : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x0b ] ;
+    LetE isUnseal             : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x0c ] ;
+    LetE isCAndPerm           : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x0d ] ;
+    LetE isCSetAddr           : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x10 ] ;
+    LetE isCIncAddrReg        : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x11 ] ;
+    LetE isCSub               : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x14 ] ;
+    LetE isCSetHigh           : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x16 ] ;
+    LetE isCTestSubset        : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x20 ] ;
+    LetE isCSetEqual          : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x21 ] ;
+
+    LetE isCIncAddr  : Bool <- Or [ #isCIncAddrReg; #isCIncAddrImm ] ;
+    LetE isCSetBounds: Bool <- Or [ #isCSetBoundsReg; #isCSetBoundsExact; #isCSetBoundsRoundDown; #isCSetBoundsImm ] ;
+
+    LetE isValidInst : Bool <- Or [
+      #isBranch; #isCjal; #isAuiPcc; #isAuiCgp; #isCIncAddr; #isCSetAddr; #isCjalr; #isCTestSubset;
+      #isCSetBounds; #isSeal; #isUnseal; #isLoad; #isStore; #isAddSub; #isCSub; #isCGetLen;
+      #isSlt; #isCSetEqual; #isShift; #isLogical; #isCram; #isCrrl; #isCAndPerm; #isCsr; #isScr;
+      #isLui; #isCGetPerm; #isCGetType; #isCGetBase; #isCGetTag; #isCGetAddr; #isCGetHigh;
+      #isCGetTop; #isCSetHigh; #isCClearTag; #isCMove; #isMret; #isECall; #isEBreak
+    ] ;
+
+    LetE isIllegalInst : Bool <- Not #isValidInst ;
+    LetE asrViolation  : Bool <- Or [ And [ #isCsr; Not #csrPermitted ]; And [ #isScr; Not #hasAsr ] ] ;
+
+    (* Direct Bit Slicing for Branch / Comparator Controls *)
+    LetE isBranchLt : Bool <- And [ #isBranch; FromBit Bool (#funct3`[2:2]) ] ;
+    LetE checkLt    : Bool <- Or [ #isBranchLt; #isSlt ] ;
+
+    LetE isBranchEq : Bool <- And [ #isBranch; Not (FromBit Bool (#funct3`[2:2])) ] ;
+    LetE checkEq    : Bool <- Or [ #isBranchEq; #isCSetEqual ] ;
+
+    LetE invertRes  : Bool <- And [ #isBranch; FromBit Bool (#funct3`[0:0]) ] ;
+
+    LetE groupVal : InstGroup <- STRUCT {
+      "isCompressed"                ::= ConstTBool false ;
+      "isImm"                       ::= Or [ #isOpImm; #isLoad; #isStore; #isCIncAddrImm; #isCSetBoundsImm; #isCsrImm ] ;
+      "isUnsigned"                  ::= #isUnsignedOp ;
+      "Branch"                      ::= #isBranch ;
+      "Cjal"                        ::= #isCjal ;
+      "AuiPcc"                      ::= #isAuiPcc ;
+      "AuiCgp"                      ::= #isAuiCgp ;
+      "CIncAddr"                    ::= #isCIncAddr ;
+      "CSetAddr"                    ::= #isCSetAddr ;
+      "Cjalr"                       ::= #isCjalr ;
+      "CTestSubset"                 ::= #isCTestSubset ;
+      "CSetBounds"                  ::= #isCSetBounds ;
+      "CSetBounds_isExact"          ::= #isCSetBoundsExact ;
+      "CSetBounds_isRoundDown"      ::= #isCSetBoundsRoundDown ;
+      "Seal"                        ::= #isSeal ;
+      "Unseal"                      ::= #isUnseal ;
+      "Load"                        ::= #isLoad ;
+      "Store"                       ::= #isStore ;
+      "AddSub"                      ::= #isAddSub ;
+      "CSub"                        ::= #isCSub ;
+      "CGetLen"                     ::= #isCGetLen ;
+      "Slt"                         ::= #isSlt ;
+      "CSetEqual"                   ::= #isCSetEqual ;
+      "Shift"                       ::= #isShift ;
+      "Shift_isArith"               ::= #isShiftArith ;
+      "Shift_isRight"               ::= #isShiftRight ;
+      "Logical"                     ::= #isLogical ;
+      "Cram"                        ::= #isCram ;
+      "Crrl"                        ::= #isCrrl ;
+      "CAndPerm"                    ::= #isCAndPerm ;
+      "Csr"                         ::= #isCsr ;
+      "Scr"                         ::= #isScr ;
+      "Lui"                         ::= #isLui ;
+      "CGetPerm"                    ::= #isCGetPerm ;
+      "CGetType"                    ::= #isCGetType ;
+      "CGetBase"                    ::= #isCGetBase ;
+      "CGetTag"                     ::= #isCGetTag ;
+      "CGetAddr"                    ::= #isCGetAddr ;
+      "CGetHigh"                    ::= #isCGetHigh ;
+      "CGetTop"                     ::= #isCGetTop ;
+      "CSetHigh"                    ::= #isCSetHigh ;
+      "CClearTag"                   ::= #isCClearTag ;
+      "CMove"                       ::= #isCMove ;
+      "ECall"                       ::= #isECall ;
+      "EBreak"                      ::= #isEBreak ;
+      "Mret"                        ::= #isMret ;
+      "ComparatorGeneral_checkLt"   ::= #checkLt ;
+      "ComparatorGeneral_checkEq"   ::= #checkEq ;
+      "ComparatorGeneral_invertRes" ::= #invertRes
+    } ;
+
+    LetE cs2SourceVal : TaggedUnion Cs2Source <-
+      ITE #isScr (mkCs2Scr #scrMappedIdx)
+          (ITE #isCsr (mkCs2Csr #csrMappedIdx)
+               (mkCs2Reg #cs2Real)) ;
+
+    @RetE _ DecodeOut (STRUCT {
+      "instGroup"    ::= #groupVal ;
+      "cs1Idx"       ::= #cs1Real ;
+      "cs2Idx"       ::= #cs2SourceVal ;
+      "instBits"     ::= #inst ;
+      "illegalInst"  ::= #isIllegalInst ;
+      "asrViolation" ::= #asrViolation
+    }).
+End DecodeUncompressed.
+
+Section DecodeCompressed.
+  Variable ty : Kind -> Type.
+  Variable inst : ty Inst.
+  Variable pcc : ty FullECapWithTag.
+
+  Definition makeCompressedOut (pseudoInst : ty Inst) : LetExpr ty DecodeOut :=
+    LETE out : DecodeOut <- decodeUncompressed pseudoInst pcc ;
+    LetE grp : InstGroup <- ##out`"instGroup" ;
+    LetE grpComp : InstGroup <- #grp `{ "isCompressed" <- ConstTBool true } ;
+    @RetE _ DecodeOut (STRUCT {
+      "instGroup"    ::= #grpComp ;
+      "cs1Idx"       ::= ##out`"cs1Idx" ;
+      "cs2Idx"       ::= ##out`"cs2Idx" ;
+      "instBits"     ::= ##out`"instBits" ;
+      "illegalInst"  ::= ##out`"illegalInst" ;
+      "asrViolation" ::= ##out`"asrViolation"
+    }).
+
+  Definition decodeQuadrant0 : LetExpr ty DecodeOut :=
+    LetE f3 : Bit 3 <- #inst`[15:13] ;
+    LetE cs13 : Bit 3 <- #inst`[9:7] ;
+    LetE cd3  : Bit 3 <- #inst`[4:2] ;
+    LetE cs15 : Bit 5 <- {< Const _ (Bit 2) (Zmod.of_Z _ 1), #cs13 >} ;
+    LetE cd5  : Bit 5 <- {< Const _ (Bit 2) (Zmod.of_Z _ 1), #cd3 >} ;
+
+    LetE lwOff : Bit 12 <- {< Const _ (Bit 5) Zmod.zero, #inst`[5:5], #inst`[12:10], #inst`[6:6], Const _ (Bit 2) Zmod.zero >} ;
+    LetE lcOff : Bit 12 <- {< Const _ (Bit 4) Zmod.zero, #inst`[6:5], #inst`[12:10], Const _ (Bit 3) Zmod.zero >} ;
+
+    LetE pseudoLW : Bit 32 <- {< #lwOff, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 2), #cd5, Const _ (Bit 5) Zmod.zero, Const _ (Bit 2) Zmod.zero >} ;
+    LetE pseudoLC : Bit 32 <- {< #lcOff, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 3), #cd5, Const _ (Bit 5) Zmod.zero, Const _ (Bit 2) Zmod.zero >} ;
+    LetE pseudoSW : Bit 32 <- {< #lwOff`[11:5], #cd5, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 2), #lwOff`[4:0], Const _ (Bit 5) (Zmod.of_Z _ 8), Const _ (Bit 2) Zmod.zero >} ;
+    LetE pseudoSC : Bit 32 <- {< #lcOff`[11:5], #cd5, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 3), #lcOff`[4:0], Const _ (Bit 5) (Zmod.of_Z _ 8), Const _ (Bit 2) Zmod.zero >} ;
+
+    LetE pseudoInst : Bit 32 <- caseDefault [(Eq #f3 $2, #pseudoLW);
+                                             (Eq #f3 $3, #pseudoLC);
+                                             (Eq #f3 $6, #pseudoSW);
+                                             (Eq #f3 $7, #pseudoSC)] $0 ;
+    makeCompressedOut pseudoInst.
+
+  Definition decodeQuadrant1 : LetExpr ty DecodeOut :=
+    LetE f3 : Bit 3 <- #inst`[15:13] ;
+    LetE rd5 : Bit 5 <- #inst`[11:7] ;
+    LetE cs13 : Bit 3 <- #inst`[9:7] ;
+    LetE cs23 : Bit 3 <- #inst`[4:2] ;
+    LetE cs15 : Bit 5 <- {< Const _ (Bit 2) (Zmod.of_Z _ 1), #cs13 >} ;
+    LetE cs25 : Bit 5 <- {< Const _ (Bit 2) (Zmod.of_Z _ 1), #cs23 >} ;
+
+    LetE imm12 : Bit 12 <- SignExtendTo 12 {< #inst`[12:12], #inst`[6:2] >} ;
+    LetE pseudoADDI : Bit 32 <- {< #imm12, #rd5, Const _ (Bit 3) Zmod.zero, #rd5, Const _ (Bit 5) (Zmod.of_Z _ 4), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
+
+    LetE cjalImm : Bit 20 <- SignExtendTo 20 {< #inst`[12:12], #inst`[8:8], #inst`[10:9], #inst`[6:6], #inst`[7:7], #inst`[2:2], #inst`[11:11], #inst`[5:3] >} ;
+    LetE pseudoCJAL : Bit 32 <- {< #cjalImm`[19:19], #cjalImm`[9:0], #cjalImm`[10:10], #cjalImm`[18:11], Const _ (Bit 5) (Zmod.of_Z _ 1), Const _ (Bit 5) (Zmod.of_Z _ 27), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
+
+    LetE pseudoLI : Bit 32 <- {< #imm12, Const _ (Bit 5) Zmod.zero, Const _ (Bit 3) Zmod.zero, #rd5, Const _ (Bit 5) (Zmod.of_Z _ 4), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
+
+    LetE luiImm : Bit 20 <- SignExtendTo 20 {< #inst`[12:12], #inst`[6:2] >} ;
+    LetE pseudoLUI : Bit 32 <- {< #luiImm, #rd5, Const _ (Bit 5) (Zmod.of_Z _ 13), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
+    LetE isLuiOp : Bool <- And [Neq #rd5 $2; Neq #rd5 $0] ;
+    LetE pseudoFunct3_3 : Bit 32 <- ITE #isLuiOp #pseudoLUI $0 ;
+
+    LetE subop : Bit 2 <- #inst`[11:10] ;
+    LetE pseudoSRLI : Bit 32 <- {< Const _ (Bit 7) Zmod.zero, #inst`[6:2], #cs15, Const _ (Bit 3) (Zmod.of_Z _ 5), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 4), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
+    LetE pseudoSRAI : Bit 32 <- {< Const _ (Bit 7) (Zmod.of_Z _ 32), #inst`[6:2], #cs15, Const _ (Bit 3) (Zmod.of_Z _ 5), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 4), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
+    LetE pseudoANDI : Bit 32 <- {< #imm12, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 7), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 4), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
+    LetE func2 : Bit 2 <- #inst`[6:5] ;
+    LetE pseudoSUB : Bit 32 <- {< Const _ (Bit 7) (Zmod.of_Z _ 32), #cs25, #cs15, Const _ (Bit 3) Zmod.zero, #cs15, Const _ (Bit 5) (Zmod.of_Z _ 12), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
+    LetE pseudoXOR : Bit 32 <- {< Const _ (Bit 7) Zmod.zero, #cs25, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 4), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 12), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
+    LetE pseudoOR  : Bit 32 <- {< Const _ (Bit 7) Zmod.zero, #cs25, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 6), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 12), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
+    LetE pseudoAND : Bit 32 <- {< Const _ (Bit 7) Zmod.zero, #cs25, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 7), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 12), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
+    LetE pseudoRegOp : Bit 32 <- caseDefault [(Eq #func2 $0, #pseudoSUB); (Eq #func2 $1, #pseudoXOR); (Eq #func2 $2, #pseudoOR); (Eq #func2 $3, #pseudoAND)] $0 ;
+    LetE pseudoFunct4 : Bit 32 <- caseDefault [(Eq #subop $0, #pseudoSRLI); (Eq #subop $1, #pseudoSRAI); (Eq #subop $2, #pseudoANDI); (Eq #subop $3, #pseudoRegOp)] $0 ;
+
+    LetE pseudoCJ : Bit 32 <- {< #cjalImm`[19:19], #cjalImm`[9:0], #cjalImm`[10:10], #cjalImm`[18:11], Const _ (Bit 5) Zmod.zero, Const _ (Bit 5) (Zmod.of_Z _ 27), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
+
+    LetE beqImm : Bit 12 <- SignExtendTo 12 {< #inst`[12:12], #inst`[6:5], #inst`[2:2], #inst`[11:10], #inst`[4:3], Const _ (Bit 1) Zmod.zero >} ;
+    LetE beqHi : Bit 7 <- {< #beqImm`[11:11], #beqImm`[9:4] >} ;
+    LetE beqLo : Bit 5 <- {< #beqImm`[3:0], #beqImm`[10:10] >} ;
+    LetE pseudoBEQZ : Bit 32 <- {< #beqHi, Const _ (Bit 5) Zmod.zero, #cs15, Const _ (Bit 3) Zmod.zero, #beqLo, Const _ (Bit 5) (Zmod.of_Z _ 24), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
+    LetE pseudoBNEZ : Bit 32 <- {< #beqHi, Const _ (Bit 5) Zmod.zero, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 1), #beqLo, Const _ (Bit 5) (Zmod.of_Z _ 24), Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
+
+    LetE pseudoInst : Bit 32 <- caseDefault [(Eq #f3 $0, #pseudoADDI);
+                                             (Eq #f3 $1, #pseudoCJAL);
+                                             (Eq #f3 $2, #pseudoLI);
+                                             (Eq #f3 $3, #pseudoFunct3_3);
+                                             (Eq #f3 $4, #pseudoFunct4);
+                                             (Eq #f3 $5, #pseudoCJ);
+                                             (Eq #f3 $6, #pseudoBEQZ);
+                                             (Eq #f3 $7, #pseudoBNEZ)] $0 ;
+    makeCompressedOut pseudoInst.
+
+  Definition decodeQuadrant2 : LetExpr ty DecodeOut :=
+    LetE f3 : Bit 3 <- #inst`[15:13] ;
+    LetE rd5 : Bit 5 <- #inst`[11:7] ;
+    LetE rs25 : Bit 5 <- #inst`[6:2] ;
+    LetE b12 : Bool <- FromBit Bool (#inst`[12:12]) ;
+
+    LetE pseudoSLLI : Bit 32 <- {< Const _ (Bit 7) Zmod.zero, #rs25, #rd5, Const _ (Bit 3) (Zmod.of_Z _ 1), #rd5, Const _ (Bit 5) (Zmod.of_Z _ 4), Const _ (Bit 2) (Zmod.of_Z _ 2) >} ;
+
+    LetE lwspOff : Bit 12 <- {< Const _ (Bit 4) Zmod.zero, #inst`[3:2], #inst`[12:12], #inst`[6:4], Const _ (Bit 2) Zmod.zero >} ;
+    LetE pseudoLWSP : Bit 32 <- {< #lwspOff, Const _ (Bit 5) (Zmod.of_Z _ 2), Const _ (Bit 3) (Zmod.of_Z _ 2), #rd5, Const _ (Bit 5) Zmod.zero, Const _ (Bit 2) (Zmod.of_Z _ 2) >} ;
+
+    LetE clcspOff : Bit 12 <- {< Const _ (Bit 3) Zmod.zero, #inst`[4:2], #inst`[12:12], #inst`[6:5], Const _ (Bit 3) Zmod.zero >} ;
+    LetE pseudoCLCSP : Bit 32 <- {< #clcspOff, Const _ (Bit 5) (Zmod.of_Z _ 2), Const _ (Bit 3) (Zmod.of_Z _ 3), #rd5, Const _ (Bit 5) Zmod.zero, Const _ (Bit 2) (Zmod.of_Z _ 2) >} ;
+
+    LetE pseudoJR : Bit 32 <- {< Const _ (Bit 12) Zmod.zero, #rd5, Const _ (Bit 3) Zmod.zero, Const _ (Bit 5) Zmod.zero, Const _ (Bit 5) (Zmod.of_Z _ 25), Const _ (Bit 2) (Zmod.of_Z _ 2) >} ;
+    LetE pseudoMV : Bit 32 <- {< Const _ (Bit 7) Zmod.zero, #rs25, Const _ (Bit 5) Zmod.zero, Const _ (Bit 3) Zmod.zero, #rd5, Const _ (Bit 5) (Zmod.of_Z _ 12), Const _ (Bit 2) (Zmod.of_Z _ 2) >} ;
+    LetE pseudoJALR : Bit 32 <- {< Const _ (Bit 12) Zmod.zero, #rd5, Const _ (Bit 3) Zmod.zero, Const _ (Bit 5) (Zmod.of_Z _ 1), Const _ (Bit 5) (Zmod.of_Z _ 25), Const _ (Bit 2) (Zmod.of_Z _ 2) >} ;
+    LetE pseudoEBREAK : Bit 32 <- {< Const _ (Bit 12) (Zmod.of_Z _ 1), Const _ (Bit 5) Zmod.zero, Const _ (Bit 3) Zmod.zero, Const _ (Bit 5) Zmod.zero, Const _ (Bit 5) (Zmod.of_Z _ 28), Const _ (Bit 2) (Zmod.of_Z _ 2) >} ;
+    LetE pseudoADD : Bit 32 <- {< Const _ (Bit 7) Zmod.zero, #rs25, #rd5, Const _ (Bit 3) Zmod.zero, #rd5, Const _ (Bit 5) (Zmod.of_Z _ 12), Const _ (Bit 2) (Zmod.of_Z _ 2) >} ;
+    LetE pseudoB12Zero : Bit 32 <- ITE (isZero #rs25) #pseudoJR #pseudoMV ;
+    LetE pseudoB12One  : Bit 32 <- ITE (isNotZero #rd5) (ITE (isZero #rs25) #pseudoJALR #pseudoADD) #pseudoEBREAK ;
+    LetE pseudoFunct4Q2 : Bit 32 <- ITE #b12 #pseudoB12One #pseudoB12Zero ;
+
+    LetE swspOff : Bit 12 <- {< Const _ (Bit 4) Zmod.zero, #inst`[8:7], #inst`[12:9], Const _ (Bit 2) Zmod.zero >} ;
+    LetE pseudoSWSP : Bit 32 <- {< #swspOff`[11:5], #rs25, Const _ (Bit 5) (Zmod.of_Z _ 2), Const _ (Bit 3) (Zmod.of_Z _ 2), #swspOff`[4:0], Const _ (Bit 5) (Zmod.of_Z _ 8), Const _ (Bit 2) (Zmod.of_Z _ 2) >} ;
+
+    LetE cscspOff : Bit 12 <- {< Const _ (Bit 3) Zmod.zero, #inst`[9:7], #inst`[12:10], Const _ (Bit 3) Zmod.zero >} ;
+    LetE pseudoCSCSP : Bit 32 <- {< #cscspOff`[11:5], #rs25, Const _ (Bit 5) (Zmod.of_Z _ 2), Const _ (Bit 3) (Zmod.of_Z _ 3), #cscspOff`[4:0], Const _ (Bit 5) (Zmod.of_Z _ 8), Const _ (Bit 2) (Zmod.of_Z _ 2) >} ;
+
+    LetE pseudoInst : Bit 32 <- caseDefault [(Eq #f3 $0, #pseudoSLLI);
+                                             (Eq #f3 $2, #pseudoLWSP);
+                                             (Eq #f3 $3, #pseudoCLCSP);
+                                             (Eq #f3 $4, #pseudoFunct4Q2);
+                                             (Eq #f3 $6, #pseudoSWSP);
+                                             (Eq #f3 $7, #pseudoCSCSP)] $0 ;
+    makeCompressedOut pseudoInst.
+
+  Definition decode : LetExpr ty DecodeOut :=
+    LetE quad : Bit 2 <- #inst`[1:0] ;
+    LETE q0 : DecodeOut <- decodeQuadrant0 ;
+    LETE q1 : DecodeOut <- decodeQuadrant1 ;
+    LETE q2 : DecodeOut <- decodeQuadrant2 ;
+    LETE unc : DecodeOut <- decodeUncompressed inst pcc ;
+    LetE res : DecodeOut <- caseDefault [(Eq #quad $0, #q0);
+                                         (Eq #quad $1, #q1);
+                                         (Eq #quad $2, #q2)] #unc ;
+    RetE #res.
+End DecodeCompressed.
