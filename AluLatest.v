@@ -568,7 +568,7 @@ Local Open Scope string_scope.
      * LoadOp = IsSigned * isLM * isLG
    + Future: Mul, Div, Rem
  - Fence.I, WFI instructions
- - Deal with ECall, EBreak correctly
+ - Exceptions, ECall, EBreak
  *)
 
 (* InstGroup is defined in SpecDefines.v *)
