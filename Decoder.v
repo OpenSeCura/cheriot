@@ -41,6 +41,7 @@ Section DecodeUncompressed.
   Variable pcc : ty FullECapWithTag.
 
   Definition decodeUncompressed : LetExpr ty DecodeOut :=
+    LetE isComp    : Bool   <- Not (IsAllOnes (#inst`[1:0])) ;
     LetE opcode    : Bit 5  <- #inst`[6:2] ;
     LetE rd        : Bit 5  <- #inst`[11:7] ;
     LetE funct3    : Bit 3  <- #inst`[14:12] ;
@@ -185,7 +186,7 @@ Section DecodeUncompressed.
     LetE invertRes  : Bool <- And [ #isBranch; FromBit Bool (#funct3`[0:0]) ] ;
 
     LetE groupVal : InstGroup <- STRUCT {
-      "isCompressed"                ::= ConstTBool false ;
+      "isCompressed"                ::= #isComp ;
       "isImm"                       ::= Or [ #isOpImm; #isLoad; #isStore; #isCIncAddrImm; #isCSetBoundsImm; #isCsrImm ] ;
       "isUnsigned"                  ::= #isUnsignedOp ;
       "Branch"                      ::= #isBranch ;
@@ -256,19 +257,6 @@ Section DecodeCompressed.
   Variable inst : ty Inst.
   Variable pcc : ty FullECapWithTag.
 
-  Definition makeCompressedOut (pseudoInst : ty Inst) : LetExpr ty DecodeOut :=
-    LETE out : DecodeOut <- decodeUncompressed pseudoInst pcc ;
-    LetE grp : InstGroup <- ##out`"instGroup" ;
-    LetE grpComp : InstGroup <- #grp `{ "isCompressed" <- ConstTBool true } ;
-    @RetE _ DecodeOut (STRUCT {
-      "instGroup"    ::= #grpComp ;
-      "cs1Idx"       ::= ##out`"cs1Idx" ;
-      "cs2Idx"       ::= ##out`"cs2Idx" ;
-      "instBits"     ::= ##out`"instBits" ;
-      "illegalInst"  ::= ##out`"illegalInst" ;
-      "asrViolation" ::= ##out`"asrViolation"
-    }).
-
   Definition decodeQuadrant0 : LetExpr ty DecodeOut :=
     LetE f3 : Bit 3 <- #inst`[15:13] ;
     LetE cs13 : Bit 3 <- #inst`[9:7] ;
@@ -288,7 +276,7 @@ Section DecodeCompressed.
                                              (Eq #f3 $3, #pseudoLC);
                                              (Eq #f3 $6, #pseudoSW);
                                              (Eq #f3 $7, #pseudoSC)] $0 ;
-    makeCompressedOut pseudoInst.
+    decodeUncompressed pseudoInst pcc.
 
   Definition decodeQuadrant1 : LetExpr ty DecodeOut :=
     LetE f3 : Bit 3 <- #inst`[15:13] ;
@@ -339,7 +327,7 @@ Section DecodeCompressed.
                                              (Eq #f3 $5, #pseudoCJ);
                                              (Eq #f3 $6, #pseudoBEQZ);
                                              (Eq #f3 $7, #pseudoBNEZ)] $0 ;
-    makeCompressedOut pseudoInst.
+    decodeUncompressed pseudoInst pcc.
 
   Definition decodeQuadrant2 : LetExpr ty DecodeOut :=
     LetE f3 : Bit 3 <- #inst`[15:13] ;
@@ -376,7 +364,7 @@ Section DecodeCompressed.
                                              (Eq #f3 $4, #pseudoFunct4Q2);
                                              (Eq #f3 $6, #pseudoSWSP);
                                              (Eq #f3 $7, #pseudoCSCSP)] $0 ;
-    makeCompressedOut pseudoInst.
+    decodeUncompressed pseudoInst pcc.
 
   Definition decode : LetExpr ty DecodeOut :=
     LetE quad : Bit 2 <- #inst`[1:0] ;
