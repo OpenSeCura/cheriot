@@ -568,9 +568,6 @@ Local Open Scope string_scope.
    + Future: Mul, Div, Rem
  *)
 
-(* InstGroup is defined in SpecDefines.v *)
-
-
 Definition AluControl := STRUCT_TYPE {
   "Alu_usePccMetadataNotCs1" :: Bool ; (* Encompasses:
                                           AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr
