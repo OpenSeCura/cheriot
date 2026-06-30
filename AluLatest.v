@@ -558,9 +558,6 @@ Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
 (* TODO:
- - Create decoder that produces InstGroup and correct register value routing
-   + Take care of compressed instructions also
-     * Compressed instruction must create a pseudo expanded instruction
  - Optimize Bounds Checks
  - Fence.I, WFI instructions
  - Exceptions, ECall, EBreak
