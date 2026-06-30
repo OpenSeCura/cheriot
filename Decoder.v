@@ -303,23 +303,30 @@ Section DecodeCompressed.
     LetE pseudoLUI : Bit 30 <- {< #luiImm, #rd5, Const _ (Bit 5) (Zmod.of_Z _ 0x0d) >} ;
 
     LetE addi16spImm : Bit 12 <- SignExtendTo 12 {< #inst`[12:12], #inst`[4:3], #inst`[5:5], #inst`[2:2], #inst`[6:6], Const _ (Bit 4) Zmod.zero >} ;
-    LetE rawADDI16SP : Bit 30 <- {< #addi16spImm, Const _ (Bit 5) (Zmod.of_Z _ 2), Const _ (Bit 3) (Zmod.of_Z _ 1), Const _ (Bit 5) (Zmod.of_Z _ 2), Const _ (Bit 5) (Zmod.of_Z _ (Z.shiftr 0x5b 2)) >} ;
-    LetE pseudoADDI16SP : Bit 30 <- ITE (isNotZero #addi16spImm) #rawADDI16SP $0 ;
+    LetE pseudoADDI16SP : Bit 30 <- {< #addi16spImm, Const _ (Bit 5) (Zmod.of_Z _ 2), Const _ (Bit 3) (Zmod.of_Z _ 1), Const _ (Bit 5) (Zmod.of_Z _ 2), Const _ (Bit 5) (Zmod.of_Z _ (Z.shiftr 0x5b 2)) >} ;
 
-    LetE isLuiOp : Bool <- And [Neq #rd5 $2; Neq #rd5 $0] ;
     LetE isAddi16spOp : Bool <- Eq #rd5 $2 ;
-    LetE pseudoFunct3_3 : Bit 30 <- ITE #isLuiOp #pseudoLUI (ITE0 #isAddi16spOp #pseudoADDI16SP) ;
+    LetE pseudoFunct3_3 : Bit 30 <- ITE #isAddi16spOp #pseudoADDI16SP #pseudoLUI ;
 
+    LetE b12 : Bool <- FromBit Bool (#inst`[12:12]) ;
     LetE subop : Bit 2 <- #inst`[11:10] ;
-    LetE pseudoSRLI : Bit 30 <- {< Const _ (Bit 7) Zmod.zero, #inst`[6:2], #cs15, Const _ (Bit 3) (Zmod.of_Z _ 5), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 0x04) >} ;
-    LetE pseudoSRAI : Bit 30 <- {< Const _ (Bit 7) (Zmod.of_Z _ 32), #inst`[6:2], #cs15, Const _ (Bit 3) (Zmod.of_Z _ 5), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 0x04) >} ;
+
+    LetE rawSRLI : Bit 30 <- {< Const _ (Bit 7) Zmod.zero, #inst`[6:2], #cs15, Const _ (Bit 3) (Zmod.of_Z _ 5), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 0x04) >} ;
+    LetE pseudoSRLI : Bit 30 <- ITE #b12 $0 #rawSRLI ;
+
+    LetE rawSRAI : Bit 30 <- {< Const _ (Bit 7) (Zmod.of_Z _ 0x20), #inst`[6:2], #cs15, Const _ (Bit 3) (Zmod.of_Z _ 5), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 0x04) >} ;
+    LetE pseudoSRAI : Bit 30 <- ITE #b12 $0 #rawSRAI ;
+
     LetE pseudoANDI : Bit 30 <- {< #imm12, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 7), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 0x04) >} ;
+
     LetE func2 : Bit 2 <- #inst`[6:5] ;
-    LetE pseudoSUB : Bit 30 <- {< Const _ (Bit 7) (Zmod.of_Z _ 32), #cs25, #cs15, Const _ (Bit 3) Zmod.zero, #cs15, Const _ (Bit 5) (Zmod.of_Z _ 0x0c) >} ;
+    LetE pseudoSUB : Bit 30 <- {< Const _ (Bit 7) (Zmod.of_Z _ 0x20), #cs25, #cs15, Const _ (Bit 3) Zmod.zero, #cs15, Const _ (Bit 5) (Zmod.of_Z _ 0x0c) >} ;
     LetE pseudoXOR : Bit 30 <- {< Const _ (Bit 7) Zmod.zero, #cs25, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 4), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 0x0c) >} ;
     LetE pseudoOR  : Bit 30 <- {< Const _ (Bit 7) Zmod.zero, #cs25, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 6), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 0x0c) >} ;
     LetE pseudoAND : Bit 30 <- {< Const _ (Bit 7) Zmod.zero, #cs25, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 7), #cs15, Const _ (Bit 5) (Zmod.of_Z _ 0x0c) >} ;
-    LetE pseudoRegOp : Bit 30 <- Or [ITE0 (Eq #func2 $0) #pseudoSUB; ITE0 (Eq #func2 $1) #pseudoXOR; ITE0 (Eq #func2 $2) #pseudoOR; ITE0 (Eq #func2 $3) #pseudoAND] ;
+    LetE rawRegOp : Bit 30 <- Or [ITE0 (Eq #func2 $0) #pseudoSUB; ITE0 (Eq #func2 $1) #pseudoXOR; ITE0 (Eq #func2 $2) #pseudoOR; ITE0 (Eq #func2 $3) #pseudoAND] ;
+    LetE pseudoRegOp : Bit 30 <- ITE #b12 $0 #rawRegOp ;
+
     LetE pseudoFunct3_4 : Bit 30 <- Or [ITE0 (Eq #subop $0) #pseudoSRLI; ITE0 (Eq #subop $1) #pseudoSRAI; ITE0 (Eq #subop $2) #pseudoANDI; ITE0 (Eq #subop $3) #pseudoRegOp] ;
 
     LetE pseudoCJ : Bit 30 <- {< #cjalImm`[19:19], #cjalImm`[9:0], #cjalImm`[10:10], #cjalImm`[18:11], Const _ (Bit 5) Zmod.zero, Const _ (Bit 5) (Zmod.of_Z _ 0x1b) >} ;
