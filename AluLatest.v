@@ -38,6 +38,9 @@ Miscellaneous:
   * LoadOp          : generic load modifier (determines size and sign/zero extension)
   * interruptStatus : Current interrupt status
   * isCompressed    : Whether the current instruction is compressed or not
+  * scrIdx          : Special Capability Register index (bits 24:20 of instruction word)
+  * cs1Idx          : Register index of cs1 (bits 19:15 of instruction word)
+  * memSize         : Access size for memory operations (bits 13:12 of instruction word)
 
 Branch
 * BEQ rs1, rs2, bimm12
@@ -513,7 +516,7 @@ ExceptionUnit: Top-level instruction exception priority evaluation unit.
   fetchExc: fetchExc (all)
   decodeExc: decodeExc (all)
   scrIdx: inst.rs2 (all)
-  cs1RegIdx: inst.rs1 (all)
+  cs1Idx: inst.rs1 (all)
   memSize: inst.memSize (all)
   ecall: 1 (ECall), 0 (others)
   ebreak: 1 (EBreak), 0 (others)
@@ -1258,7 +1261,7 @@ Section Alu.
   Definition ExceptionUnit (fetchExc : ty FetchException)
                            (decodeExc : ty DecodeException)
                            (scrIdx : ty (Bit RegIdxSz))
-                           (cs1RegIdx : ty (Bit RegIdxSz))
+                           (cs1Idx : ty (Bit RegIdxSz))
                            (memSize : ty (Bit LgLgNumBytesFullCapSz))
                            (ecall ebreak : ty Bool)
                            (isLoad isStore : ty Bool)
@@ -1275,7 +1278,7 @@ Section Alu.
     LetE illegalInst   : Bool <- ##decodeExc`"illegal" ;
     LetE asrViolation  : Bool <- ##decodeExc`"asr" ;
     LETE memExcOut : Option ExceptionInfo <-
-      MemException isStore cs1Tag cs1ECap cs1RegIdx inBounds addr memSize ;
+      MemException isStore cs1Tag cs1ECap cs1Idx inBounds addr memSize ;
 
     LetE isMemOp : Bool <- Or [ #isLoad; #isStore ] ;
 
