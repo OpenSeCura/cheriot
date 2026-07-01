@@ -1268,6 +1268,55 @@ Section Alu.
                   (mkNone ty))))))
     ).
 
+  Definition Exception (fetchTag fetchSeal fetchExecPerm fetchBounds : ty Bool)
+                        (illegalInst asrViolation ecall ebreak : ty Bool)
+                        (scrIdx : ty (Bit RegIdxSz))
+                        (isLoad isStore : ty Bool)
+                        (cs1Tag : ty Bool)
+                        (cs1ECap : ty ECap)
+                        (cs1RegIdx : ty (Bit RegIdxSz))
+                        (inBounds : ty Bool)
+                        (addr : ty Addr)
+                        (memSize : ty (Bit LgLgNumBytesFullCapSz))
+  : LetExpr ty (Option ExceptionInfo) :=
+    LETE memExcOut : Option ExceptionInfo <-
+      MemException isStore cs1Tag cs1ECap cs1RegIdx inBounds addr memSize ;
+
+    LetE isMemOp : Bool <- Or [ #isLoad; #isStore ] ;
+
+    (* 1. Fetch Mtval payloads (S = false, RegIdx = 0) *)
+    LetE mtvalFetchTag  : CheriMtval <- mkCheriMtval (ConstBool false) $0 $CapEx_TagViolation ;
+    LetE mtvalFetchSeal : CheriMtval <- mkCheriMtval (ConstBool false) $0 $CapEx_SealViolation ;
+    LetE mtvalFetchExec : CheriMtval <- mkCheriMtval (ConstBool false) $0 $CapEx_PermitExecuteViolation ;
+    LetE mtvalFetchBnds : CheriMtval <- mkCheriMtval (ConstBool false) $0 $CapEx_BoundsViolation ;
+
+    (* 2. Decoder & System Mtval payloads *)
+    LetE mtvalZero      : CheriMtval <- mkCheriMtval (ConstBool false) $0 $0 ;
+    LetE mtvalAsr       : CheriMtval <- mkCheriMtval (ConstBool true) #scrIdx $CapEx_AccessSystemRegsViolation ;
+
+    (* 3. Strict Priority Cascade *)
+    RetE (
+      ITE (Not #fetchTag)
+        (mkSome (mkExceptionInfo $EXC_CHERI #mtvalFetchTag))
+        (ITE #fetchSeal
+          (mkSome (mkExceptionInfo $EXC_CHERI #mtvalFetchSeal))
+          (ITE (Not #fetchExecPerm)
+            (mkSome (mkExceptionInfo $EXC_CHERI #mtvalFetchExec))
+            (ITE (Not #fetchBounds)
+              (mkSome (mkExceptionInfo $EXC_CHERI #mtvalFetchBnds))
+              (ITE #illegalInst
+                (mkSome (mkExceptionInfo $EXC_IllegalInst #mtvalZero))
+                (ITE #asrViolation
+                  (mkSome (mkExceptionInfo $EXC_CHERI #mtvalAsr))
+                  (ITE #ecall
+                    (mkSome (mkExceptionInfo $EXC_ECallM #mtvalZero))
+                    (ITE #ebreak
+                      (mkSome (mkExceptionInfo $EXC_Breakpoint #mtvalZero))
+                      (ITE #isMemOp
+                        #memExcOut
+                        (mkNone ty)))))))))
+    ).
+
   (* ===========================================================================
      2. ROUTING & DATAPATH MULTIPLEXING BASED ON AluControl
      =========================================================================== *)

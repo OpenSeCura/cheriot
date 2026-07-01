@@ -327,7 +327,7 @@ Section Cs2Constructors.
 End Cs2Constructors.
 
 (* ===========================================================================
-   MULTICYCLE OPERATIONS (MemOp, FenceOp)
+   DEFERRED OPERATIONS (MemOp, FenceOp, MretOp)
    =========================================================================== *)
 
 Definition MemOp := STRUCT_TYPE {
@@ -346,18 +346,19 @@ Definition FenceOp := STRUCT_TYPE {
   "WW"       :: Bool
 }.
 
-Definition MultiCycleOpType := [
+Definition DeferredOpType := [
   ("MemOp"%string, MemOp) ;
-  ("FenceOp"%string, FenceOp)
+  ("FenceOp"%string, FenceOp) ;
+  ("MretOp"%string, Bit 0)
 ].
 
-Definition MultiCycleOp := TaggedUnion MultiCycleOpType.
+Definition DeferredOp := TaggedUnion DeferredOpType.
 
-Section MultiCycleConstructors.
+Section DeferredConstructors.
   Variable ty : Kind -> Type.
 
   Definition mkMemOpLoad (size : ty (Bit LgLgNumBytesFullCapSz)) (isUnsigned isLM isLG : ty Bool)
-  : LetExpr ty (TaggedUnion MultiCycleOpType) :=
+  : LetExpr ty (TaggedUnion DeferredOpType) :=
     LetE memOpVal : MemOp <- STRUCT {
       "isStore"    ::= ConstTBool false ;
       "memSize"    ::= #size ;
@@ -365,10 +366,10 @@ Section MultiCycleConstructors.
       "isLM"       ::= #isLM ;
       "isLG"       ::= #isLG
     } ;
-    RetE (UNION (MultiCycleOpType, "MemOp" ::= #memOpVal)).
+    RetE (UNION (DeferredOpType, "MemOp" ::= #memOpVal)).
 
   Definition mkMemOpStore (size : ty (Bit LgLgNumBytesFullCapSz))
-  : LetExpr ty (TaggedUnion MultiCycleOpType) :=
+  : LetExpr ty (TaggedUnion DeferredOpType) :=
     LetE memOpVal : MemOp <- STRUCT {
       "isStore"    ::= ConstTBool true ;
       "memSize"    ::= #size ;
@@ -376,9 +377,9 @@ Section MultiCycleConstructors.
       "isLM"       ::= ConstTBool false ;
       "isLG"       ::= ConstTBool false
     } ;
-    RetE (UNION (MultiCycleOpType, "MemOp" ::= #memOpVal)).
+    RetE (UNION (DeferredOpType, "MemOp" ::= #memOpVal)).
 
-  Definition mkFenceI : LetExpr ty (TaggedUnion MultiCycleOpType) :=
+  Definition mkFenceI : LetExpr ty (TaggedUnion DeferredOpType) :=
     LetE fenceVal : FenceOp <- STRUCT {
       "isFenceI" ::= ConstTBool true ;
       "RR"       ::= ConstTBool false ;
@@ -386,9 +387,9 @@ Section MultiCycleConstructors.
       "WR"       ::= ConstTBool false ;
       "WW"       ::= ConstTBool false
     } ;
-    RetE (UNION (MultiCycleOpType, "FenceOp" ::= #fenceVal)).
+    RetE (UNION (DeferredOpType, "FenceOp" ::= #fenceVal)).
 
-  Definition mkFenceData (rr rw wr ww : ty Bool) : LetExpr ty (TaggedUnion MultiCycleOpType) :=
+  Definition mkFenceData (rr rw wr ww : ty Bool) : LetExpr ty (TaggedUnion DeferredOpType) :=
     LetE fenceVal : FenceOp <- STRUCT {
       "isFenceI" ::= ConstTBool false ;
       "RR"       ::= #rr ;
@@ -396,8 +397,11 @@ Section MultiCycleConstructors.
       "WR"       ::= #wr ;
       "WW"       ::= #ww
     } ;
-    RetE (UNION (MultiCycleOpType, "FenceOp" ::= #fenceVal)).
-End MultiCycleConstructors.
+    RetE (UNION (DeferredOpType, "FenceOp" ::= #fenceVal)).
+
+  Definition mkMret : LetExpr ty (TaggedUnion DeferredOpType) :=
+    RetE (UNION (DeferredOpType, "MretOp" ::= ConstBit Zmod.zero)).
+End DeferredConstructors.
 
 (* ===========================================================================
    RISC-V & CHERIoT EXCEPTION CONSTANTS & INFO
