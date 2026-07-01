@@ -4,12 +4,14 @@ import sys
 from pathlib import Path
 
 def parse_groups_from_paren(paren_text, valid_groups):
-    """Extract instruction groups from parenthesized text like '(Branch, Cjal, Load & !isImm)'."""
+    """Extract instruction groups from parenthesized text like '(Branch, Cjal, Cjalr)'."""
     groups = set()
-    cleaned = re.sub(r"&|!|\bwhen\b|\bisImm\b|\bisArith\b|\bisRight\b|\bnot taken\b|\btaken\b|\bcompressed\b|\buncompressed\b", " ", paren_text)
+    cleaned = re.sub(r"&|!|\bwhen\b|\bisImm\b|\bisArith\b|\bisRight\b|\bnot taken\b|\btaken\b|\bcompressed\b|\buncompressed\b|\bcond\b", " ", paren_text)
     for token in re.split(r"[,/\s(){}]+", cleaned):
         token = token.strip()
-        if token in valid_groups:
+        if token == "others":
+            groups.update(valid_groups)
+        elif token in valid_groups:
             groups.add(token)
         elif token == "Aui":
             groups.add("AuiPcc")
@@ -74,18 +76,32 @@ def verify_alu(file_path):
             unit_ports[current_unit] = {}
 
         is_writeback = any(header.startswith(prefix) for prefix in ["Reg.", "NewPcc.", "NewSpecial.", "Exception", "LoadPostProcess"])
+
+        # Extract unit active mode groups from lines starting with '-'
+        unit_active_groups = set()
+        for line in lines[1:]:
+            line_str = line.strip()
+            if line_str.startswith("-") and ":" in line_str:
+                mode_right = line_str.split(":")[1].strip()
+                unit_active_groups.update(parse_groups_from_paren(mode_right, section1_groups))
         
         if is_writeback:
             full_rest = block[block.find(":") + 1:].strip()
             unit_ports[current_unit]["out"] = []
             matches = re.findall(r"([^(),]+?)\s*\(([^)]+)\)", full_rest)
-            for src_expr, paren_content in matches:
-                src_expr = src_expr.strip()
-                grps = parse_groups_from_paren(paren_content, section1_groups)
-                if grps:
-                    unit_ports[current_unit]["out"].append((src_expr, grps))
-                    for g in grps:
-                        reachability[g]["writebacks"].add(header)
+            if not matches and full_rest in known_units:
+                # Direct pass-through without parens, e.g. NewPcc.addr: NextAddrUnit
+                unit_ports[current_unit]["out"].append((full_rest, section1_groups))
+                for g in section1_groups:
+                    reachability[g]["writebacks"].add(header)
+            else:
+                for src_expr, paren_content in matches:
+                    src_expr = src_expr.strip()
+                    grps = parse_groups_from_paren(paren_content, section1_groups)
+                    if grps:
+                        unit_ports[current_unit]["out"].append((src_expr, grps))
+                        for g in grps:
+                            reachability[g]["writebacks"].add(header)
         else:
             field_lines = []
             for line in lines[1:]:
@@ -107,13 +123,20 @@ def verify_alu(file_path):
                     unit_ports[current_unit][port_name] = []
 
                 matches = re.findall(r"([^(),]+?)\s*\(([^)]+)\)", rest)
-                for src_expr, paren_content in matches:
-                    src_expr = src_expr.strip()
-                    grps = parse_groups_from_paren(paren_content, section1_groups)
-                    if grps:
-                        unit_ports[current_unit][port_name].append((src_expr, grps))
-                        for g in grps:
-                            reachability[g]["units"].add(header)
+                if not matches and "(" not in rest and rest.strip():
+                    src_expr = rest.strip()
+                    effective_grps = section1_groups
+                    unit_ports[current_unit][port_name].append((src_expr, effective_grps))
+                    for g in effective_grps:
+                        reachability[g]["units"].add(header)
+                else:
+                    for src_expr, paren_content in matches:
+                        src_expr = src_expr.strip()
+                        grps = parse_groups_from_paren(paren_content, section1_groups)
+                        if grps:
+                            unit_ports[current_unit][port_name].append((src_expr, grps))
+                            for g in grps:
+                                reachability[g]["units"].add(header)
 
     # Implicit handling
     for implicit_grp in ["ECall", "EBreak", "Mret"]:
@@ -207,13 +230,11 @@ def verify_alu(file_path):
         if not ports_a:
             continue
 
-        # Collect all instruction groups that drive ANY port of unit_a
         unit_groups = set()
         for port_name, src_list in ports_a.items():
             for src_expr, grps in src_list:
                 unit_groups.update(grps)
 
-        # For each group G driving unit_a, check that EVERY port of unit_a has a selector for G
         for g in sorted(unit_groups):
             for port_name, src_list in ports_a.items():
                 port_has_g = False
@@ -247,7 +268,6 @@ def verify_alu(file_path):
                 unit_groups.update(grps)
 
         for g in sorted(unit_groups):
-            # Check if unit_a is consumed by any downstream unit B or writeback MUX for group G
             consumed = False
             for unit_b, ports_b in unit_ports.items():
                 if unit_b == unit_a:
