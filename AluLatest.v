@@ -514,11 +514,11 @@ BoundsExact: Specialized tag calculation unit for CSetBounds.
 NextPcUnit: Specialized next program counter address calculation unit.
   - Branch : Branch
   - Jump   : Cjal, Cjalr
-  Outputs: newPccAddr
+  Outputs: newPccAddr, BranchTaken
   targetAddr: AdderBeforeBoundsCheck
   seqAddr: AdderToOutput
   cond: ComparatorGeneral.cond
-
+ 
 NewPcc.tag: AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
 NewPcc.ecap: CjalrUnit.ecap (Cjalr), pcc.ecap (others)
 NewPcc.addr: NextPcUnit
@@ -556,6 +556,7 @@ Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, 
 
 Exception: LoadUnit.Exception (Load), StoreUnit.Exception (Store), 0 (others)
 LoadPostProcess: LoadUnit.LoadPostProcess (Load), 0 (others)
+BranchTaken: NextPcUnit.BranchTaken
 *)
 
 From Stdlib Require Import String List ZArith Zmod.
@@ -860,11 +861,16 @@ Section Alu.
     LetE finalRes : Bool <- ITE #invertRes (Not #cond) #cond;
     @RetE _ ComparatorGeneralRes (STRUCT { "cond" ::= #finalRes; "eq" ::= #eqRes }).
 
+  Definition NextPcUnitRes := STRUCT_TYPE {
+    "nextAddr"    :: Addr;
+    "branchTaken" :: Bool }.
+
   Definition NextPcUnit (targetAddr seqAddr : ty Addr) (cond isBranch isJump : ty Bool)
-  : LetExpr ty Addr :=
-    LetE isTaken : Bool <- Or [ And [ #isBranch; #cond ]; #isJump ];
+  : LetExpr ty NextPcUnitRes :=
+    LetE branchTaken : Bool <- And [ #isBranch; #cond ];
+    LetE isTaken : Bool <- Or [ #branchTaken; #isJump ];
     LetE nextAddr : Addr <- ITE #isTaken #targetAddr #seqAddr;
-    RetE #nextAddr.
+    @RetE _ NextPcUnitRes (STRUCT { "nextAddr" ::= #nextAddr; "branchTaken" ::= #cond }).
 
   Definition CjalrUnitRes := STRUCT_TYPE {
     "tag"             :: Bool;
@@ -1227,7 +1233,8 @@ Section Alu.
     "Reg" :: FullECapWithTag ;
     "Exception" :: Bool ;
     "LoadPostProcess" :: Bit 3 ;
-    "NewInterruptStatus" :: Bool
+    "NewInterruptStatus" :: Bool ;
+    "BranchTaken" :: Bool
   }.
 
   Section AluRouting.
@@ -1446,7 +1453,7 @@ Section Alu.
       LETE StoreUnitOut : Bool <- StoreUnit cs1Tag cs1ECap AddrBoundsCheckOut ;
 
       LetE ComparatorGeneral_cond : Bool <- ##ComparatorGeneralOut`"cond" ;
-      LETE NextPcUnitOut : Addr <-
+      LETE NextPcUnitOut : NextPcUnitRes <-
         NextPcUnit AdderBeforeBoundsCheckOut AdderToOutputOut
                      ComparatorGeneral_cond
                      NextPcUnit_isBranch NextPcUnit_isJump ;
@@ -1460,7 +1467,7 @@ Section Alu.
       LetE NewPcc_ecap : ECap <-
         ITE (##aluControl`"NewPcc_ecap_isCjalrUnitEcapNotPccEcap")
             (##CjalrUnitOut`"ecap") (##pcc`"ecap") ;
-      LetE NewPcc_addr : Addr <- #NextPcUnitOut ;
+      LetE NewPcc_addr : Addr <- ##NextPcUnitOut`"nextAddr" ;
 
       LetE NewSpecial_tag : Bool <- #ScrSanitizerOut ;
 
@@ -1534,7 +1541,8 @@ Section Alu.
         "Reg" ::= #RegVal ;
         "Exception" ::= #ExceptionRes ;
         "LoadPostProcess" ::= #LoadPostProcessRes ;
-        "NewInterruptStatus" ::= ##CjalrUnitOut`"interruptStatus"
+        "NewInterruptStatus" ::= ##CjalrUnitOut`"interruptStatus" ;
+        "BranchTaken" ::= ##NextPcUnitOut`"branchTaken"
       }).
   End AluRouting.
 End Alu.
