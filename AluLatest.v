@@ -1224,17 +1224,49 @@ Section Alu.
     LetE keepTag : Bool <- Or [ Not #isSpecialPcc; #lsbZero ] ;
     @RetE _ Bool (And [ #tag; #keepTag ]).
 
-  Definition LoadUnitRes := STRUCT_TYPE {
-    "Exception" :: Bool ;
-    "LoadPostProcess" :: Bit 3 }.
+  Definition MemException (isStore : ty Bool)
+                           (cs1Tag : ty Bool)
+                           (ecap : ty ECap)
+                           (cs1RegIdx : ty (Bit RegIdxSz))
+                           (inBounds : ty Bool)
+                           (addr : ty Addr)
+                           (memSize : ty (Bit LgLgNumBytesFullCapSz))
+  : LetExpr ty (Option ExceptionInfo) :=
+    LetE cs1Perms  : CapPerms       <- ##ecap`"perms" ;
+    LetE cs1Otype  : Bit CapOTypeSz <- ##ecap`"oType" ;
+    LetE cs1Sealed : Bool           <- isNotZero #cs1Otype ;
 
-  Definition LoadUnit (tag : ty Bool) (ecap : ty ECap) (inBounds : ty Bool) (loadOp : ty (Bit 3)) : LetExpr ty LoadUnitRes :=
-    LetE exc : Bool <- Or [ (Not #tag); (Not #inBounds) ];
-    @RetE _ LoadUnitRes (STRUCT { "Exception" ::= #exc; "LoadPostProcess" ::= #loadOp }).
+    LetE isCap : Bool <- Eq #memSize $3 ;
 
-  Definition StoreUnit (tag : ty Bool) (ecap : ty ECap) (inBounds : ty Bool) : LetExpr ty Bool :=
-    LetE exc : Bool <- Or [ (Not #tag); (Not #inBounds) ];
-    RetE #exc.
+    (* 1. Exception Conditions (in Priority Order) *)
+    LetE tagExc      : Bool <- Not #cs1Tag ;
+    LetE sealExc     : Bool <- #cs1Sealed ;
+    LetE hasPerm     : Bool <- ITE #isStore (##cs1Perms`"SD") (##cs1Perms`"LD") ;
+    LetE permExc     : Bool <- Not #hasPerm ;
+    LetE storeCapExc : Bool <- And [ #isStore; #isCap; Not (##cs1Perms`"MC") ] ;
+    LetE boundsExc   : Bool <- Not #inBounds ;
+    LetE alignExc    : Bool <- And [ #isCap; isNotZero (#addr`[2:0]) ] ; (* Misaligned ONLY for caps *)
+
+    (* 2. Payload & ExceptionInfo Constructors *)
+    LetE permCause   : Bit 5 <- ITE #isStore $CapEx_PermitStoreViolation $CapEx_PermitLoadViolation ;
+    LetE alignMcause : Bit 5 <- ITE #isStore $EXC_StoreAddrAlign $EXC_LoadAddrAlign ;
+
+    (* 3. Strict Priority Chain returning Option ExceptionInfo directly *)
+    RetE (
+      ITE #tagExc
+        (mkSome (mkExceptionInfo $EXC_CHERI (mkCheriMtval (ConstBool false) #cs1RegIdx $CapEx_TagViolation)))
+        (ITE #sealExc
+          (mkSome (mkExceptionInfo $EXC_CHERI (mkCheriMtval (ConstBool false) #cs1RegIdx $CapEx_SealViolation)))
+          (ITE #permExc
+            (mkSome (mkExceptionInfo $EXC_CHERI (mkCheriMtval (ConstBool false) #cs1RegIdx #permCause)))
+            (ITE #storeCapExc
+              (mkSome (mkExceptionInfo $EXC_CHERI (mkCheriMtval (ConstBool false) #cs1RegIdx $CapEx_PermitStoreCapViolation)))
+              (ITE #boundsExc
+                (mkSome (mkExceptionInfo $EXC_CHERI (mkCheriMtval (ConstBool false) #cs1RegIdx $CapEx_BoundsViolation)))
+                (ITE #alignExc
+                  (mkSome (mkExceptionInfo #alignMcause (mkCheriMtval (ConstBool false) #cs1RegIdx $0)))
+                  (mkNone ty))))))
+    ).
 
   (* ===========================================================================
      2. ROUTING & DATAPATH MULTIPLEXING BASED ON AluControl
@@ -1465,9 +1497,6 @@ Section Alu.
 
       LETE ScrSanitizerOut : Bool <- ScrSanitizer cs1Tag cs1Addr inst ;
 
-      LETE LoadUnitOut  : LoadUnitRes  <- LoadUnit cs1Tag cs1ECap AddrBoundsCheckOut LoadOp ;
-      LETE StoreUnitOut : Bool <- StoreUnit cs1Tag cs1ECap AddrBoundsCheckOut ;
-
       LetE ComparatorGeneral_cond : Bool <- ##ComparatorGeneralOut`"cond" ;
       LETE NextPcUnitOut : NextPcUnitRes <-
         NextPcUnit AdderBeforeBoundsCheckOut AdderToOutputOut
@@ -1537,11 +1566,9 @@ Section Alu.
             (##aluControl`"Reg_addr_CapEq", ZeroExtendTo Xlen (ToBit #CapEqOut)) ]
           #uimm20 ;
 
-      LetE ExceptionRes : Bool <-
-        ITE (##aluControl`"Exception_isLoadUnitNotStoreUnit")
-            (##LoadUnitOut`"Exception") #StoreUnitOut ;
+      LetE ExceptionRes : Bool <- ConstTBool false ;
 
-      LetE LoadPostProcessRes : Bit 3 <- ##LoadUnitOut`"LoadPostProcess" ;
+      LetE LoadPostProcessRes : Bit 3 <- #inst`[14:12] ;
 
       LetE NewPccVal : FullECapWithTag <-
         STRUCT { "tag" ::= #NewPcc_tag; "ecap" ::= #NewPcc_ecap;

@@ -438,22 +438,20 @@ Definition ExceptionInfo := STRUCT_TYPE {
 Section ExceptionConstructors.
   Variable ty : Kind -> Type.
 
-  Definition mkCheriMtval (s : ty Bool) (regIdx : ty (Bit RegIdxSz)) (cheriCause : ty (Bit 5))
-  : LetExpr ty CheriMtval :=
-    LetE mtvalVal : CheriMtval <- STRUCT {
-      "S"          ::= #s ;
-      "RegIdx"     ::= #regIdx ;
-      "CheriCause" ::= #cheriCause
-    } ;
-    RetE #mtvalVal.
+  Definition mkCheriMtval (s : Expr ty Bool) (regIdx : Expr ty (Bit RegIdxSz)) (cheriCause : Expr ty (Bit 5))
+  : Expr ty CheriMtval :=
+    STRUCT {
+      "S"          ::= s ;
+      "RegIdx"     ::= regIdx ;
+      "CheriCause" ::= cheriCause
+    }.
 
-  Definition mkExceptionInfo (mcause : ty (Bit 5)) (mtval : ty CheriMtval)
-  : LetExpr ty ExceptionInfo :=
-    LetE excVal : ExceptionInfo <- STRUCT {
-      "mcause" ::= #mcause ;
-      "mtval"  ::= #mtval
-    } ;
-    RetE #excVal.
+  Definition mkExceptionInfo (mcause : Expr ty (Bit 5)) (mtval : Expr ty CheriMtval)
+  : Expr ty ExceptionInfo :=
+    STRUCT {
+      "mcause" ::= mcause ;
+      "mtval"  ::= mtval
+    }.
 End ExceptionConstructors.
 
 Section Decoders.
