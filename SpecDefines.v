@@ -42,6 +42,10 @@ Definition Inst     := Eval compute in Bit InstSz.
 Definition LgAddrSz := Eval compute in Z.log2_up AddrSz.
 Definition ExpSz    := Eval compute in LgAddrSz.
 Definition NumBytesXlen := Eval compute in (Xlen / 8).
+Definition FullCapSz := 64.
+Definition NumBytesFullCapSz := Eval compute in (FullCapSz / 8).
+Definition LgNumBytesFullCapSz := Eval compute in Z.log2_up NumBytesFullCapSz.
+Definition LgLgNumBytesFullCapSz := Eval compute in Z.log2_up (LgNumBytesFullCapSz + 1).
 
 Definition isCompressed ty (inst: ty Inst) : Expr ty (Bit 2) := TruncLsb (InstSz-2) 2 #inst.
 Definition getCd ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[11:7].
@@ -313,14 +317,87 @@ Definition Cs2Source := [
 Section Cs2Constructors.
   Variable ty : Kind -> Type.
   Definition mkCs2Reg (idx : Expr ty (Bit RegIdxSzReal)) : Expr ty (TaggedUnion Cs2Source) :=
-    BuildUnion (ls := Cs2Source) (@Build_FinType 3 0 I) idx.
+    UNION (Cs2Source, "Reg" ::= idx).
 
   Definition mkCs2Csr (idx : Expr ty (Bit CsrIdxSz)) : Expr ty (TaggedUnion Cs2Source) :=
-    BuildUnion (ls := Cs2Source) (@Build_FinType 3 1 I) idx.
+    UNION (Cs2Source, "Csr" ::= idx).
 
   Definition mkCs2Scr (idx : Expr ty (Bit ScrIdxSz)) : Expr ty (TaggedUnion Cs2Source) :=
-    BuildUnion (ls := Cs2Source) (@Build_FinType 3 2 I) idx.
+    UNION (Cs2Source, "Scr" ::= idx).
 End Cs2Constructors.
+
+(* ===========================================================================
+   MULTICYCLE OPERATIONS (MemOp, FenceOp)
+   =========================================================================== *)
+
+Definition MemOp := STRUCT_TYPE {
+  "isStore"    :: Bool ;
+  "memSize"    :: Bit LgLgNumBytesFullCapSz ;
+  "isUnsigned" :: Bool ;
+  "isLM"       :: Bool ;
+  "isLG"       :: Bool
+}.
+
+Definition FenceOp := STRUCT_TYPE {
+  "isFenceI" :: Bool ;
+  "RR"       :: Bool ;
+  "RW"       :: Bool ;
+  "WR"       :: Bool ;
+  "WW"       :: Bool
+}.
+
+Definition MultiCycleOpType := [
+  ("MemOp"%string, MemOp) ;
+  ("FenceOp"%string, FenceOp)
+].
+
+Definition MultiCycleOp := TaggedUnion MultiCycleOpType.
+
+Section MultiCycleConstructors.
+  Variable ty : Kind -> Type.
+
+  Definition mkMemOpLoad (size : ty (Bit LgLgNumBytesFullCapSz)) (isUnsigned isLM isLG : ty Bool)
+  : LetExpr ty (TaggedUnion MultiCycleOpType) :=
+    LetE memOpVal : MemOp <- STRUCT {
+      "isStore"    ::= ConstTBool false ;
+      "memSize"    ::= #size ;
+      "isUnsigned" ::= #isUnsigned ;
+      "isLM"       ::= #isLM ;
+      "isLG"       ::= #isLG
+    } ;
+    RetE (UNION (MultiCycleOpType, "MemOp" ::= #memOpVal)).
+
+  Definition mkMemOpStore (size : ty (Bit LgLgNumBytesFullCapSz))
+  : LetExpr ty (TaggedUnion MultiCycleOpType) :=
+    LetE memOpVal : MemOp <- STRUCT {
+      "isStore"    ::= ConstTBool true ;
+      "memSize"    ::= #size ;
+      "isUnsigned" ::= ConstTBool false ;
+      "isLM"       ::= ConstTBool false ;
+      "isLG"       ::= ConstTBool false
+    } ;
+    RetE (UNION (MultiCycleOpType, "MemOp" ::= #memOpVal)).
+
+  Definition mkFenceI : LetExpr ty (TaggedUnion MultiCycleOpType) :=
+    LetE fenceVal : FenceOp <- STRUCT {
+      "isFenceI" ::= ConstTBool true ;
+      "RR"       ::= ConstTBool false ;
+      "RW"       ::= ConstTBool false ;
+      "WR"       ::= ConstTBool false ;
+      "WW"       ::= ConstTBool false
+    } ;
+    RetE (UNION (MultiCycleOpType, "FenceOp" ::= #fenceVal)).
+
+  Definition mkFenceData (rr rw wr ww : ty Bool) : LetExpr ty (TaggedUnion MultiCycleOpType) :=
+    LetE fenceVal : FenceOp <- STRUCT {
+      "isFenceI" ::= ConstTBool false ;
+      "RR"       ::= #rr ;
+      "RW"       ::= #rw ;
+      "WR"       ::= #wr ;
+      "WW"       ::= #ww
+    } ;
+    RetE (UNION (MultiCycleOpType, "FenceOp" ::= #fenceVal)).
+End MultiCycleConstructors.
 
 Section Decoders.
   Variable ty : Kind -> Type.
