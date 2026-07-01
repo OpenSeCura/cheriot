@@ -381,7 +381,7 @@ ComparatorGeneral:
   - LTSigned   : Branch (when BLT/BGE), Slt (when SLT/SLTI)
   - LTUnsigned : Branch (when BLTU/BGEU), Slt (when SLTU/SLTIU)
   - Invert     : Branch (when BNE, BGE, BGEU to invert EQ/LT result)
-  Outputs: lt, eq
+  Outputs: cond, eq
   op1: cs1.addr (Branch, Slt, CSetEqual)
   op2: cs2.addr (Branch, Slt & !isImm, CSetEqual), simm12 (Slt & isImm)
 
@@ -836,8 +836,12 @@ Section Alu.
     "lt" :: Bool ;
     "eq" :: Bool }.
 
+  Definition ComparatorGeneralRes := STRUCT_TYPE {
+    "cond" :: Bool ;
+    "eq"   :: Bool }.
+
   Definition ComparatorGeneral (op1 op2 : ty (Bit Xlen)) (isUnsigned checkLt checkEq invertRes : ty Bool)
-  : LetExpr ty ComparatorOut :=
+  : LetExpr ty ComparatorGeneralRes :=
     LetE flipBit : Bit 1 <- ToBit (Not #isUnsigned) ;
     let flipMsb e:= {< Xor [#flipBit; TruncMsb 1 (Xlen-1) e], TruncLsb 1 (Xlen-1) e >} in
     LetE op1_flipped : Bit Xlen <- flipMsb #op1 ;
@@ -846,7 +850,7 @@ Section Alu.
     LetE eqRes : Bool <- Eq #op1 #op2;
     LetE cond  : Bool <- Or [ And [ #checkLt; #ltRes ]; And [ #checkEq; #eqRes ] ];
     LetE finalRes : Bool <- ITE #invertRes (Not #cond) #cond;
-    @RetE _ ComparatorOut (STRUCT { "lt" ::= #finalRes; "eq" ::= #eqRes }).
+    @RetE _ ComparatorGeneralRes (STRUCT { "cond" ::= #finalRes; "eq" ::= #eqRes }).
 
   Definition CjalrUnitRes := STRUCT_TYPE {
     "tag"             :: Bool;
@@ -1386,7 +1390,7 @@ Section Alu.
       LetE ComparatorGeneral_checkLt    : Bool <- ##aluControl`"ComparatorGeneral_checkLt" ;
       LetE ComparatorGeneral_checkEq    : Bool <- ##aluControl`"ComparatorGeneral_checkEq" ;
       LetE ComparatorGeneral_invertRes  : Bool <- ##aluControl`"ComparatorGeneral_invertRes" ;
-      LETE ComparatorGeneralOut : ComparatorOut <-
+      LETE ComparatorGeneralOut : ComparatorGeneralRes <-
         ComparatorGeneral ComparatorGeneral_op1 ComparatorGeneral_op2
                           ComparatorGeneral_isUnsigned ComparatorGeneral_checkLt
                           ComparatorGeneral_checkEq ComparatorGeneral_invertRes ;
@@ -1435,7 +1439,7 @@ Section Alu.
         ITE (##aluControl`"NewPcc_ecap_isCjalrUnitEcapNotPccEcap")
             (##CjalrUnitOut`"ecap") (##pcc`"ecap") ;
       LetE NewPcc_addr_isBranchTaken : Bool <-
-        And [ ##aluControl`"NewPcc_addr_isBranch" ; ##ComparatorGeneralOut`"lt" ] ;
+        And [ ##aluControl`"NewPcc_addr_isBranch" ; ##ComparatorGeneralOut`"cond" ] ;
       LetE NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput : Bool <-
         Or [ #NewPcc_addr_isBranchTaken ; ##aluControl`"NewPcc_addr_isUnconditionalJump" ] ;
       LetE NewPcc_addr : Addr <-
@@ -1472,7 +1476,7 @@ Section Alu.
         caseDefault (k := Data) [
             (##aluControl`"Reg_addr_AdderBeforeBoundsCheck", #AdderBeforeBoundsCheckOut) ;
             (##aluControl`"Reg_addr_ComparatorGeneralLt",
-             ZeroExtendTo Xlen (ToBit (##ComparatorGeneralOut`"lt"))) ;
+             ZeroExtendTo Xlen (ToBit (##ComparatorGeneralOut`"cond"))) ;
             (##aluControl`"Reg_addr_Shifter", #ShifterOut) ;
             (##aluControl`"Reg_addr_Logical", #LogicalOut) ;
             (##aluControl`"Reg_addr_AdderToOutput", #AdderToOutputOut) ;
