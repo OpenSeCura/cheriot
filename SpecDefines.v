@@ -310,8 +310,8 @@ Definition ScrIdxSz := Z.log2_up (Z.of_nat (length ScrTable)).
 (* TaggedUnion with 3 distinct sources: Reg (4-bit GPR), Csr (CsrIdxSz CSR), Scr (ScrIdxSz SCR) *)
 Definition Cs2Source := [
   ("Reg"%string, Bit RegIdxSzReal) ;
-  ("Csr"%string, Bit CsrIdxSz) ;
-  ("Scr"%string, Bit ScrIdxSz)
+  ("Scr"%string, Bit ScrIdxSz) ;
+  ("Csr"%string, Bit CsrIdxSz)
 ].
 
 Section Cs2Constructors.
@@ -398,6 +398,63 @@ Section MultiCycleConstructors.
     } ;
     RetE (UNION (MultiCycleOpType, "FenceOp" ::= #fenceVal)).
 End MultiCycleConstructors.
+
+(* ===========================================================================
+   RISC-V & CHERIoT EXCEPTION CONSTANTS & INFO
+   =========================================================================== *)
+
+(* Standard RISC-V mcause values (DECIMAL) *)
+Definition EXC_IllegalInst    := 2.
+Definition EXC_Breakpoint     := 3.
+Definition EXC_LoadAddrAlign  := 4.
+Definition EXC_StoreAddrAlign := 6.
+Definition EXC_ECallM         := 11.
+Definition EXC_CHERI          := 28.
+
+(* CHERI CheriCause values (HEXADECIMAL) *)
+Definition CapEx_BoundsViolation           := 0x01.
+Definition CapEx_TagViolation              := 0x02.
+Definition CapEx_SealViolation             := 0x03.
+Definition CapEx_TypeViolation             := 0x04.
+Definition CapEx_PermitExecuteViolation    := 0x11.
+Definition CapEx_PermitLoadViolation       := 0x12.
+Definition CapEx_PermitStoreViolation      := 0x13.
+Definition CapEx_PermitStoreCapViolation   := 0x15.
+Definition CapEx_AccessSystemRegsViolation := 0x18.
+
+(* Explicit mtval struct *)
+Definition CheriMtval := STRUCT_TYPE {
+  "S"          :: Bool ;
+  "RegIdx"     :: Bit RegIdxSz ;
+  "CheriCause" :: Bit 5
+}.
+
+(* Top-level Exception Payload struct *)
+Definition ExceptionInfo := STRUCT_TYPE {
+  "mcause" :: Bit 5 ;
+  "mtval"  :: CheriMtval
+}.
+
+Section ExceptionConstructors.
+  Variable ty : Kind -> Type.
+
+  Definition mkCheriMtval (s : ty Bool) (regIdx : ty (Bit RegIdxSz)) (cheriCause : ty (Bit 5))
+  : LetExpr ty CheriMtval :=
+    LetE mtvalVal : CheriMtval <- STRUCT {
+      "S"          ::= #s ;
+      "RegIdx"     ::= #regIdx ;
+      "CheriCause" ::= #cheriCause
+    } ;
+    RetE #mtvalVal.
+
+  Definition mkExceptionInfo (mcause : ty (Bit 5)) (mtval : ty CheriMtval)
+  : LetExpr ty ExceptionInfo :=
+    LetE excVal : ExceptionInfo <- STRUCT {
+      "mcause" ::= #mcause ;
+      "mtval"  ::= #mtval
+    } ;
+    RetE #excVal.
+End ExceptionConstructors.
 
 Section Decoders.
   Variable ty : Kind -> Type.
