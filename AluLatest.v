@@ -1294,6 +1294,10 @@ Section Alu.
     LetE mtvalZero      : CheriMtval <- mkCheriMtval (ConstBool false) $0 $0 ;
     LetE mtvalAsr       : CheriMtval <- mkCheriMtval (ConstBool true) #scrIdx $CapEx_AccessSystemRegsViolation ;
 
+    LetE sysCallExc : Option ExceptionInfo <-
+      Or [ ITE0 #ecall (mkSome (mkExceptionInfo $EXC_ECallM #mtvalZero)) ;
+           ITE0 #ebreak (mkSome (mkExceptionInfo $EXC_Breakpoint #mtvalZero)) ] ;
+
     (* 3. Strict Priority Cascade *)
     RetE (
       ITE (Not #fetchTag)
@@ -1308,13 +1312,9 @@ Section Alu.
                 (mkSome (mkExceptionInfo $EXC_IllegalInst #mtvalZero))
                 (ITE #asrViolation
                   (mkSome (mkExceptionInfo $EXC_CHERI #mtvalAsr))
-                  (ITE #ecall
-                    (mkSome (mkExceptionInfo $EXC_ECallM #mtvalZero))
-                    (ITE #ebreak
-                      (mkSome (mkExceptionInfo $EXC_Breakpoint #mtvalZero))
-                      (ITE #isMemOp
-                        #memExcOut
-                        (mkNone ty)))))))))
+                  (ITE #isMemOp
+                    #memExcOut
+                    #sysCallExc))))))
     ).
 
   (* ===========================================================================
