@@ -495,25 +495,34 @@ ScrSanitizer: Check if last LSB bit is 0 for certain SCR writes
   addr: cs1.addr (Scr)
   inst: inst (Scr)
 
-LoadUnit: Specialized load operation modifier and exception calculation unit.
-  - CalcLoadOpAndException : Load
-  Outputs: Exception, LoadPostProcess
+LoadUnit: Specialized load operation modifier unit.
+  - CalcLoadOp : Load
+  Outputs: LoadPostProcess
   tag: cs1.tag (Load)
   ecap: cs1.ecap (Load)
   inBounds: AddrBoundsCheck (Load)
   loadOp: LoadOp (Load)
-
-StoreUnit: Specialized store exception calculation unit.
-  - CalcStoreException : Store
-  tag: cs1.tag (Store)
-  ecap: cs1.ecap (Store)
-  inBounds: AddrBoundsCheck (Store)
 
 BoundsExact: Specialized tag calculation unit for CSetBounds.
   - CalcBoundsExactTag : CSetBounds
   inBounds: AddrBoundsCheck (CSetBounds)
   exact: Bounds.exact (CSetBounds)
   isExact: Bounds_isExact (CSetBounds)
+
+ExceptionUnit: Top-level instruction exception priority evaluation unit.
+  fetchExc: fetchExc (all)
+  decodeExc: decodeExc (all)
+  scrIdx: inst.rs2 (all)
+  cs1RegIdx: inst.rs1 (all)
+  memSize: inst.memSize (all)
+  ecall: 1 (ECall), 0 (others)
+  ebreak: 1 (EBreak), 0 (others)
+  isLoad: 1 (Load), 0 (others)
+  isStore: 1 (Store), 0 (others)
+  cs1Tag: cs1.tag (all)
+  cs1ECap: cs1.ecap (all)
+  inBounds: AddrBoundsCheck (Load, Store), 0 (others)
+  addr: AdderBeforeBoundsCheck (Load, Store), 0 (others)
 
 NewPcc.tag: AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
 NewPcc.ecap: CjalrUnit.ecap (Cjalr), pcc.ecap (others)
@@ -552,7 +561,7 @@ Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, 
           Bounds.base (CSetBounds), Bounds.cram (Cram), Bounds.crrl (Crrl),
           CapSubset (CTestSubset), CapEq (CSetEqual)
 
-Exception: LoadUnit.Exception (Load), StoreUnit.Exception (Store), 0 (others)
+Exception: ExceptionUnit (all)
 LoadPostProcess: LoadUnit.LoadPostProcess (Load), 0 (others)
 BranchTaken: ComparatorGeneral.cond
 *)
@@ -667,7 +676,10 @@ Definition AluControl := STRUCT_TYPE {
   "Reg_addr_BoundsCrrl" :: Bool ;
   "Reg_addr_CapSubset" :: Bool ;
   "Reg_addr_CapEq" :: Bool ;
-  "Exception_isLoadUnitNotStoreUnit" :: Bool ;
+  "ECall" :: Bool ;
+  "EBreak" :: Bool ;
+  "Load" :: Bool ;
+  "Store" :: Bool ;
   "Cjal" :: Bool ;
   "Cjalr" :: Bool ;
   "Branch" :: Bool }.
@@ -810,7 +822,10 @@ Section DecodeInstGroup.
       "Reg_addr_BoundsCrrl" ::= ##group`"Crrl" ;
       "Reg_addr_CapSubset" ::= ##group`"CTestSubset" ;
       "Reg_addr_CapEq" ::= ##group`"CSetEqual" ;
-      "Exception_isLoadUnitNotStoreUnit" ::= ##group`"Load" ;
+      "ECall" ::= ##group`"ECall" ;
+      "EBreak" ::= ##group`"EBreak" ;
+      "Load" ::= ##group`"Load" ;
+      "Store" ::= ##group`"Store" ;
       "Cjal" ::= ##group`"Cjal" ;
       "Cjalr" ::= ##group`"Cjalr" ;
       "Branch" ::= ##group`"Branch"
@@ -1240,17 +1255,17 @@ Section Alu.
                   (mkNone ty))))))
     ).
 
-  Definition Exception (fetchExc : ty FetchException)
-                       (decodeExc : ty DecodeException)
-                       (scrIdx : ty (Bit RegIdxSz))
-                       (cs1RegIdx : ty (Bit RegIdxSz))
-                       (memSize : ty (Bit LgLgNumBytesFullCapSz))
-                       (ecall ebreak : ty Bool)
-                       (isLoad isStore : ty Bool)
-                       (cs1Tag : ty Bool)
-                       (cs1ECap : ty ECap)
-                       (inBounds : ty Bool)
-                       (addr : ty Addr)
+  Definition ExceptionUnit (fetchExc : ty FetchException)
+                           (decodeExc : ty DecodeException)
+                           (scrIdx : ty (Bit RegIdxSz))
+                           (cs1RegIdx : ty (Bit RegIdxSz))
+                           (memSize : ty (Bit LgLgNumBytesFullCapSz))
+                           (ecall ebreak : ty Bool)
+                           (isLoad isStore : ty Bool)
+                           (cs1Tag : ty Bool)
+                           (cs1ECap : ty ECap)
+                           (inBounds : ty Bool)
+                           (addr : ty Addr)
   : LetExpr ty (Option ExceptionInfo) :=
     LetE fetchTag      : Bool <- ##fetchExc`"tag" ;
     LetE fetchSeal     : Bool <- ##fetchExc`"seal" ;
@@ -1605,6 +1620,8 @@ Section Alu.
                  "addr" ::= #cs1Addr } ;
       LetE RegVal : FullECapWithTag <-
         STRUCT { "tag" ::= #Reg_tag; "ecap" ::= #Reg_ecap; "addr" ::= #Reg_addr } ;
+      LetE BranchTakenRes : Bool <- And [ ##aluControl`"Branch" ; ##ComparatorGeneralOut`"cond" ] ;
+
       @RetE _ AluOut (STRUCT {
         "NewPcc" ::= #NewPccVal ;
         "NewSpecial" ::= #NewSpecialVal ;
@@ -1615,7 +1632,7 @@ Section Alu.
         "Cjal" ::= ##aluControl`"Cjal" ;
         "Cjalr" ::= ##aluControl`"Cjalr" ;
         "Branch" ::= ##aluControl`"Branch" ;
-        "BranchTaken" ::= And [ ##aluControl`"Branch" ; ##ComparatorGeneralOut`"cond" ]
+        "BranchTaken" ::= #BranchTakenRes
       }).
   End AluRouting.
 End Alu.

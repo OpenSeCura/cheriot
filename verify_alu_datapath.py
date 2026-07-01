@@ -71,7 +71,7 @@ def verify_alu(file_path):
         if current_unit not in unit_ports:
             unit_ports[current_unit] = {}
 
-        is_writeback = any(header.startswith(prefix) for prefix in ["Reg.", "NewPcc.", "NewSpecial.", "Exception", "LoadPostProcess", "BranchTaken"])
+        is_writeback = header in ["Exception", "LoadPostProcess", "BranchTaken", "NewInterruptStatus"] or any(header.startswith(prefix) for prefix in ["Reg.", "NewPcc.", "NewSpecial."])
 
         if is_writeback:
             full_rest = block[block.find(":") + 1:].strip()
@@ -83,7 +83,9 @@ def verify_alu(file_path):
                 for src_expr, paren_content in matches:
                     src_expr = re.sub(r"\bIF\s+!?Compressed\b", "", src_expr, flags=re.IGNORECASE).strip(", ")
                     grps = parse_groups_from_paren(paren_content, section1_groups)
-                    if "others" in paren_content:
+                    if "all" in paren_content:
+                        parsed_matches.append((src_expr, "all", section1_groups))
+                    elif "others" in paren_content:
                         parsed_matches.append((src_expr, "others", grps))
                     else:
                         explicit_grps.update(grps)
@@ -91,7 +93,13 @@ def verify_alu(file_path):
 
                 others_grps = section1_groups - explicit_grps
                 for src_expr, match_type, grps in parsed_matches:
-                    effective_grps = (others_grps | grps) if match_type == "others" else grps
+                    if match_type == "all":
+                        effective_grps = section1_groups
+                    elif match_type == "others":
+                        effective_grps = others_grps | grps
+                    else:
+                        effective_grps = grps
+
                     if effective_grps:
                         unit_ports[current_unit]["out"].append((src_expr, effective_grps))
                         for g in effective_grps:
@@ -137,7 +145,9 @@ def verify_alu(file_path):
                     for src_expr, paren_content in matches:
                         src_expr = re.sub(r"\bIF\s+!?Compressed\b", "", src_expr, flags=re.IGNORECASE).strip(", ")
                         grps = parse_groups_from_paren(paren_content, section1_groups)
-                        if "others" in paren_content:
+                        if "all" in paren_content:
+                            parsed_matches.append((src_expr, "all", section1_groups))
+                        elif "others" in paren_content:
                             parsed_matches.append((src_expr, "others", grps))
                         else:
                             explicit_grps.update(grps)
@@ -145,7 +155,13 @@ def verify_alu(file_path):
 
                     others_grps = section1_groups - explicit_grps
                     for src_expr, match_type, grps in parsed_matches:
-                        effective_grps = (others_grps | grps) if match_type == "others" else grps
+                        if match_type == "all":
+                            effective_grps = section1_groups
+                        elif match_type == "others":
+                            effective_grps = others_grps | grps
+                        else:
+                            effective_grps = grps
+
                         if effective_grps:
                             unit_ports[current_unit][port_name].append((src_expr, effective_grps))
                             for g in effective_grps:
@@ -191,7 +207,7 @@ def verify_alu(file_path):
     print("\n--------------------------------------------------------------------------------")
     print("INVARIANT 3: STRICT SIGNAL TYPING (Strict Comma-Separated InstGroup List & 'when' Option Specifiers)")
     print("--------------------------------------------------------------------------------")
-    valid_elements = section1_groups | {"others", "Aui"}
+    valid_elements = section1_groups | {"others", "all", "Aui"}
     informal_found = False
     for block in s2_blocks:
         block_str = block.strip()
@@ -200,7 +216,7 @@ def verify_alu(file_path):
         header = block_str.split(":")[0].strip()
 
         # Check writeback MUX block vs Functional Unit block
-        is_wb = any(header.startswith(prefix) for prefix in ["Reg.", "NewPcc.", "NewSpecial.", "Exception", "LoadPostProcess", "BranchTaken"])
+        is_wb = header in ["Exception", "LoadPostProcess", "BranchTaken", "NewInterruptStatus"] or any(header.startswith(prefix) for prefix in ["Reg.", "NewPcc.", "NewSpecial."])
 
         input_lines = []
         option_lines = []
@@ -262,7 +278,7 @@ def verify_alu(file_path):
     print("  then for EVERY input port of unit A, there MUST be a matching selector for group G.")
     print("--------------------------------------------------------------------------------")
     inv4_failed = False
-    functional_units = {u for u in known_units if not any(u.startswith(p) for p in ["Reg.", "NewPcc.", "NewSpecial.", "Exception", "LoadPostProcess", "BranchTaken"])}
+    functional_units = {u for u in known_units if u not in ["Exception", "LoadPostProcess", "BranchTaken", "NewInterruptStatus"] and not any(u.startswith(p) for p in ["Reg.", "NewPcc.", "NewSpecial."])}
 
     for unit_b, ports_b in unit_ports.items():
         for port_b, src_list in ports_b.items():
