@@ -498,13 +498,17 @@ ScrSanitizer: Check if last LSB bit is 0 for certain SCR writes
   addr: cs1.addr (Scr)
   inst: inst (Scr)
 
-LoadUnit: Specialized load operation modifier unit.
-  - CalcLoadOp : Load
+DeferredUnit: Specialized deferred operation builder unit.
   Outputs: DeferredOp
-  tag: cs1.tag (Load)
-  ecap: cs1.ecap (Load)
-  inBounds: AddrBoundsCheck (Load)
-  loadOp: LoadOp (Load)
+  cs1Perms: cs1.perms (all)
+  memSize: memSize (all)
+  isUnsigned: inst[14] (all)
+  zimm12: zimm12 (all)
+  isLoad: 1 (Load), 0 (others)
+  isStore: 1 (Store), 0 (others)
+  isFence: 1 (Fence), 0 (others)
+  isMret: 1 (Mret), 0 (others)
+  isFenceI: inst[12] (all)
 
 BoundsExact: Specialized tag calculation unit for CSetBounds.
   - CalcBoundsExactTag : CSetBounds
@@ -565,7 +569,7 @@ Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, 
           CapSubset (CTestSubset), CapEq (CSetEqual)
 
 Exception: ExceptionUnit (all)
-DeferredOp: LoadUnit (Load), 0 (others)
+DeferredOp: DeferredUnit (all)
 BranchTaken: ComparatorGeneral.cond
 *)
 
@@ -582,7 +586,8 @@ Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
 (* TODO:
- - All DeferredOp
+ - MRET need not be deferred
+ - Exceptions can also possibly be handled in terms of changing the PCC
  - CSetHigh and CGetHigh are wrong - we need caps encoder, decoder
  *)
 
@@ -684,7 +689,9 @@ Definition AluControl := STRUCT_TYPE {
   "Store" :: Bool ;
   "Cjal" :: Bool ;
   "Cjalr" :: Bool ;
-  "Branch" :: Bool }.
+  "Branch" :: Bool ;
+  "Fence" :: Bool ;
+  "Mret" :: Bool }.
 
 Section DecodeInstGroup.
   Variable ty : Kind -> Type.
@@ -830,7 +837,9 @@ Section DecodeInstGroup.
       "Store" ::= ##group`"Store" ;
       "Cjal" ::= ##group`"Cjal" ;
       "Cjalr" ::= ##group`"Cjalr" ;
-      "Branch" ::= ##group`"Branch"
+      "Branch" ::= ##group`"Branch" ;
+      "Fence" ::= ##group`"Fence" ;
+      "Mret" ::= ##group`"Mret"
     }).
 End DecodeInstGroup.
 
@@ -1335,6 +1344,32 @@ Section Alu.
     LetE isMemOp : Bool <- Or [ #isLoad; #isStore ] ;
     RetE (ITE0 #isMemOp (mkSome (UNION (DeferredOpType, "MemOp" ::= #memOpVal)))).
 
+  Definition Deferred (cs1Perms : ty CapPerms)
+                      (memSize : ty (Bit LgLgNumBytesFullCapSz))
+                      (isUnsigned isFenceI : ty Bool)
+                      (zimm12 : ty (Bit Xlen))
+                      (isLoad isStore isFence isMret : ty Bool)
+  : LetExpr ty (Option DeferredOp) :=
+    LetE pred_r : Bool <- isNotZero (#zimm12`[5:5]) ;
+    LetE pred_w : Bool <- isNotZero (#zimm12`[4:4]) ;
+    LetE succ_r : Bool <- isNotZero (#zimm12`[1:1]) ;
+    LetE succ_w : Bool <- isNotZero (#zimm12`[0:0]) ;
+    LetE rr : Bool <- And [ Not #isFenceI ; #pred_r ; #succ_r ] ;
+    LetE rw : Bool <- And [ Not #isFenceI ; #pred_r ; #succ_w ] ;
+    LetE wr : Bool <- And [ Not #isFenceI ; #pred_w ; #succ_r ] ;
+    LetE ww : Bool <- And [ Not #isFenceI ; #pred_w ; #succ_w ] ;
+    LetE fenceVal : FenceOp <- STRUCT {
+      "isFenceI" ::= #isFenceI ;
+      "RR"       ::= #rr ;
+      "RW"       ::= #rw ;
+      "WR"       ::= #wr ;
+      "WW"       ::= #ww
+    } ;
+    LETE memOpOpt : Option DeferredOp <- LoadStore cs1Perms memSize isUnsigned isLoad isStore ;
+    RetE (Or [ ITE0 #isMret (mkSome (UNION (DeferredOpType, "MretOp" ::= ConstBit Zmod.zero))) ;
+               ITE0 #isFence (mkSome (UNION (DeferredOpType, "FenceOp" ::= #fenceVal))) ;
+               #memOpOpt ]).
+
   Definition AluOut := STRUCT_TYPE {
     "NewPcc" :: FullECapWithTag ;
     "NewSpecial" :: FullECapWithTag ;
@@ -1396,6 +1431,7 @@ Section Alu.
       LetE scrIdx : Bit RegIdxSz <- #inst_val`[24:20] ;
       LetE cs1Idx : Bit RegIdxSz <- #inst_val`[19:15] ;
       LetE memSize : Bit LgLgNumBytesFullCapSz <- #inst_val`[13:12] ;
+      LetE isFenceI : Bool <- isNotZero (#inst_val`[12:12]) ;
 
       LetE Shifter_shamt_AddCapBSz : Bool <-
         ##aluControl`"Shifter_shamt_AddCapBSz_ComparatorTopRep_topRep_AdderBeforeRepCheck" ;
@@ -1644,8 +1680,10 @@ Section Alu.
                       cs1Tag cs1ECap AddrBoundsCheckOut AdderBeforeBoundsCheckOut ;
 
       LetE isUnsigned : Bool <- isNotZero (#inst_val`[14:14]) ;
+      LetE isFence : Bool <- ##aluControl`"Fence" ;
+      LetE isMret : Bool <- ##aluControl`"Mret" ;
       LETE DeferredOpRes : Option DeferredOp <-
-        LoadStore cs1Perms memSize isUnsigned isLoad isStore ;
+        Deferred cs1Perms memSize isUnsigned isFenceI zimm12 isLoad isStore isFence isMret ;
 
       LetE NewPccVal : FullECapWithTag <-
         STRUCT { "tag" ::= #NewPcc_tag; "ecap" ::= #NewPcc_ecap;
