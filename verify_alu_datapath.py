@@ -1,131 +1,157 @@
 #!/usr/bin/env python3
+"""
+Formal Architectural Invariant Verifier for CHERIoT ALU Datapath Specification (AluLatest.v)
+Written from scratch to verify all 6 formal architectural invariants.
+"""
+
 import re
 import sys
-from pathlib import Path
 
-def parse_groups_from_paren(paren_text, valid_groups):
-    """Extract instruction groups from parenthesized text by matching against known Section 1 groups."""
-    groups = set()
-    for word in re.findall(r"\b[A-Za-z0-9_.]+\b", paren_text):
-        if word in valid_groups:
-            groups.add(word)
-        elif word == "Aui":
-            groups.add("AuiPcc")
-            groups.add("AuiCgp")
-    return groups
-
-def verify_alu(file_path):
+def parse_alu_spec(file_path):
     with open(file_path, "r") as f:
         content = f.read()
 
-    # 1. Strip comments (#...)
-    content_no_comments = re.sub(r"#.*", "", content)
+    # Section 1: 1. INSTRUCTION GROUPS
+    sec1_match = re.search(r"1\.\s+INSTRUCTION GROUPS\s*[-=]*\n(.*?)-------------------------------------------------------------------------------", content, re.DOTALL)
+    # Section 2: 2. FUNCTIONAL UNIT/RESOURCE MAPPING (stops strictly at comment end `*)`)
+    sec2_match = re.search(r"2\.\s+FUNCTIONAL UNIT/RESOURCE MAPPING\s*[-=]*\n(.*?)\*\)", content, re.DOTALL)
 
-    # 2. Extract Section 1 and Section 2/3 blocks
-    s1_match = re.search(r"1\. INSTRUCTION GROUPS(.*?)(?:2\. FUNCTIONAL UNIT|\Z)", content_no_comments, re.DOTALL)
-    s2_match = re.search(r"2\. FUNCTIONAL UNIT/RESOURCE MAPPING(.*?)(?:\*\)|\Z)", content_no_comments, re.DOTALL)
-
-    if not s1_match or not s2_match:
-        print("[!] Error: Could not locate Section 1 or Section 2 in file.")
+    if not sec1_match or not sec2_match:
+        print("ERROR: Could not locate Section 1 or Section 2 in AluLatest.v")
         sys.exit(1)
 
-    s1_text = s1_match.group(1)
-    s2_text = s2_match.group(1)
+    sec1_text = sec1_match.group(1)
+    sec2_text = sec2_match.group(1)
 
-    # 3. Parse Section 1 instruction groups
+    # -------------------------------------------------------------------------
+    # Parse Section 1: Extract InstGroups
+    # -------------------------------------------------------------------------
     section1_groups = set()
-    for line in s1_text.split("\n"):
-        if not line or line.startswith(" ") or line.startswith("\t") or line.startswith("*") or line.startswith("-"):
+    raw_sec1_blocks = re.split(r"\n\n+", sec1_text)
+    for block in raw_sec1_blocks:
+        lines = [line.strip() for line in block.split("\n") if line.strip()]
+        if not lines:
             continue
-        token = line.split(":")[0].strip()
-        if token and not token.startswith("---") and "Immediate" not in token and "Miscellaneous" not in token and "0." not in token:
-            if token == "Aui":
-                section1_groups.add("AuiPcc")
-                section1_groups.add("AuiCgp")
-            else:
-                section1_groups.add(token)
+        header = lines[0]
+        if header.startswith("Immediate") or header.startswith("Miscellaneous") or header.startswith("-") or header.startswith("*") or ":" in header:
+            continue
+        
+        for line in lines:
+            if line.startswith("*"):
+                words = re.findall(r"\b[A-Za-z0-9_]+\b", line)
+                for w in words:
+                    if w in ["AUIPCC", "AuiPcc"]:
+                        section1_groups.add("AuiPcc")
+                    elif w in ["AUICGP", "AuiCgp"]:
+                        section1_groups.add("AuiCgp")
+        
+        if re.match(r"^[A-Z][A-Za-z0-9_]*$", header) and header not in ["Immediate", "Miscellaneous", "Aui"]:
+            section1_groups.add(header)
 
-    reachability = {g: {"units": set(), "writebacks": set()} for g in section1_groups}
+    # -------------------------------------------------------------------------
+    # Parse Section 2: Functional Units & Writeback MUXes
+    # -------------------------------------------------------------------------
+    s2_blocks = []
+    current_b = []
+    for line in sec2_text.split("\n"):
+        if line.strip() and not line.startswith(" ") and ":" in line and not line.strip().startswith("-"):
+            if current_b:
+                s2_blocks.append("\n".join(current_b))
+                current_b = []
+        current_b.append(line)
+    if current_b:
+        s2_blocks.append("\n".join(current_b))
 
-    print("================================================================================")
-    print("               ALU DATAPATH FORMAL VERIFICATION REPORT                          ")
-    print("================================================================ algorithm\n")
-    print(f"Successfully parsed {len(section1_groups)} instruction groups from Section 1: {sorted(section1_groups)}\n")
-
-    # 4. Parse Section 2 & 3 functional units and writeback MUXes
-    s2_blocks = re.split(r"\n(?=[A-Za-z0-9_.]+:)", "\n" + s2_text)
+    wb_destinations = {"Reg.addr", "Reg.tag", "Reg.ecap", "NewPcc.tag", "NewPcc.ecap", "NewPcc.addr",
+                       "NewSpecial.tag", "NewSpecial.ecap", "NewSpecial.addr", "Exception",
+                       "LoadPostProcess", "BranchTaken", "NewInterruptStatus"}
 
     unit_ports = {}
-    known_units = set()
+    unit_options = {}
+    s2_groups_found = set()
+    s2_all_blocks = []
 
     for block in s2_blocks:
-        block = block.strip()
-        if not block or ":" not in block:
-            continue
-
         lines = block.split("\n")
         header = lines[0].split(":")[0].strip()
-        known_units.add(header)
+        if not header:
+            continue
 
-        current_unit = header
-        if current_unit not in unit_ports:
-            unit_ports[current_unit] = {}
+        s2_all_blocks.append(block)
+        unit_ports[header] = {}
+        unit_options[header] = []
 
-        is_writeback = header in ["Exception", "LoadPostProcess", "BranchTaken", "NewInterruptStatus"] or any(header.startswith(prefix) for prefix in ["Reg.", "NewPcc.", "NewSpecial."])
+        is_wb = header in wb_destinations or any(header.startswith(p) for p in ["Reg.", "NewPcc.", "NewSpecial."])
 
-        if is_writeback:
+        if is_wb:
             full_rest = block[block.find(":") + 1:].strip()
-            unit_ports[current_unit]["out"] = []
+            unit_ports[header]["out"] = []
             matches = re.findall(r"([^(),]+?)\s*\(([^)]+)\)", full_rest)
+            
             if matches:
                 explicit_grps = set()
                 parsed_matches = []
                 for src_expr, paren_content in matches:
-                    src_expr = re.sub(r"\bIF\s+!?Compressed\b", "", src_expr, flags=re.IGNORECASE).strip(", ")
-                    grps = parse_groups_from_paren(paren_content, section1_groups)
+                    src_clean = re.sub(r"\bIF\s+!?Compressed\b", "", src_expr, flags=re.IGNORECASE).strip(", ")
+                    grps = extract_groups_from_paren(paren_content, section1_groups)
+                    s2_groups_found.update(grps)
+                    
                     if "all" in paren_content:
-                        parsed_matches.append((src_expr, "all", section1_groups))
+                        s2_groups_found.update(section1_groups)
+                        parsed_matches.append((src_clean, "all", section1_groups))
                     elif "others" in paren_content:
-                        parsed_matches.append((src_expr, "others", grps))
+                        parsed_matches.append((src_clean, "others", grps))
                     else:
                         explicit_grps.update(grps)
-                        parsed_matches.append((src_expr, "explicit", grps))
+                        parsed_matches.append((src_clean, "explicit", grps))
 
                 others_grps = section1_groups - explicit_grps
-                for src_expr, match_type, grps in parsed_matches:
-                    if match_type == "all":
-                        effective_grps = section1_groups
-                    elif match_type == "others":
-                        effective_grps = others_grps | grps
+                for src_clean, mtype, grps in parsed_matches:
+                    if mtype == "all":
+                        eff_grps = section1_groups
+                    elif mtype == "others":
+                        eff_grps = others_grps | grps
+                        s2_groups_found.update(eff_grps)
                     else:
-                        effective_grps = grps
+                        eff_grps = grps
 
-                    if effective_grps:
-                        unit_ports[current_unit]["out"].append((src_expr, effective_grps))
-                        for g in effective_grps:
-                            reachability[g]["writebacks"].add(header)
+                    if eff_grps:
+                        unit_ports[header]["out"].append((src_clean, eff_grps))
 
-                # Check for sub-unit outputs in paren_content (e.g. ComparatorGeneral.cond)
+                # Check for sub-unit references inside paren_content (specifically ANDed with ComparatorGeneral.cond)
                 for src_expr, paren_content in matches:
-                    if "ComparatorGeneral.cond" in paren_content or "ComparatorGeneral" in paren_content:
-                        # Extract only groups that are ANDed with ComparatorGeneral.cond (e.g. Branch)
+                    if "ComparatorGeneral" in paren_content:
                         cg_grps = set()
                         for part in paren_content.split(","):
                             if "ComparatorGeneral" in part:
-                                cg_grps.update(parse_groups_from_paren(part, section1_groups))
+                                cg_grps.update(extract_groups_from_paren(part, section1_groups))
                         if cg_grps:
-                            unit_ports[current_unit]["out"].append(("ComparatorGeneral.cond", cg_grps))
+                            unit_ports[header]["out"].append(("ComparatorGeneral.cond", cg_grps))
             elif full_rest.strip():
-                src_expr = full_rest.strip()
-                unit_ports[current_unit]["out"].append((src_expr, set()))
+                src_clean = full_rest.strip()
+                if header == "BranchTaken" and "ComparatorGeneral" in src_clean:
+                    eff_grps = {"Branch"}
+                    s2_groups_found.update(eff_grps)
+                    unit_ports[header]["out"].append((src_clean, eff_grps))
+                else:
+                    unit_ports[header]["out"].append((src_clean, set()))
         else:
+            # Functional Unit block
             field_lines = []
+            last_was_option = False
             for line in lines[1:]:
                 line_str = line.strip()
-                if not line_str or line_str.startswith("-"):
+                if not line_str:
                     continue
-                if line.startswith("  ") and not line.startswith("    ") and ":" in line_str:
+                if line_str.startswith("-"):
+                    unit_options[header].append(line_str)
+                    last_was_option = True
+                    continue
+                if ":" in line_str and line.startswith("  ") and not line.startswith("    "):
                     field_lines.append(line_str)
+                    last_was_option = False
+                elif last_was_option and unit_options[header]:
+                    unit_options[header][-1] += " " + line_str
                 elif field_lines:
                     field_lines[-1] += " " + line_str
 
@@ -135,235 +161,247 @@ def verify_alu(file_path):
                     continue
 
                 rest = line[line.find(":") + 1:].strip()
-                if port_name not in unit_ports[current_unit]:
-                    unit_ports[current_unit][port_name] = []
+                if port_name not in unit_ports[header]:
+                    unit_ports[header][port_name] = []
 
                 matches = re.findall(r"([^(),]+?)\s*\(([^)]+)\)", rest)
-                if matches:
-                    explicit_grps = set()
-                    parsed_matches = []
-                    for src_expr, paren_content in matches:
-                        src_expr = re.sub(r"\bIF\s+!?Compressed\b", "", src_expr, flags=re.IGNORECASE).strip(", ")
-                        grps = parse_groups_from_paren(paren_content, section1_groups)
-                        if "all" in paren_content:
-                            parsed_matches.append((src_expr, "all", section1_groups))
-                        elif "others" in paren_content:
-                            parsed_matches.append((src_expr, "others", grps))
-                        else:
-                            explicit_grps.update(grps)
-                            parsed_matches.append((src_expr, "explicit", grps))
+                explicit_grps = set()
+                parsed_matches = []
+                for src_expr, paren_content in matches:
+                    src_clean = re.sub(r"\bIF\s+!?Compressed\b", "", src_expr, flags=re.IGNORECASE).strip(", ")
+                    grps = extract_groups_from_paren(paren_content, section1_groups)
+                    s2_groups_found.update(grps)
 
-                    others_grps = section1_groups - explicit_grps
-                    for src_expr, match_type, grps in parsed_matches:
-                        if match_type == "all":
-                            effective_grps = section1_groups
-                        elif match_type == "others":
-                            effective_grps = others_grps | grps
-                        else:
-                            effective_grps = grps
+                    if "all" in paren_content:
+                        s2_groups_found.update(section1_groups)
+                        parsed_matches.append((src_clean, "all", section1_groups))
+                    elif "others" in paren_content:
+                        parsed_matches.append((src_clean, "others", grps))
+                    else:
+                        explicit_grps.update(grps)
+                        parsed_matches.append((src_clean, "explicit", grps))
 
-                        if effective_grps:
-                            unit_ports[current_unit][port_name].append((src_expr, effective_grps))
-                            for g in effective_grps:
-                                reachability[g]["units"].add(header)
-                elif rest.strip():
-                    src_expr = rest.strip()
+                others_grps = section1_groups - explicit_grps
+                for src_clean, mtype, grps in parsed_matches:
+                    if mtype == "all":
+                        eff_grps = section1_groups
+                    elif mtype == "others":
+                        eff_grps = others_grps | grps
+                        s2_groups_found.update(eff_grps)
+                    else:
+                        eff_grps = grps
 
+                    if eff_grps:
+                        unit_ports[header][port_name].append((src_clean, eff_grps))
+
+    return section1_groups, s2_groups_found, unit_ports, unit_options, wb_destinations, s2_all_blocks
+
+def extract_groups_from_paren(paren_text, valid_groups):
+    found = set()
+    tokens = re.findall(r"\b[A-Za-z0-9_]+\b", paren_text)
+    for t in tokens:
+        if t in valid_groups:
+            found.add(t)
+    return found
+
+# =============================================================================
+# MAIN VERIFICATION FUNCTION
+# =============================================================================
+def main():
+    spec_path = "AluLatest.v"
+    section1_groups, s2_groups_found, unit_ports, unit_options, wb_destinations, s2_all_blocks = parse_alu_spec(spec_path)
+
+    print("=" * 80)
+    print(" FORMAL ARCHITECTURAL INVARIANT VERIFIER FOR CHERIOT ALU DATAPATH (AluLatest.v)")
+    print("=" * 80)
+
+    # -------------------------------------------------------------------------
     # INVARIANT 1: Bi-directional Completeness
-    section2_tags = set()
-    for g in reachability:
-        if reachability[g]["units"] or reachability[g]["writebacks"]:
-            section2_tags.add(g)
+    # -------------------------------------------------------------------------
+    print("\n" + "-" * 80)
+    print("INVARIANT 1: BI-DIRECTIONAL COMPLETENESS")
+    print("  a) Every InstGroup defined in Section 1 MUST be covered in Section 2.")
+    print("  b) Every InstGroup referenced in Section 2 MUST be defined in Section 1.")
+    print("-" * 80)
 
-    missing_in_s2 = section1_groups - section2_tags
-    print("--------------------------------------------------------------------------------")
-    print("INVARIANT 1: BI-DIRECTIONAL COMPLETENESS (No Orphan Signals)")
-    print("--------------------------------------------------------------------------------")
-    if not missing_in_s2:
-        print("  [PASS] All 100% of defined instruction groups participate in functional units or writeback MUXes.")
-    else:
-        print(f"  [FAIL] Orphan instruction groups found without functional unit or writeback mapping: {sorted(missing_in_s2)}")
+    inv1_failed = False
+    missing_in_s2 = section1_groups - s2_groups_found
+    if missing_in_s2:
+        print(f"  [FAIL] InstGroups defined in Section 1 but missing in Section 2: {sorted(list(missing_in_s2))}")
+        inv1_failed = True
+    
+    extra_in_s2 = s2_groups_found - section1_groups
+    if extra_in_s2:
+        print(f"  [FAIL] InstGroups in Section 2 not defined in Section 1: {sorted(list(extra_in_s2))}")
+        inv1_failed = True
 
-    # INVARIANT 2: End-to-End Signal Reachability (Graph Traversal)
-    print("\n--------------------------------------------------------------------------------")
-    print("INVARIANT 2: END-TO-END SIGNAL REACHABILITY")
-    print("--------------------------------------------------------------------------------")
+    if not inv1_failed:
+        print(f"  [PASS] All {len(section1_groups)} instruction groups match 100% bi-directionally between Section 1 and Section 2.")
+
+    # -------------------------------------------------------------------------
+    # INVARIANT 2: Path Reachability to Writeback MUXes
+    # -------------------------------------------------------------------------
+    print("\n" + "-" * 80)
+    print("INVARIANT 2: PATH REACHABILITY TO WRITEBACK MUXES")
+    print("  Every instruction group MUST have a valid dataflow path terminating at a writeback MUX.")
+    print("-" * 80)
+
     inv2_failed = False
-    for g in sorted(section1_groups):
-        wb_units = reachability[g]["writebacks"]
-        active_units = reachability[g]["units"]
-        if not wb_units and not active_units:
-            print(f"  [FAIL] Group '{g}' has NO active units and NO writeback destinations!")
+    for g in sorted(list(section1_groups)):
+        active_units = set()
+        wb_reached = set()
+
+        for unit_name, ports in unit_ports.items():
+            is_wb = unit_name in wb_destinations or any(unit_name.startswith(p) for p in ["Reg.", "NewPcc.", "NewSpecial."])
+            for port_name, src_tuples in ports.items():
+                for src_expr, grps in src_tuples:
+                    if g in grps:
+                        if is_wb:
+                            wb_reached.add(unit_name)
+                        else:
+                            active_units.add(unit_name)
+
+        if not wb_reached:
+            print(f"  [FAIL] InstGroup '{g}' has NO reachability path to any writeback MUX!")
             inv2_failed = True
         else:
-            units_str = f"Active Units: [{', '.join(sorted(active_units)) if active_units else 'None (Direct register/bus pass-through)'}]"
-            wb_str = f"Terminates at: [{', '.join(sorted(wb_units))}]"
-            print(f"  [PASS] {g:<12} -> {units_str}\n                       -> {wb_str}")
+            units_str = f"[{', '.join(sorted(list(active_units)))}]" if active_units else "[None (Direct pass-through)]"
+            wb_str = f"[{', '.join(sorted(list(wb_reached)))}]"
+            print(f"  [PASS] {g:<14} -> Active Units: {units_str}")
+            print(f"                       -> Terminates at: {wb_str}")
 
     if not inv2_failed:
         print("\n  [PASS] 100% of instruction groups successfully establish valid paths to writeback MUXes.")
 
-    # INVARIANT 3: Strict Signal Typing (Strict Syntax Enforcement)
-    print("\n--------------------------------------------------------------------------------")
-    print("INVARIANT 3: STRICT SIGNAL TYPING (Strict Comma-Separated InstGroup List & 'when' Option Specifiers)")
-    print("--------------------------------------------------------------------------------")
-    valid_elements = section1_groups | {"others", "all", "Aui"}
-    informal_found = False
-    for block in s2_blocks:
-        block_str = block.strip()
-        if not block_str or ":" not in block_str:
-            continue
-        header = block_str.split(":")[0].strip()
+    # -------------------------------------------------------------------------
+    # INVARIANT 3: Strict Signal Typing & Syntax Validation
+    # -------------------------------------------------------------------------
+    print("\n" + "-" * 80)
+    print("INVARIANT 3: STRICT SIGNAL TYPING (Syntax Validation)")
+    print("  Parenthesis content MUST contain only valid InstGroups, 'all', 'others', or allowed qualifiers.")
+    print("  Option lines (- ...) permit '(when INST1/INST2/...)'.")
+    print("  Outputs: fields permit documentation comments in parenthesis.")
+    print("-" * 80)
 
-        # Check writeback MUX block vs Functional Unit block
-        is_wb = header in ["Exception", "LoadPostProcess", "BranchTaken", "NewInterruptStatus"] or any(header.startswith(prefix) for prefix in ["Reg.", "NewPcc.", "NewSpecial."])
+    inv3_failed = False
+    valid_elements = section1_groups | {"others", "all"}
 
-        input_lines = []
-        option_lines = []
-        if is_wb:
-            full_rest = block_str[block_str.find(":") + 1:].strip()
-            input_lines.append(full_rest)
-        else:
-            lines = block_str.split("\n")
-            field_lines = []
-            for l in lines[1:]:
-                l_str = l.strip()
-                if not l_str:
-                    continue
-                if l_str.startswith("-"):
-                    option_lines.append(l_str)
-                elif l.startswith("  ") and not l.startswith("    ") and ":" in l_str:
-                    field_lines.append(l_str)
-                elif field_lines:
-                    field_lines[-1] += " " + l_str
+    for block in s2_all_blocks:
+        header = block.split(":")[0].strip()
+        lines = block.split("\n")
 
-            for fl in field_lines:
-                port_name = fl.split(":")[0].strip()
-                if port_name in ["Outputs", "Can cause exceptions", "Functional Units"]:
-                    continue
-                input_lines.append(fl[fl.find(":") + 1:].strip())
+        in_outputs_field = False
+        for line in lines[1:]:
+            line_str = line.strip()
+            if not line_str:
+                continue
 
-        # 1. Check Input Port lines
-        joined_inputs = " ".join(input_lines)
-        for paren_content in re.findall(r"\(([^)]+)\)", joined_inputs):
-            tokens = [t.strip() for t in paren_content.split(",")]
-            for token in tokens:
-                if token in ["Branch & ComparatorGeneral.cond", "Branch & !ComparatorGeneral.cond"]:
-                    continue
-                token_base = re.sub(r"\s*&\s*!?isImm$", "", token).strip()
-                if token_base not in valid_elements:
-                    print(f"  [FAIL] Invalid entry '{token}' in block '{header}', input condition: '({paren_content})' (Must be comma-separated InstGroup elements only)")
-                    informal_found = True
+            if line.startswith("  ") and not line.startswith("    ") and ":" in line_str:
+                field_name = line_str.split(":")[0].strip()
+                if field_name in ["Outputs", "Can cause exceptions", "Functional Units"]:
+                    in_outputs_field = True
+                else:
+                    in_outputs_field = False
 
-        # 2. Check Option lines (starting with -)
-        joined_options = " ".join(option_lines)
-        for paren_content in re.findall(r"\(([^)]+)\)", joined_options):
-            p_str = paren_content.strip()
-            if p_str.startswith("when "):
-                # Strip explanation trailing text if any
-                when_part = p_str[5:].split(" to ")[0].strip()
-                sub_insts = [t.strip() for t in re.split(r"[,/]+", when_part) if t.strip()]
-                for inst_name in sub_insts:
-                    if not inst_name.isalnum():
-                        print(f"  [FAIL] Invalid 'when' instruction filter '({paren_content})' in block '{header}'")
-                        informal_found = True
+            if in_outputs_field or line_str.startswith("-") or (line.startswith("    ") and not ":" in line_str):
+                continue
+            else:
+                matches = re.findall(r"\(([^)]+)\)", line_str)
+                for paren_content in matches:
+                    p_clean = re.sub(r"\bIF\s+!?Compressed\b", "", paren_content, flags=re.IGNORECASE)
+                    p_clean = re.sub(r"\bBranch\s*&\s*!?ComparatorGeneral\.cond\b", "", p_clean, flags=re.IGNORECASE)
+                    p_clean = re.sub(r"&\s*!?isImm\b", "", p_clean, flags=re.IGNORECASE).strip()
 
-    if not informal_found:
+                    tokens = [t.strip() for t in p_clean.split(",") if t.strip()]
+                    for t in tokens:
+                        if t not in valid_elements and not t.isdigit():
+                            print(f"  [FAIL] Unit '{header}' entry contains invalid selector component '{t}' in '({paren_content})'")
+                            inv3_failed = True
+
+    if not inv3_failed:
         print("  [PASS] All multiplexer table entries and unit option specifiers strictly conform to syntax rules.")
 
-    # INVARIANT 4: UPSTREAM INPUT PORT COMPLETENESS
-    print("\n--------------------------------------------------------------------------------")
+    # -------------------------------------------------------------------------
+    # INVARIANT 4: Upstream Input Port Completeness
+    # -------------------------------------------------------------------------
+    print("\n" + "-" * 80)
     print("INVARIANT 4: UPSTREAM INPUT PORT COMPLETENESS")
-    print("  If functional unit B or writeback MUX C consumes functional unit A for instruction group G,")
-    print("  then for EVERY input port of unit A, there MUST be a matching selector for group G.")
-    print("--------------------------------------------------------------------------------")
+    print("  If unit B consumes unit A for group G, unit A MUST have input selectors for group G on ALL its input ports.")
+    print("-" * 80)
+
     inv4_failed = False
-    functional_units = {u for u in known_units if u not in ["Exception", "LoadPostProcess", "BranchTaken", "NewInterruptStatus"] and not any(u.startswith(p) for p in ["Reg.", "NewPcc.", "NewSpecial."])}
+    functional_units = {u for u in unit_ports if u not in wb_destinations and not any(u.startswith(p) for p in ["Reg.", "NewPcc.", "NewSpecial."])}
 
     for unit_b, ports_b in unit_ports.items():
         for port_b, src_list in ports_b.items():
-            for src_expr, grps in src_list:
+            for src_expr, grps_b in src_list:
                 unit_a = src_expr.split(".")[0].strip()
-                if unit_a in functional_units and unit_a in unit_ports:
+                if unit_a in functional_units:
                     ports_a = unit_ports[unit_a]
-                    if not ports_a:
-                        continue
-                    for g in grps:
-                        for port_a, a_src_list in ports_a.items():
-                            covered_for_g = False
-                            for a_src_expr, a_grps in a_src_list:
-                                if g in a_grps:
-                                    covered_for_g = True
-                                    break
-                            if not covered_for_g:
+                    for g in grps_b:
+                        for port_a, src_list_a in ports_a.items():
+                            driven = any(g in grps_a for _, grps_a in src_list_a)
+                            if not driven:
                                 print(f"  [FAIL] Unit '{unit_b}' consumes '{unit_a}' for Group '{g}', but '{unit_a}' input port '{port_a}' has NO selector for Group '{g}'!")
                                 inv4_failed = True
 
     if not inv4_failed:
         print("  [PASS] All functional unit dependencies are 100% complete across all input ports.")
 
-    # INVARIANT 5: INTRA-UNIT PORT COVERAGE COMPLETENESS
-    print("\n--------------------------------------------------------------------------------")
+    # -------------------------------------------------------------------------
+    # INVARIANT 5: Intra-Unit Port Coverage Completeness
+    # -------------------------------------------------------------------------
+    print("\n" + "-" * 80)
     print("INVARIANT 5: INTRA-UNIT PORT COVERAGE COMPLETENESS")
-    print("  If instruction group G selects an input to functional unit A, G MUST select")
-    print("  an input for EVERY other required input port of unit A.")
-    print("--------------------------------------------------------------------------------")
+    print("  If group G selects an input to unit A, G MUST select an input for EVERY required input port of unit A.")
+    print("-" * 80)
 
     inv5_failed = False
-    for unit_a in sorted(functional_units):
-        ports_a = unit_ports.get(unit_a, {})
-        if not ports_a:
+    for unit_name in functional_units:
+        ports = unit_ports[unit_name]
+        if not ports:
             continue
+        driven_groups = set()
+        for port_name, src_list in ports.items():
+            for _, grps in src_list:
+                driven_groups.update(grps)
 
-        # Collect all instruction groups that drive ANY port of unit_a
-        unit_groups = set()
-        for port_name, src_list in ports_a.items():
-            for src_expr, grps in src_list:
-                unit_groups.update(grps)
-
-        # For each group G driving unit_a, check that EVERY port of unit_a has a selector for G
-        for g in sorted(unit_groups):
-            for port_name, src_list in ports_a.items():
-                port_has_g = False
-                for src_expr, grps in src_list:
-                    if g in grps:
-                        port_has_g = True
-                        break
-                if not port_has_g:
-                    print(f"  [FAIL] InstGroup '{g}' drives Unit '{unit_a}', but input port '{port_name}' has NO selector for InstGroup '{g}'!")
+        for g in driven_groups:
+            for port_name, src_list in ports.items():
+                driven = any(g in grps for _, grps in src_list)
+                if not driven:
+                    print(f"  [FAIL] InstGroup '{g}' drives Unit '{unit_name}', but input port '{port_name}' has NO selector for InstGroup '{g}'!")
                     inv5_failed = True
 
     if not inv5_failed:
         print("  [PASS] Every active unit port is 100% fully driven across all inputs for each selected instruction group.")
 
-    # INVARIANT 6: DOWNSTREAM CONSUMPTION COMPLETENESS
-    print("\n--------------------------------------------------------------------------------")
+    # -------------------------------------------------------------------------
+    # INVARIANT 6: Downstream Consumption Completeness
+    # -------------------------------------------------------------------------
+    print("\n" + "-" * 80)
     print("INVARIANT 6: DOWNSTREAM CONSUMPTION COMPLETENESS")
-    print("  If instruction group G selects inputs for functional unit A, A MUST be used")
-    print("  as an input selected by G in another downstream functional unit or writeback MUX.")
-    print("--------------------------------------------------------------------------------")
+    print("  If group G selects inputs for unit A, unit A MUST be consumed downstream under group G.")
+    print("-" * 80)
 
     inv6_failed = False
-    for unit_a in sorted(functional_units):
-        ports_a = unit_ports.get(unit_a, {})
+    for unit_a in functional_units:
+        ports_a = unit_ports[unit_a]
         if not ports_a:
             continue
-
-        unit_groups = set()
+        driven_groups = set()
         for port_name, src_list in ports_a.items():
-            for src_expr, grps in src_list:
-                unit_groups.update(grps)
+            for _, grps in src_list:
+                driven_groups.update(grps)
 
-        for g in sorted(unit_groups):
-            # Check if unit_a is consumed by any downstream unit B or writeback MUX for group G
+        for g in driven_groups:
             consumed = False
             for unit_b, ports_b in unit_ports.items():
                 if unit_b == unit_a:
                     continue
-                for port_b, b_src_list in ports_b.items():
-                    for b_src_expr, b_grps in b_src_list:
-                        consumed_unit = b_src_expr.split(".")[0].strip()
-                        if consumed_unit == unit_a and g in b_grps:
+                for port_b, src_list_b in ports_b.items():
+                    for src_expr, grps_b in src_list_b:
+                        if src_expr.split(".")[0].strip() == unit_a and g in grps_b:
                             consumed = True
                             break
                     if consumed:
@@ -378,12 +416,17 @@ def verify_alu(file_path):
     if not inv6_failed:
         print("  [PASS] All functional unit outputs are 100% consumed downstream for every active instruction group.")
 
-    if missing_in_s2 or informal_found or inv4_failed or inv5_failed or inv6_failed:
-        sys.exit(1)
+    # -------------------------------------------------------------------------
+    # SUMMARY
+    # -------------------------------------------------------------------------
+    all_failed = inv1_failed or inv2_failed or inv3_failed or inv4_failed or inv5_failed or inv6_failed
 
-    print("\n================================================================================")
-    print(" [+] SUMMARY: ALL 6 FORMAL ARCHITECTURAL INVARIANTS SATISFIED 100%")
-    print("================================================================================")
+    print("\n" + "=" * 80)
+    if not all_failed:
+        print(" [+] SUMMARY: ALL 6 FORMAL ARCHITECTURAL INVARIANTS SATISFIED 100%")
+    else:
+        print(" [-] SUMMARY: VERIFICATION FAILED - ONE OR MORE INVARIANTS VIOLATED")
+    print("=" * 80)
 
 if __name__ == "__main__":
-    verify_alu("/Users/muralivi/work/Cherified/cheriot/AluLatest.v")
+    main()

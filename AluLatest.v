@@ -78,7 +78,7 @@ Cjal
       g) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
       h) AddrBoundsCheck (ands the two comparator outputs correctly)
 
-Aui
+AuiCgp/AuiPcc
 * AUICGP cd, uimm20_11
     Implicit Read : c3 / CGP
 * AUIPCC cd, uimm20_11
