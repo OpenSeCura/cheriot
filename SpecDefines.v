@@ -357,28 +357,6 @@ Definition DeferredOp := TaggedUnion DeferredOpType.
 Section DeferredConstructors.
   Variable ty : Kind -> Type.
 
-  Definition mkMemOpLoad (size : ty (Bit LgLgNumBytesFullCapSz)) (isUnsigned isLM isLG : ty Bool)
-  : LetExpr ty (TaggedUnion DeferredOpType) :=
-    LetE memOpVal : MemOp <- STRUCT {
-      "isStore"    ::= ConstTBool false ;
-      "memSize"    ::= #size ;
-      "isUnsigned" ::= #isUnsigned ;
-      "isLM"       ::= #isLM ;
-      "isLG"       ::= #isLG
-    } ;
-    RetE (UNION (DeferredOpType, "MemOp" ::= #memOpVal)).
-
-  Definition mkMemOpStore (size : ty (Bit LgLgNumBytesFullCapSz))
-  : LetExpr ty (TaggedUnion DeferredOpType) :=
-    LetE memOpVal : MemOp <- STRUCT {
-      "isStore"    ::= ConstTBool true ;
-      "memSize"    ::= #size ;
-      "isUnsigned" ::= ConstTBool false ;
-      "isLM"       ::= ConstTBool false ;
-      "isLG"       ::= ConstTBool false
-    } ;
-    RetE (UNION (DeferredOpType, "MemOp" ::= #memOpVal)).
-
   Definition mkFenceI : LetExpr ty (TaggedUnion DeferredOpType) :=
     LetE fenceVal : FenceOp <- STRUCT {
       "isFenceI" ::= ConstTBool true ;

@@ -1318,6 +1318,23 @@ Section Alu.
      2. ROUTING & DATAPATH MULTIPLEXING BASED ON AluControl
      =========================================================================== *)
 
+  Definition LoadStore (cs1Perms : ty CapPerms)
+                       (memSize : ty (Bit LgLgNumBytesFullCapSz))
+                       (isUnsigned isLoad isStore : ty Bool)
+  : LetExpr ty (Option DeferredOp) :=
+    LetE isLM : Bool <- And [ #isLoad ; ##cs1Perms`"LM" ] ;
+    LetE isLG : Bool <- And [ #isLoad ; ##cs1Perms`"LG" ] ;
+    LetE isUnsig : Bool <- And [ #isLoad ; #isUnsigned ] ;
+    LetE memOpVal : MemOp <- STRUCT {
+      "isStore"    ::= #isStore ;
+      "memSize"    ::= #memSize ;
+      "isUnsigned" ::= #isUnsig ;
+      "isLM"       ::= #isLM ;
+      "isLG"       ::= #isLG
+    } ;
+    LetE isMemOp : Bool <- Or [ #isLoad; #isStore ] ;
+    RetE (ITE0 #isMemOp (mkSome (UNION (DeferredOpType, "MemOp" ::= #memOpVal)))).
+
   Definition AluOut := STRUCT_TYPE {
     "NewPcc" :: FullECapWithTag ;
     "NewSpecial" :: FullECapWithTag ;
@@ -1626,7 +1643,9 @@ Section Alu.
                       ecall ebreak isLoad isStore
                       cs1Tag cs1ECap AddrBoundsCheckOut AdderBeforeBoundsCheckOut ;
 
-      LETE DeferredOpRes : Option DeferredOp <- RetE (mkNone ty) ;
+      LetE isUnsigned : Bool <- isNotZero (#inst_val`[14:14]) ;
+      LETE DeferredOpRes : Option DeferredOp <-
+        LoadStore cs1Perms memSize isUnsigned isLoad isStore ;
 
       LetE NewPccVal : FullECapWithTag <-
         STRUCT { "tag" ::= #NewPcc_tag; "ecap" ::= #NewPcc_ecap;
