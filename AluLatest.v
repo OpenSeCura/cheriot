@@ -1323,7 +1323,7 @@ Section Alu.
     "NewPcc" :: FullECapWithTag ;
     "NewSpecial" :: FullECapWithTag ;
     "Reg" :: FullECapWithTag ;
-    "Exception" :: Bool ;
+    "Exception" :: Option ExceptionInfo ;
     "LoadPostProcess" :: Bit 3 ;
     "NewInterruptStatus" :: Bool ;
     "Cjal" :: Bool ;
@@ -1336,6 +1336,8 @@ Section Alu.
     Variable pcc cs1 cs2 : ty FullECapWithTag.
     Variable inst : ty Inst.
     Variable currInterruptStatus : ty Bool.
+    Variable fetchExc : ty FetchException.
+    Variable decodeExc : ty DecodeException.
 
     Definition AluRouting (aluControl : ty AluControl) : LetExpr ty AluOut :=
       LetE inst_val : Inst <- ##inst ;
@@ -1347,11 +1349,12 @@ Section Alu.
 
       LetE cs1Addr : Bit Xlen <- ##cs1`"addr" ;
       LetE cs1Tag : Bool <- ##cs1`"tag" ;
-      LetE cs1Base : Bit (AddrSz + 1) <- ##cs1`"ecap"`"base" ;
-      LetE cs1Top : Bit (AddrSz + 1) <- ##cs1`"ecap"`"top" ;
-      LetE cs1Exp : Bit ExpSz <- ##cs1`"ecap"`"E" ;
-      LetE cs1Perms : CapPerms <- ##cs1`"ecap"`"perms" ;
-      LetE cs1OType : Bit CapOTypeSz <- ##cs1`"ecap"`"oType" ;
+      LetE cs1ECap : ECap <- ##cs1`"ecap" ;
+      LetE cs1Base : Bit (AddrSz + 1) <- ##cs1ECap`"base" ;
+      LetE cs1Top : Bit (AddrSz + 1) <- ##cs1ECap`"top" ;
+      LetE cs1Exp : Bit ExpSz <- ##cs1ECap`"E" ;
+      LetE cs1Perms : CapPerms <- ##cs1ECap`"perms" ;
+      LetE cs1OType : Bit CapOTypeSz <- ##cs1ECap`"oType" ;
 
       LetE cs2Addr : Bit Xlen <- ##cs2`"addr" ;
       LetE cs2Tag : Bool <- ##cs2`"tag" ;
@@ -1374,6 +1377,9 @@ Section Alu.
             Const _ (Bit 1) Zmod.zero >}) ;
       LetE jimm20 : Bit Xlen <- SignExtendTo Xlen #jimm21 ;
       LetE LoadOp : Bit 3 <- ConstExtract 17 3 12 #inst_val ;
+      LetE scrIdx : Bit RegIdxSz <- #inst_val`[24:20] ;
+      LetE cs1Idx : Bit RegIdxSz <- #inst_val`[19:15] ;
+      LetE memSize : Bit LgLgNumBytesFullCapSz <- #inst_val`[13:12] ;
 
       LetE Shifter_shamt_AddCapBSz : Bool <-
         ##aluControl`"Shifter_shamt_AddCapBSz_ComparatorTopRep_topRep_AdderBeforeRepCheck" ;
@@ -1611,7 +1617,15 @@ Section Alu.
             (##aluControl`"Reg_addr_CapEq", ZeroExtendTo Xlen (ToBit #CapEqOut)) ]
           #uimm20 ;
 
-      LetE ExceptionRes : Bool <- ConstTBool false ;
+      LetE ecall : Bool <- ##aluControl`"ECall" ;
+      LetE ebreak : Bool <- ##aluControl`"EBreak" ;
+      LetE isLoad : Bool <- ##aluControl`"Load" ;
+      LetE isStore : Bool <- ##aluControl`"Store" ;
+
+      LETE ExceptionRes : Option ExceptionInfo <-
+        ExceptionUnit fetchExc decodeExc scrIdx cs1Idx memSize
+                      ecall ebreak isLoad isStore
+                      cs1Tag cs1ECap AddrBoundsCheckOut AdderBeforeBoundsCheckOut ;
 
       LetE LoadPostProcessRes : Bit 3 <- #inst`[14:12] ;
 
