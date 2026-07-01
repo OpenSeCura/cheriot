@@ -59,7 +59,6 @@ Branch
                            AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       h) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
       i) AddrBoundsCheck (ands the two comparator outputs correctly)
-      j) NextPcUnit (selecting next PC address targetAddr / seqAddr based on branch condition)
 
 Cjal
 * CJAL cd, jimm20
@@ -75,7 +74,6 @@ Cjal
                            AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       g) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
       h) AddrBoundsCheck (ands the two comparator outputs correctly)
-      i) NextPcUnit (selecting next PC address targetAddr)
 
 Aui
 * AUICGP cd, uimm20_11
@@ -125,7 +123,6 @@ Cjalr
       a) AdderBeforeBoundsCheck (computing jump target address cs1.addr + simm12)
       b) AdderToOutput (computing return link address PC + 2 / PC + 4)
       c) CjalrUnit (sentry legality / unsealing check unit)
-      d) NextPcUnit (selecting next PC address targetAddr)
 
 CTestSubset
 * CTestSubset rd, cs1, cs2
@@ -518,17 +515,10 @@ BoundsExact: Specialized tag calculation unit for CSetBounds.
   exact: Bounds.exact (CSetBounds)
   isExact: Bounds_isExact (CSetBounds)
 
-NextPcUnit: Specialized next program counter address calculation unit.
-  - Branch : Branch
-  - Jump   : Cjal, Cjalr
-  Outputs: newPccAddr, BranchTaken
-  targetAddr: AdderBeforeBoundsCheck
-  seqAddr: AdderToOutput
-  cond: ComparatorGeneral.cond
- 
 NewPcc.tag: AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
 NewPcc.ecap: CjalrUnit.ecap (Cjalr), pcc.ecap (others)
-NewPcc.addr: NextPcUnit
+NewPcc.addr: AdderBeforeBoundsCheck (Branch & ComparatorGeneral.cond, Cjal, Cjalr), AdderToOutput (others)
+
 NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
 
 NewSpecial.tag: ScrSanitizer (Scr)
@@ -563,7 +553,7 @@ Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, 
 
 Exception: LoadUnit.Exception (Load), StoreUnit.Exception (Store), 0 (others)
 LoadPostProcess: LoadUnit.LoadPostProcess (Load), 0 (others)
-BranchTaken: NextPcUnit.BranchTaken
+BranchTaken: ComparatorGeneral.cond
 *)
 
 From Stdlib Require Import String List ZArith Zmod.
@@ -602,8 +592,6 @@ Definition AluControl := STRUCT_TYPE {
   "AdderBeforeBoundsCheck_offset_zimm12" :: Bool ;
   "AdderBeforeBoundsCheck_offset_simm12" :: Bool ; (* default option *)
   "AdderToOutput_base_pccAddr" :: Bool ;
-  "NextPcUnit_isBranch" :: Bool ;
-  "NextPcUnit_isJump" :: Bool ;
   "AdderToOutput_base_cs1Addr" :: Bool ; (* default option *)
   "AdderToOutput_base_cs1Top" :: Bool ;
   "AdderToOutput_offset_const2" :: Bool ;
@@ -708,8 +696,6 @@ Section DecodeInstGroup.
              And [ ##group`"CIncAddr"; ##group`"isImm" ] ] ;
       "AdderToOutput_base_pccAddr" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Cjalr" ] ;
-      "NextPcUnit_isBranch" ::= ##group`"Branch" ;
-      "NextPcUnit_isJump" ::= Or [ ##group`"Cjal"; ##group`"Cjalr" ] ;
       "AdderToOutput_base_cs1Addr" ::= Or [ ##group`"AddSub"; ##group`"CSub" ] ;
       "AdderToOutput_base_cs1Top" ::= ##group`"CGetLen" ;
       "AdderToOutput_offset_const2" ::=
@@ -873,17 +859,6 @@ Section Alu.
     LetE cond  : Bool <- Or [ And [ #checkLt; #ltRes ]; And [ #checkEq; #eqRes ] ];
     LetE finalRes : Bool <- ITE #invertRes (Not #cond) #cond;
     @RetE _ ComparatorGeneralRes (STRUCT { "cond" ::= #finalRes; "eq" ::= #eqRes }).
-
-  Definition NextPcUnitRes := STRUCT_TYPE {
-    "nextAddr"    :: Addr;
-    "branchTaken" :: Bool }.
-
-  Definition NextPcUnit (targetAddr seqAddr : ty Addr) (cond isBranch isJump : ty Bool)
-  : LetExpr ty NextPcUnitRes :=
-    LetE branchTaken : Bool <- And [ #isBranch; #cond ];
-    LetE isTaken : Bool <- Or [ #branchTaken; #isJump ];
-    LetE nextAddr : Addr <- ITE #isTaken #targetAddr #seqAddr;
-    @RetE _ NextPcUnitRes (STRUCT { "nextAddr" ::= #nextAddr; "branchTaken" ::= #cond }).
 
   Definition CjalrUnitRes := STRUCT_TYPE {
     "tag"             :: Bool;
@@ -1404,8 +1379,6 @@ Section Alu.
 
       LetE AdderToOutput_base_pccAddr : Bool <-
         ##aluControl`"AdderToOutput_base_pccAddr" ;
-      LetE NextPcUnit_isBranch : Bool <- ##aluControl`"NextPcUnit_isBranch" ;
-      LetE NextPcUnit_isJump   : Bool <- ##aluControl`"NextPcUnit_isJump" ;
 
       LetE AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr : Bool <- ##aluControl`"Alu_usePccMetadataNotCs1" ;
       LetE AddCapBSz_baseExp_isPccExpNotCs1Exp : Bool <- ##aluControl`"Alu_usePccMetadataNotCs1" ;
@@ -1554,11 +1527,9 @@ Section Alu.
 
       LETE ScrSanitizerOut : Bool <- ScrSanitizer cs1Tag cs1Addr inst ;
 
-      LetE ComparatorGeneral_cond : Bool <- ##ComparatorGeneralOut`"cond" ;
-      LETE NextPcUnitOut : NextPcUnitRes <-
-        NextPcUnit AdderBeforeBoundsCheckOut AdderToOutputOut
-                     ComparatorGeneral_cond
-                     NextPcUnit_isBranch NextPcUnit_isJump ;
+      LetE NewPcc_addr_AdderBeforeBoundsCheck : Bool <-
+          Or [ ##aluControl`"Cjal" ; ##aluControl`"Cjalr" ;
+               And [ ##aluControl`"Branch"; ##ComparatorGeneralOut`"cond" ] ];
 
       (* =========================================================================
          WRITEBACK NETWORKS (WbControl defined via AluControl)
@@ -1569,7 +1540,9 @@ Section Alu.
       LetE NewPcc_ecap : ECap <-
         ITE (##aluControl`"NewPcc_ecap_isCjalrUnitEcapNotPccEcap")
             (##CjalrUnitOut`"ecap") (##pcc`"ecap") ;
-      LetE NewPcc_addr : Addr <- ##NextPcUnitOut`"nextAddr" ;
+      LetE NewPcc_addr : Addr <- ITE #NewPcc_addr_AdderBeforeBoundsCheck
+                                   #AdderBeforeBoundsCheckOut
+                                   #AdderToOutputOut ;
 
       LetE NewSpecial_tag : Bool <- #ScrSanitizerOut ;
 
@@ -1645,7 +1618,7 @@ Section Alu.
         "Cjal" ::= ##aluControl`"Cjal" ;
         "Cjalr" ::= ##aluControl`"Cjalr" ;
         "Branch" ::= ##aluControl`"Branch" ;
-        "BranchTaken" ::= ##NextPcUnitOut`"branchTaken"
+        "BranchTaken" ::= And [ ##aluControl`"Branch" ; ##ComparatorGeneralOut`"cond" ]
       }).
   End AluRouting.
 End Alu.
