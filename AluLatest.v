@@ -583,7 +583,6 @@ Local Open Scope string_scope.
 
 (* TODO:
  - All DeferredOp
- - Fix Exception handling in the comment block
  - CSetHigh and CGetHigh are wrong - we need caps encoder, decoder
  *)
 
