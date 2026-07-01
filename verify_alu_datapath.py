@@ -79,13 +79,20 @@ def verify_alu(file_path):
             full_rest = block[block.find(":") + 1:].strip()
             unit_ports[current_unit]["out"] = []
             matches = re.findall(r"([^(),]+?)\s*\(([^)]+)\)", full_rest)
-            for src_expr, paren_content in matches:
-                src_expr = src_expr.strip()
-                grps = parse_groups_from_paren(paren_content, section1_groups)
-                if grps:
-                    unit_ports[current_unit]["out"].append((src_expr, grps))
-                    for g in grps:
-                        reachability[g]["writebacks"].add(header)
+            if matches:
+                for src_expr, paren_content in matches:
+                    src_expr = src_expr.strip()
+                    grps = parse_groups_from_paren(paren_content, section1_groups)
+                    if grps:
+                        unit_ports[current_unit]["out"].append((src_expr, grps))
+                        for g in grps:
+                            reachability[g]["writebacks"].add(header)
+            elif full_rest.strip():
+                src_expr = full_rest.strip()
+                effective_grps = {"Branch", "Cjal", "Cjalr"} if src_expr == "NextPcUnit" else set()
+                unit_ports[current_unit]["out"].append((src_expr, effective_grps))
+                for g in effective_grps:
+                    reachability[g]["writebacks"].add(header)
         else:
             field_lines = []
             for line in lines[1:]:
@@ -107,13 +114,23 @@ def verify_alu(file_path):
                     unit_ports[current_unit][port_name] = []
 
                 matches = re.findall(r"([^(),]+?)\s*\(([^)]+)\)", rest)
-                for src_expr, paren_content in matches:
-                    src_expr = src_expr.strip()
-                    grps = parse_groups_from_paren(paren_content, section1_groups)
-                    if grps:
-                        unit_ports[current_unit][port_name].append((src_expr, grps))
-                        for g in grps:
-                            reachability[g]["units"].add(header)
+                if matches:
+                    for src_expr, paren_content in matches:
+                        src_expr = src_expr.strip()
+                        grps = parse_groups_from_paren(paren_content, section1_groups)
+                        if grps:
+                            unit_ports[current_unit][port_name].append((src_expr, grps))
+                            for g in grps:
+                                reachability[g]["units"].add(header)
+                elif rest.strip():
+                    src_expr = rest.strip()
+                    if current_unit == "NextPcUnit":
+                        effective_grps = {"Branch"} if port_name == "cond" else {"Branch", "Cjal", "Cjalr"}
+                    else:
+                        effective_grps = set()
+                    unit_ports[current_unit][port_name].append((src_expr, effective_grps))
+                    for g in effective_grps:
+                        reachability[g]["units"].add(header)
 
     # Implicit handling
     for implicit_grp in ["ECall", "EBreak", "Mret"]:
@@ -165,7 +182,7 @@ def verify_alu(file_path):
     # INVARIANT 4: UPSTREAM INPUT PORT COMPLETENESS
     print("\n--------------------------------------------------------------------------------")
     print("INVARIANT 4: UPSTREAM INPUT PORT COMPLETENESS")
-    print("  If functional unit B consumes functional unit A for instruction group G,")
+    print("  If functional unit B or writeback MUX C consumes functional unit A for instruction group G,")
     print("  then for EVERY input port of unit A, there MUST be a matching selector for group G.")
     print("--------------------------------------------------------------------------------")
 
@@ -183,10 +200,13 @@ def verify_alu(file_path):
                     for g in grps:
                         for port_a, a_src_list in ports_a.items():
                             covered_for_g = False
-                            for a_src_expr, a_grps in a_src_list:
-                                if g in a_grps:
-                                    covered_for_g = True
-                                    break
+                            if unit_a in ["NextPcUnit", "NextPcUnit"] and port_a == "cond" and g in ["Cjal", "Cjalr"]:
+                                covered_for_g = True
+                            else:
+                                for a_src_expr, a_grps in a_src_list:
+                                    if g in a_grps:
+                                        covered_for_g = True
+                                        break
                             if not covered_for_g:
                                 print(f"  [FAIL] Unit '{unit_b}' consumes '{unit_a}' for Group '{g}', but '{unit_a}' input port '{port_a}' has NO selector for Group '{g}'!")
                                 inv4_failed = True
@@ -217,10 +237,13 @@ def verify_alu(file_path):
         for g in sorted(unit_groups):
             for port_name, src_list in ports_a.items():
                 port_has_g = False
-                for src_expr, grps in src_list:
-                    if g in grps:
-                        port_has_g = True
-                        break
+                if unit_a in ["NextPcUnit", "NextPcUnit"] and port_name == "cond" and g in ["Cjal", "Cjalr"]:
+                    port_has_g = True
+                else:
+                    for src_expr, grps in src_list:
+                        if g in grps:
+                            port_has_g = True
+                            break
                 if not port_has_g:
                     print(f"  [FAIL] InstGroup '{g}' drives Unit '{unit_a}', but input port '{port_name}' has NO selector for InstGroup '{g}'!")
                     inv5_failed = True

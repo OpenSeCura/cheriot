@@ -59,7 +59,7 @@ Branch
                            AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       h) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
       i) AddrBoundsCheck (ands the two comparator outputs correctly)
-      j) NextAddrUnit (selecting next PC address targetAddr / seqAddr based on branch condition)
+      j) NextPcUnit (selecting next PC address targetAddr / seqAddr based on branch condition)
 
 Cjal
 * CJAL cd, jimm20
@@ -75,7 +75,7 @@ Cjal
                            AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       g) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
       h) AddrBoundsCheck (ands the two comparator outputs correctly)
-      i) NextAddrUnit (selecting next PC address targetAddr)
+      i) NextPcUnit (selecting next PC address targetAddr)
 
 Aui
 * AUICGP cd, uimm20_11
@@ -125,7 +125,7 @@ Cjalr
       a) AdderBeforeBoundsCheck (computing jump target address cs1.addr + simm12)
       b) AdderToOutput (computing return link address PC + 2 / PC + 4)
       c) CjalrUnit (sentry legality / unsealing check unit)
-      d) NextAddrUnit (selecting next PC address targetAddr)
+      d) NextPcUnit (selecting next PC address targetAddr)
 
 CTestSubset
 * CTestSubset rd, cs1, cs2
@@ -511,7 +511,7 @@ BoundsExact: Specialized tag calculation unit for CSetBounds.
   exact: Bounds.exact (CSetBounds)
   isExact: Bounds_isExact (CSetBounds)
 
-NextAddrUnit: Specialized next program counter address calculation unit.
+NextPcUnit: Specialized next program counter address calculation unit.
   - Branch : Branch
   - Jump   : Cjal, Cjalr
   Outputs: newPccAddr
@@ -521,7 +521,7 @@ NextAddrUnit: Specialized next program counter address calculation unit.
 
 NewPcc.tag: AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
 NewPcc.ecap: CjalrUnit.ecap (Cjalr), pcc.ecap (others)
-NewPcc.addr: NextAddrUnit
+NewPcc.addr: NextPcUnit
 NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
 
 NewSpecial.tag: ScrSanitizer (Scr)
@@ -547,7 +547,7 @@ Reg.ecap: 0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGe
           {cs1.perms, cs1.otype, Bounds.base, Bounds.top, Bounds.E} (CSetBounds)
 
 Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, Store),
-          ComparatorGeneral.lt (Slt), Shifter (Shift), Logical (Logical),
+          ComparatorGeneral.cond (Slt), Shifter (Shift), Logical (Logical),
           AdderToOutput (Cjal, Cjalr, AddSub, CGetLen, CSub),
           cs1.perms (CGetPerm), cs1.otype (CGetType), cs1.base (CGetBase), cs1.tag (CGetTag), cs1.addr (CGetAddr), cs1.high (CGetHigh), cs1.top (CGetTop),
           cs2.addr (CSetAddr, Csr, Scr), cs1.addr (CAndPerm, CClearTag, Seal, Unseal, CMove, CSetHigh),
@@ -571,7 +571,6 @@ Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
 (* TODO:
- - Fix routing for branch
  - Fence.I, WFI instructions
  - Exceptions, ECall, EBreak
  - CSetHigh and CGetHigh are wrong - we need caps encoder, decoder
@@ -595,8 +594,8 @@ Definition AluControl := STRUCT_TYPE {
   "AdderBeforeBoundsCheck_offset_zimm12" :: Bool ;
   "AdderBeforeBoundsCheck_offset_simm12" :: Bool ; (* default option *)
   "AdderToOutput_base_pccAddr" :: Bool ;
-  "NextAddrUnit_isBranch" :: Bool ;
-  "NextAddrUnit_isJump" :: Bool ;
+  "NextPcUnit_isBranch" :: Bool ;
+  "NextPcUnit_isJump" :: Bool ;
   "AdderToOutput_base_cs1Addr" :: Bool ; (* default option *)
   "AdderToOutput_base_cs1Top" :: Bool ;
   "AdderToOutput_offset_const2" :: Bool ;
@@ -698,8 +697,8 @@ Section DecodeInstGroup.
              And [ ##group`"CIncAddr"; ##group`"isImm" ] ] ;
       "AdderToOutput_base_pccAddr" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Cjalr" ] ;
-      "NextAddrUnit_isBranch" ::= ##group`"Branch" ;
-      "NextAddrUnit_isJump" ::= Or [ ##group`"Cjal"; ##group`"Cjalr" ] ;
+      "NextPcUnit_isBranch" ::= ##group`"Branch" ;
+      "NextPcUnit_isJump" ::= Or [ ##group`"Cjal"; ##group`"Cjalr" ] ;
       "AdderToOutput_base_cs1Addr" ::= Or [ ##group`"AddSub"; ##group`"CSub" ] ;
       "AdderToOutput_base_cs1Top" ::= ##group`"CGetLen" ;
       "AdderToOutput_offset_const2" ::=
@@ -861,7 +860,7 @@ Section Alu.
     LetE finalRes : Bool <- ITE #invertRes (Not #cond) #cond;
     @RetE _ ComparatorGeneralRes (STRUCT { "cond" ::= #finalRes; "eq" ::= #eqRes }).
 
-  Definition NextAddrUnit (targetAddr seqAddr : ty Addr) (cond isBranch isJump : ty Bool)
+  Definition NextPcUnit (targetAddr seqAddr : ty Addr) (cond isBranch isJump : ty Bool)
   : LetExpr ty Addr :=
     LetE isTaken : Bool <- Or [ And [ #isBranch; #cond ]; #isJump ];
     LetE nextAddr : Addr <- ITE #isTaken #targetAddr #seqAddr;
@@ -1293,8 +1292,8 @@ Section Alu.
 
       LetE AdderToOutput_base_pccAddr : Bool <-
         ##aluControl`"AdderToOutput_base_pccAddr" ;
-      LetE NextAddrUnit_isBranch : Bool <- ##aluControl`"NextAddrUnit_isBranch" ;
-      LetE NextAddrUnit_isJump   : Bool <- ##aluControl`"NextAddrUnit_isJump" ;
+      LetE NextPcUnit_isBranch : Bool <- ##aluControl`"NextPcUnit_isBranch" ;
+      LetE NextPcUnit_isJump   : Bool <- ##aluControl`"NextPcUnit_isJump" ;
 
       LetE AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr : Bool <- ##aluControl`"Alu_usePccMetadataNotCs1" ;
       LetE AddCapBSz_baseExp_isPccExpNotCs1Exp : Bool <- ##aluControl`"Alu_usePccMetadataNotCs1" ;
@@ -1447,10 +1446,10 @@ Section Alu.
       LETE StoreUnitOut : Bool <- StoreUnit cs1Tag cs1ECap AddrBoundsCheckOut ;
 
       LetE ComparatorGeneral_cond : Bool <- ##ComparatorGeneralOut`"cond" ;
-      LETE NextAddrUnitOut : Addr <-
-        NextAddrUnit AdderBeforeBoundsCheckOut AdderToOutputOut
+      LETE NextPcUnitOut : Addr <-
+        NextPcUnit AdderBeforeBoundsCheckOut AdderToOutputOut
                      ComparatorGeneral_cond
-                     NextAddrUnit_isBranch NextAddrUnit_isJump ;
+                     NextPcUnit_isBranch NextPcUnit_isJump ;
 
       (* =========================================================================
          WRITEBACK NETWORKS (WbControl defined via AluControl)
@@ -1461,7 +1460,7 @@ Section Alu.
       LetE NewPcc_ecap : ECap <-
         ITE (##aluControl`"NewPcc_ecap_isCjalrUnitEcapNotPccEcap")
             (##CjalrUnitOut`"ecap") (##pcc`"ecap") ;
-      LetE NewPcc_addr : Addr <- #NextAddrUnitOut ;
+      LetE NewPcc_addr : Addr <- #NextPcUnitOut ;
 
       LetE NewSpecial_tag : Bool <- #ScrSanitizerOut ;
 
