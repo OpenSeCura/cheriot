@@ -58,7 +58,7 @@ Branch
       g) ComparatorTopRep (checking representable upper limit
                            AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       h) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
-      i) AddrBoundsCheck (validates top > addr >= base representability PC tag)
+      i) AddrBoundsCheck (ands the two comparator outputs correctly)
 
 Cjal
 * CJAL cd, jimm20
@@ -73,7 +73,7 @@ Cjal
       f) ComparatorTopRep (checking representable upper limit
                            AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       g) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
-      h) AddrBoundsCheck (validates top > addr >= base representability PC tag)
+      h) AddrBoundsCheck (ands the two comparator outputs correctly)
 
 Aui
 * AUICGP cd, uimm20_11
@@ -88,7 +88,7 @@ Aui
       e) ComparatorTopRep (checking representable upper limit
                            AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       f) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= base)
-      g) AddrBoundsCheck (validates top > addr >= base representability tag)
+      g) AddrBoundsCheck (ands the two comparator outputs correctly)
 
 CIncAddr
 * CIncAddr cd, cs1, rs2
@@ -101,7 +101,7 @@ CIncAddr
       e) ComparatorTopRep (checking representable upper limit
                            AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       f) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= cs1.base)
-      g) AddrBoundsCheck (validates top > addr >= base representability tag)
+      g) AddrBoundsCheck (ands the two comparator outputs correctly)
 
 CSetAddr
 * CSetAddr cd, cs1, rs2
@@ -111,7 +111,7 @@ CSetAddr
       c) AdderBeforeRepCheck (computing representable upper limit address cs1.base + Shifter)
       d) ComparatorTopRep (checking representable upper limit cs2.addr <= AdderBeforeRepCheck)
       e) ComparatorBase (checking representable lower limit cs2.addr >= cs1.base)
-      f) AddrBoundsCheck (validates top > addr >= base representability tag)
+      f) AddrBoundsCheck (ands the two comparator outputs correctly)
 
 Cjalr
 * CJALR cd, cs1, simm12
@@ -137,10 +137,11 @@ CSetBounds
 * CSetBoundsRoundDown cd, cs1, rs2
 * CSetBoundsImm cd, cs1, zimm12
     Functional Units:
-      a) Bounds (computing compressed bounds Bounds.base, Bounds.top, Bounds.E)
-      b) ComparatorTopRep (verifying requested top < cs1.top)
-      c) ComparatorBase (verifying requested base >= cs1.base)
-      d) AddrBoundsCheck (validates top > addr >= base bounds check)
+      a) AdderBeforeBoundsCheck (computing requested top address cs1.addr + rs2 / zimm12)
+      b) Bounds (computing compressed bounds Bounds.base, Bounds.top, Bounds.E)
+      c) ComparatorTopRep (verifying requested top AdderBeforeBoundsCheck <= cs1.top)
+      d) ComparatorBase (verifying requested base >= cs1.base)
+      e) AddrBoundsCheck (ands the two comparator outputs correctly)
 
 Seal
 * CSeal cd, cs1, cs2
@@ -148,7 +149,7 @@ Seal
       a) SealerUnsealer (computing sealed capability metadata)
       b) ComparatorTopRep (checking top cs1.addr/cs1.otype < cs2.top)
       c) ComparatorBase (checking base cs1.addr/cs1.otype >= cs2.base)
-      d) AddrBoundsCheck (validates top > addr >= base sealing check)
+      d) AddrBoundsCheck (ands the two comparator outputs correctly)
 
 Unseal
 * CUnseal cd, cs1, cs2
@@ -156,7 +157,7 @@ Unseal
       a) SealerUnsealer (computing unsealed capability metadata)
       b) ComparatorTopRep (checking top cs1.addr/cs1.otype < cs2.top)
       c) ComparatorBase (checking base cs1.addr/cs1.otype >= cs2.base)
-      d) AddrBoundsCheck (validates top > addr >= base unsealing check)
+      d) AddrBoundsCheck (ands the two comparator outputs correctly)
 
 Load
 * LB rd, simm12(cs1)
@@ -170,7 +171,7 @@ Load
       a) AdderBeforeBoundsCheck (memory address cs1.addr + simm12)
       b) ComparatorTopRep (checking top AdderBeforeBoundsCheck < cs1.top)
       c) ComparatorBase (checking base AdderBeforeBoundsCheck >= cs1.base)
-      d) AddrBoundsCheck (validates top > addr >= base load bounds check)
+      d) AddrBoundsCheck (ands the two comparator outputs correctly)
       e) LoadUnit (outputs exception and LoadPostProcess LG/LM etc)
 
 Store
@@ -183,7 +184,7 @@ Store
       a) AdderBeforeBoundsCheck (memory address cs1.addr + simm12)
       b) ComparatorTopRep (checking top AdderBeforeBoundsCheck < cs1.top)
       c) ComparatorBase (checking base AdderBeforeBoundsCheck >= cs1.base)
-      d) AddrBoundsCheck (validates top > addr >= base store bounds check)
+      d) AddrBoundsCheck (ands the two comparator outputs correctly)
       e) StoreUnit (outputs exception)
 
 AddSub
@@ -355,11 +356,13 @@ Mret
 2. FUNCTIONAL UNIT/RESOURCE MAPPING
 -------------------------------------------------------------------------------
 AdderBeforeBoundsCheck:
-  - ADD : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, Cjalr, Load, Store
+  - ADD : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetBounds, Cjalr, Load, Store
   base: pcc.addr (Branch, Cjal, AuiPcc),
-        cs1.addr (AuiCgp, CIncAddr, CSetAddr, Cjalr, Load, Store)
+        cs1.addr (AuiCgp, CIncAddr, CSetBounds, Cjalr, Load, Store)
   offset: bimm12 (Branch), jimm20 (Cjal), uimm20_11 (AuiPcc, AuiCgp),
-        cs2.addr (CIncAddr & !isImm), simm12 (Cjalr, Load, Store, CIncAddr & isImm)
+        cs2.addr (CIncAddr & !isImm, CSetBounds & !isImm),
+        zimm12 (CSetBounds & isImm),
+        simm12 (Cjalr, Load, Store, CIncAddr & isImm)
 
 AdderToOutput:
   - ADD : Branch, Cjal, Cjalr, AddSub (when ADD/ADDI)
@@ -435,26 +438,26 @@ AdderBeforeRepCheck:
   shifter: Shifter (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
 
 ComparatorTopRep: (checking against top or representable limit)
-  - LTEUnsigned : CTestSubset
-  - LTUnsigned  : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal
+  - LTEUnsigned : CTestSubset, CSetBounds
+  - LTUnsigned  : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, Load, Store, Seal, Unseal
   Outputs: lt, eq
-  addr: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store),
-        cs2.addr (Seal), cs1.otype (Unseal), cs1.top (CTestSubset)
+  addr: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetBounds, Load, Store),
+        cs2.addr (Seal, CSetAddr), cs1.otype (Unseal), cs1.top (CTestSubset)
   topRep: AdderBeforeRepCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr),
         cs1.top (CSetBounds, Load, Store), cs2.top (Seal, Unseal, CTestSubset)
 
 ComparatorBase: (checking against base)
   - GTEUnsigned : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Seal, Unseal, Load, Store,
                   CTestSubset
-  addr: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, Load, Store),
-        cs2.addr (Seal), cs1.otype (Unseal), cs1.addr (CSetBounds), cs1.base (CTestSubset)
+  addr: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, Load, Store),
+        cs2.addr (Seal, CSetAddr), cs1.otype (Unseal), cs1.addr (CSetBounds), cs1.base (CTestSubset)
   base: pcc.base (Branch, Cjal, AuiPcc),
         cs1.base (AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store),
         cs2.base (Seal, Unseal, CTestSubset)
 
 AddrBoundsCheck: Specialized capability address bounds and representability check unit.
   - CheckInBounds : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal
-                    (validates top > addr >= base)
+                    (ands the two comparator outputs correctly)
   tag: cs1.tag (AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal),
         pcc.tag (Branch, Cjal, AuiPcc)
   topLt: ComparatorTopRep.lt
@@ -508,7 +511,8 @@ BoundsExact: Specialized tag calculation unit for CSetBounds.
 NewPcc.tag: AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
 NewPcc.ecap: CjalrUnit.ecap (Cjalr), pcc.ecap (others)
 NewPcc.addr: AdderBeforeBoundsCheck (Branch taken, Cjal, Cjalr),
-             AdderToOutput (Branch not taken, others)
+             AdderToOutput (Branch not taken, others),
+             ComparatorGeneral (Branch condition selector)
 NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
 
 NewSpecial.tag: ScrSanitizer (Scr)
@@ -558,7 +562,7 @@ Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
 (* TODO:
- - Optimize Bounds Checks
+ - Fix routing for branch
  - Fence.I, WFI instructions
  - Exceptions, ECall, EBreak
  - CSetHigh and CGetHigh are wrong - we need caps encoder, decoder
@@ -579,8 +583,11 @@ Definition AluControl := STRUCT_TYPE {
   "AdderBeforeBoundsCheck_offset_jimm20" :: Bool ;
   "AdderBeforeBoundsCheck_offset_uimm20_11" :: Bool ;
   "AdderBeforeBoundsCheck_offset_cs2Addr" :: Bool ;
+  "AdderBeforeBoundsCheck_offset_zimm12" :: Bool ;
   "AdderBeforeBoundsCheck_offset_simm12" :: Bool ; (* default option *)
-  "AdderToOutput_base_pccAddr_NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput" :: Bool ;
+  "AdderToOutput_base_pccAddr" :: Bool ;
+  "NewPcc_addr_isBranch" :: Bool ;
+  "NewPcc_addr_isUnconditionalJump" :: Bool ;
   "AdderToOutput_base_cs1Addr" :: Bool ; (* default option *)
   "AdderToOutput_base_cs1Top" :: Bool ;
   "AdderToOutput_offset_const2" :: Bool ;
@@ -673,12 +680,17 @@ Section DecodeInstGroup.
       "AdderBeforeBoundsCheck_offset_jimm20" ::= ##group`"Cjal" ;
       "AdderBeforeBoundsCheck_offset_uimm20_11" ::= Or [ ##group`"AuiPcc"; ##group`"AuiCgp" ] ;
       "AdderBeforeBoundsCheck_offset_cs2Addr" ::=
-        And [ ##group`"CIncAddr"; Not ##group`"isImm" ] ;
-       "AdderBeforeBoundsCheck_offset_simm12" ::=
+        Or [ And [ ##group`"CIncAddr"; Not ##group`"isImm" ];
+             And [ ##group`"CSetBounds"; Not ##group`"isImm" ] ] ;
+      "AdderBeforeBoundsCheck_offset_zimm12" ::=
+        And [ ##group`"CSetBounds"; ##group`"isImm" ] ;
+      "AdderBeforeBoundsCheck_offset_simm12" ::=
         Or [ ##group`"Cjalr"; ##group`"Load"; ##group`"Store";
              And [ ##group`"CIncAddr"; ##group`"isImm" ] ] ;
-      "AdderToOutput_base_pccAddr_NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput" ::=
+      "AdderToOutput_base_pccAddr" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Cjalr" ] ;
+      "NewPcc_addr_isBranch" ::= ##group`"Branch" ;
+      "NewPcc_addr_isUnconditionalJump" ::= Or [ ##group`"Cjal"; ##group`"Cjalr" ] ;
       "AdderToOutput_base_cs1Addr" ::= Or [ ##group`"AddSub"; ##group`"CSub" ] ;
       "AdderToOutput_base_cs1Top" ::= ##group`"CGetLen" ;
       "AdderToOutput_offset_const2" ::=
@@ -716,21 +728,21 @@ Section DecodeInstGroup.
       "Shifter_isRight" ::= ##group`"Shift_isRight" ;
       "ComparatorTopRep_addr_AdderBeforeBoundsCheck" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
-             ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds"; ##group`"Load";
+             ##group`"CIncAddr"; ##group`"CSetBounds"; ##group`"Load";
              ##group`"Store" ] ;
       "ComparatorTopRep_addr_cs1Addr" ::= ConstTBool false ;
-      "ComparatorTopRep_addr_cs2Addr" ::= ##group`"Seal" ;
+      "ComparatorTopRep_addr_cs2Addr" ::= Or [ ##group`"Seal"; ##group`"CSetAddr" ] ;
       "ComparatorTopRep_addr_cs1OType" ::= ##group`"Unseal" ;
       "ComparatorTopRep_addr_cs1Top" ::= ##group`"CTestSubset" ;
       "ComparatorTopRep_topRep_cs1Top" ::=
         Or [ ##group`"CSetBounds"; ##group`"Load"; ##group`"Store" ] ;
       "ComparatorTopRep_topRep_cs2Top_ComparatorBase_base_cs2Base" ::=
         Or [ ##group`"CTestSubset"; ##group`"Seal"; ##group`"Unseal" ] ;
-      "ComparatorTopRep_checkLte" ::= ##group`"CTestSubset" ;
+      "ComparatorTopRep_checkLte" ::= Or [ ##group`"CTestSubset"; ##group`"CSetBounds" ] ;
       "ComparatorBase_addr_AdderBeforeBoundsCheck" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
-             ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"Load"; ##group`"Store" ] ;
-      "ComparatorBase_addr_cs2Addr" ::= ##group`"Seal" ;
+             ##group`"CIncAddr"; ##group`"Load"; ##group`"Store" ] ;
+      "ComparatorBase_addr_cs2Addr" ::= Or [ ##group`"Seal"; ##group`"CSetAddr" ] ;
       "ComparatorBase_addr_cs1Addr" ::= ##group`"CSetBounds" ;
       "ComparatorBase_addr_cs1OType" ::= ##group`"Unseal" ;
       "ComparatorBase_addr_cs1Base" ::= ##group`"CTestSubset" ;
@@ -1261,9 +1273,7 @@ Section Alu.
         ##aluControl`"Reg_tag_ecap_addr_SealerUnsealer" ;
 
       LetE AdderToOutput_base_pccAddr : Bool <-
-        ##aluControl`"AdderToOutput_base_pccAddr_NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput" ;
-      LetE NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput : Bool <-
-        ##aluControl`"AdderToOutput_base_pccAddr_NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput" ;
+        ##aluControl`"AdderToOutput_base_pccAddr" ;
 
       LetE AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr : Bool <- ##aluControl`"Alu_usePccMetadataNotCs1" ;
       LetE AddCapBSz_baseExp_isPccExpNotCs1Exp : Bool <- ##aluControl`"Alu_usePccMetadataNotCs1" ;
@@ -1278,7 +1288,8 @@ Section Alu.
             (##aluControl`"AdderBeforeBoundsCheck_offset_bimm12", #bimm12) ;
             (##aluControl`"AdderBeforeBoundsCheck_offset_jimm20", #jimm20) ;
             (##aluControl`"AdderBeforeBoundsCheck_offset_uimm20_11", #uimm20_11) ;
-            (##aluControl`"AdderBeforeBoundsCheck_offset_cs2Addr", #cs2Addr) ]
+            (##aluControl`"AdderBeforeBoundsCheck_offset_cs2Addr", #cs2Addr) ;
+            (##aluControl`"AdderBeforeBoundsCheck_offset_zimm12", #zimm12) ]
           #simm12 ;
       LETE AdderBeforeBoundsCheckOut : Bit Xlen <-
         AdderBeforeBoundsCheck AdderBeforeBoundsCheck_base AdderBeforeBoundsCheck_offset ;
@@ -1423,6 +1434,10 @@ Section Alu.
       LetE NewPcc_ecap : ECap <-
         ITE (##aluControl`"NewPcc_ecap_isCjalrUnitEcapNotPccEcap")
             (##CjalrUnitOut`"ecap") (##pcc`"ecap") ;
+      LetE NewPcc_addr_isBranchTaken : Bool <-
+        And [ ##aluControl`"NewPcc_addr_isBranch" ; ##ComparatorGeneralOut`"lt" ] ;
+      LetE NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput : Bool <-
+        Or [ #NewPcc_addr_isBranchTaken ; ##aluControl`"NewPcc_addr_isUnconditionalJump" ] ;
       LetE NewPcc_addr : Addr <-
         ITE (#NewPcc_addr_isAdderBeforeBoundsCheckNotAdderToOutput)
             #AdderBeforeBoundsCheckOut #AdderToOutputOut ;
