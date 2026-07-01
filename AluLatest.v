@@ -573,12 +573,12 @@ Local Open Scope string_scope.
 
 (* TODO:
  - Fence.I instructions
- - Exceptions, ECall, EBreak
- - CSetHigh and CGetHigh are wrong - we need caps encoder, decoder
  - Create a generic MultiCycleOp as the output for Alu
    + MemOp = (LoadOp | StoreOp) * Size
      * LoadOp = IsSigned * isLM * isLG
    + Future: Mul, Div, Rem
+ - Exceptions, ECall, EBreak
+ - CSetHigh and CGetHigh are wrong - we need caps encoder, decoder
  *)
 
 Definition AluControl := STRUCT_TYPE {
