@@ -426,6 +426,18 @@ Definition CapEx_PermitStoreViolation      := 0x13.
 Definition CapEx_PermitStoreCapViolation   := 0x15.
 Definition CapEx_AccessSystemRegsViolation := 0x18.
 
+Definition FetchException := STRUCT_TYPE {
+  "tag"    :: Bool ;
+  "seal"   :: Bool ;
+  "perm"   :: Bool ;
+  "bounds" :: Bool
+}.
+
+Definition DecodeException := STRUCT_TYPE {
+  "illegal" :: Bool ;
+  "asr"     :: Bool
+}.
+
 (* Explicit mtval struct *)
 Definition CheriMtval := STRUCT_TYPE {
   "S"          :: Bool ;

@@ -1225,12 +1225,12 @@ Section Alu.
     @RetE _ Bool (And [ #tag; #keepTag ]).
 
   Definition MemException (isStore : ty Bool)
-                           (cs1Tag : ty Bool)
-                           (ecap : ty ECap)
-                           (cs1RegIdx : ty (Bit RegIdxSz))
-                           (inBounds : ty Bool)
-                           (addr : ty Addr)
-                           (memSize : ty (Bit LgLgNumBytesFullCapSz))
+                          (cs1Tag : ty Bool)
+                          (ecap : ty ECap)
+                          (cs1Idx : ty (Bit RegIdxSz))
+                          (inBounds : ty Bool)
+                          (addr : ty Addr)
+                          (memSize : ty (Bit LgLgNumBytesFullCapSz))
   : LetExpr ty (Option ExceptionInfo) :=
     LetE cs1Perms  : CapPerms       <- ##ecap`"perms" ;
     LetE cs1Otype  : Bit CapOTypeSz <- ##ecap`"oType" ;
@@ -1254,31 +1254,39 @@ Section Alu.
     (* 3. Strict Priority Chain returning Option ExceptionInfo directly *)
     RetE (
       ITE #tagExc
-        (mkSome (mkExceptionInfo $EXC_CHERI (mkCheriMtval (ConstBool false) #cs1RegIdx $CapEx_TagViolation)))
+        (mkSome (mkExceptionInfo $EXC_CHERI (mkCheriMtval (ConstBool false) #cs1Idx $CapEx_TagViolation)))
         (ITE #sealExc
-          (mkSome (mkExceptionInfo $EXC_CHERI (mkCheriMtval (ConstBool false) #cs1RegIdx $CapEx_SealViolation)))
+          (mkSome (mkExceptionInfo $EXC_CHERI (mkCheriMtval (ConstBool false) #cs1Idx $CapEx_SealViolation)))
           (ITE #permExc
-            (mkSome (mkExceptionInfo $EXC_CHERI (mkCheriMtval (ConstBool false) #cs1RegIdx #permCause)))
+            (mkSome (mkExceptionInfo $EXC_CHERI (mkCheriMtval (ConstBool false) #cs1Idx #permCause)))
             (ITE #storeCapExc
-              (mkSome (mkExceptionInfo $EXC_CHERI (mkCheriMtval (ConstBool false) #cs1RegIdx $CapEx_PermitStoreCapViolation)))
+              (mkSome (mkExceptionInfo $EXC_CHERI (mkCheriMtval (ConstBool false) #cs1Idx $CapEx_PermitStoreCapViolation)))
               (ITE #boundsExc
-                (mkSome (mkExceptionInfo $EXC_CHERI (mkCheriMtval (ConstBool false) #cs1RegIdx $CapEx_BoundsViolation)))
+                (mkSome (mkExceptionInfo $EXC_CHERI (mkCheriMtval (ConstBool false) #cs1Idx $CapEx_BoundsViolation)))
                 (ITE #alignExc
-                  (mkSome (mkExceptionInfo #alignMcause (mkCheriMtval (ConstBool false) #cs1RegIdx $0)))
+                  (mkSome (mkExceptionInfo #alignMcause (mkCheriMtval (ConstBool false) #cs1Idx $0)))
                   (mkNone ty))))))
     ).
 
-  Definition Exception (fetchTag fetchSeal fetchExecPerm fetchBounds : ty Bool)
-                        (illegalInst asrViolation ecall ebreak : ty Bool)
-                        (scrIdx : ty (Bit RegIdxSz))
-                        (isLoad isStore : ty Bool)
-                        (cs1Tag : ty Bool)
-                        (cs1ECap : ty ECap)
-                        (cs1RegIdx : ty (Bit RegIdxSz))
-                        (inBounds : ty Bool)
-                        (addr : ty Addr)
-                        (memSize : ty (Bit LgLgNumBytesFullCapSz))
+  Definition Exception (fetchExc : ty FetchException)
+                       (decodeExc : ty DecodeException)
+                       (scrIdx : ty (Bit RegIdxSz))
+                       (cs1RegIdx : ty (Bit RegIdxSz))
+                       (memSize : ty (Bit LgLgNumBytesFullCapSz))
+                       (ecall ebreak : ty Bool)
+                       (isLoad isStore : ty Bool)
+                       (cs1Tag : ty Bool)
+                       (cs1ECap : ty ECap)
+                       (inBounds : ty Bool)
+                       (addr : ty Addr)
   : LetExpr ty (Option ExceptionInfo) :=
+    LetE fetchTag      : Bool <- ##fetchExc`"tag" ;
+    LetE fetchSeal     : Bool <- ##fetchExc`"seal" ;
+    LetE fetchExecPerm : Bool <- ##fetchExc`"perm" ;
+    LetE fetchBounds   : Bool <- ##fetchExc`"bounds" ;
+
+    LetE illegalInst   : Bool <- ##decodeExc`"illegal" ;
+    LetE asrViolation  : Bool <- ##decodeExc`"asr" ;
     LETE memExcOut : Option ExceptionInfo <-
       MemException isStore cs1Tag cs1ECap cs1RegIdx inBounds addr memSize ;
 
