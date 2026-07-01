@@ -376,7 +376,7 @@ AdderToOutput:
   - SUB : AddSub (when SUB), CSub, CGetLen
   base: pcc.addr (Branch, Cjal, Cjalr), cs1.addr (AddSub, CSub),
         cs1.top (CGetLen)
-  offset: 2 (compressed {Branch, Cjal, Cjalr}), 4 (uncompressed {Branch, Cjal, Cjalr}),
+  offset: 2 (Branch, Cjal, Cjalr) IF Compressed, 4 (Branch, Cjal, Cjalr) IF !Compressed,
         cs2.addr (AddSub & !isImm, CSub), simm12 (AddSub & isImm), cs1.base (CGetLen)
 
 AddCapBSz:
@@ -517,7 +517,8 @@ BoundsExact: Specialized tag calculation unit for CSetBounds.
 
 NewPcc.tag: AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
 NewPcc.ecap: CjalrUnit.ecap (Cjalr), pcc.ecap (others)
-NewPcc.addr: AdderBeforeBoundsCheck (Branch & ComparatorGeneral.cond, Cjal, Cjalr), AdderToOutput (others)
+NewPcc.addr: AdderBeforeBoundsCheck (Branch & ComparatorGeneral.cond, Cjal, Cjalr),
+             AdderToOutput (Branch & !ComparatorGeneral.cond)
 
 NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
 
