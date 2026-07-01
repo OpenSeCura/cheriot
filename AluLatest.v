@@ -59,6 +59,7 @@ Branch
                            AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       h) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
       i) AddrBoundsCheck (ands the two comparator outputs correctly)
+      j) NextAddrUnit (selecting next PC address targetAddr / seqAddr based on branch condition)
 
 Cjal
 * CJAL cd, jimm20
@@ -74,6 +75,7 @@ Cjal
                            AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       g) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
       h) AddrBoundsCheck (ands the two comparator outputs correctly)
+      i) NextAddrUnit (selecting next PC address targetAddr)
 
 Aui
 * AUICGP cd, uimm20_11
@@ -123,6 +125,7 @@ Cjalr
       a) AdderBeforeBoundsCheck (computing jump target address cs1.addr + simm12)
       b) AdderToOutput (computing return link address PC + 2 / PC + 4)
       c) CjalrUnit (sentry legality / unsealing check unit)
+      d) NextAddrUnit (selecting next PC address targetAddr)
 
 CTestSubset
 * CTestSubset rd, cs1, cs2
