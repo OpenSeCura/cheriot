@@ -49,6 +49,7 @@ Section DecodeUncompressed.
     LetE rs2       : Bit 5  <- #inst`[24:20] ;
     LetE funct7    : Bit 7  <- #inst`[31:25] ;
     LetE csrAddr   : Bit 12 <- #inst`[31:20] ;
+    LetE fm        : Bit 4  <- #inst`[31:28] ;
 
     LetE cs1Real : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal #rs1 ;
     LetE cs2Real : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal #rs2 ;
@@ -165,12 +166,18 @@ Section DecodeUncompressed.
     LetE isCIncAddr  : Bool <- Or [ #isCIncAddrReg; #isCIncAddrImm ] ;
     LetE isCSetBounds: Bool <- Or [ #isCSetBoundsReg; #isCSetBoundsExact; #isCSetBoundsRoundDown; #isCSetBoundsImm ] ;
 
+    LetE isFenceOp: Bool <- Eq #opcode $(Z.shiftr 0x0f 2) ;
+    LetE isFenceI      : Bool <- And [ #isFenceOp; Eq #funct3 $1; isZero #rs1; isZero #rd; isZero #csrAddr ] ;
+    LetE isFenceNormal : Bool <- And [ #isFenceOp; isZero #funct3; isZero #rs1; isZero #rd; isZero #fm ] ;
+    LetE isFenceTSO    : Bool <- And [ #isFenceOp; isZero #funct3; isZero #rs1; isZero #rd; Eq #fm $8 ] ;
+    LetE isFence       : Bool <- Or [ #isFenceI; #isFenceNormal; #isFenceTSO ] ;
+
     LetE isValidInst : Bool <- Or [
       #isBranch; #isCjal; #isAuiPcc; #isAuiCgp; #isCIncAddr; #isCSetAddr; #isCjalr; #isCTestSubset;
       #isCSetBounds; #isSeal; #isUnseal; #isLoad; #isStore; #isAddSub; #isCSub; #isCGetLen;
       #isSlt; #isCSetEqual; #isShift; #isLogical; #isCram; #isCrrl; #isCAndPerm; #isCsr; #isScr;
       #isLui; #isCGetPerm; #isCGetType; #isCGetBase; #isCGetTag; #isCGetAddr; #isCGetHigh;
-      #isCGetTop; #isCSetHigh; #isCClearTag; #isCMove; #isMret; #isECall; #isEBreak
+      #isCGetTop; #isCSetHigh; #isCClearTag; #isCMove; #isMret; #isECall; #isEBreak; #isFence
     ] ;
 
     LetE isIllegalInst : Bool <- Not #isValidInst ;
@@ -232,6 +239,7 @@ Section DecodeUncompressed.
       "ECall"                       ::= #isECall ;
       "EBreak"                      ::= #isEBreak ;
       "Mret"                        ::= #isMret ;
+      "Fence"                       ::= #isFence ;
       "ComparatorGeneral_checkLt"   ::= #checkLt ;
       "ComparatorGeneral_checkEq"   ::= #checkEq ;
       "ComparatorGeneral_invertRes" ::= #invertRes

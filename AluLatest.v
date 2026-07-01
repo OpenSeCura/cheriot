@@ -355,6 +355,13 @@ Mret
     Functional Units:
       a) None (direct register copy)
 
+Fence
+* FENCE
+* FENCE.I
+* FENCE.TSO
+    Functional Units:
+      a) None (direct register copy)
+
 -------------------------------------------------------------------------------
 2. FUNCTIONAL UNIT/RESOURCE MAPPING
 -------------------------------------------------------------------------------

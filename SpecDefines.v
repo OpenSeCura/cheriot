@@ -199,6 +199,7 @@ Definition InstGroup := STRUCT_TYPE {
   "ECall"                       :: Bool ;
   "EBreak"                      :: Bool ;
   "Mret"                        :: Bool ;
+  "Fence"                       :: Bool ;
   "ComparatorGeneral_checkLt"   :: Bool ; (* Should be set only for Branch and Slt *)
   "ComparatorGeneral_checkEq"   :: Bool ; (* Should be set only for Branch and CSetEqual *)
   "ComparatorGeneral_invertRes" :: Bool   (* Should be set only for Branch *)

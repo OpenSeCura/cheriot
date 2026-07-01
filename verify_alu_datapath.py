@@ -133,7 +133,7 @@ def verify_alu(file_path):
                         reachability[g]["units"].add(header)
 
     # Implicit handling
-    for implicit_grp in ["ECall", "EBreak", "Mret"]:
+    for implicit_grp in ["ECall", "EBreak", "Mret", "Fence"]:
         if implicit_grp in reachability:
             reachability[implicit_grp]["writebacks"].add("NewPcc (Implicit direct copy)")
 
