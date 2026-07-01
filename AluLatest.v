@@ -570,12 +570,8 @@ Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
 (* TODO:
- - Fence.I instructions
- - Create a generic MultiCycleOp as the output for Alu
-   + MemOp = (LoadOp | StoreOp) * Size
-     * LoadOp = IsSigned * isLM * isLG
-   + Future: Mul, Div, Rem
- - Exceptions, ECall, EBreak
+ - All DeferredOp
+ - Fix Exception handling in the comment block
  - CSetHigh and CGetHigh are wrong - we need caps encoder, decoder
  *)
 
