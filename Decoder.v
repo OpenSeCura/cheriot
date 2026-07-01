@@ -122,7 +122,7 @@ Section DecodeUncompressed.
 
     LetE isSysZero: Bool <- And [ #isSystem; isZero #funct3 ] ;
     LetE isMret   : Bool <- And [ #isSysZero; Eq #csrAddr $0x302 ] ;
-    LetE isECall  : Bool <- And [ #isSysZero; isZero #csrAddr ] ;
+    LetE isECall  : Bool <- And [ #isSysZero; Or [ isZero #csrAddr; Eq #csrAddr $0x105 ] ] ;
     LetE isEBreak : Bool <- And [ #isSysZero; Eq #csrAddr $1 ] ;
 
     (* CHERIoT Operations (Opcode 0x5B) *)
