@@ -36,17 +36,11 @@ def parse_alu_spec(file_path):
         if header.startswith("Immediate") or header.startswith("Miscellaneous") or header.startswith("-") or header.startswith("*") or ":" in header:
             continue
         
-        for line in lines:
-            if line.startswith("*"):
-                words = re.findall(r"\b[A-Za-z0-9_]+\b", line)
-                for w in words:
-                    if w in ["AUIPCC", "AuiPcc"]:
-                        section1_groups.add("AuiPcc")
-                    elif w in ["AUICGP", "AuiCgp"]:
-                        section1_groups.add("AuiCgp")
-        
-        if re.match(r"^[A-Z][A-Za-z0-9_]*$", header) and header not in ["Immediate", "Miscellaneous", "Aui"]:
-            section1_groups.add(header)
+        # Handle slash-separated headers like AuiCgp/AuiPcc
+        sub_headers = [h.strip() for h in header.split("/") if h.strip()]
+        for h in sub_headers:
+            if re.match(r"^[A-Z][A-Za-z0-9_]*$", h) and h not in ["Immediate", "Miscellaneous"]:
+                section1_groups.add(h)
 
     # -------------------------------------------------------------------------
     # Parse Section 2: Functional Units & Writeback MUXes
