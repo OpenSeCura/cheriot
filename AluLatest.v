@@ -500,7 +500,7 @@ ScrSanitizer: Check if last LSB bit is 0 for certain SCR writes
 
 LoadUnit: Specialized load operation modifier unit.
   - CalcLoadOp : Load
-  Outputs: LoadPostProcess
+  Outputs: DeferredOp
   tag: cs1.tag (Load)
   ecap: cs1.ecap (Load)
   inBounds: AddrBoundsCheck (Load)
@@ -565,7 +565,7 @@ Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, 
           CapSubset (CTestSubset), CapEq (CSetEqual)
 
 Exception: ExceptionUnit (all)
-LoadPostProcess: LoadUnit.LoadPostProcess (Load), 0 (others)
+DeferredOp: LoadUnit (Load), 0 (others)
 BranchTaken: ComparatorGeneral.cond
 *)
 
@@ -1323,7 +1323,7 @@ Section Alu.
     "NewSpecial" :: FullECapWithTag ;
     "Reg" :: FullECapWithTag ;
     "Exception" :: Option ExceptionInfo ;
-    "LoadPostProcess" :: Bit 3 ;
+    "DeferredOp" :: Option DeferredOp ;
     "NewInterruptStatus" :: Bool ;
     "Cjal" :: Bool ;
     "Cjalr" :: Bool ;
@@ -1626,7 +1626,7 @@ Section Alu.
                       ecall ebreak isLoad isStore
                       cs1Tag cs1ECap AddrBoundsCheckOut AdderBeforeBoundsCheckOut ;
 
-      LetE LoadPostProcessRes : Bit 3 <- #inst`[14:12] ;
+      LETE DeferredOpRes : Option DeferredOp <- RetE (mkNone ty) ;
 
       LetE NewPccVal : FullECapWithTag <-
         STRUCT { "tag" ::= #NewPcc_tag; "ecap" ::= #NewPcc_ecap;
@@ -1643,7 +1643,7 @@ Section Alu.
         "NewSpecial" ::= #NewSpecialVal ;
         "Reg" ::= #RegVal ;
         "Exception" ::= #ExceptionRes ;
-        "LoadPostProcess" ::= #LoadPostProcessRes ;
+        "DeferredOp" ::= #DeferredOpRes ;
         "NewInterruptStatus" ::= ##CjalrUnitOut`"interruptStatus" ;
         "Cjal" ::= ##aluControl`"Cjal" ;
         "Cjalr" ::= ##aluControl`"Cjalr" ;

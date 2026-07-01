@@ -58,7 +58,7 @@ def parse_alu_spec(file_path):
 
     wb_destinations = {"Reg.addr", "Reg.tag", "Reg.ecap", "NewPcc.tag", "NewPcc.ecap", "NewPcc.addr",
                        "NewSpecial.tag", "NewSpecial.ecap", "NewSpecial.addr", "Exception",
-                       "LoadPostProcess", "BranchTaken", "NewInterruptStatus"}
+                       "DeferredOp", "BranchTaken", "NewInterruptStatus"}
 
     unit_ports = {}
     unit_options = {}
