@@ -572,7 +572,7 @@ Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
 (* TODO:
- - Fence.I, WFI instructions
+ - Fence.I instructions
  - Exceptions, ECall, EBreak
  - CSetHigh and CGetHigh are wrong - we need caps encoder, decoder
  - Create a generic MultiCycleOp as the output for Alu
@@ -675,7 +675,10 @@ Definition AluControl := STRUCT_TYPE {
   "Reg_addr_BoundsCrrl" :: Bool ;
   "Reg_addr_CapSubset" :: Bool ;
   "Reg_addr_CapEq" :: Bool ;
-  "Exception_isLoadUnitNotStoreUnit" :: Bool }.
+  "Exception_isLoadUnitNotStoreUnit" :: Bool ;
+  "Cjal" :: Bool ;
+  "Cjalr" :: Bool ;
+  "Branch" :: Bool }.
 
 Section DecodeInstGroup.
   Variable ty : Kind -> Type.
@@ -817,7 +820,10 @@ Section DecodeInstGroup.
       "Reg_addr_BoundsCrrl" ::= ##group`"Crrl" ;
       "Reg_addr_CapSubset" ::= ##group`"CTestSubset" ;
       "Reg_addr_CapEq" ::= ##group`"CSetEqual" ;
-      "Exception_isLoadUnitNotStoreUnit" ::= ##group`"Load"
+      "Exception_isLoadUnitNotStoreUnit" ::= ##group`"Load" ;
+      "Cjal" ::= ##group`"Cjal" ;
+      "Cjalr" ::= ##group`"Cjalr" ;
+      "Branch" ::= ##group`"Branch"
     }).
 End DecodeInstGroup.
 
@@ -1234,6 +1240,9 @@ Section Alu.
     "Exception" :: Bool ;
     "LoadPostProcess" :: Bit 3 ;
     "NewInterruptStatus" :: Bool ;
+    "Cjal" :: Bool ;
+    "Cjalr" :: Bool ;
+    "Branch" :: Bool ;
     "BranchTaken" :: Bool
   }.
 
@@ -1542,6 +1551,9 @@ Section Alu.
         "Exception" ::= #ExceptionRes ;
         "LoadPostProcess" ::= #LoadPostProcessRes ;
         "NewInterruptStatus" ::= ##CjalrUnitOut`"interruptStatus" ;
+        "Cjal" ::= ##aluControl`"Cjal" ;
+        "Cjalr" ::= ##aluControl`"Cjalr" ;
+        "Branch" ::= ##aluControl`"Branch" ;
         "BranchTaken" ::= ##NextPcUnitOut`"branchTaken"
       }).
   End AluRouting.
