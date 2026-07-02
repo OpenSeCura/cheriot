@@ -530,9 +530,19 @@ ExceptionUnit: Top-level instruction exception priority evaluation unit.
   inBounds: AddrBoundsCheck (Load, Store), 0 (others)
   addr: AdderBeforeBoundsCheck (Load, Store), 0 (others)
 
+NextPcc: Next PCC address and change evaluation unit.
+  isMret: 1 (Mret), 0 (others)
+  isCjal: 1 (Cjal), 0 (others)
+  isCjalr: 1 (Cjalr), 0 (others)
+  isBranch: 1 (Branch), 0 (others)
+  isCond: ComparatorGeneral.cond (all)
+  cs2Addr: cs2.addr (all)
+  addrIn: AdderBeforeBoundsCheck (all)
+  Outputs: addr, NewPccAddr_change, NewPccEcap_change
+
 NewPcc.tag: cs2.tag (Mret), AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
 NewPcc.ecap: cs2.ecap (Mret), CjalrUnit.ecap (Cjalr), pcc.ecap (others)
-NewPcc.addr: cs2.addr (Mret), AdderBeforeBoundsCheck (Branch & ComparatorGeneral.cond, Cjal, Cjalr)
+NewPcc.addr: NextPcc.addr (all)
 
 NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
 
@@ -568,8 +578,8 @@ Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, 
 
 Exception: ExceptionUnit (all)
 DeferredOp: Deferred (all)
-NewPccEcap_change: Mret, Cjalr
-NewPccAddr_change: Mret, Branch & ComparatorGeneral.cond, Cjal, Cjalr
+NewPccEcap_change: NextPcc.NewPccEcap_change (all)
+NewPccAddr_change: NextPcc.NewPccAddr_change (all)
 *)
 
 From Stdlib Require Import String List ZArith Zmod.
@@ -692,6 +702,7 @@ Definition AluControl := STRUCT_TYPE {
   "EBreak" :: Bool ;
   "Load" :: Bool ;
   "Store" :: Bool ;
+  "Mret" :: Bool ;
   "Cjal" :: Bool ;
   "Cjalr" :: Bool ;
   "Branch" :: Bool ;
@@ -864,6 +875,7 @@ Section DecodeInstGroup.
       "EBreak" ::= ##group`"EBreak" ;
       "Load" ::= ##group`"Load" ;
       "Store" ::= ##group`"Store" ;
+      "Mret" ::= ##group`"Mret" ;
       "Cjal" ::= ##group`"Cjal" ;
       "Cjalr" ::= ##group`"Cjalr" ;
       "Branch" ::= ##group`"Branch" ;
@@ -1355,6 +1367,25 @@ Section Alu.
      2. ROUTING & DATAPATH MULTIPLEXING BASED ON AluControl
      =========================================================================== *)
 
+  Definition NextPccRes := STRUCT_TYPE {
+    "addr" :: Addr ;
+    "NewPccAddr_change" :: Bool ;
+    "NewPccEcap_change" :: Bool
+  }.
+
+  Definition NextPcc (isMret isCjal isCjalr isBranch isCond : ty Bool)
+                     (cs2Addr addrIn : ty Addr)
+  : LetExpr ty NextPccRes :=
+    LetE isTakenBranch : Bool <- And [ #isBranch ; #isCond ] ;
+    LetE addrChange : Bool <- Or [ #isMret ; #isCjal ; #isCjalr ; #isTakenBranch ] ;
+    LetE ecapChange : Bool <- Or [ #isMret ; #isCjalr ] ;
+    LetE pccAddrOut : Addr <- ITE (#isMret) #cs2Addr #addrIn ;
+    @RetE _ NextPccRes (STRUCT {
+      "addr" ::= #pccAddrOut ;
+      "NewPccAddr_change" ::= #addrChange ;
+      "NewPccEcap_change" ::= #ecapChange
+    }).
+
   Definition LoadStore (cs1Perms : ty CapPerms)
                        (memSize : ty (Bit LgLgNumBytesFullCapSz))
                        (isUnsigned isLoad isStore : ty Bool)
@@ -1625,9 +1656,14 @@ Section Alu.
 
       LETE ScrSanitizerOut : Bool <- ScrSanitizer cs1Tag cs1Addr inst ;
 
-      LetE NewPcc_addr_AdderBeforeBoundsCheck : Bool <-
-        Or [ ##aluControl`"Cjal" ; ##aluControl`"Cjalr" ;
-             And [ ##aluControl`"Branch"; ##ComparatorGeneralOut`"cond" ] ] ;
+      LetE isMret : Bool <- ##aluControl`"Mret" ;
+      LetE isCjal : Bool <- ##aluControl`"Cjal" ;
+      LetE isCjalr : Bool <- ##aluControl`"Cjalr" ;
+      LetE isBranch : Bool <- ##aluControl`"Branch" ;
+      LetE isCond : Bool <- ##ComparatorGeneralOut`"cond" ;
+
+      LETE NextPccOut : NextPccRes <-
+        NextPcc isMret isCjal isCjalr isBranch isCond cs2Addr AdderBeforeBoundsCheckOut ;
 
       LetE NewPcc_tag : Bool <-
         caseDefault (k := Bool) [
@@ -1642,15 +1678,11 @@ Section Alu.
             (##aluControl`"NewPcc_ecap_CjalrUnitEcap", ##CjalrUnitOut`"ecap") ]
           (##pcc`"ecap") ;
 
-      LetE NewPcc_addr : Addr <-
-        Or [ ITE0 (##aluControl`"NewPcc_addr_cs2Addr") #cs2Addr ;
-             ITE0 #NewPcc_addr_AdderBeforeBoundsCheck #AdderBeforeBoundsCheckOut ] ;
+      LetE NewPcc_addr : Addr <- ##NextPccOut`"addr" ;
 
-      LetE NewPccEcap_change : Bool <-
-        Or [ ##aluControl`"NewPcc_ecap_cs2Ecap" ; ##aluControl`"NewPcc_ecap_CjalrUnitEcap" ] ;
+      LetE NewPccEcap_change : Bool <- ##NextPccOut`"NewPccEcap_change" ;
 
-      LetE NewPccAddr_change : Bool <-
-        Or [ ##aluControl`"NewPcc_addr_cs2Addr" ; #NewPcc_addr_AdderBeforeBoundsCheck ] ;
+      LetE NewPccAddr_change : Bool <- ##NextPccOut`"NewPccAddr_change" ;
 
       LetE NewSpecial_tag : Bool <- #ScrSanitizerOut ;
 
