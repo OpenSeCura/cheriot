@@ -532,8 +532,7 @@ ExceptionUnit: Top-level instruction exception priority evaluation unit.
 
 NewPcc.tag: cs2.tag (Mret), AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
 NewPcc.ecap: cs2.ecap (Mret), CjalrUnit.ecap (Cjalr), pcc.ecap (others)
-NewPcc.addr: cs2.addr (Mret), AdderBeforeBoundsCheck (Branch & ComparatorGeneral.cond, Cjal, Cjalr),
-             AdderToOutput (Branch & !ComparatorGeneral.cond)
+NewPcc.addr: cs2.addr (Mret), AdderBeforeBoundsCheck (Branch & ComparatorGeneral.cond, Cjal, Cjalr)
 
 NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
 
@@ -569,7 +568,8 @@ Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, 
 
 Exception: ExceptionUnit (all)
 DeferredOp: Deferred (all)
-Taken: AdderBeforeBoundsCheck (Branch & ComparatorGeneral.cond, Cjal, Cjalr)
+NewPccEcap_change: Mret, Cjalr
+NewPccAddr_change: Mret, Branch & ComparatorGeneral.cond, Cjal, Cjalr
 *)
 
 From Stdlib Require Import String List ZArith Zmod.
@@ -585,8 +585,8 @@ Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
 (* TODO:
- - There are functional mistakes with Taken
- - Branch shouldn't be setting NewPcc.addr
+ - This is extremely ugly now; clean it up!!! (Branch, Cjal, Cjalr being part of the AluControl is jarring)
+ - Optimize common signals away in AluControl!
  - CSetHigh and CGetHigh are wrong - we need caps encoder, decoder
  *)
 
@@ -1404,14 +1404,12 @@ Section Alu.
     "Exception" :: Option ExceptionInfo ;
     "DeferredOp" :: Option DeferredOp ;
     "NewInterruptStatus" :: Bool ;
-    "Cjal" :: Bool ;
-    "Cjalr" :: Bool ;
-    "Branch" :: Bool ;
-    "Taken" :: Bool
+    "NewPccEcap_change" :: Bool ;
+    "NewPccAddr_change" :: Bool
   }.
 
   Section AluRouting.
-    Variable pcc cs1 cs2 : ty FullECapWithTag.
+    Variables (pcc cs1 cs2 : ty FullECapWithTag).
     Variable inst : ty Inst.
     Variable currInterruptStatus : ty Bool.
     Variable fetchExc : ty FetchException.
@@ -1628,10 +1626,8 @@ Section Alu.
       LETE ScrSanitizerOut : Bool <- ScrSanitizer cs1Tag cs1Addr inst ;
 
       LetE NewPcc_addr_AdderBeforeBoundsCheck : Bool <-
-          Or [ ##aluControl`"Cjal" ; ##aluControl`"Cjalr" ;
-               And [ ##aluControl`"Branch"; ##ComparatorGeneralOut`"cond" ] ];
-      LetE NewPcc_addr_AdderToOutput : Bool <-
-          And [ ##aluControl`"Branch" ; Not (##ComparatorGeneralOut`"cond") ] ;
+        Or [ ##aluControl`"Cjal" ; ##aluControl`"Cjalr" ;
+             And [ ##aluControl`"Branch"; ##ComparatorGeneralOut`"cond" ] ] ;
 
       LetE NewPcc_tag : Bool <-
         caseDefault (k := Bool) [
@@ -1648,8 +1644,13 @@ Section Alu.
 
       LetE NewPcc_addr : Addr <-
         Or [ ITE0 (##aluControl`"NewPcc_addr_cs2Addr") #cs2Addr ;
-             ITE0 #NewPcc_addr_AdderBeforeBoundsCheck #AdderBeforeBoundsCheckOut ;
-             ITE0 #NewPcc_addr_AdderToOutput #AdderToOutputOut ] ;
+             ITE0 #NewPcc_addr_AdderBeforeBoundsCheck #AdderBeforeBoundsCheckOut ] ;
+
+      LetE NewPccEcap_change : Bool <-
+        Or [ ##aluControl`"NewPcc_ecap_cs2Ecap" ; ##aluControl`"NewPcc_ecap_CjalrUnitEcap" ] ;
+
+      LetE NewPccAddr_change : Bool <-
+        Or [ ##aluControl`"NewPcc_addr_cs2Addr" ; #NewPcc_addr_AdderBeforeBoundsCheck ] ;
 
       LetE NewSpecial_tag : Bool <- #ScrSanitizerOut ;
 
@@ -1726,7 +1727,6 @@ Section Alu.
                  "addr" ::= #cs1Addr } ;
       LetE RegVal : FullECapWithTag <-
         STRUCT { "tag" ::= #Reg_tag; "ecap" ::= #Reg_ecap; "addr" ::= #Reg_addr } ;
-      LetE TakenRes : Bool <- #NewPcc_addr_AdderBeforeBoundsCheck ;
 
       @RetE _ AluOut (STRUCT {
         "NewPcc" ::= #NewPccVal ;
@@ -1735,10 +1735,8 @@ Section Alu.
         "Exception" ::= #ExceptionRes ;
         "DeferredOp" ::= #DeferredOpRes ;
         "NewInterruptStatus" ::= ##CjalrUnitOut`"interruptStatus" ;
-        "Cjal" ::= ##aluControl`"Cjal" ;
-        "Cjalr" ::= ##aluControl`"Cjalr" ;
-        "Branch" ::= ##aluControl`"Branch" ;
-        "Taken" ::= #TakenRes
+        "NewPccEcap_change" ::= #NewPccEcap_change ;
+        "NewPccAddr_change" ::= #NewPccAddr_change
       }).
   End AluRouting.
 End Alu.
