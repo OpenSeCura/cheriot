@@ -518,17 +518,17 @@ BoundsExact: Specialized tag calculation unit for CSetBounds.
 ExceptionUnit: Top-level instruction exception priority evaluation unit.
   fetchExc: fetchExc (all)
   decodeExc: decodeExc (all)
-  scrIdx: inst.rs2 (CSpecialRw)
-  cs1Idx: inst.rs1 (Load, Store)
-  memSize: inst.memSize (Load, Store)
+  scrIdx: inst.rs2 (all)
+  cs1Idx: inst.rs1 (all)
+  memSize: inst.memSize (all)
   ecall: 1 (ECall), 0 (others)
   ebreak: 1 (EBreak), 0 (others)
   isLoad: 1 (Load), 0 (others)
   isStore: 1 (Store), 0 (others)
-  cs1Tag: cs1.tag (Load, Store)
-  cs1ECap: cs1.ecap (Load, Store)
+  cs1Tag: cs1.tag (all)
+  cs1ECap: cs1.ecap (all)
   inBounds: AddrBoundsCheck (Load, Store), 0 (others)
-  addr: AdderBeforeBoundsCheck (Load, Store)
+  addr: AdderBeforeBoundsCheck (all)
 
 NextPcc: Next PCC address and change evaluation unit.
   isMret: 1 (Mret), 0 (others)
@@ -542,7 +542,7 @@ NextPcc: Next PCC address and change evaluation unit.
 
 NewPcc.tag: cs2.tag (Mret), AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
 NewPcc.ecap: cs2.ecap (Mret), CjalrUnit.ecap (Cjalr), pcc.ecap (others)
-NewPcc.addr: NextPcc.addr (all)
+NewPcc.addr: NextPcc.addr (Mret, Branch, Cjal, Cjalr)
 
 NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
 
