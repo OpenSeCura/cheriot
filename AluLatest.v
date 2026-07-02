@@ -375,11 +375,11 @@ AdderBeforeBoundsCheck:
         simm12 (Cjalr, Load, Store, CIncAddr & isImm)
 
 AdderToOutput:
-  - ADD : Branch, Cjal, Cjalr, AddSub (when ADD/ADDI)
+  - ADD : Cjal, Cjalr, AddSub (when ADD/ADDI)
   - SUB : AddSub (when SUB), CSub, CGetLen
-  base: pcc.addr (Branch, Cjal, Cjalr), cs1.addr (AddSub, CSub),
+  base: pcc.addr (Cjal, Cjalr), cs1.addr (AddSub, CSub),
         cs1.top (CGetLen)
-  offset: 2 (Branch, Cjal, Cjalr) IF Compressed, 4 (Branch, Cjal, Cjalr) IF !Compressed,
+  offset: 2 (Cjal, Cjalr) IF Compressed, 4 (Cjal, Cjalr) IF !Compressed,
         cs2.addr (AddSub & !isImm, CSub), simm12 (AddSub & isImm), cs1.base (CGetLen)
 
 AddCapBSz:
@@ -518,26 +518,26 @@ BoundsExact: Specialized tag calculation unit for CSetBounds.
 ExceptionUnit: Top-level instruction exception priority evaluation unit.
   fetchExc: fetchExc (all)
   decodeExc: decodeExc (all)
-  scrIdx: inst.rs2 (all)
-  cs1Idx: inst.rs1 (all)
-  memSize: inst.memSize (all)
+  scrIdx: inst.rs2 (CSpecialRw)
+  cs1Idx: inst.rs1 (Load, Store)
+  memSize: inst.memSize (Load, Store)
   ecall: 1 (ECall), 0 (others)
   ebreak: 1 (EBreak), 0 (others)
   isLoad: 1 (Load), 0 (others)
   isStore: 1 (Store), 0 (others)
-  cs1Tag: cs1.tag (all)
-  cs1ECap: cs1.ecap (all)
+  cs1Tag: cs1.tag (Load, Store)
+  cs1ECap: cs1.ecap (Load, Store)
   inBounds: AddrBoundsCheck (Load, Store), 0 (others)
-  addr: AdderBeforeBoundsCheck (Load, Store), 0 (others)
+  addr: AdderBeforeBoundsCheck (Load, Store)
 
 NextPcc: Next PCC address and change evaluation unit.
   isMret: 1 (Mret), 0 (others)
   isCjal: 1 (Cjal), 0 (others)
   isCjalr: 1 (Cjalr), 0 (others)
   isBranch: 1 (Branch), 0 (others)
-  isCond: ComparatorGeneral.cond (all)
-  cs2Addr: cs2.addr (all)
-  addrIn: AdderBeforeBoundsCheck (all)
+  isCond: ComparatorGeneral.cond (Branch)
+  cs2Addr: cs2.addr (Mret)
+  addrIn: AdderBeforeBoundsCheck (Branch, Cjal, Cjalr)
   Outputs: addr, NewPccAddr_change, NewPccEcap_change
 
 NewPcc.tag: cs2.tag (Mret), AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
