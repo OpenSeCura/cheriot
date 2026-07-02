@@ -498,8 +498,13 @@ ScrSanitizer: Check if last LSB bit is 0 for certain SCR writes
   addr: cs1.addr (Scr)
   inst: inst (Scr)
 
+BoundsExact: Specialized tag calculation unit for CSetBounds.
+  - CalcBoundsExactTag : CSetBounds
+  inBounds: AddrBoundsCheck (CSetBounds)
+  exact: Bounds.exact (CSetBounds)
+  isExact: Bounds_isExact (CSetBounds)
+
 Deferred: Specialized deferred operation builder unit.
-  Outputs: DeferredOp
   cs1Perms: cs1.perms (all)
   memSize: memSize (all)
   isUnsigned: inst[14] (all)
@@ -508,12 +513,6 @@ Deferred: Specialized deferred operation builder unit.
   isStore: 1 (Store), 0 (others)
   isFence: 1 (Fence), 0 (others)
   isFenceI: inst[12] (all)
-
-BoundsExact: Specialized tag calculation unit for CSetBounds.
-  - CalcBoundsExactTag : CSetBounds
-  inBounds: AddrBoundsCheck (CSetBounds)
-  exact: Bounds.exact (CSetBounds)
-  isExact: Bounds_isExact (CSetBounds)
 
 ExceptionUnit: Top-level instruction exception priority evaluation unit.
   fetchExc: fetchExc (all)
@@ -543,6 +542,11 @@ NextPcc: Next PCC address and change evaluation unit.
 NewPcc.tag: cs2.tag (Mret), AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
 NewPcc.ecap: cs2.ecap (Mret), CjalrUnit.ecap (Cjalr), pcc.ecap (others)
 NewPcc.addr: NextPcc.addr (Mret, Branch, Cjal, Cjalr)
+
+Exception: ExceptionUnit (all)
+DeferredOp: Deferred (all)
+NewPccEcap_change: NextPcc.NewPccEcap_change (all)
+NewPccAddr_change: NextPcc.NewPccAddr_change (all)
 
 NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
 
@@ -575,11 +579,6 @@ Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, 
           cs2.addr (CSetAddr, Csr, Scr), cs1.addr (CAndPerm, CClearTag, Seal, Unseal, CMove, CSetHigh),
           Bounds.base (CSetBounds), Bounds.cram (Cram), Bounds.crrl (Crrl),
           CapSubset (CTestSubset), CapEq (CSetEqual)
-
-Exception: ExceptionUnit (all)
-DeferredOp: Deferred (all)
-NewPccEcap_change: NextPcc.NewPccEcap_change (all)
-NewPccAddr_change: NextPcc.NewPccAddr_change (all)
 *)
 
 From Stdlib Require Import String List ZArith Zmod.
