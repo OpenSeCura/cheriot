@@ -585,6 +585,7 @@ Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
 (* TODO:
+ - There are functional mistakes with Taken
  - Branch shouldn't be setting NewPcc.addr
  - CSetHigh and CGetHigh are wrong - we need caps encoder, decoder
  *)
