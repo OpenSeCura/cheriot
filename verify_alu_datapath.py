@@ -58,7 +58,7 @@ def parse_alu_spec(file_path):
 
     wb_destinations = {"Reg.addr", "Reg.tag", "Reg.ecap", "NewPcc.tag", "NewPcc.ecap", "NewPcc.addr",
                        "NewSpecial.tag", "NewSpecial.ecap", "NewSpecial.addr", "Exception",
-                       "DeferredOp", "BranchTaken", "NewInterruptStatus"}
+                       "DeferredOp", "Taken", "NewInterruptStatus"}
 
     unit_ports = {}
     unit_options = {}
@@ -123,7 +123,7 @@ def parse_alu_spec(file_path):
                             unit_ports[header]["out"].append(("ComparatorGeneral.cond", cg_grps))
             elif full_rest.strip():
                 src_clean = full_rest.strip()
-                if header == "BranchTaken" and "ComparatorGeneral" in src_clean:
+                if header == "Taken" and ("AdderBeforeBoundsCheck" in src_clean or "ComparatorGeneral" in src_clean):
                     eff_grps = {"Branch"}
                     s2_groups_found.update(eff_grps)
                     unit_ports[header]["out"].append((src_clean, eff_grps))

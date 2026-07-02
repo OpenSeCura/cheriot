@@ -348,8 +348,7 @@ Definition FenceOp := STRUCT_TYPE {
 
 Definition DeferredOpType := [
   ("MemOp"%string, MemOp) ;
-  ("FenceOp"%string, FenceOp) ;
-  ("MretOp"%string, Bit 0)
+  ("FenceOp"%string, FenceOp)
 ].
 
 Definition DeferredOp := TaggedUnion DeferredOpType.
@@ -376,9 +375,6 @@ Section DeferredConstructors.
       "WW"       ::= #ww
     } ;
     RetE (UNION (DeferredOpType, "FenceOp" ::= #fenceVal)).
-
-  Definition mkMret : LetExpr ty (TaggedUnion DeferredOpType) :=
-    RetE (UNION (DeferredOpType, "MretOp" ::= ConstBit Zmod.zero)).
 End DeferredConstructors.
 
 (* ===========================================================================

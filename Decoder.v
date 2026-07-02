@@ -246,9 +246,10 @@ Section DecodeUncompressed.
     } ;
 
     LetE cs2SourceVal : TaggedUnion Cs2Source <-
-      ITE #isScr (mkCs2Scr #scrMappedIdx)
-          (ITE #isCsr (mkCs2Csr #csrMappedIdx)
-               (mkCs2Reg #cs2Real)) ;
+      ITE #isMret (mkCs2Scr $(getScrIdx "MePcc"%string))
+          (ITE #isScr (mkCs2Scr #scrMappedIdx)
+               (ITE #isCsr (mkCs2Csr #csrMappedIdx)
+                    (mkCs2Reg #cs2Real))) ;
 
     @RetE _ DecodeOut (STRUCT {
       "instGroup"    ::= #groupVal ;

@@ -498,7 +498,7 @@ ScrSanitizer: Check if last LSB bit is 0 for certain SCR writes
   addr: cs1.addr (Scr)
   inst: inst (Scr)
 
-DeferredUnit: Specialized deferred operation builder unit.
+Deferred: Specialized deferred operation builder unit.
   Outputs: DeferredOp
   cs1Perms: cs1.perms (all)
   memSize: memSize (all)
@@ -507,7 +507,6 @@ DeferredUnit: Specialized deferred operation builder unit.
   isLoad: 1 (Load), 0 (others)
   isStore: 1 (Store), 0 (others)
   isFence: 1 (Fence), 0 (others)
-  isMret: 1 (Mret), 0 (others)
   isFenceI: inst[12] (all)
 
 BoundsExact: Specialized tag calculation unit for CSetBounds.
@@ -531,9 +530,9 @@ ExceptionUnit: Top-level instruction exception priority evaluation unit.
   inBounds: AddrBoundsCheck (Load, Store), 0 (others)
   addr: AdderBeforeBoundsCheck (Load, Store), 0 (others)
 
-NewPcc.tag: AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
-NewPcc.ecap: CjalrUnit.ecap (Cjalr), pcc.ecap (others)
-NewPcc.addr: AdderBeforeBoundsCheck (Branch & ComparatorGeneral.cond, Cjal, Cjalr),
+NewPcc.tag: cs2.tag (Mret), AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
+NewPcc.ecap: cs2.ecap (Mret), CjalrUnit.ecap (Cjalr), pcc.ecap (others)
+NewPcc.addr: cs2.addr (Mret), AdderBeforeBoundsCheck (Branch & ComparatorGeneral.cond, Cjal, Cjalr),
              AdderToOutput (Branch & !ComparatorGeneral.cond)
 
 NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
@@ -569,8 +568,8 @@ Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, 
           CapSubset (CTestSubset), CapEq (CSetEqual)
 
 Exception: ExceptionUnit (all)
-DeferredOp: DeferredUnit (all)
-BranchTaken: ComparatorGeneral.cond
+DeferredOp: Deferred (all)
+Taken: AdderBeforeBoundsCheck (Branch & ComparatorGeneral.cond, Cjal, Cjalr)
 *)
 
 From Stdlib Require Import String List ZArith Zmod.
@@ -586,8 +585,7 @@ Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
 (* TODO:
- - MRET need not be deferred
- - Exceptions can also possibly be handled in terms of changing the PCC
+ - Branch shouldn't be setting NewPcc.addr
  - CSetHigh and CGetHigh are wrong - we need caps encoder, decoder
  *)
 
@@ -645,8 +643,14 @@ Definition AluControl := STRUCT_TYPE {
   "ComparatorBase_addr_cs1OType" :: Bool ;
   "ComparatorBase_addr_cs1Base" :: Bool ;
   "ComparatorBase_base_cs1Base" :: Bool ; (* default option *)
-  "NewPcc_tag_isAddrBoundsCheckNotCjalrUnitTag" :: Bool ;
-  "NewPcc_ecap_isCjalrUnitEcapNotPccEcap" :: Bool ;
+  "NewPcc_tag_cs2Tag" :: Bool ;
+  "NewPcc_tag_AddrBoundsCheck" :: Bool ;
+  "NewPcc_tag_CjalrUnitTag" :: Bool ;
+  "NewPcc_tag_pccTag" :: Bool ; (* default option *)
+  "NewPcc_ecap_cs2Ecap" :: Bool ;
+  "NewPcc_ecap_CjalrUnitEcap" :: Bool ;
+  "NewPcc_ecap_pccEcap" :: Bool ; (* default option *)
+  "NewPcc_addr_cs2Addr" :: Bool ;
   "Reg_tag_const0" :: Bool ; (* default option *)
   "Reg_tag_pccTag" :: Bool ;
   "Reg_tag_cs1Tag" :: Bool ;
@@ -690,8 +694,7 @@ Definition AluControl := STRUCT_TYPE {
   "Cjal" :: Bool ;
   "Cjalr" :: Bool ;
   "Branch" :: Bool ;
-  "Fence" :: Bool ;
-  "Mret" :: Bool }.
+  "Fence" :: Bool }.
 
 Section DecodeInstGroup.
   Variable ty : Kind -> Type.
@@ -772,8 +775,33 @@ Section DecodeInstGroup.
       "ComparatorBase_base_cs1Base" ::=
         Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds";
              ##group`"Load"; ##group`"Store" ] ;
-      "NewPcc_tag_isAddrBoundsCheckNotCjalrUnitTag" ::= Or [ ##group`"Branch"; ##group`"Cjal" ] ;
-      "NewPcc_ecap_isCjalrUnitEcapNotPccEcap" ::= ##group`"Cjalr" ;
+      "NewPcc_tag_cs2Tag" ::= ##group`"Mret" ;
+      "NewPcc_tag_AddrBoundsCheck" ::= Or [ ##group`"Branch"; ##group`"Cjal" ] ;
+      "NewPcc_tag_CjalrUnitTag" ::= ##group`"Cjalr" ;
+      "NewPcc_tag_pccTag" ::=
+        Or [ ##group`"Lui"; ##group`"AddSub"; ##group`"Slt"; ##group`"Shift";
+             ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
+             ##group`"CGetTag"; ##group`"CGetAddr"; ##group`"CGetHigh"; ##group`"CGetTop";
+             ##group`"CGetLen"; ##group`"Cram"; ##group`"Crrl"; ##group`"CSub";
+             ##group`"CSetEqual"; ##group`"CTestSubset"; ##group`"Csr"; ##group`"CSetHigh";
+             ##group`"CClearTag"; ##group`"Load"; ##group`"Store"; ##group`"AuiPcc";
+             ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds";
+             ##group`"Seal"; ##group`"Unseal"; ##group`"CAndPerm"; ##group`"CMove";
+             ##group`"Scr"; ##group`"ECall"; ##group`"EBreak"; ##group`"Fence" ] ;
+      "NewPcc_ecap_cs2Ecap" ::= ##group`"Mret" ;
+      "NewPcc_ecap_CjalrUnitEcap" ::= ##group`"Cjalr" ;
+      "NewPcc_ecap_pccEcap" ::=
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Lui"; ##group`"AddSub";
+             ##group`"Slt"; ##group`"Shift"; ##group`"Logical"; ##group`"CGetPerm";
+             ##group`"CGetType"; ##group`"CGetBase"; ##group`"CGetTag"; ##group`"CGetAddr";
+             ##group`"CGetHigh"; ##group`"CGetTop"; ##group`"CGetLen"; ##group`"Cram";
+             ##group`"Crrl"; ##group`"CSub"; ##group`"CSetEqual"; ##group`"CTestSubset";
+             ##group`"Csr"; ##group`"CSetHigh"; ##group`"CClearTag"; ##group`"Load";
+             ##group`"Store"; ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr";
+             ##group`"CSetAddr"; ##group`"CSetBounds"; ##group`"Seal"; ##group`"Unseal";
+             ##group`"CAndPerm"; ##group`"CMove"; ##group`"Scr"; ##group`"ECall";
+             ##group`"EBreak"; ##group`"Fence" ] ;
+      "NewPcc_addr_cs2Addr" ::= ##group`"Mret" ;
       "Reg_tag_const0" ::=
         Or [ ##group`"Lui"; ##group`"AddSub"; ##group`"Slt"; ##group`"Shift";
              ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
@@ -838,8 +866,7 @@ Section DecodeInstGroup.
       "Cjal" ::= ##group`"Cjal" ;
       "Cjalr" ::= ##group`"Cjalr" ;
       "Branch" ::= ##group`"Branch" ;
-      "Fence" ::= ##group`"Fence" ;
-      "Mret" ::= ##group`"Mret"
+      "Fence" ::= ##group`"Fence"
     }).
 End DecodeInstGroup.
 
@@ -1348,7 +1375,7 @@ Section Alu.
                       (memSize : ty (Bit LgLgNumBytesFullCapSz))
                       (isUnsigned isFenceI : ty Bool)
                       (zimm12 : ty (Bit Xlen))
-                      (isLoad isStore isFence isMret : ty Bool)
+                      (isLoad isStore isFence : ty Bool)
   : LetExpr ty (Option DeferredOp) :=
     LetE pred_r : Bool <- isNotZero (#zimm12`[5:5]) ;
     LetE pred_w : Bool <- isNotZero (#zimm12`[4:4]) ;
@@ -1366,8 +1393,7 @@ Section Alu.
       "WW"       ::= #ww
     } ;
     LETE memOpOpt : Option DeferredOp <- LoadStore cs1Perms memSize isUnsigned isLoad isStore ;
-    RetE (Or [ ITE0 #isMret (mkSome (UNION (DeferredOpType, "MretOp" ::= ConstBit Zmod.zero))) ;
-               ITE0 #isFence (mkSome (UNION (DeferredOpType, "FenceOp" ::= #fenceVal))) ;
+    RetE (Or [ ITE0 #isFence (mkSome (UNION (DeferredOpType, "FenceOp" ::= #fenceVal))) ;
                #memOpOpt ]).
 
   Definition AluOut := STRUCT_TYPE {
@@ -1380,7 +1406,7 @@ Section Alu.
     "Cjal" :: Bool ;
     "Cjalr" :: Bool ;
     "Branch" :: Bool ;
-    "BranchTaken" :: Bool
+    "Taken" :: Bool
   }.
 
   Section AluRouting.
@@ -1603,19 +1629,26 @@ Section Alu.
       LetE NewPcc_addr_AdderBeforeBoundsCheck : Bool <-
           Or [ ##aluControl`"Cjal" ; ##aluControl`"Cjalr" ;
                And [ ##aluControl`"Branch"; ##ComparatorGeneralOut`"cond" ] ];
+      LetE NewPcc_addr_AdderToOutput : Bool <-
+          And [ ##aluControl`"Branch" ; Not (##ComparatorGeneralOut`"cond") ] ;
 
-      (* =========================================================================
-         WRITEBACK NETWORKS (WbControl defined via AluControl)
-         ========================================================================= *)
       LetE NewPcc_tag : Bool <-
-        ITE (##aluControl`"NewPcc_tag_isAddrBoundsCheckNotCjalrUnitTag")
-            #AddrBoundsCheckOut (##CjalrUnitOut`"tag") ;
+        caseDefault (k := Bool) [
+            (##aluControl`"NewPcc_tag_cs2Tag", #cs2Tag) ;
+            (##aluControl`"NewPcc_tag_AddrBoundsCheck", #AddrBoundsCheckOut) ;
+            (##aluControl`"NewPcc_tag_CjalrUnitTag", ##CjalrUnitOut`"tag") ]
+          #pccTag ;
+
       LetE NewPcc_ecap : ECap <-
-        ITE (##aluControl`"NewPcc_ecap_isCjalrUnitEcapNotPccEcap")
-            (##CjalrUnitOut`"ecap") (##pcc`"ecap") ;
-      LetE NewPcc_addr : Addr <- ITE #NewPcc_addr_AdderBeforeBoundsCheck
-                                   #AdderBeforeBoundsCheckOut
-                                   #AdderToOutputOut ;
+        caseDefault (k := ECap) [
+            (##aluControl`"NewPcc_ecap_cs2Ecap", ##cs2`"ecap") ;
+            (##aluControl`"NewPcc_ecap_CjalrUnitEcap", ##CjalrUnitOut`"ecap") ]
+          (##pcc`"ecap") ;
+
+      LetE NewPcc_addr : Addr <-
+        Or [ ITE0 (##aluControl`"NewPcc_addr_cs2Addr") #cs2Addr ;
+             ITE0 #NewPcc_addr_AdderBeforeBoundsCheck #AdderBeforeBoundsCheckOut ;
+             ITE0 #NewPcc_addr_AdderToOutput #AdderToOutputOut ] ;
 
       LetE NewSpecial_tag : Bool <- #ScrSanitizerOut ;
 
@@ -1681,9 +1714,8 @@ Section Alu.
 
       LetE isUnsigned : Bool <- isNotZero (#inst_val`[14:14]) ;
       LetE isFence : Bool <- ##aluControl`"Fence" ;
-      LetE isMret : Bool <- ##aluControl`"Mret" ;
       LETE DeferredOpRes : Option DeferredOp <-
-        Deferred cs1Perms memSize isUnsigned isFenceI zimm12 isLoad isStore isFence isMret ;
+        Deferred cs1Perms memSize isUnsigned isFenceI zimm12 isLoad isStore isFence ;
 
       LetE NewPccVal : FullECapWithTag <-
         STRUCT { "tag" ::= #NewPcc_tag; "ecap" ::= #NewPcc_ecap;
@@ -1693,7 +1725,7 @@ Section Alu.
                  "addr" ::= #cs1Addr } ;
       LetE RegVal : FullECapWithTag <-
         STRUCT { "tag" ::= #Reg_tag; "ecap" ::= #Reg_ecap; "addr" ::= #Reg_addr } ;
-      LetE BranchTakenRes : Bool <- And [ ##aluControl`"Branch" ; ##ComparatorGeneralOut`"cond" ] ;
+      LetE TakenRes : Bool <- #NewPcc_addr_AdderBeforeBoundsCheck ;
 
       @RetE _ AluOut (STRUCT {
         "NewPcc" ::= #NewPccVal ;
@@ -1705,7 +1737,7 @@ Section Alu.
         "Cjal" ::= ##aluControl`"Cjal" ;
         "Cjalr" ::= ##aluControl`"Cjalr" ;
         "Branch" ::= ##aluControl`"Branch" ;
-        "BranchTaken" ::= #BranchTakenRes
+        "Taken" ::= #TakenRes
       }).
   End AluRouting.
 End Alu.
