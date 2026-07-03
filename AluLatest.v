@@ -432,7 +432,7 @@ Bounds:
 BoundsExact:
   - CalcBoundsExactTag : CSetBounds (when CSetBoundsExact)
   inBounds: AddrBoundsCheck (CSetBounds)
-  exact: Bounds.exact (CSetBounds)
+  boundsAreExact: Bounds.exact (CSetBounds)
 
 Shifter:
   - ShiftLeftLogical     : Shift (when SLL/SLLI), Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
@@ -922,7 +922,7 @@ Section Alu.
     "ecap"            :: ECap;
     "interruptStatus" :: Bool }.
 
-  Definition CjalrUnit (cs1 : ty FullECapWithTag) (instWord : ty Inst) (currIntStatus : ty Bool)
+  Definition CjalrUnit (cs1 : ty FullECapWithTag) (inst : ty Inst) (currIntStatus : ty Bool)
   : LetExpr ty CjalrUnitRes :=
     LetE cs1Tag : Bool <- ##cs1`"tag" ;
     LetE cs1ECap : ECap <- ##cs1`"ecap" ;
@@ -930,9 +930,9 @@ Section Alu.
     LetE cs1Sealed : Bool <- isSealed cs1ECap ;
     LetE notCs1Sealed : Bool <- Not #cs1Sealed ;
 
-    LetE cdNum : Bit RegIdxSz <- getCd instWord ;
-    LetE cs1Num : Bit RegIdxSz <- getCs1 instWord ;
-    LetE immZero : Bool <- isZero (#instWord`[31:20]) ;
+    LetE cdNum : Bit RegIdxSz <- getCd inst ;
+    LetE cs1Num : Bit RegIdxSz <- getCs1 inst ;
+    LetE immZero : Bool <- isZero (#inst`[31:20]) ;
 
     LetE isCdZero : Bool <- isZero #cdNum ;
     LetE isCs1Cra : Bool <- Eq #cs1Num $Cra ;
@@ -969,41 +969,41 @@ Section Alu.
     "tag"  :: Bool ;
     "ecap" :: ECap }.
 
-  Definition CAndPerm (capTag : ty Bool) (ecapVal : ty ECap) (rs2 : ty Data) : LetExpr ty TagECap :=
+  Definition CAndPerm (tag : ty Bool) (ecap : ty ECap) (cs2Addr : ty Data) : LetExpr ty TagECap :=
     LetE maskBits : Bit (kindSize CapPerms) <-
-      TruncLsb (Xlen - kindSize CapPerms) (kindSize CapPerms) #rs2 ;
+      TruncLsb (Xlen - kindSize CapPerms) (kindSize CapPerms) #cs2Addr ;
     LetE maskVal : CapPerms <- FromBit CapPerms #maskBits ;
-    LetE oldPerms : CapPerms <- ##ecapVal`"perms" ;
+    LetE oldPerms : CapPerms <- ##ecap`"perms" ;
     LetE rawMask : CapPerms <- And [ ##oldPerms; #maskVal ] ;
     LetE newPerms : CapPerms <- fixPerms rawMask ;
-    LetE sealed : Bool <- isSealed ecapVal ;
+    LetE sealed : Bool <- isSealed ecap ;
     LetE maskAllOnesNonGL : Bool <- isAllOnes (#maskVal `{ "GL" <- ConstTBool true }) ;
     LetE keepTag : Bool <- Or [ Not #sealed; #maskAllOnesNonGL ] ;
-    LetE outTag : Bool <- And [ #capTag; #keepTag ] ;
-    LetE outECap : ECap <- ##ecapVal `{ "perms" <- #newPerms } ;
+    LetE outTag : Bool <- And [ #tag; #keepTag ] ;
+    LetE outECap : ECap <- ##ecap `{ "perms" <- #newPerms } ;
     @RetE _ TagECap (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap }).
 
-  Definition SealerUnsealer (isUnseal boundsValid cs1Tag : ty Bool) (ecap1 : ty ECap) (src2 : ty FullECapWithTag)
+  Definition SealerUnsealer (isUnseal inBounds tag : ty Bool) (ecap : ty ECap) (cs2 : ty FullECapWithTag)
   : LetExpr ty TagECap :=
-    LetE ecap2 : ECap <- ##src2`"ecap" ;
-    LetE perms1 : CapPerms <- ##ecap1`"perms" ;
+    LetE ecap2 : ECap <- ##cs2`"ecap" ;
+    LetE perms1 : CapPerms <- ##ecap`"perms" ;
     LetE perms2 : CapPerms <- ##ecap2`"perms" ;
-    LetE sealed1 : Bool <- isSealed ecap1 ;
+    LetE sealed1 : Bool <- isSealed ecap ;
     LetE sealed2 : Bool <- isSealed ecap2 ;
-    LetE cs2Addr : Data <- ##src2`"addr" ;
-    LetE cs2Tag : Bool <- ##src2`"tag" ;
+    LetE cs2Addr : Data <- ##cs2`"addr" ;
+    LetE cs2Tag : Bool <- ##cs2`"tag" ;
     LetE sealRange : Bool <- ITE (##perms1`"EX")
                                (And [ Sgt #cs2Addr $0; Sle #cs2Addr $7 ])
                                (And [ Sgt #cs2Addr $8; Sle #cs2Addr $15 ]) ;
     LetE permit : Bool <- ITE #isUnseal
                             (And [ #sealed1; ##perms2`"US" ])
                             (And [ Not #sealed1; ##perms2`"SE"; #sealRange ]) ;
-    LetE outTag : Bool <- And [ #cs1Tag; #cs2Tag; #boundsValid; Not #sealed2; #permit ] ;
+    LetE outTag : Bool <- And [ #tag; #cs2Tag; #inBounds; Not #sealed2; #permit ] ;
     LetE outOType : Bit CapOTypeSz <-
       ITE0 (Not #isUnseal) (TruncLsb (AddrSz - CapOTypeSz) CapOTypeSz #cs2Addr) ;
     LetE outGL : Bool <- ITE #isUnseal (And [ ##perms1`"GL"; ##perms2`"GL" ]) (##perms1`"GL") ;
     LetE outPerms : CapPerms <- ##perms1 `{ "GL" <- #outGL } ;
-    LetE outECap : ECap <- ##ecap1 `{ "oType" <- #outOType } `{ "perms" <- #outPerms } ;
+    LetE outECap : ECap <- ##ecap `{ "oType" <- #outOType } `{ "perms" <- #outPerms } ;
     @RetE _ TagECap (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap }).
 
   Definition BoundsRes := STRUCT_TYPE {
@@ -1199,18 +1199,18 @@ Section Alu.
                           "length" ::= #outLen;
                           "exact" ::= Or [isNotZero #base_mod_e; isNotZero #length_mod_e] })).
 
-  Definition BoundsExact (inBounds boundsExact instIsExact : ty Bool) : LetExpr ty Bool :=
-    @RetE _ Bool (And [ #inBounds; Or [ Not #instIsExact; #boundsExact ] ]).
+  Definition BoundsExact (inBounds boundsAreExact instIsExact : ty Bool) : LetExpr ty Bool :=
+    @RetE _ Bool (And [ #inBounds; Or [ Not #instIsExact; #boundsAreExact ] ]).
 
   (* If isArith is set for left shift, results are wrong *)
-  Definition Shifter (val : ty (Bit Xlen)) (amt : ty (Bit 5)) (isRight isArith : ty Bool)
+  Definition Shifter (data : ty (Bit Xlen)) (shamt : ty (Bit 5)) (isRight isArith : ty Bool)
   : LetExpr ty (Bit Xlen) :=
     ( let rev e := ToBit (ArrayReverse (FromBit (Array (Z.to_nat Xlen) Bool) e)) in
-      LetE inpVal : Bit Xlen <- ITE #isRight #val (rev #val) ;
+      LetE inpVal : Bit Xlen <- ITE #isRight #data (rev #data) ;
       LetE signBit : Bit 1 <-
         ITE #isArith (TruncMsb 1 (Xlen - 1) #inpVal) (Const ty (Bit 1) Zmod.zero) ;
       LetE extVal : Bit (Xlen + 1) <- {< #signBit, #inpVal >} ;
-      LetE shiftedExt : Bit (Xlen + 1) <- Sra #extVal #amt ;
+      LetE shiftedExt : Bit (Xlen + 1) <- Sra #extVal #shamt ;
       LetE shiftedXlen : Bit Xlen <- TruncLsb 1 Xlen #shiftedExt ;
       @RetE _ (Bit Xlen) (ITE #isRight #shiftedXlen (rev #shiftedXlen))
     ).
