@@ -596,7 +596,7 @@ Definition AluControl := STRUCT_TYPE {
   (* AdderBeforeBoundsCheck_offset_zimm12 = CSetBoundsImm *)
   "AdderBeforeBoundsCheck_offset_simm12" :: Bool ; (* default option *)
   "AdderToOutput_base_pccAddr" :: Bool ;
-  "AdderToOutput_base_cs1Addr" :: Bool ; (* default option *)
+  (* AdderToOutput_base_cs1Addr = AddSub (* default option *) *)
   (* AdderToOutput_base_cs1Top = CGetLen *)
   "AdderToOutput_offset_const2" :: Bool ;
   "AdderToOutput_offset_const4" :: Bool ; (* default option *)
@@ -692,6 +692,7 @@ Definition AluControl := STRUCT_TYPE {
   "Fence" :: Bool ;
   "Branch" :: Bool ;
   "Cjal" :: Bool ;
+  "AddSub" :: Bool ;
   "CGetLen" :: Bool ;
   "Unseal" :: Bool ;
   "Shift" :: Bool ;
@@ -738,7 +739,6 @@ Section DecodeInstGroup.
              And [ ##group`"CIncAddr"; ##group`"isImm" ] ] ;
       "AdderToOutput_base_pccAddr" ::=
         Or [ ##group`"Cjal"; ##group`"Cjalr" ] ;
-      "AdderToOutput_base_cs1Addr" ::= ##group`"AddSub" ;
       "AdderToOutput_offset_const2" ::=
         And [ ##group`"isCompressed";
               Or [ ##group`"Cjal"; ##group`"Cjalr" ] ] ;
@@ -837,6 +837,7 @@ Section DecodeInstGroup.
       "Fence" ::= ##group`"Fence" ;
       "Branch" ::= ##group`"Branch" ;
       "Cjal" ::= ##group`"Cjal" ;
+      "AddSub" ::= ##group`"AddSub" ;
       "CGetLen" ::= ##group`"CGetLen" ;
       "Unseal" ::= ##group`"Unseal" ;
       "Shift" ::= ##group`"Shift" ;
