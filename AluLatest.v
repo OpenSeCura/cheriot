@@ -15,10 +15,6 @@
  *)
 
 (*
-===============================================================================
-                       CHERIOT ALU SPECIFICATION
-===============================================================================
-
 1. INSTRUCTION GROUPS
 -------------------------------------------------------------------------------
 Immediate Formats:
@@ -884,9 +880,6 @@ End DecodeInstGroup.
 
 Section Alu.
   Variable ty : Kind -> Type.
-  (* ===========================================================================
-     1. GALLINA FUNCTIONAL UNIT SPECIFICATIONS
-     =========================================================================== *)
 
   Definition AdderBeforeBoundsCheck (base offset : ty (Bit Xlen)) : LetExpr ty (Bit Xlen) :=
     LetE sum : Bit Xlen <- Add [ #base; #offset ];
