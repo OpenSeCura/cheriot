@@ -429,6 +429,11 @@ Bounds:
   cs1: cs1 (CSetBounds, Cram, Crrl)
   reqLimit: cs2.addr (CSetBounds & !isImm), zimm12 (CSetBounds & isImm), cs1.addr (Cram, Crrl)
 
+BoundsExact:
+  - CalcBoundsExactTag : CSetBounds (when CSetBoundsExact)
+  inBounds: AddrBoundsCheck (CSetBounds)
+  exact: Bounds.exact (CSetBounds)
+
 Shifter:
   - ShiftLeftLogical     : Shift (when SLL/SLLI), Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
   - ShiftRightLogical    : Shift (when SRL/SRLI)
@@ -492,11 +497,6 @@ ScrSanitizer:
   tag: cs1.tag (Scr)
   addr: cs1.addr (Scr)
   inst: inst (Scr)
-
-BoundsExact:
-  - CalcBoundsExactTag : CSetBounds (when CSetBoundsExact)
-  inBounds: AddrBoundsCheck (CSetBounds)
-  exact: Bounds.exact (CSetBounds)
 
 Deferred (Output):
   - Load   : Load
@@ -1199,6 +1199,9 @@ Section Alu.
                           "length" ::= #outLen;
                           "exact" ::= Or [isNotZero #base_mod_e; isNotZero #length_mod_e] })).
 
+  Definition BoundsExact (inBounds boundsExact instIsExact : ty Bool) : LetExpr ty Bool :=
+    @RetE _ Bool (And [ #inBounds; Or [ Not #instIsExact; #boundsExact ] ]).
+
   (* If isArith is set for left shift, results are wrong *)
   Definition Shifter (val : ty (Bit Xlen)) (amt : ty (Bit 5)) (isRight isArith : ty Bool)
   : LetExpr ty (Bit Xlen) :=
@@ -1234,9 +1237,6 @@ Section Alu.
   Definition AddrBoundsCheck (tag topLt baseGe : ty Bool) : LetExpr ty Bool :=
     LetE inBounds : Bool <- And [ #topLt; #baseGe ];
     @RetE _ Bool (And [ #tag; #inBounds ]).
-
-  Definition BoundsExact (inBounds boundsExact instIsExact : ty Bool) : LetExpr ty Bool :=
-    @RetE _ Bool (And [ #inBounds; Or [ Not #instIsExact; #boundsExact ] ]).
 
   Definition CapSubset (topLe baseGe tag1 tag2 : ty Bool) (perms1 perms2 : ty CapPerms) : LetExpr ty Bool :=
     LetE pAnd : CapPerms <- And [ #perms1; #perms2 ];
@@ -1428,13 +1428,13 @@ Section Alu.
 
   Definition AluOut := STRUCT_TYPE {
     "NewPcc" :: FullECapWithTag ;
-    "NewSpecial" :: FullECapWithTag ;
-    "Reg" :: FullECapWithTag ;
+    "NewPccEcap_change" :: Bool ;
+    "NewPccAddr_change" :: Bool ;
     "Exception" :: Option ExceptionInfo ;
     "DeferredOp" :: Option DeferredOp ;
     "NewInterruptStatus" :: Bool ;
-    "NewPccEcap_change" :: Bool ;
-    "NewPccAddr_change" :: Bool
+    "NewSpecial" :: FullECapWithTag ;
+    "Reg" :: FullECapWithTag
   }.
 
   Section AluRouting.
@@ -1736,13 +1736,13 @@ Section Alu.
 
       @RetE _ AluOut (STRUCT {
         "NewPcc" ::= #NewPccVal ;
-        "NewSpecial" ::= #NewSpecialVal ;
-        "Reg" ::= #RegVal ;
+        "NewPccEcap_change" ::= #NewPccEcap_change ;
+        "NewPccAddr_change" ::= #NewPccAddr_change ;
         "Exception" ::= #ExceptionRes ;
         "DeferredOp" ::= #DeferredOpRes ;
         "NewInterruptStatus" ::= ##CjalrUnitOut`"interruptStatus" ;
-        "NewPccEcap_change" ::= #NewPccEcap_change ;
-        "NewPccAddr_change" ::= #NewPccAddr_change
+        "NewSpecial" ::= #NewSpecialVal ;
+        "Reg" ::= #RegVal
       }).
   End AluRouting.
 End Alu.
