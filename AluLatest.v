@@ -614,7 +614,7 @@ Definition AluControl := STRUCT_TYPE {
   (* AdderToOutput_offset_cs1Base = CGetLen *)
   "AdderToOutput_isSub" :: Bool ;
   "ComparatorGeneral_op2_isCs2AddrNotSimm12" :: Bool ;
-  "ComparatorGeneral_isUnsigned" :: Bool ;
+  (* ComparatorGeneral_isUnsigned = isUnsigned *)
   "ComparatorGeneral_checkLt" :: Bool ;
   "ComparatorGeneral_checkEq" :: Bool ;
   "ComparatorGeneral_invertRes" :: Bool ;
@@ -654,7 +654,7 @@ Definition AluControl := STRUCT_TYPE {
   (* NewPcc_ecap_cs2Ecap = Scr *)
   (* NewPcc_ecap_CjalrUnitEcap = Cjalr *)
   "NewPcc_ecap_pccEcap" :: Bool ; (* default option *)
-  "NewPcc_addr_cs2Addr" :: Bool ;
+  (* NewPcc_addr_cs2Addr = Mret *)
   "Reg_tag_const0" :: Bool ; (* default option *)
   (* Reg_tag_pccTag = Cjal *)
   "Reg_tag_cs1Tag" :: Bool ;
@@ -667,32 +667,32 @@ Definition AluControl := STRUCT_TYPE {
   "Reg_ecap_pccEcap" :: Bool ;
   "Reg_ecap_cs1Ecap" :: Bool ;
   (* Reg_ecap_cs2Ecap = Scr *)
-  "Reg_ecap_cs2Addr" :: Bool ;
+  (* Reg_ecap_cs2Addr = CSetHigh *)
   (* Reg_ecap_CAndPerm = CAndPerm *)
   (* Reg_ecap_Bounds = CSetBounds *)
   (* Reg_ecap_SealerUnsealer = SealOrUnseal *)
-  "Reg_addr_uimm20" :: Bool ; (* default option *)
+  (* Reg_addr_uimm20 = Lui *)
   "Reg_addr_AdderBeforeBoundsCheck" :: Bool ;
-  "Reg_addr_ComparatorGeneralLt" :: Bool ;
+  (* Reg_addr_ComparatorGeneralLt = Slt *)
   (* Reg_addr_Shifter = Shift *)
-  "Reg_addr_Logical" :: Bool ;
+  (* Reg_addr_Logical = Logical *)
   "Reg_addr_AdderToOutput" :: Bool ;
-  "Reg_addr_CGetPerm" :: Bool ;
-  "Reg_addr_CGetType" :: Bool ;
-  "Reg_addr_CGetBase" :: Bool ;
-  "Reg_addr_CGetTag" :: Bool ;
-  "Reg_addr_CGetAddr" :: Bool ;
-  "Reg_addr_CGetHigh" :: Bool ;
-  "Reg_addr_CGetTop" :: Bool ;
+  (* Reg_addr_CGetPerm = CGetPerm *)
+  (* Reg_addr_CGetType = CGetType *)
+  (* Reg_addr_CGetBase = CGetBase *)
+  (* Reg_addr_CGetTag = CGetTag *)
+  (* Reg_addr_CGetAddr = CGetAddr *)
+  (* Reg_addr_CGetHigh = CGetHigh *)
+  (* Reg_addr_CGetTop = CGetTop *)
   "Reg_addr_cs2Addr" :: Bool ;
   "Reg_addr_cs1Addr" :: Bool ;
   (* Reg_addr_CAndPerm = CAndPerm *)
   (* Reg_addr_SealerUnsealer = SealOrUnseal *)
   (* Reg_addr_BoundsBase = CSetBounds *)
-  "Reg_addr_BoundsCram" :: Bool ;
-  "Reg_addr_BoundsCrrl" :: Bool ;
+  (* Reg_addr_BoundsCram = Cram *)
+  (* Reg_addr_BoundsCrrl = Crrl *)
   (* Reg_addr_CapSubset = CTestSubset *)
-  "Reg_addr_CapEq" :: Bool ;
+  (* Reg_addr_CapEq = CSetEqual *)
   "ECall" :: Bool ;
   "EBreak" :: Bool ;
   "Load" :: Bool ;
@@ -709,6 +709,21 @@ Definition AluControl := STRUCT_TYPE {
   "Cjalr" :: Bool ;
   "Scr" :: Bool ;
   "CAndPerm" :: Bool ;
+  "isUnsigned" :: Bool ;
+  "Lui" :: Bool ;
+  "Slt" :: Bool ;
+  "Logical" :: Bool ;
+  "CGetPerm" :: Bool ;
+  "CGetType" :: Bool ;
+  "CGetBase" :: Bool ;
+  "CGetTag" :: Bool ;
+  "CGetAddr" :: Bool ;
+  "CGetHigh" :: Bool ;
+  "CGetTop" :: Bool ;
+  "Cram" :: Bool ;
+  "Crrl" :: Bool ;
+  "CSetEqual" :: Bool ;
+  "CSetHigh" :: Bool ;
   "BranchOrCjalOrAuiPcc" :: Bool ;
   "BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr" :: Bool ;
   "SealOrSetAddr" :: Bool ;
@@ -731,14 +746,14 @@ Section DecodeInstGroup.
         Or [ ##group`"Cjalr"; ##group`"Load"; ##group`"Store";
              And [ ##group`"CIncAddr"; ##group`"isImm" ] ] ;
       "AdderToOutput_base_pccAddr" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Cjalr" ] ;
+        Or [ ##group`"Cjal"; ##group`"Cjalr" ] ;
       "AdderToOutput_base_cs1Addr" ::= Or [ ##group`"AddSub"; ##group`"CSub" ] ;
       "AdderToOutput_offset_const2" ::=
         And [ ##group`"isCompressed";
-              Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Cjalr" ] ] ;
+              Or [ ##group`"Cjal"; ##group`"Cjalr" ] ] ;
       "AdderToOutput_offset_const4" ::=
         And [ Not ##group`"isCompressed";
-              Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Cjalr" ] ] ;
+              Or [ ##group`"Cjal"; ##group`"Cjalr" ] ] ;
       "AdderToOutput_offset_cs2Addr" ::=
         Or [ And [ ##group`"AddSub"; Not ##group`"isImm" ]; ##group`"CSub" ] ;
       "AdderToOutput_offset_simm12" ::= And [ ##group`"AddSub"; ##group`"isImm" ] ;
@@ -746,7 +761,6 @@ Section DecodeInstGroup.
       "ComparatorGeneral_op2_isCs2AddrNotSimm12" ::=
         Or [ ##group`"Branch"; ##group`"CSetEqual";
              And [ ##group`"Slt"; Not ##group`"isImm" ] ] ;
-      "ComparatorGeneral_isUnsigned" ::= ##group`"isUnsigned" ;
       "ComparatorGeneral_checkLt" ::= ##group`"ComparatorGeneral_checkLt" ;
       "ComparatorGeneral_checkEq" ::= ##group`"ComparatorGeneral_checkEq" ;
       "ComparatorGeneral_invertRes" ::= ##group`"ComparatorGeneral_invertRes" ;
@@ -795,7 +809,6 @@ Section DecodeInstGroup.
              ##group`"CSetAddr"; ##group`"CSetBounds"; ##group`"Seal"; ##group`"Unseal";
              ##group`"CAndPerm"; ##group`"CMove"; ##group`"Scr"; ##group`"ECall";
              ##group`"EBreak"; ##group`"Fence" ] ;
-      "NewPcc_addr_cs2Addr" ::= ##group`"Mret" ;
       "Reg_tag_const0" ::=
         Or [ ##group`"Lui"; ##group`"AddSub"; ##group`"Slt"; ##group`"Shift";
              ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
@@ -818,29 +831,15 @@ Section DecodeInstGroup.
       "Reg_ecap_cs1Ecap" ::=
         Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CClearTag";
              ##group`"CMove" ] ;
-      "Reg_ecap_cs2Addr" ::= ##group`"CSetHigh" ;
-      "Reg_addr_uimm20" ::= ##group`"Lui" ;
       "Reg_addr_AdderBeforeBoundsCheck" ::=
         Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"Load";
              ##group`"Store" ] ;
-      "Reg_addr_ComparatorGeneralLt" ::= ##group`"Slt" ;
-      "Reg_addr_Logical" ::= ##group`"Logical" ;
       "Reg_addr_AdderToOutput" ::=
         Or [ ##group`"Cjal"; ##group`"Cjalr"; ##group`"AddSub"; ##group`"CGetLen";
              ##group`"CSub" ] ;
-      "Reg_addr_CGetPerm" ::= ##group`"CGetPerm" ;
-      "Reg_addr_CGetType" ::= ##group`"CGetType" ;
-      "Reg_addr_CGetBase" ::= ##group`"CGetBase" ;
-      "Reg_addr_CGetTag"  ::= ##group`"CGetTag" ;
-      "Reg_addr_CGetAddr" ::= ##group`"CGetAddr" ;
-      "Reg_addr_CGetHigh" ::= ##group`"CGetHigh" ;
-      "Reg_addr_CGetTop"  ::= ##group`"CGetTop" ;
       "Reg_addr_cs2Addr" ::= Or [ ##group`"CSetAddr"; ##group`"Csr"; ##group`"Scr" ] ;
       "Reg_addr_cs1Addr" ::=
         Or [ ##group`"CClearTag"; ##group`"CMove"; ##group`"CSetHigh" ] ;
-      "Reg_addr_BoundsCram" ::= ##group`"Cram" ;
-      "Reg_addr_BoundsCrrl" ::= ##group`"Crrl" ;
-      "Reg_addr_CapEq" ::= ##group`"CSetEqual" ;
       "ECall" ::= ##group`"ECall" ;
       "EBreak" ::= ##group`"EBreak" ;
       "Load" ::= ##group`"Load" ;
@@ -857,6 +856,21 @@ Section DecodeInstGroup.
       "Cjalr" ::= ##group`"Cjalr" ;
       "Scr" ::= ##group`"Scr" ;
       "CAndPerm" ::= ##group`"CAndPerm" ;
+      "isUnsigned" ::= ##group`"isUnsigned" ;
+      "Lui" ::= ##group`"Lui" ;
+      "Slt" ::= ##group`"Slt" ;
+      "Logical" ::= ##group`"Logical" ;
+      "CGetPerm" ::= ##group`"CGetPerm" ;
+      "CGetType" ::= ##group`"CGetType" ;
+      "CGetBase" ::= ##group`"CGetBase" ;
+      "CGetTag" ::= ##group`"CGetTag" ;
+      "CGetAddr" ::= ##group`"CGetAddr" ;
+      "CGetHigh" ::= ##group`"CGetHigh" ;
+      "CGetTop" ::= ##group`"CGetTop" ;
+      "Cram" ::= ##group`"Cram" ;
+      "Crrl" ::= ##group`"Crrl" ;
+      "CSetEqual" ::= ##group`"CSetEqual" ;
+      "CSetHigh" ::= ##group`"CSetHigh" ;
       "BranchOrCjalOrAuiPcc" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr" ::=
@@ -1582,7 +1596,7 @@ Section Alu.
       LetE ComparatorGeneral_op1 : Bit Xlen <- #cs1Addr ;
       LetE ComparatorGeneral_op2 : Bit Xlen <-
         ITE (##aluControl`"ComparatorGeneral_op2_isCs2AddrNotSimm12") #cs2Addr #simm12 ;
-      LetE ComparatorGeneral_isUnsigned : Bool <- ##aluControl`"ComparatorGeneral_isUnsigned" ;
+      LetE ComparatorGeneral_isUnsigned : Bool <- ##aluControl`"isUnsigned" ;
       LetE ComparatorGeneral_checkLt    : Bool <- ##aluControl`"ComparatorGeneral_checkLt" ;
       LetE ComparatorGeneral_checkEq    : Bool <- ##aluControl`"ComparatorGeneral_checkEq" ;
       LetE ComparatorGeneral_invertRes  : Bool <- ##aluControl`"ComparatorGeneral_invertRes" ;
@@ -1672,7 +1686,7 @@ Section Alu.
         caseDefault (k := ECap) [ (##aluControl`"Reg_ecap_pccEcap", ##pcc`"ecap") ;
                                    (##aluControl`"Reg_ecap_cs1Ecap", ##cs1`"ecap") ;
                                    (##aluControl`"Scr", ##cs2`"ecap") ;
-                                   (##aluControl`"Reg_ecap_cs2Addr", ##cs2`"ecap") ;
+                                   (##aluControl`"CSetHigh", ##cs2`"ecap") ;
                                    (##aluControl`"CAndPerm", ##CAndPermOut`"ecap") ;
                                    (##aluControl`"SealOrUnseal", ##SealerUnsealerOut`"ecap") ;
                                    (##aluControl`"CSetBounds", #Bounds_outECap) ]
@@ -1681,27 +1695,27 @@ Section Alu.
       LetE Reg_addr : Data <-
         caseDefault (k := Data) [
             (##aluControl`"Reg_addr_AdderBeforeBoundsCheck", #AdderBeforeBoundsCheckOut) ;
-            (##aluControl`"Reg_addr_ComparatorGeneralLt",
+            (##aluControl`"Slt",
              ZeroExtendTo Xlen (ToBit (##ComparatorGeneralOut`"cond"))) ;
             (##aluControl`"Shift", #ShifterOut) ;
-            (##aluControl`"Reg_addr_Logical", #LogicalOut) ;
+            (##aluControl`"Logical", #LogicalOut) ;
             (##aluControl`"Reg_addr_AdderToOutput", #AdderToOutputOut) ;
-            (##aluControl`"Reg_addr_CGetPerm", #cs1Addr) ;
-            (##aluControl`"Reg_addr_CGetType", ZeroExtendTo Xlen #cs1OType) ;
-            (##aluControl`"Reg_addr_CGetBase", TruncLsb 1 Xlen #cs1Base) ;
-            (##aluControl`"Reg_addr_CGetTag",  ZeroExtendTo Xlen (ToBit #cs1Tag)) ;
-            (##aluControl`"Reg_addr_CGetAddr", #cs1Addr) ;
-            (##aluControl`"Reg_addr_CGetHigh", #cs1Addr) ;
-            (##aluControl`"Reg_addr_CGetTop",  TruncLsb 1 Xlen #cs1Top) ;
+            (##aluControl`"CGetPerm", #cs1Addr) ;
+            (##aluControl`"CGetType", ZeroExtendTo Xlen #cs1OType) ;
+            (##aluControl`"CGetBase", TruncLsb 1 Xlen #cs1Base) ;
+            (##aluControl`"CGetTag",  ZeroExtendTo Xlen (ToBit #cs1Tag)) ;
+            (##aluControl`"CGetAddr", #cs1Addr) ;
+            (##aluControl`"CGetHigh", #cs1Addr) ;
+            (##aluControl`"CGetTop",  TruncLsb 1 Xlen #cs1Top) ;
             (##aluControl`"Reg_addr_cs2Addr", #cs2Addr) ;
             (##aluControl`"Reg_addr_cs1Addr", #cs1Addr) ;
             (##aluControl`"CAndPerm", #cs1Addr) ;
             (##aluControl`"SealOrUnseal", #cs1Addr) ;
             (##aluControl`"CSetBounds", TruncLsb 1 Xlen (##BoundsOut`"base")) ;
-            (##aluControl`"Reg_addr_BoundsCram", TruncLsb 1 Xlen (##BoundsOut`"cram")) ;
-            (##aluControl`"Reg_addr_BoundsCrrl", TruncLsb 1 Xlen (##BoundsOut`"length")) ;
+            (##aluControl`"Cram", TruncLsb 1 Xlen (##BoundsOut`"cram")) ;
+            (##aluControl`"Crrl", TruncLsb 1 Xlen (##BoundsOut`"length")) ;
             (##aluControl`"CTestSubset", ZeroExtendTo Xlen (ToBit #CapSubsetOut)) ;
-            (##aluControl`"Reg_addr_CapEq", ZeroExtendTo Xlen (ToBit #CapEqOut)) ]
+            (##aluControl`"CSetEqual", ZeroExtendTo Xlen (ToBit #CapEqOut)) ]
           #uimm20 ;
 
       LetE ecall : Bool <- ##aluControl`"ECall" ;
