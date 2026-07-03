@@ -586,9 +586,6 @@ Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
 (* TODO:
- - Fix lines 505 to 547
- - This is extremely ugly now; clean it up!!! (Branch, Cjal, Cjalr being part of the AluControl is jarring)
- - Optimize common signals away in AluControl!
  - CSetHigh and CGetHigh are wrong - we need caps encoder, decoder
  *)
 
