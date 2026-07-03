@@ -1365,21 +1365,21 @@ Section Alu.
      2. ROUTING & DATAPATH MULTIPLEXING BASED ON AluControl
      =========================================================================== *)
 
-  Definition NextPccRes := STRUCT_TYPE {
+  Definition NewPccRes := STRUCT_TYPE {
     "addr" :: Addr ;
     "NewPccAddr_change" :: Bool ;
     "NewPccEcap_change" :: Bool
   }.
 
-  Definition NextPcc (isMret isCjal isCjalr isBranch : ty Bool)
-                     (isCond : ty Bool)
-                     (cs2Addr addrIn : ty Addr)
-  : LetExpr ty NextPccRes :=
+  Definition NewPcc (isMret isCjal isCjalr isBranch : ty Bool)
+                    (isCond : ty Bool)
+                    (cs2Addr addrIn : ty Addr)
+  : LetExpr ty NewPccRes :=
     LetE isTakenBranch : Bool <- And [ #isBranch ; #isCond ] ;
     LetE addrChange : Bool <- Or [ #isMret ; #isCjal ; #isCjalr ; #isTakenBranch ] ;
     LetE ecapChange : Bool <- Or [ #isMret ; #isCjalr ] ;
     LetE pccAddrOut : Addr <- ITE (#isMret) #cs2Addr #addrIn ;
-    @RetE _ NextPccRes (STRUCT {
+    @RetE _ NewPccRes (STRUCT {
       "addr" ::= #pccAddrOut ;
       "NewPccAddr_change" ::= #addrChange ;
       "NewPccEcap_change" ::= #ecapChange
@@ -1639,8 +1639,8 @@ Section Alu.
       LetE isBranch : Bool <- ##aluControl`"Branch" ;
       LetE isCond : Bool <- ##ComparatorGeneralOut`"cond" ;
 
-      LETE NextPccOut : NextPccRes <-
-        NextPcc isMret isCjal isCjalr isBranch isCond cs2Addr AdderBeforeBoundsCheckOut ;
+      LETE NewPccOut : NewPccRes <-
+        NewPcc isMret isCjal isCjalr isBranch isCond cs2Addr AdderBeforeBoundsCheckOut ;
 
       LetE NewPcc_tag : Bool <-
         caseDefault (k := Bool) [
@@ -1655,11 +1655,11 @@ Section Alu.
             (##aluControl`"Cjalr", ##CjalrUnitOut`"ecap") ]
           (##pcc`"ecap") ;
 
-      LetE NewPcc_addr : Addr <- ##NextPccOut`"addr" ;
+      LetE NewPcc_addr : Addr <- ##NewPccOut`"addr" ;
 
-      LetE NewPccEcap_change : Bool <- ##NextPccOut`"NewPccEcap_change" ;
+      LetE NewPccEcap_change : Bool <- ##NewPccOut`"NewPccEcap_change" ;
 
-      LetE NewPccAddr_change : Bool <- ##NextPccOut`"NewPccAddr_change" ;
+      LetE NewPccAddr_change : Bool <- ##NewPccOut`"NewPccAddr_change" ;
 
       LetE NewSpecial_tag : Bool <- #ScrSanitizerOut ;
 
