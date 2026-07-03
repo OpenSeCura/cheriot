@@ -1260,6 +1260,51 @@ Section Alu.
     LetE keepTag : Bool <- Or [ Not #isSpecialPcc; #lsbZero ] ;
     @RetE _ Bool (And [ #tag; #keepTag ]).
 
+  Definition LoadStore (cs1Perms : ty CapPerms)
+                       (memSize : ty (Bit LgLgNumBytesFullCapSz))
+                       (isUnsigned isLoad isStore : ty Bool)
+  : LetExpr ty (Option DeferredOp) :=
+    LetE isLM : Bool <- And [ #isLoad ; ##cs1Perms`"LM" ] ;
+    LetE isLG : Bool <- And [ #isLoad ; ##cs1Perms`"LG" ] ;
+    LetE isUnsig : Bool <- And [ #isLoad ; #isUnsigned ] ;
+    LetE memOpVal : MemOp <- STRUCT {
+      "isStore"    ::= #isStore ;
+      "memSize"    ::= #memSize ;
+      "isUnsigned" ::= #isUnsig ;
+      "isLM"       ::= #isLM ;
+      "isLG"       ::= #isLG
+    } ;
+    LetE isMemOp : Bool <- Or [ #isLoad; #isStore ] ;
+    RetE (ITE0 #isMemOp (mkSome (UNION (DeferredOpType, "MemOp" ::= #memOpVal)))).
+
+  Definition Deferred (isLoad isStore isFence : ty Bool)
+                       (cs1Perms : ty CapPerms)
+                       (inst : ty (Bit Xlen))
+  : LetExpr ty (Option DeferredOp) :=
+    LetE memSize : Bit LgLgNumBytesFullCapSz <- #inst`[13:12] ;
+    LetE isUnsigned : Bool <- isNotZero (#inst`[14:14]) ;
+    LetE isFenceI : Bool <- isNotZero (#inst`[12:12]) ;
+    LetE isTso : Bool <- isNotZero (#inst`[31:31]) ;
+    LetE fenceOp : Bit 4 <- #inst`[27:24] ;
+    LetE pred_r : Bool <- isNotZero (#fenceOp`[3:3]) ;
+    LetE pred_w : Bool <- isNotZero (#fenceOp`[2:2]) ;
+    LetE succ_r : Bool <- isNotZero (#fenceOp`[1:1]) ;
+    LetE succ_w : Bool <- isNotZero (#fenceOp`[0:0]) ;
+    LetE rr : Bool <- And [ Not #isFenceI ; #pred_r ; #succ_r ] ;
+    LetE rw : Bool <- And [ Not #isFenceI ; #pred_r ; #succ_w ] ;
+    LetE wr : Bool <- And [ Not #isFenceI ; Not #isTso ; #pred_w ; #succ_r ] ;
+    LetE ww : Bool <- And [ Not #isFenceI ; #pred_w ; #succ_w ] ;
+    LetE fenceVal : FenceOp <- STRUCT {
+      "isFenceI" ::= #isFenceI ;
+      "RR"       ::= #rr ;
+      "RW"       ::= #rw ;
+      "WR"       ::= #wr ;
+      "WW"       ::= #ww
+    } ;
+    LETE memOpOpt : Option DeferredOp <- LoadStore cs1Perms memSize isUnsigned isLoad isStore ;
+    RetE (Or [ ITE0 #isFence (mkSome (UNION (DeferredOpType, "FenceOp" ::= #fenceVal))) ;
+               #memOpOpt ]).
+
   Definition MemException (isStore : ty Bool)
                           (cs1Tag : ty Bool)
                           (ecap : ty ECap)
@@ -1361,10 +1406,6 @@ Section Alu.
                     #sysCallExc))))))
     ).
 
-  (* ===========================================================================
-     2. ROUTING & DATAPATH MULTIPLEXING BASED ON AluControl
-     =========================================================================== *)
-
   Definition NewPccRes := STRUCT_TYPE {
     "addr" :: Addr ;
     "NewPccAddr_change" :: Bool ;
@@ -1384,51 +1425,6 @@ Section Alu.
       "NewPccAddr_change" ::= #addrChange ;
       "NewPccEcap_change" ::= #ecapChange
     }).
-
-  Definition LoadStore (cs1Perms : ty CapPerms)
-                       (memSize : ty (Bit LgLgNumBytesFullCapSz))
-                       (isUnsigned isLoad isStore : ty Bool)
-  : LetExpr ty (Option DeferredOp) :=
-    LetE isLM : Bool <- And [ #isLoad ; ##cs1Perms`"LM" ] ;
-    LetE isLG : Bool <- And [ #isLoad ; ##cs1Perms`"LG" ] ;
-    LetE isUnsig : Bool <- And [ #isLoad ; #isUnsigned ] ;
-    LetE memOpVal : MemOp <- STRUCT {
-      "isStore"    ::= #isStore ;
-      "memSize"    ::= #memSize ;
-      "isUnsigned" ::= #isUnsig ;
-      "isLM"       ::= #isLM ;
-      "isLG"       ::= #isLG
-    } ;
-    LetE isMemOp : Bool <- Or [ #isLoad; #isStore ] ;
-    RetE (ITE0 #isMemOp (mkSome (UNION (DeferredOpType, "MemOp" ::= #memOpVal)))).
-
-  Definition Deferred (isLoad isStore isFence : ty Bool)
-                       (cs1Perms : ty CapPerms)
-                       (inst : ty (Bit Xlen))
-  : LetExpr ty (Option DeferredOp) :=
-    LetE memSize : Bit LgLgNumBytesFullCapSz <- #inst`[13:12] ;
-    LetE isUnsigned : Bool <- isNotZero (#inst`[14:14]) ;
-    LetE isFenceI : Bool <- isNotZero (#inst`[12:12]) ;
-    LetE isTso : Bool <- isNotZero (#inst`[31:31]) ;
-    LetE fenceOp : Bit 4 <- #inst`[27:24] ;
-    LetE pred_r : Bool <- isNotZero (#fenceOp`[3:3]) ;
-    LetE pred_w : Bool <- isNotZero (#fenceOp`[2:2]) ;
-    LetE succ_r : Bool <- isNotZero (#fenceOp`[1:1]) ;
-    LetE succ_w : Bool <- isNotZero (#fenceOp`[0:0]) ;
-    LetE rr : Bool <- And [ Not #isFenceI ; #pred_r ; #succ_r ] ;
-    LetE rw : Bool <- And [ Not #isFenceI ; #pred_r ; #succ_w ] ;
-    LetE wr : Bool <- And [ Not #isFenceI ; Not #isTso ; #pred_w ; #succ_r ] ;
-    LetE ww : Bool <- And [ Not #isFenceI ; #pred_w ; #succ_w ] ;
-    LetE fenceVal : FenceOp <- STRUCT {
-      "isFenceI" ::= #isFenceI ;
-      "RR"       ::= #rr ;
-      "RW"       ::= #rw ;
-      "WR"       ::= #wr ;
-      "WW"       ::= #ww
-    } ;
-    LETE memOpOpt : Option DeferredOp <- LoadStore cs1Perms memSize isUnsigned isLoad isStore ;
-    RetE (Or [ ITE0 #isFence (mkSome (UNION (DeferredOpType, "FenceOp" ::= #fenceVal))) ;
-               #memOpOpt ]).
 
   Definition AluOut := STRUCT_TYPE {
     "NewPcc" :: FullECapWithTag ;
