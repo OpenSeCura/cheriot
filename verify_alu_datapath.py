@@ -143,8 +143,8 @@ def parse_alu_latest(file_path):
                 if not l_str:
                     continue
                 
-                # A new writeback starts if it has a colon OR if it is exactly a single word (e.g. "NewPcc")
-                is_new_wb = (":" in l_str) or bool(re.match(r"^[A-Za-z0-9_.]+$", l_str))
+                # A new writeback starts if it has a colon OR if it is exactly the name of an (Output) unit
+                is_new_wb = (":" in l_str) or (l_str in [u for u, info in units.items() if info["is_output"]])
                 if is_new_wb:
                     if curr_wb:
                         wb_joined_blocks.append(" ".join(curr_wb))
@@ -186,12 +186,6 @@ def parse_alu_latest(file_path):
                             writebacks[wb_name].append((src_clean, eff))
                     elif rest:
                         writebacks[wb_name].append((rest, section1_groups))
-                else:
-                    # Writeback with no colon (e.g., "NewPcc", "Exception", "Deferred")
-                    wb_name = line_str
-                    unit_src = "NewPcc" if "NewPcc" in wb_name else wb_name
-                    writebacks[wb_name] = [(unit_src, section1_groups)]
-
     return section1_groups, s2_groups_found, units, writebacks, sec2_text
 
 def run_invariant_checks():
