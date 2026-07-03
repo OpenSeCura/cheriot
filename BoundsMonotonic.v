@@ -26,7 +26,7 @@ Import ListNotations.
 Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
-(* The statement of this theorem is wrong; I will fix it later *)
+(* TODO: The statement of this theorem is wrong; I will fix it later *)
 Theorem BoundsMonotonic base length isRoundDown:
   let bounds : type BoundsRes := evalLetExpr (Bounds base length isRoundDown) in
   (Zmod.to_Z (bounds@%"base") >= Zmod.to_Z base /\ Zmod.to_Z (bounds@%"top") <= Zmod.to_Z (base + length))%Z.
