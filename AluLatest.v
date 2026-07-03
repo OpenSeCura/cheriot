@@ -593,7 +593,7 @@ Definition AluControl := STRUCT_TYPE {
   (* AdderBeforeBoundsCheck_offset_jimm20 = Cjal *)
   "AdderBeforeBoundsCheck_offset_uimm20_11" :: Bool ;
   "AdderBeforeBoundsCheck_offset_cs2Addr" :: Bool ;
-  (* AdderBeforeBoundsCheck_offset_zimm12 = CSetBoundsImm *)
+  (* AdderBeforeBoundsCheck_offset_zimm12 = Bounds_isImm *)
   "AdderBeforeBoundsCheck_offset_simm12" :: Bool ; (* default option *)
   "AdderToOutput_base_pccAddr" :: Bool ;
   (* AdderToOutput_base_cs1Addr = AddSub (* default option *) *)
@@ -612,7 +612,7 @@ Definition AluControl := STRUCT_TYPE {
   "Logical_op2_isCs2AddrNotSimm12" :: Bool ;
   (* SealerUnsealer_isUnseal = Unseal *)
   "Bounds_reqLimit_cs2Addr" :: Bool ;
-  (* Bounds_reqLimit_zimm12 = CSetBoundsImm (* default option *) *)
+  (* Bounds_reqLimit_zimm12 = Bounds_isImm (* default option *) *)
   "Bounds_reqLimit_cs1Addr" :: Bool ;
   "Bounds_isRoundDown" :: Bool ;
   "Bounds_isExact" :: Bool ;
