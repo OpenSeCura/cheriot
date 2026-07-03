@@ -35,12 +35,8 @@ Immediate Formats:
   * zimm5           : 5-bit zero-extended immediate (CSR manipulations)
 
 Miscellaneous:
-  * LoadOp          : generic load modifier (determines size and sign/zero extension)
   * interruptStatus : Current interrupt status
   * isCompressed    : Whether the current instruction is compressed or not
-  * scrIdx          : Special Capability Register index (bits 24:20 of instruction word)
-  * cs1Idx          : Register index of cs1 (bits 19:15 of instruction word)
-  * memSize         : Access size for memory operations (bits 13:12 of instruction word)
 
 Branch
 * BEQ rs1, rs2, bimm12
@@ -502,49 +498,46 @@ BoundsExact:
   inBounds: AddrBoundsCheck (CSetBounds)
   exact: Bounds.exact (CSetBounds)
 
-Deferred (Mux):
-  cs1Perms: cs1.perms (all)
-  memSize: memSize (all)
-  isUnsigned: inst[14] (all)
-  zimm12: zimm12 (all)
-  isLoad: 1 (Load), 0 (others)
-  isStore: 1 (Store), 0 (others)
-  isFence: 1 (Fence), 0 (others)
-  isFenceI: inst[12] (all)
+Deferred (Output):
+  - Load   : Load
+  - Store  : Store
+  - Fence  : Fence
+  Outputs: MemOp {isStore, memSize, isUnsigned, isLM, isLG} OR FenceOp {isFenceI, RR, RW, WR, WW}
+  cs1Perms: cs1.perms (Load)
+  inst: inst (Load, Store, Fence)
 
-ExceptionUnit (Mux):
+Exception (Output):
+  - ECall  : ECall
+  - EBreak : EBreak
+  - Load   : Load
+  - Store  : Store
+  Outputs: isException, mcause, isScr, regIdx, mtval
   fetchExc: fetchExc (all)
   decodeExc: decodeExc (all)
-  scrIdx: inst.rs2 (all)
-  cs1Idx: inst.rs1 (all)
-  memSize: inst.memSize (all)
-  ecall: 1 (ECall), 0 (others)
-  ebreak: 1 (EBreak), 0 (others)
-  isLoad: 1 (Load), 0 (others)
-  isStore: 1 (Store), 0 (others)
-  cs1Tag: cs1.tag (all)
-  cs1ECap: cs1.ecap (all)
-  inBounds: AddrBoundsCheck (Load, Store), 0 (others)
-  addr: AdderBeforeBoundsCheck (all)
+  inst: inst (all)
+  cs1Tag: cs1.tag (Load, Store)
+  cs1ECap: cs1.ecap (Load, Store)
+  inBounds: AddrBoundsCheck (Load, Store)
+  addr: AdderBeforeBoundsCheck (Load, Store)
 
-NextPcc (Mux):
-  Outputs: addr, NewPccAddr_change, NewPccEcap_change
-  isMret: 1 (Mret), 0 (others)
-  isCjal: 1 (Cjal), 0 (others)
-  isCjalr: 1 (Cjalr), 0 (others)
-  isBranch: 1 (Branch), 0 (others)
+NewPcc (Output):
+  - Mret   : Mret
+  - Cjal   : Cjal
+  - Cjalr  : Cjalr
+  - Branch : Branch
+  Outputs: addr, Addr_change, Ecap_change
   isCond: ComparatorGeneral.cond (Branch)
   cs2Addr: cs2.addr (Mret)
   addrIn: AdderBeforeBoundsCheck (Branch, Cjal, Cjalr)
 
 NewPcc.tag: cs2.tag (Mret), AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
 NewPcc.ecap: cs2.ecap (Mret), CjalrUnit.ecap (Cjalr), pcc.ecap (others)
-NewPcc.addr: NextPcc.addr (Mret, Branch, Cjal, Cjalr)
+NewPcc.addr
+NewPcc.Ecap_change
+NewPcc.Addr_change
 
-Exception: ExceptionUnit (all)
-DeferredOp: Deferred (all)
-NewPccEcap_change: NextPcc.NewPccEcap_change (all)
-NewPccAddr_change: NextPcc.NewPccAddr_change (all)
+Exception
+Deferred
 
 NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
 
@@ -772,9 +765,6 @@ Section DecodeInstGroup.
       "Shifter_shamt_AddCapBSz" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
              ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
-      "ComparatorTopOrRep_topRep_AdderBeforeRepCheck" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
-             ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
       "Shifter_isArith" ::= ##group`"Shift_isArith" ;
       "Shifter_isRight" ::= ##group`"Shift_isRight" ;
       "ComparatorTopOrRep_addr_AdderBeforeBoundsCheck" ::=
@@ -787,6 +777,9 @@ Section DecodeInstGroup.
       "ComparatorTopOrRep_addr_cs1Top" ::= ##group`"CTestSubset" ;
       "ComparatorTopOrRep_topRep_cs1Top" ::=
         Or [ ##group`"CSetBounds"; ##group`"Load"; ##group`"Store" ] ;
+      "ComparatorTopOrRep_topRep_AdderBeforeRepCheck" ::=
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
+             ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
       "ComparatorTopOrRep_topRep_cs2Top" ::=
         Or [ ##group`"CTestSubset"; ##group`"Seal"; ##group`"Unseal" ] ;
       "ComparatorBase_base_cs2Base" ::=
@@ -1323,13 +1316,10 @@ Section Alu.
                   (mkNone ty))))))
     ).
 
-  Definition ExceptionUnit (fetchExc : ty FetchException)
+  Definition ExceptionUnit (isECall isEBreak isLoad isStore : ty Bool)
+                           (fetchExc : ty FetchException)
                            (decodeExc : ty DecodeException)
-                           (scrIdx : ty (Bit RegIdxSz))
-                           (cs1Idx : ty (Bit RegIdxSz))
-                           (memSize : ty (Bit LgLgNumBytesFullCapSz))
-                           (ecall ebreak : ty Bool)
-                           (isLoad isStore : ty Bool)
+                           (inst : ty (Bit Xlen))
                            (cs1Tag : ty Bool)
                            (cs1ECap : ty ECap)
                            (inBounds : ty Bool)
@@ -1342,7 +1332,10 @@ Section Alu.
 
     LetE illegalInst   : Bool <- ##decodeExc`"illegal" ;
     LetE asrViolation  : Bool <- ##decodeExc`"asr" ;
-    LETE memExcOut : Option ExceptionInfo <-
+    LetE scrIdx        : Bit RegIdxSz <- #inst`[24:20] ;
+    LetE cs1Idx        : Bit RegIdxSz <- #inst`[19:15] ;
+    LetE memSize       : Bit LgLgNumBytesFullCapSz <- #inst`[13:12] ;
+    LETE memExcOut     : Option ExceptionInfo <-
       MemException isStore cs1Tag cs1ECap cs1Idx inBounds addr memSize ;
 
     LetE isMemOp : Bool <- Or [ #isLoad; #isStore ] ;
@@ -1358,8 +1351,8 @@ Section Alu.
     LetE mtvalAsr       : CheriMtval <- mkCheriMtval (ConstBool true) #scrIdx $CapEx_AccessSystemRegsViolation ;
 
     LetE sysCallExc : Option ExceptionInfo <-
-      Or [ ITE0 #ecall (mkSome (mkExceptionInfo $EXC_ECallM #mtvalZero)) ;
-           ITE0 #ebreak (mkSome (mkExceptionInfo $EXC_Breakpoint #mtvalZero)) ] ;
+      Or [ ITE0 #isECall (mkSome (mkExceptionInfo $EXC_ECallM #mtvalZero)) ;
+           ITE0 #isEBreak (mkSome (mkExceptionInfo $EXC_Breakpoint #mtvalZero)) ] ;
 
     (* 3. Strict Priority Cascade *)
     RetE (
@@ -1390,7 +1383,8 @@ Section Alu.
     "NewPccEcap_change" :: Bool
   }.
 
-  Definition NextPcc (isMret isCjal isCjalr isBranch isCond : ty Bool)
+  Definition NextPcc (isMret isCjal isCjalr isBranch : ty Bool)
+                     (isCond : ty Bool)
                      (cs2Addr addrIn : ty Addr)
   : LetExpr ty NextPccRes :=
     LetE isTakenBranch : Bool <- And [ #isBranch ; #isCond ] ;
@@ -1420,16 +1414,18 @@ Section Alu.
     LetE isMemOp : Bool <- Or [ #isLoad; #isStore ] ;
     RetE (ITE0 #isMemOp (mkSome (UNION (DeferredOpType, "MemOp" ::= #memOpVal)))).
 
-  Definition Deferred (cs1Perms : ty CapPerms)
-                      (memSize : ty (Bit LgLgNumBytesFullCapSz))
-                      (isUnsigned isFenceI : ty Bool)
-                      (zimm12 : ty (Bit Xlen))
-                      (isLoad isStore isFence : ty Bool)
+  Definition Deferred (isLoad isStore isFence : ty Bool)
+                       (cs1Perms : ty CapPerms)
+                       (inst : ty (Bit Xlen))
   : LetExpr ty (Option DeferredOp) :=
-    LetE pred_r : Bool <- isNotZero (#zimm12`[5:5]) ;
-    LetE pred_w : Bool <- isNotZero (#zimm12`[4:4]) ;
-    LetE succ_r : Bool <- isNotZero (#zimm12`[1:1]) ;
-    LetE succ_w : Bool <- isNotZero (#zimm12`[0:0]) ;
+    LetE memSize : Bit LgLgNumBytesFullCapSz <- #inst`[13:12] ;
+    LetE isUnsigned : Bool <- isNotZero (#inst`[14:14]) ;
+    LetE isFenceI : Bool <- isNotZero (#inst`[12:12]) ;
+    LetE fenceOp : Bit 4 <- #inst`[27:24] ;
+    LetE pred_r : Bool <- isNotZero (#fenceOp`[3:3]) ;
+    LetE pred_w : Bool <- isNotZero (#fenceOp`[2:2]) ;
+    LetE succ_r : Bool <- isNotZero (#fenceOp`[1:1]) ;
+    LetE succ_w : Bool <- isNotZero (#fenceOp`[0:0]) ;
     LetE rr : Bool <- And [ Not #isFenceI ; #pred_r ; #succ_r ] ;
     LetE rw : Bool <- And [ Not #isFenceI ; #pred_r ; #succ_w ] ;
     LetE wr : Bool <- And [ Not #isFenceI ; #pred_w ; #succ_r ] ;
@@ -1500,7 +1496,6 @@ Section Alu.
         ({< #inst_val`[31:31], #inst_val`[19:12], #inst_val`[20:20], #inst_val`[30:21],
             Const _ (Bit 1) Zmod.zero >}) ;
       LetE jimm20 : Bit Xlen <- SignExtendTo Xlen #jimm21 ;
-      LetE LoadOp : Bit 3 <- ConstExtract 17 3 12 #inst_val ;
       LetE scrIdx : Bit RegIdxSz <- #inst_val`[24:20] ;
       LetE cs1Idx : Bit RegIdxSz <- #inst_val`[19:15] ;
       LetE memSize : Bit LgLgNumBytesFullCapSz <- #inst_val`[13:12] ;
@@ -1761,14 +1756,13 @@ Section Alu.
       LetE isStore : Bool <- ##aluControl`"Store" ;
 
       LETE ExceptionRes : Option ExceptionInfo <-
-        ExceptionUnit fetchExc decodeExc scrIdx cs1Idx memSize
-                      ecall ebreak isLoad isStore
+        ExceptionUnit ecall ebreak isLoad isStore
+                      fetchExc decodeExc inst_val
                       cs1Tag cs1ECap AddrBoundsCheckOut AdderBeforeBoundsCheckOut ;
 
-      LetE isUnsigned : Bool <- isNotZero (#inst_val`[14:14]) ;
       LetE isFence : Bool <- ##aluControl`"Fence" ;
       LETE DeferredOpRes : Option DeferredOp <-
-        Deferred cs1Perms memSize isUnsigned isFenceI zimm12 isLoad isStore isFence ;
+        Deferred isLoad isStore isFence cs1Perms inst_val ;
 
       LetE NewPccVal : FullECapWithTag <-
         STRUCT { "tag" ::= #NewPcc_tag; "ecap" ::= #NewPcc_ecap;
