@@ -209,6 +209,29 @@ Definition InstGroup := STRUCT_TYPE {
   "ComparatorGeneral_invertRes" :: Bool   (* Should be set only for Branch *)
 }.
 
+Definition FunctionalUnits := STRUCT_TYPE {
+  "AdderBeforeBoundsCheck" :: Bool ;
+  "AdderToOutput" :: Bool ;
+  "AddCapBSz" :: Bool ;
+  "ComparatorGeneral" :: Bool ;
+  "CjalrUnit" :: Bool ;
+  "Logical" :: Bool ;
+  "CAndPerm" :: Bool ;
+  "SealerUnsealer" :: Bool ;
+  "Bounds" :: Bool ;
+  "Shifter" :: Bool ;
+  "AdderBeforeRepCheck" :: Bool ;
+  "ComparatorTopOrRep" :: Bool ;
+  "ComparatorBase" :: Bool ;
+  "AddrBoundsCheck" :: Bool ;
+  "CapSubset" :: Bool ;
+  "CapEq" :: Bool ;
+  "ScrSanitizer" :: Bool ;
+  "Deferred" :: Bool ;
+  "Exception" :: Bool ;
+  "NewPcc" :: Bool
+}.
+
 (* ===========================================================================
    CSR & SCR DEFINITIONS, TABLES, MAPPINGS, AND DECODERS
    =========================================================================== *)

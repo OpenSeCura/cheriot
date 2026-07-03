@@ -53,6 +53,7 @@ Branch
                              AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       g) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
       h) AddrBoundsCheck (ands the two comparator outputs correctly)
+      i) NewPcc (updates pcc address to AdderBeforeBoundsCheck, tag to AddrBoundsCheck)
 
 Cjal
 * CJAL cd, jimm20
@@ -68,6 +69,7 @@ Cjal
                              AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       g) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
       h) AddrBoundsCheck (ands the two comparator outputs correctly)
+      i) NewPcc (updates pcc address to AdderBeforeBoundsCheck, tag to AddrBoundsCheck)
 
 AuiCgp/AuiPcc
 * AUICGP cd, uimm20_11
@@ -117,6 +119,7 @@ Cjalr
       a) AdderBeforeBoundsCheck (computing jump target address cs1.addr + simm12)
       b) AdderToOutput (computing return link address PC + 2 / PC + 4)
       c) CjalrUnit (sentry legality / unsealing check unit)
+      d) NewPcc (updates pcc address to AdderBeforeBoundsCheck, tag to CjalrUnit.tag, ecap to CjalrUnit.ecap)
 
 CTestSubset
 * CTestSubset rd, cs1, cs2
@@ -832,6 +835,55 @@ Section DecodeInstGroup.
       "SealOrUnseal" ::= Or [ ##group`"Seal"; ##group`"Unseal" ]
     }).
 End DecodeInstGroup.
+
+Section GetFunctionalUnits.
+  Variable ty : Kind -> Type.
+  Variable group : ty InstGroup.
+
+  Definition getFunctionalUnitsForInstGroup : LetExpr ty FunctionalUnits :=
+    RetE (STRUCT {
+      "AdderBeforeBoundsCheck" ::=
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
+             ##group`"CIncAddr"; ##group`"Cjalr"; ##group`"CSetBounds";
+             ##group`"Load"; ##group`"Store" ] ;
+      "AdderToOutput" ::= Or [ ##group`"Cjal"; ##group`"Cjalr"; ##group`"AddSub"; ##group`"CGetLen" ] ;
+      "AddCapBSz" ::=
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
+             ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
+      "ComparatorGeneral" ::= Or [ ##group`"Branch"; ##group`"Slt"; ##group`"CSetEqual" ] ;
+      "CjalrUnit" ::= ##group`"Cjalr" ;
+      "Logical" ::= ##group`"Logical" ;
+      "CAndPerm" ::= ##group`"CAndPerm" ;
+      "SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
+      "Bounds" ::= Or [ ##group`"CSetBounds"; ##group`"Cram"; ##group`"Crrl" ] ;
+      "Shifter" ::=
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
+             ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"Shift" ] ;
+      "AdderBeforeRepCheck" ::=
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
+             ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
+      "ComparatorTopOrRep" ::=
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
+             ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CTestSubset";
+             ##group`"CSetBounds"; ##group`"Seal"; ##group`"Unseal";
+             ##group`"Load"; ##group`"Store" ] ;
+      "ComparatorBase" ::=
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
+             ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CTestSubset";
+             ##group`"CSetBounds"; ##group`"Seal"; ##group`"Unseal";
+             ##group`"Load"; ##group`"Store" ] ;
+      "AddrBoundsCheck" ::=
+        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
+             ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds";
+             ##group`"Seal"; ##group`"Unseal"; ##group`"Load"; ##group`"Store" ] ;
+      "CapSubset" ::= ##group`"CTestSubset" ;
+      "CapEq" ::= ##group`"CSetEqual" ;
+      "ScrSanitizer" ::= ##group`"Scr" ;
+      "Deferred" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"Fence" ] ;
+      "Exception" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"ECall"; ##group`"EBreak" ] ;
+      "NewPcc" ::= Or [ ##group`"Mret"; ##group`"Cjal"; ##group`"Cjalr"; ##group`"Branch" ]
+    }).
+End GetFunctionalUnits.
 
 Section Alu.
   Variable ty : Kind -> Type.
