@@ -593,12 +593,12 @@ Definition AluControl := STRUCT_TYPE {
   "AdderBeforeBoundsCheck_offset_uimm20_11" :: Bool ;
   "AdderBeforeBoundsCheck_offset_cs2Addr" :: Bool ;
   (* AdderBeforeBoundsCheck_offset_zimm12 = Bounds_isImm *)
-  "AdderBeforeBoundsCheck_offset_simm12" :: Bool ; (* default option *)
+  (* "AdderBeforeBoundsCheck_offset_simm12" :: Bool ; (* default option *) *)
   "AdderToOutput_base_pccAddr" :: Bool ;
   (* AdderToOutput_base_cs1Addr = AddSub (* default option *) *)
   (* AdderToOutput_base_cs1Top = CGetLen *)
   "AdderToOutput_offset_const2" :: Bool ;
-  "AdderToOutput_offset_const4" :: Bool ; (* default option *)
+  (* "AdderToOutput_offset_const4" :: Bool ; (* default option *) *)
   "AdderToOutput_offset_cs2Addr" :: Bool ;
   "AdderToOutput_offset_simm12" :: Bool ;
   (* AdderToOutput_offset_cs1Base = CGetLen *)
@@ -618,16 +618,16 @@ Definition AluControl := STRUCT_TYPE {
   "Bounds_isImm" :: Bool ;
   (* Shifter_data_isCs1AddrNotConst1 = Shift *)
   "Shifter_shamt_cs2Addr" :: Bool ;
-  "Shifter_shamt_shamt" :: Bool ; (* default option *)
+  (* "Shifter_shamt_shamt" :: Bool ; (* default option *) *)
   (* Shifter_shamt_AddCapBSz = BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr *)
   "Shifter_isArith" :: Bool ;
   "Shifter_isRight" :: Bool ;
   "ComparatorTopOrRep_addr_AdderBeforeBoundsCheck" :: Bool ;
-  "ComparatorTopOrRep_addr_cs1Addr" :: Bool ; (* default option *)
+  (* "ComparatorTopOrRep_addr_cs1Addr" :: Bool ; (* default option *) *)
   (* ComparatorTopOrRep_addr_cs2Addr = SealOrSetAddr *)
   (* ComparatorTopOrRep_addr_cs1OType = Unseal *)
   (* ComparatorTopOrRep_addr_cs1Top = CTestSubset *)
-  "ComparatorTopOrRep_topRep_cs1Top" :: Bool ; (* default option *)
+  (* "ComparatorTopOrRep_topRep_cs1Top" :: Bool ; (* default option *) *)
   (* ComparatorTopOrRep_topRep_AdderBeforeRepCheck = BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr *)
   (* ComparatorTopOrRep_topRep_cs2Top = SealOrUnsealOrSubset *)
   (* ComparatorBase_base_cs2Base = SealOrUnsealOrSubset *)
@@ -637,7 +637,7 @@ Definition AluControl := STRUCT_TYPE {
   (* ComparatorBase_addr_cs1Addr = CSetBounds (* default option *) *)
   (* ComparatorBase_addr_cs1OType = Unseal *)
   (* ComparatorBase_addr_cs1Base = CTestSubset *)
-  "ComparatorBase_base_cs1Base" :: Bool ; (* default option *)
+  (* "ComparatorBase_base_cs1Base" :: Bool ; (* default option *) *)
   (* NewPcc_tag_cs2Tag = Scr *)
   (* NewPcc_tag_CjalrUnitTag = Cjalr *)
   (* NewPcc_ecap_cs2Ecap = Scr *)
@@ -728,17 +728,17 @@ Section DecodeInstGroup.
       "AdderBeforeBoundsCheck_offset_cs2Addr" ::=
         Or [ And [ ##group`"CIncAddr"; Not ##group`"isImm" ];
              And [ ##group`"CSetBounds"; Not ##group`"isImm" ] ] ;
-      "AdderBeforeBoundsCheck_offset_simm12" ::=
+      (* "AdderBeforeBoundsCheck_offset_simm12" ::=
         Or [ ##group`"Cjalr"; ##group`"Load"; ##group`"Store";
-             And [ ##group`"CIncAddr"; ##group`"isImm" ] ] ;
+             And [ ##group`"CIncAddr"; ##group`"isImm" ] ] ; *)
       "AdderToOutput_base_pccAddr" ::=
         Or [ ##group`"Cjal"; ##group`"Cjalr" ] ;
       "AdderToOutput_offset_const2" ::=
         And [ ##group`"isCompressed";
               Or [ ##group`"Cjal"; ##group`"Cjalr" ] ] ;
-      "AdderToOutput_offset_const4" ::=
+      (* "AdderToOutput_offset_const4" ::=
         And [ Not ##group`"isCompressed";
-              Or [ ##group`"Cjal"; ##group`"Cjalr" ] ] ;
+              Or [ ##group`"Cjal"; ##group`"Cjalr" ] ] ; *)
       "AdderToOutput_offset_cs2Addr" ::= And [ ##group`"AddSub"; Not ##group`"isImm" ] ;
       "AdderToOutput_offset_simm12" ::= And [ ##group`"AddSub"; ##group`"isImm" ] ;
       "AdderToOutput_isSub" ::= Or [ And [ ##group`"AddSub"; ##group`"AddSub_isSub" ]; ##group`"CGetLen" ] ;
@@ -755,23 +755,23 @@ Section DecodeInstGroup.
       "Bounds_isExact" ::= ##group`"CSetBounds_isExact" ;
       "Bounds_isImm" ::= And [ ##group`"CSetBounds"; ##group`"isImm" ] ;
       "Shifter_shamt_cs2Addr" ::= And [ ##group`"Shift"; Not ##group`"isImm" ] ;
-      "Shifter_shamt_shamt" ::= And [ ##group`"Shift"; ##group`"isImm" ] ;
+      (* "Shifter_shamt_shamt" ::= And [ ##group`"Shift"; ##group`"isImm" ] ; *)
       "Shifter_isArith" ::= ##group`"Shift_isArith" ;
       "Shifter_isRight" ::= ##group`"Shift_isRight" ;
       "ComparatorTopOrRep_addr_AdderBeforeBoundsCheck" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
              ##group`"CIncAddr"; ##group`"CSetBounds"; ##group`"Load";
              ##group`"Store" ] ;
-      "ComparatorTopOrRep_addr_cs1Addr" ::= ConstTBool false ;
-      "ComparatorTopOrRep_topRep_cs1Top" ::=
-        Or [ ##group`"CSetBounds"; ##group`"Load"; ##group`"Store" ] ;
+      (* "ComparatorTopOrRep_addr_cs1Addr" ::= ConstTBool false ; *)
+      (* "ComparatorTopOrRep_topRep_cs1Top" ::=
+        Or [ ##group`"CSetBounds"; ##group`"Load"; ##group`"Store" ] ; *)
       "ComparatorTopOrRep_checkLte" ::= Or [ ##group`"CTestSubset"; ##group`"CSetBounds" ] ;
       "ComparatorBase_addr_AdderBeforeBoundsCheck" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
              ##group`"CIncAddr"; ##group`"Load"; ##group`"Store" ] ;
-      "ComparatorBase_base_cs1Base" ::=
+      (* "ComparatorBase_base_cs1Base" ::=
         Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds";
-             ##group`"Load"; ##group`"Store" ] ;
+             ##group`"Load"; ##group`"Store" ] ; *)
 
       "Reg_tag_cs1Tag" ::= Or [ ##group`"Cjalr"; ##group`"CMove" ] ;
       "Reg_tag_AddrBoundsCheck" ::=
