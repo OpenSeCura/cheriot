@@ -1460,8 +1460,6 @@ Section Alu.
     Variable decodeExc : ty DecodeException.
 
     Definition AluRouting (aluControl : ty AluControl) : LetExpr ty AluOut :=
-      LetE inst_val : Inst <- ##inst ;
-
       LetE pccAddr : Bit Xlen <- ##pcc`"addr" ;
       LetE pccTag : Bool <- ##pcc`"tag" ;
       LetE pccBase : Bit (AddrSz + 1) <- ##pcc`"ecap"`"base" ;
@@ -1482,24 +1480,24 @@ Section Alu.
       LetE cs2Top : Bit (AddrSz + 1) <- ##cs2`"ecap"`"top" ;
       LetE cs2Perms : CapPerms <- ##cs2`"ecap"`"perms" ;
 
-      LetE simm12 : Bit Xlen <- SignExtendTo Xlen (#inst_val`[31:20]) ;
-      LetE zimm12 : Bit Xlen <- ZeroExtendTo Xlen (#inst_val`[31:20]) ;
-      LetE uimm20 : Bit Xlen <- ({< #inst_val`[31:12], Const ty (Bit 12) Zmod.zero >}) ;
+      LetE simm12 : Bit Xlen <- SignExtendTo Xlen (##inst`[31:20]) ;
+      LetE zimm12 : Bit Xlen <- ZeroExtendTo Xlen (##inst`[31:20]) ;
+      LetE uimm20 : Bit Xlen <- ({< ##inst`[31:12], Const ty (Bit 12) Zmod.zero >}) ;
       LetE uimm20_11 : Bit Xlen <-
-        ({< #inst_val`[31:31], #inst_val`[31:12], Const ty (Bit 11) Zmod.zero >}) ;
-      LetE shamt <- #inst_val`[24:20] ;
+        ({< ##inst`[31:31], ##inst`[31:12], Const ty (Bit 11) Zmod.zero >}) ;
+      LetE shamt <- ##inst`[24:20] ;
       LetE bimm13 : Bit 13 <-
-        ({< #inst_val`[31:31], #inst_val`[7:7], #inst_val`[30:25], #inst_val`[11:8],
+        ({< ##inst`[31:31], ##inst`[7:7], ##inst`[30:25], ##inst`[11:8],
             Const _ (Bit 1) Zmod.zero >}) ;
       LetE bimm12 : Bit Xlen <- SignExtendTo Xlen #bimm13 ;
       LetE jimm21 : Bit 21 <-
-        ({< #inst_val`[31:31], #inst_val`[19:12], #inst_val`[20:20], #inst_val`[30:21],
+        ({< ##inst`[31:31], ##inst`[19:12], ##inst`[20:20], ##inst`[30:21],
             Const _ (Bit 1) Zmod.zero >}) ;
       LetE jimm20 : Bit Xlen <- SignExtendTo Xlen #jimm21 ;
-      LetE scrIdx : Bit RegIdxSz <- #inst_val`[24:20] ;
-      LetE cs1Idx : Bit RegIdxSz <- #inst_val`[19:15] ;
-      LetE memSize : Bit LgLgNumBytesFullCapSz <- #inst_val`[13:12] ;
-      LetE isFenceI : Bool <- isNotZero (#inst_val`[12:12]) ;
+      LetE scrIdx : Bit RegIdxSz <- ##inst`[24:20] ;
+      LetE cs1Idx : Bit RegIdxSz <- ##inst`[19:15] ;
+      LetE memSize : Bit LgLgNumBytesFullCapSz <- ##inst`[13:12] ;
+      LetE isFenceI : Bool <- isNotZero (##inst`[12:12]) ;
 
       LetE Shifter_shamt_AddCapBSz : Bool <-
         ##aluControl`"Shifter_shamt_AddCapBSz" ;
@@ -1642,7 +1640,7 @@ Section Alu.
       LetE Logical_op1 : Bit Xlen <- #cs1Addr ;
       LetE Logical_op2 : Bit Xlen <-
         ITE (##aluControl`"Logical_op2_isCs2AddrNotSimm12") #cs2Addr #simm12 ;
-      LetE Logical_opSel : Bit 2 <- #inst_val`[13:12] ;
+      LetE Logical_opSel : Bit 2 <- ##inst`[13:12] ;
       LETE LogicalOut : Bit Xlen <- Logical Logical_op1 Logical_op2 Logical_opSel ;
 
       LETE CAndPermOut : TagECap <- CAndPerm cs1Tag cs1ECap cs2Addr ;
@@ -1757,12 +1755,12 @@ Section Alu.
 
       LETE ExceptionRes : Option ExceptionInfo <-
         ExceptionUnit ecall ebreak isLoad isStore
-                      fetchExc decodeExc inst_val
+                      fetchExc decodeExc inst
                       cs1Tag cs1ECap AddrBoundsCheckOut AdderBeforeBoundsCheckOut ;
 
       LetE isFence : Bool <- ##aluControl`"Fence" ;
       LETE DeferredOpRes : Option DeferredOp <-
-        Deferred isLoad isStore isFence cs1Perms inst_val ;
+        Deferred isLoad isStore isFence cs1Perms inst ;
 
       LetE NewPccVal : FullECapWithTag <-
         STRUCT { "tag" ::= #NewPcc_tag; "ecap" ::= #NewPcc_ecap;
