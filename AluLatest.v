@@ -1421,6 +1421,7 @@ Section Alu.
     LetE memSize : Bit LgLgNumBytesFullCapSz <- #inst`[13:12] ;
     LetE isUnsigned : Bool <- isNotZero (#inst`[14:14]) ;
     LetE isFenceI : Bool <- isNotZero (#inst`[12:12]) ;
+    LetE isTso : Bool <- isNotZero (#inst`[31:31]) ;
     LetE fenceOp : Bit 4 <- #inst`[27:24] ;
     LetE pred_r : Bool <- isNotZero (#fenceOp`[3:3]) ;
     LetE pred_w : Bool <- isNotZero (#fenceOp`[2:2]) ;
@@ -1428,7 +1429,7 @@ Section Alu.
     LetE succ_w : Bool <- isNotZero (#fenceOp`[0:0]) ;
     LetE rr : Bool <- And [ Not #isFenceI ; #pred_r ; #succ_r ] ;
     LetE rw : Bool <- And [ Not #isFenceI ; #pred_r ; #succ_w ] ;
-    LetE wr : Bool <- And [ Not #isFenceI ; #pred_w ; #succ_r ] ;
+    LetE wr : Bool <- And [ Not #isFenceI ; Not #isTso ; #pred_w ; #succ_r ] ;
     LetE ww : Bool <- And [ Not #isFenceI ; #pred_w ; #succ_w ] ;
     LetE fenceVal : FenceOp <- STRUCT {
       "isFenceI" ::= #isFenceI ;
