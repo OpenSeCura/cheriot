@@ -45,15 +45,14 @@ Branch
     Implicit Write: pcc.addr, pcc.tag
     Functional Units:
       a) AdderBeforeBoundsCheck (computing branch target address PC + bimm12)
-      b) AdderToOutput (computing sequential next PC PC + 2 / PC + 4)
-      c) ComparatorGeneral (evaluating branch condition)
-      d) AddCapBSz (computing representable limit exponent)
-      e) Shifter (computing representable limit shift mask 1 << AddCapBSz)
-      f) AdderBeforeRepCheck (computing representable upper limit address pcc.base + Shifter)
-      g) ComparatorTopOrRep (checking representable upper limit
+      b) ComparatorGeneral (evaluating branch condition)
+      c) AddCapBSz (computing representable limit exponent)
+      d) Shifter (computing representable limit shift mask 1 << AddCapBSz)
+      e) AdderBeforeRepCheck (computing representable upper limit address pcc.base + Shifter)
+      f) ComparatorTopOrRep (checking representable upper limit
                              AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
-      h) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
-      i) AddrBoundsCheck (ands the two comparator outputs correctly)
+      g) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
+      h) AddrBoundsCheck (ands the two comparator outputs correctly)
 
 Cjal
 * CJAL cd, jimm20
@@ -167,7 +166,8 @@ Load
       b) ComparatorTopOrRep (checking top AdderBeforeBoundsCheck < cs1.top)
       c) ComparatorBase (checking base AdderBeforeBoundsCheck >= cs1.base)
       d) AddrBoundsCheck (ands the two comparator outputs correctly)
-      e) LoadUnit (outputs exception and LoadPostProcess LG/LM etc)
+      e) Deferred (outputs memory operation info LG/LM etc)
+      f) Exception (outputs exception if bounds/tag/permission/alignment violation)
 
 Store
 * SB rs2, simm12(cs1)
@@ -180,7 +180,8 @@ Store
       b) ComparatorTopOrRep (checking top AdderBeforeBoundsCheck < cs1.top)
       c) ComparatorBase (checking base AdderBeforeBoundsCheck >= cs1.base)
       d) AddrBoundsCheck (ands the two comparator outputs correctly)
-      e) StoreUnit (outputs exception)
+      e) Deferred (outputs memory operation info)
+      f) Exception (outputs exception if bounds/tag/permission/alignment violation)
 
 AddSub
 * ADD rd, rs1, rs2
@@ -329,7 +330,7 @@ ECall
     Implicit Write: MEPCC, pcc, mcause (8)
     Note: Will cause exception
     Functional Units:
-      a) None (direct register copy)
+      a) Exception (outputs exception with cause EXC_ECallM)
 
 EBreak
 * EBREAK
@@ -337,7 +338,7 @@ EBreak
     Implicit Write: MEPCC, pcc, mcause (3)
     Note: Will cause exception
     Functional Units:
-      a) None (direct register copy)
+      a) Exception (outputs exception with cause EXC_Breakpoint)
 
 Mret
 * MRET
@@ -345,14 +346,14 @@ Mret
     Implicit Write: pcc
     Note: Decoder will cause exceptions if no ASR
     Functional Units:
-      a) None (direct register copy)
+      a) NewPcc (updates pcc address to cs2Addr)
 
 Fence
 * FENCE
 * FENCE.I
 * FENCE.TSO
     Functional Units:
-      a) None (direct register copy)
+      a) Deferred (outputs fence operation info)
 
 -------------------------------------------------------------------------------
 2. FUNCTIONAL UNIT/RESOURCE MAPPING
