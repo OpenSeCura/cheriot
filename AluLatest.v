@@ -519,17 +519,16 @@ NewPcc (Output):
   - Cjal   : Cjal
   - Cjalr  : Cjalr
   - Branch : Branch
-  Outputs: addr, Addr_change, Ecap_change
+  Outputs: tag, ecap, addr, Addr_change, Ecap_change
   isCond: ComparatorGeneral.cond (Branch)
-  cs2Addr: cs2.addr (Mret)
+  cs2: cs2 (Mret)
   addrIn: AdderBeforeBoundsCheck (Branch, Cjal, Cjalr)
+  inBounds: AddrBoundsCheck (Branch, Cjal)
+  cjalrTag: CjalrUnit.tag (Cjalr)
+  cjalrEcap: CjalrUnit.ecap (Cjalr)
+  pccTag: pcc.tag (all)
 
-NewPcc.tag: cs2.tag (Mret), AddrBoundsCheck (Branch, Cjal), CjalrUnit.tag (Cjalr), pcc.tag (others)
-NewPcc.ecap: cs2.ecap (Mret), CjalrUnit.ecap (Cjalr), pcc.ecap (others)
-NewPcc.addr
-NewPcc.Ecap_change
-NewPcc.Addr_change
-
+NewPcc
 Exception
 Deferred
 
@@ -1397,6 +1396,8 @@ Section Alu.
     ).
 
   Definition NewPccRes := STRUCT_TYPE {
+    "tag" :: Bool ;
+    "ecap" :: ECap ;
     "addr" :: Addr ;
     "NewPccAddr_change" :: Bool ;
     "NewPccEcap_change" :: Bool
@@ -1404,13 +1405,27 @@ Section Alu.
 
   Definition NewPcc (isMret isCjal isCjalr isBranch : ty Bool)
                     (isCond : ty Bool)
-                    (cs2Addr addrIn : ty Addr)
+                    (cs2 : ty FullECapWithTag) (addrIn : ty Addr)
+                    (inBounds cjalrTag : ty Bool) (cjalrEcap : ty ECap)
+                    (pccTag : ty Bool)
   : LetExpr ty NewPccRes :=
     LetE isTakenBranch : Bool <- And [ #isBranch ; #isCond ] ;
     LetE addrChange : Bool <- Or [ #isMret ; #isCjal ; #isCjalr ; #isTakenBranch ] ;
     LetE ecapChange : Bool <- Or [ #isMret ; #isCjalr ] ;
+    LetE cs2Addr : Addr <- ##cs2`"addr" ;
     LetE pccAddrOut : Addr <- ITE (#isMret) #cs2Addr #addrIn ;
+    LetE pccTagOut : Bool <-
+      caseDefault (k := Bool) [
+          (#isMret, ##cs2`"tag") ;
+          (Or [ #isBranch ; #isCjal ], #inBounds) ;
+          (#isCjalr, #cjalrTag) ]
+        #pccTag ;
+    LetE pccEcapOut : ECap <-
+      Or [ ITE0 #isMret ##cs2`"ecap" ;
+           ITE0 #isCjalr #cjalrEcap ] ;
     @RetE _ NewPccRes (STRUCT {
+      "tag" ::= #pccTagOut ;
+      "ecap" ::= #pccEcapOut ;
       "addr" ::= #pccAddrOut ;
       "NewPccAddr_change" ::= #addrChange ;
       "NewPccEcap_change" ::= #ecapChange
@@ -1625,26 +1640,16 @@ Section Alu.
       LetE isBranch : Bool <- ##aluControl`"Branch" ;
       LetE isCond : Bool <- ##ComparatorGeneralOut`"cond" ;
 
+      LetE cjalrTag : Bool <- ##CjalrUnitOut`"tag" ;
+      LetE cjalrEcap : ECap <- ##CjalrUnitOut`"ecap" ;
       LETE NewPccOut : NewPccRes <-
-        NewPcc isMret isCjal isCjalr isBranch isCond cs2Addr AdderBeforeBoundsCheckOut ;
+        NewPcc isMret isCjal isCjalr isBranch isCond cs2 AdderBeforeBoundsCheckOut
+               AddrBoundsCheckOut cjalrTag cjalrEcap pccTag ;
 
-      LetE NewPcc_tag : Bool <-
-        caseDefault (k := Bool) [
-            (##aluControl`"Scr", #cs2Tag) ;
-            (##aluControl`"NewPcc_tag_AddrBoundsCheck", #AddrBoundsCheckOut) ;
-            (##aluControl`"Cjalr", ##CjalrUnitOut`"tag") ]
-          #pccTag ;
-
-      LetE NewPcc_ecap : ECap <-
-        caseDefault (k := ECap) [
-            (##aluControl`"Scr", ##cs2`"ecap") ;
-            (##aluControl`"Cjalr", ##CjalrUnitOut`"ecap") ]
-          (##pcc`"ecap") ;
-
+      LetE NewPcc_tag : Bool <- ##NewPccOut`"tag" ;
+      LetE NewPcc_ecap : ECap <- ##NewPccOut`"ecap" ;
       LetE NewPcc_addr : Addr <- ##NewPccOut`"addr" ;
-
       LetE NewPccEcap_change : Bool <- ##NewPccOut`"NewPccEcap_change" ;
-
       LetE NewPccAddr_change : Bool <- ##NewPccOut`"NewPccAddr_change" ;
 
       LetE NewSpecial_tag : Bool <- #ScrSanitizerOut ;
