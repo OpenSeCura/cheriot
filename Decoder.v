@@ -81,8 +81,7 @@ Section DecodeUncompressed.
 
     (* ALU Operations *)
     LetE isAdd : Bool <- And [isZero #funct3; Or [And [#isOp; isZero #funct7]; #isOpImm]];
-    LetE isSub : Bool <- And [#isOp; isZero #funct3; Eq #funct7 $0x20];
-    LetE isAddSub : Bool <- Or [#isAdd; #isSub] ;
+    LetE isOpSub : Bool <- And [#isOp; isZero #funct3; Eq #funct7 $0x20] ;
 
     LetE isSlt   : Bool <- And [ Eq (#funct3`[2:1]) $1; Or [And [#isOp; isZero #funct7]; #isOpImm] ] ;
 
@@ -108,7 +107,7 @@ Section DecodeUncompressed.
     (* System Operations & CSR Validation *)
     LetE isCsrOp: Bool <- And [ #isSystem; isNotZero (#funct3`[1:0]) ] ;
     LetE csrAllowRead  : Bool <- Or [ csrAllowReadNoAsrDecoder csrAddr; #hasAsr ] ;
-    LetE csrAllowWrite : Bool <- Or [ csrAllowWriteNoAsrDecoder csrAddr; #hasAsr ] ;
+    LetE csrAllowWrite : Bool <- Or [ csrAllowReadNoAsrDecoder csrAddr; #hasAsr ] ;
 
     LetE isCsrWriteAlways : Bool <- Or [ Eq #funct3 $1; Eq #funct3 $5 ] ; (* CSRRW / CSRRWI *)
     LetE isCsrBitMod      : Bool <- Or [ Eq #funct3 $2; Eq #funct3 $3; Eq #funct3 $6; Eq #funct3 $7 ] ; (* CSRRS/RC/RSI/RCI *)
@@ -163,6 +162,9 @@ Section DecodeUncompressed.
     LetE isCTestSubset        : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x20 ] ;
     LetE isCSetEqual          : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x21 ] ;
 
+    LetE isSub    : Bool <- Or [ #isOpSub; #isCSub ] ;
+    LetE isAddSub : Bool <- Or [ #isAdd; #isSub ] ;
+
     LetE isCIncAddr  : Bool <- Or [ #isCIncAddrReg; #isCIncAddrImm ] ;
     LetE isCSetBounds: Bool <- Or [ #isCSetBoundsReg; #isCSetBoundsExact; #isCSetBoundsRoundDown; #isCSetBoundsImm ] ;
 
@@ -174,7 +176,7 @@ Section DecodeUncompressed.
 
     LetE isValidInst : Bool <- Or [
       #isBranch; #isCjal; #isAuiPcc; #isAuiCgp; #isCIncAddr; #isCSetAddr; #isCjalr; #isCTestSubset;
-      #isCSetBounds; #isSeal; #isUnseal; #isLoad; #isStore; #isAddSub; #isCSub; #isCGetLen;
+      #isCSetBounds; #isSeal; #isUnseal; #isLoad; #isStore; #isAddSub; #isCGetLen;
       #isSlt; #isCSetEqual; #isShift; #isLogical; #isCram; #isCrrl; #isCAndPerm; #isCsr; #isScr;
       #isLui; #isCGetPerm; #isCGetType; #isCGetBase; #isCGetTag; #isCGetAddr; #isCGetHigh;
       #isCGetTop; #isCSetHigh; #isCClearTag; #isCMove; #isMret; #isECall; #isEBreak; #isFence
@@ -212,7 +214,7 @@ Section DecodeUncompressed.
       "Load"                        ::= #isLoad ;
       "Store"                       ::= #isStore ;
       "AddSub"                      ::= #isAddSub ;
-      "CSub"                        ::= #isCSub ;
+      "AddSub_isSub"                ::= #isSub ;
       "CGetLen"                     ::= #isCGetLen ;
       "Slt"                         ::= #isSlt ;
       "CSetEqual"                   ::= #isCSetEqual ;

@@ -176,7 +176,7 @@ Definition InstGroup := STRUCT_TYPE {
   "Load"                        :: Bool ;
   "Store"                       :: Bool ;
   "AddSub"                      :: Bool ;
-  "CSub"                        :: Bool ;
+  "AddSub_isSub"                :: Bool ; (* This also captures AddSub *)
   "CGetLen"                     :: Bool ;
   "Slt"                         :: Bool ;
   "CSetEqual"                   :: Bool ;

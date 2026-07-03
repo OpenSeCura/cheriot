@@ -187,13 +187,9 @@ AddSub
 * ADD rd, rs1, rs2
 * SUB rd, rs1, rs2
 * ADDI rd, rs1, simm12
-    Functional Units:
-      a) AdderToOutput (arithmetic calculation)
-
-CSub
 * CSub rd, cs1, cs2
     Functional Units:
-      a) AdderToOutput (address difference calculation)
+      a) AdderToOutput (arithmetic calculation)
 
 CGetLen
 * CGetLen rd, cs1
@@ -369,11 +365,11 @@ AdderBeforeBoundsCheck:
 
 AdderToOutput:
   - ADD : Cjal, Cjalr, AddSub (when ADD/ADDI)
-  - SUB : AddSub (when SUB), CSub, CGetLen
-  base: pcc.addr (Cjal, Cjalr), cs1.addr (AddSub, CSub),
+  - SUB : AddSub (when SUB/CSub), CGetLen
+  base: pcc.addr (Cjal, Cjalr), cs1.addr (AddSub),
         cs1.top (CGetLen)
   offset: 2 (Cjal, Cjalr) IF Compressed, 4 (Cjal, Cjalr) IF !Compressed,
-        cs2.addr (AddSub & !isImm, CSub), simm12 (AddSub & isImm), cs1.base (CGetLen)
+        cs2.addr (AddSub & !isImm), simm12 (AddSub & isImm), cs1.base (CGetLen)
 
 AddCapBSz:
   - ADD_CapBSz : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
@@ -544,7 +540,7 @@ NewSpecial.ecap: cs1.ecap (Scr)
 NewSpecial.addr: cs1.addr (Scr)
 
 Reg.tag: 0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGetTag, CGetAddr, CGetHigh,
-            CGetTop, CGetLen, Cram, Crrl, CSub, CSetEqual, CTestSubset, Csr, CSetHigh, CClearTag, Load, Store),
+            CGetTop, CGetLen, Cram, Crrl, CSetEqual, CTestSubset, Csr, CSetHigh, CClearTag, Load, Store),
          pcc.tag (Cjal),
          cs1.tag (Cjalr, CMove),
          cs2.tag (Scr),
@@ -554,7 +550,7 @@ Reg.tag: 0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGet
          SealerUnsealer.tag (Seal, Unseal)
 
 Reg.ecap: 0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGetTag, CGetAddr, CGetHigh,
-             CGetTop, CGetLen, Cram, Crrl, CSub, CSetEqual, CTestSubset, Csr, Load, Store),
+             CGetTop, CGetLen, Cram, Crrl, CSetEqual, CTestSubset, Csr, Load, Store),
           pcc.ecap (AuiPcc, Cjal, Cjalr),
           cs1.ecap (AuiCgp, CIncAddr, CSetAddr, CClearTag, CMove),
           cs2.addr (CSetHigh), cs2.ecap (Scr), CAndPerm.ecap (CAndPerm),
@@ -563,7 +559,7 @@ Reg.ecap: 0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGe
 
 Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, Store),
           ComparatorGeneral.cond (Slt), Shifter (Shift), Logical (Logical),
-          AdderToOutput (Cjal, Cjalr, AddSub, CGetLen, CSub),
+          AdderToOutput (Cjal, Cjalr, AddSub, CGetLen),
           cs1.perms (CGetPerm), cs1.otype (CGetType), cs1.base (CGetBase), cs1.tag (CGetTag),
           cs1.addr (CGetAddr), cs1.high (CGetHigh), cs1.top (CGetTop),
           cs2.addr (CSetAddr, Csr, Scr), cs1.addr (CAndPerm, CClearTag, Seal, Unseal, CMove, CSetHigh),
@@ -742,20 +738,19 @@ Section DecodeInstGroup.
              And [ ##group`"CIncAddr"; ##group`"isImm" ] ] ;
       "AdderToOutput_base_pccAddr" ::=
         Or [ ##group`"Cjal"; ##group`"Cjalr" ] ;
-      "AdderToOutput_base_cs1Addr" ::= Or [ ##group`"AddSub"; ##group`"CSub" ] ;
+      "AdderToOutput_base_cs1Addr" ::= ##group`"AddSub" ;
       "AdderToOutput_offset_const2" ::=
         And [ ##group`"isCompressed";
               Or [ ##group`"Cjal"; ##group`"Cjalr" ] ] ;
       "AdderToOutput_offset_const4" ::=
         And [ Not ##group`"isCompressed";
               Or [ ##group`"Cjal"; ##group`"Cjalr" ] ] ;
-      "AdderToOutput_offset_cs2Addr" ::=
-        Or [ And [ ##group`"AddSub"; Not ##group`"isImm" ]; ##group`"CSub" ] ;
+      "AdderToOutput_offset_cs2Addr" ::= And [ ##group`"AddSub"; Not ##group`"isImm" ] ;
       "AdderToOutput_offset_simm12" ::= And [ ##group`"AddSub"; ##group`"isImm" ] ;
-      "AdderToOutput_isSub" ::= Or [ ##group`"CSub"; ##group`"CGetLen" ] ;
+      "AdderToOutput_isSub" ::= Or [ And [ ##group`"AddSub"; ##group`"AddSub_isSub" ]; ##group`"CGetLen" ] ;
       "ComparatorGeneral_op2_isCs2AddrNotSimm12" ::=
         Or [ ##group`"Branch"; ##group`"CSetEqual";
-             And [ ##group`"Slt"; Not ##group`"isImm" ] ] ;
+              And [ ##group`"Slt"; Not ##group`"isImm" ] ] ;
       "ComparatorGeneral_checkLt" ::= ##group`"ComparatorGeneral_checkLt" ;
       "ComparatorGeneral_checkEq" ::= ##group`"ComparatorGeneral_checkEq" ;
       "ComparatorGeneral_invertRes" ::= ##group`"ComparatorGeneral_invertRes" ;
@@ -788,7 +783,7 @@ Section DecodeInstGroup.
         Or [ ##group`"Lui"; ##group`"AddSub"; ##group`"Slt"; ##group`"Shift";
              ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
              ##group`"CGetTag"; ##group`"CGetAddr"; ##group`"CGetHigh"; ##group`"CGetTop";
-             ##group`"CGetLen"; ##group`"Cram"; ##group`"Crrl"; ##group`"CSub";
+             ##group`"CGetLen"; ##group`"Cram"; ##group`"Crrl";
              ##group`"CSetEqual"; ##group`"CTestSubset"; ##group`"Csr"; ##group`"CSetHigh";
              ##group`"CClearTag"; ##group`"Load"; ##group`"Store"; ##group`"AuiPcc";
              ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds";
@@ -799,7 +794,7 @@ Section DecodeInstGroup.
              ##group`"Slt"; ##group`"Shift"; ##group`"Logical"; ##group`"CGetPerm";
              ##group`"CGetType"; ##group`"CGetBase"; ##group`"CGetTag"; ##group`"CGetAddr";
              ##group`"CGetHigh"; ##group`"CGetTop"; ##group`"CGetLen"; ##group`"Cram";
-             ##group`"Crrl"; ##group`"CSub"; ##group`"CSetEqual"; ##group`"CTestSubset";
+             ##group`"Crrl"; ##group`"CSetEqual"; ##group`"CTestSubset";
              ##group`"Csr"; ##group`"CSetHigh"; ##group`"CClearTag"; ##group`"Load";
              ##group`"Store"; ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr";
              ##group`"CSetAddr"; ##group`"CSetBounds"; ##group`"Seal"; ##group`"Unseal";
@@ -810,7 +805,7 @@ Section DecodeInstGroup.
              ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
              ##group`"CGetTag"; ##group`"CGetAddr"; ##group`"CGetHigh"; ##group`"CGetTop";
              ##group`"CGetLen"; ##group`"Cram";
-             ##group`"Crrl"; ##group`"CSub"; ##group`"CSetEqual"; ##group`"CTestSubset";
+             ##group`"Crrl"; ##group`"CSetEqual"; ##group`"CTestSubset";
              ##group`"Csr"; ##group`"CSetHigh"; ##group`"CClearTag"; ##group`"Load";
              ##group`"Store" ] ;
       "Reg_tag_cs1Tag" ::= Or [ ##group`"Cjalr"; ##group`"CMove" ] ;
@@ -821,7 +816,7 @@ Section DecodeInstGroup.
              ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
              ##group`"CGetTag"; ##group`"CGetAddr"; ##group`"CGetHigh"; ##group`"CGetTop";
              ##group`"CGetLen"; ##group`"Cram";
-             ##group`"Crrl"; ##group`"CSub"; ##group`"CSetEqual"; ##group`"CTestSubset";
+             ##group`"Crrl"; ##group`"CSetEqual"; ##group`"CTestSubset";
              ##group`"Csr"; ##group`"Load"; ##group`"Store" ] ;
       "Reg_ecap_pccEcap" ::= Or [ ##group`"AuiPcc"; ##group`"Cjal"; ##group`"Cjalr" ] ;
       "Reg_ecap_cs1Ecap" ::=
@@ -831,8 +826,7 @@ Section DecodeInstGroup.
         Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"Load";
              ##group`"Store" ] ;
       "Reg_addr_AdderToOutput" ::=
-        Or [ ##group`"Cjal"; ##group`"Cjalr"; ##group`"AddSub"; ##group`"CGetLen";
-             ##group`"CSub" ] ;
+        Or [ ##group`"Cjal"; ##group`"Cjalr"; ##group`"AddSub"; ##group`"CGetLen" ] ;
       "Reg_addr_cs2Addr" ::= Or [ ##group`"CSetAddr"; ##group`"Csr"; ##group`"Scr" ] ;
       "Reg_addr_cs1Addr" ::=
         Or [ ##group`"CClearTag"; ##group`"CMove"; ##group`"CSetHigh" ] ;
