@@ -639,14 +639,10 @@ Definition AluControl := STRUCT_TYPE {
   (* ComparatorBase_addr_cs1Base = CTestSubset *)
   "ComparatorBase_base_cs1Base" :: Bool ; (* default option *)
   (* NewPcc_tag_cs2Tag = Scr *)
-
   (* NewPcc_tag_CjalrUnitTag = Cjalr *)
-
   (* NewPcc_ecap_cs2Ecap = Scr *)
   (* NewPcc_ecap_CjalrUnitEcap = Cjalr *)
-
   (* NewPcc_addr_cs2Addr = Mret *)
-
   (* Reg_tag_pccTag = Cjal *)
   "Reg_tag_cs1Tag" :: Bool ;
   (* Reg_tag_cs2Tag = Scr *)
@@ -654,7 +650,6 @@ Definition AluControl := STRUCT_TYPE {
   (* Reg_tag_BoundsExact = CSetBounds *)
   (* Reg_tag_CAndPerm = CAndPerm *)
   (* Reg_tag_SealerUnsealer = SealOrUnseal *)
-
   "Reg_ecap_pccEcap" :: Bool ;
   "Reg_ecap_cs1Ecap" :: Bool ;
   (* Reg_ecap_cs2Ecap = Scr *)
