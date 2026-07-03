@@ -639,14 +639,14 @@ Definition AluControl := STRUCT_TYPE {
   (* ComparatorBase_addr_cs1Base = CTestSubset *)
   "ComparatorBase_base_cs1Base" :: Bool ; (* default option *)
   (* NewPcc_tag_cs2Tag = Scr *)
-  "NewPcc_tag_AddrBoundsCheck" :: Bool ;
+
   (* NewPcc_tag_CjalrUnitTag = Cjalr *)
-  "NewPcc_tag_pccTag" :: Bool ; (* default option *)
+
   (* NewPcc_ecap_cs2Ecap = Scr *)
   (* NewPcc_ecap_CjalrUnitEcap = Cjalr *)
-  "NewPcc_ecap_pccEcap" :: Bool ; (* default option *)
+
   (* NewPcc_addr_cs2Addr = Mret *)
-  "Reg_tag_const0" :: Bool ; (* default option *)
+
   (* Reg_tag_pccTag = Cjal *)
   "Reg_tag_cs1Tag" :: Bool ;
   (* Reg_tag_cs2Tag = Scr *)
@@ -654,7 +654,7 @@ Definition AluControl := STRUCT_TYPE {
   (* Reg_tag_BoundsExact = CSetBounds *)
   (* Reg_tag_CAndPerm = CAndPerm *)
   (* Reg_tag_SealerUnsealer = SealOrUnseal *)
-  "Reg_ecap_const0" :: Bool ; (* default option *)
+
   "Reg_ecap_pccEcap" :: Bool ;
   "Reg_ecap_cs1Ecap" :: Bool ;
   (* Reg_ecap_cs2Ecap = Scr *)
@@ -777,46 +777,11 @@ Section DecodeInstGroup.
       "ComparatorBase_base_cs1Base" ::=
         Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds";
              ##group`"Load"; ##group`"Store" ] ;
-      "NewPcc_tag_AddrBoundsCheck" ::= Or [ ##group`"Branch"; ##group`"Cjal" ] ;
-      "NewPcc_tag_pccTag" ::=
-        Or [ ##group`"Lui"; ##group`"AddSub"; ##group`"Slt"; ##group`"Shift";
-             ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
-             ##group`"CGetTag"; ##group`"CGetAddr"; ##group`"CGetHigh"; ##group`"CGetTop";
-             ##group`"CGetLen"; ##group`"Cram"; ##group`"Crrl";
-             ##group`"CSetEqual"; ##group`"CTestSubset"; ##group`"Csr"; ##group`"CSetHigh";
-             ##group`"CClearTag"; ##group`"Load"; ##group`"Store"; ##group`"AuiPcc";
-             ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds";
-             ##group`"Seal"; ##group`"Unseal"; ##group`"CAndPerm"; ##group`"CMove";
-             ##group`"Scr"; ##group`"ECall"; ##group`"EBreak"; ##group`"Fence" ] ;
-      "NewPcc_ecap_pccEcap" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"Lui"; ##group`"AddSub";
-             ##group`"Slt"; ##group`"Shift"; ##group`"Logical"; ##group`"CGetPerm";
-             ##group`"CGetType"; ##group`"CGetBase"; ##group`"CGetTag"; ##group`"CGetAddr";
-             ##group`"CGetHigh"; ##group`"CGetTop"; ##group`"CGetLen"; ##group`"Cram";
-             ##group`"Crrl"; ##group`"CSetEqual"; ##group`"CTestSubset";
-             ##group`"Csr"; ##group`"CSetHigh"; ##group`"CClearTag"; ##group`"Load";
-             ##group`"Store"; ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr";
-             ##group`"CSetAddr"; ##group`"CSetBounds"; ##group`"Seal"; ##group`"Unseal";
-             ##group`"CAndPerm"; ##group`"CMove"; ##group`"Scr"; ##group`"ECall";
-             ##group`"EBreak"; ##group`"Fence" ] ;
-      "Reg_tag_const0" ::=
-        Or [ ##group`"Lui"; ##group`"AddSub"; ##group`"Slt"; ##group`"Shift";
-             ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
-             ##group`"CGetTag"; ##group`"CGetAddr"; ##group`"CGetHigh"; ##group`"CGetTop";
-             ##group`"CGetLen"; ##group`"Cram";
-             ##group`"Crrl"; ##group`"CSetEqual"; ##group`"CTestSubset";
-             ##group`"Csr"; ##group`"CSetHigh"; ##group`"CClearTag"; ##group`"Load";
-             ##group`"Store" ] ;
+
       "Reg_tag_cs1Tag" ::= Or [ ##group`"Cjalr"; ##group`"CMove" ] ;
       "Reg_tag_AddrBoundsCheck" ::=
         Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
-      "Reg_ecap_const0" ::=
-        Or [ ##group`"Lui"; ##group`"AddSub"; ##group`"Slt"; ##group`"Shift";
-             ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
-             ##group`"CGetTag"; ##group`"CGetAddr"; ##group`"CGetHigh"; ##group`"CGetTop";
-             ##group`"CGetLen"; ##group`"Cram";
-             ##group`"Crrl"; ##group`"CSetEqual"; ##group`"CTestSubset";
-             ##group`"Csr"; ##group`"Load"; ##group`"Store" ] ;
+
       "Reg_ecap_pccEcap" ::= Or [ ##group`"AuiPcc"; ##group`"Cjal"; ##group`"Cjalr" ] ;
       "Reg_ecap_cs1Ecap" ::=
         Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CClearTag";
