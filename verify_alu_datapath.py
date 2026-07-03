@@ -52,151 +52,145 @@ def parse_alu_latest(file_path):
                 found.add(t)
         return found
 
-    # Split Section 2 into Units part and Writeback part
-    wb_start_match = re.search(r"\n(NewPcc\.tag:.*)", sec2_text, re.DOTALL)
-    if wb_start_match:
-        units_part = sec2_text[:wb_start_match.start()]
-        wb_part = sec2_text[wb_start_match.start():]
-    else:
-        units_part = sec2_text
-        wb_part = ""
-
     units = {}
+    writebacks = {}
     s2_groups_found = set()
 
-    # Parse Units
-    unit_raw_blocks = re.split(r"\n(?=[A-Z][A-Za-z0-9_]*(?:\s+\(Output\))?:)", units_part)
-    for u_block in unit_raw_blocks:
-        u_block_str = u_block.strip()
-        if not u_block_str:
-            continue
-        lines = u_block_str.split("\n")
+    blocks = re.split(r"\n\n+", sec2_text.strip())
+    
+    for block in blocks:
+        lines = block.split("\n")
         header_line = lines[0].strip()
-        if ":" not in header_line:
-            continue
+        
+        # A Unit block's header ends with a colon and has nothing after it on the same line
+        # e.g., "AdderBeforeBoundsCheck:" or "NewPcc (Output):"
+        if header_line.endswith(":"):
+            header_raw = header_line[:-1].strip()
+            unit_name = header_raw.split("(")[0].strip()
+            is_output = "(Output)" in header_raw
 
-        header_raw = header_line.split(":")[0].strip()
-        unit_name = header_raw.split("(")[0].strip()
-        is_output = "(Output)" in header_raw
+            units[unit_name] = {
+                "is_output": is_output,
+                "outputs": set(),
+                "ports": {}
+            }
 
-        units[unit_name] = {
-            "is_output": is_output,
-            "outputs": set(),
-            "ports": {}
-        }
+            port_lines = []
+            curr_p = []
+            for line in lines[1:]:
+                l_str = line.strip()
+                if not l_str or l_str.startswith("-"):
+                    continue
+                if l_str.startswith("Outputs:"):
+                    raw_outs = l_str[len("Outputs:"):].strip()
+                    fields = re.split(r",|\bOR\b", raw_outs)
+                    for f in fields:
+                        f_clean = re.sub(r"\{.*?\}", "", f).strip()
+                        if f_clean:
+                            units[unit_name]["outputs"].add(f_clean)
+                    continue
+                
+                # A new port starts if it has a colon
+                if ":" in l_str and not l_str.startswith("(") and re.match(r"^[a-zA-Z0-9_.]+\s*:", l_str):
+                    if curr_p:
+                        port_lines.append(" ".join(curr_p))
+                        curr_p = []
+                curr_p.append(l_str)
+            if curr_p:
+                port_lines.append(" ".join(curr_p))
 
-        port_lines = []
-        curr_p = []
-        for line in lines[1:]:
-            l_str = line.strip()
-            if not l_str or l_str.startswith("-"):
-                continue
-            if l_str.startswith("Outputs:"):
-                raw_outs = l_str[len("Outputs:"):].strip()
-                fields = re.split(r",|\bOR\b", raw_outs)
-                for f in fields:
-                    f_clean = re.sub(r"\{.*?\}", "", f).strip()
-                    if f_clean:
-                        units[unit_name]["outputs"].add(f_clean)
-                continue
-            
-            if ":" in l_str and not l_str.startswith("(") and re.match(r"^[a-zA-Z0-9_]+\s*:", l_str):
-                if curr_p:
-                    port_lines.append(" ".join(curr_p))
-                    curr_p = []
-            curr_p.append(l_str)
-        if curr_p:
-            port_lines.append(" ".join(curr_p))
+            for p_str in port_lines:
+                if ":" not in p_str:
+                    continue
+                port_name = p_str.split(":")[0].strip()
+                rest = p_str[p_str.find(":") + 1:].strip()
+                units[unit_name]["ports"][port_name] = []
 
-        for p_str in port_lines:
-            if ":" not in p_str:
-                continue
-            port_name = p_str.split(":")[0].strip()
-            rest = p_str[p_str.find(":") + 1:].strip()
-            units[unit_name]["ports"][port_name] = []
+                matches = re.findall(r"([^(),]+?)\s*\(([^)]+)\)", rest)
+                if matches:
+                    explicit_grps = set()
+                    parsed = []
+                    for src_expr, paren in matches:
+                        src_clean = re.sub(r"^.*?,\s*", "", src_expr).strip()
+                        grps = extract_groups_from_paren(paren)
+                        s2_groups_found.update(grps)
+                        if "all" in paren:
+                            parsed.append((src_clean, "all", section1_groups))
+                        elif "others" in paren:
+                            parsed.append((src_clean, "others", grps))
+                        else:
+                            explicit_grps.update(grps)
+                            parsed.append((src_clean, "explicit", grps))
 
-            matches = re.findall(r"([^(),]+?)\s*\(([^)]+)\)", rest)
-            if matches:
-                explicit_grps = set()
-                parsed = []
-                for src_expr, paren in matches:
-                    src_clean = re.sub(r"^.*?,\s*", "", src_expr).strip()
-                    grps = extract_groups_from_paren(paren)
-                    s2_groups_found.update(grps)
-                    if "all" in paren:
-                        parsed.append((src_clean, "all", section1_groups))
-                    elif "others" in paren:
-                        parsed.append((src_clean, "others", grps))
-                    else:
-                        explicit_grps.update(grps)
-                        parsed.append((src_clean, "explicit", grps))
+                    others_grps = section1_groups - explicit_grps
+                    for src_clean, mtype, grps in parsed:
+                        if mtype == "all":
+                            eff = section1_groups
+                        elif mtype == "others":
+                            eff = others_grps | grps
+                        else:
+                            eff = grps
+                        units[unit_name]["ports"][port_name].append((src_clean, eff))
+                elif rest:
+                    units[unit_name]["ports"][port_name].append((rest, section1_groups))
 
-                others_grps = section1_groups - explicit_grps
-                for src_clean, mtype, grps in parsed:
-                    if mtype == "all":
-                        eff = section1_groups
-                    elif mtype == "others":
-                        eff = others_grps | grps
-                    else:
-                        eff = grps
-                    units[unit_name]["ports"][port_name].append((src_clean, eff))
-            elif rest:
-                units[unit_name]["ports"][port_name].append((rest, section1_groups))
-
-    # Parse Writebacks (joining multiline writeback destinations)
-    writebacks = {}
-    wb_raw_lines = wb_part.split("\n")
-    wb_joined_blocks = []
-    curr_wb = []
-    for l in wb_raw_lines:
-        l_str = l.strip()
-        if not l_str:
-            continue
-        if ":" in l_str or l_str in ["NewPcc.addr", "NewPcc.Ecap_change", "NewPcc.Addr_change", "Exception", "Deferred"]:
+        else:
+            # It's a Writeback block!
+            wb_joined_blocks = []
+            curr_wb = []
+            for l in lines:
+                l_str = l.strip()
+                if not l_str:
+                    continue
+                
+                # A new writeback starts if it has a colon OR if it is exactly a single word (e.g. "NewPcc")
+                is_new_wb = (":" in l_str) or bool(re.match(r"^[A-Za-z0-9_.]+$", l_str))
+                if is_new_wb:
+                    if curr_wb:
+                        wb_joined_blocks.append(" ".join(curr_wb))
+                        curr_wb = []
+                curr_wb.append(l_str)
             if curr_wb:
                 wb_joined_blocks.append(" ".join(curr_wb))
-                curr_wb = []
-        curr_wb.append(l_str)
-    if curr_wb:
-        wb_joined_blocks.append(" ".join(curr_wb))
 
-    for line_str in wb_joined_blocks:
-        if ":" in line_str:
-            wb_name = line_str.split(":")[0].strip()
-            rest = line_str[line_str.find(":") + 1:].strip()
-            writebacks[wb_name] = []
+            for line_str in wb_joined_blocks:
+                if ":" in line_str:
+                    wb_name = line_str.split(":")[0].strip()
+                    rest = line_str[line_str.find(":") + 1:].strip()
+                    writebacks[wb_name] = []
 
-            matches = re.findall(r"([^(),]+?)\s*\(([^)]+)\)", rest)
-            if matches:
-                explicit_grps = set()
-                parsed = []
-                for src_expr, paren in matches:
-                    src_clean = re.sub(r"^.*?,\s*", "", src_expr).strip()
-                    grps = extract_groups_from_paren(paren)
-                    s2_groups_found.update(grps)
-                    if "all" in paren:
-                        parsed.append((src_clean, "all", section1_groups))
-                    elif "others" in paren:
-                        parsed.append((src_clean, "others", grps))
-                    else:
-                        explicit_grps.update(grps)
-                        parsed.append((src_clean, "explicit", grps))
+                    matches = re.findall(r"([^(),]+?)\s*\(([^)]+)\)", rest)
+                    if matches:
+                        explicit_grps = set()
+                        parsed = []
+                        for src_expr, paren in matches:
+                            src_clean = re.sub(r"^.*?,\s*", "", src_expr).strip()
+                            grps = extract_groups_from_paren(paren)
+                            s2_groups_found.update(grps)
+                            if "all" in paren:
+                                parsed.append((src_clean, "all", section1_groups))
+                            elif "others" in paren:
+                                parsed.append((src_clean, "others", grps))
+                            else:
+                                explicit_grps.update(grps)
+                                parsed.append((src_clean, "explicit", grps))
 
-                others_grps = section1_groups - explicit_grps
-                for src_clean, mtype, grps in parsed:
-                    if mtype == "all":
-                        eff = section1_groups
-                    elif mtype == "others":
-                        eff = others_grps | grps
-                    else:
-                        eff = grps
-                    writebacks[wb_name].append((src_clean, eff))
-            elif rest:
-                writebacks[wb_name].append((rest, section1_groups))
-        elif line_str in ["NewPcc.addr", "NewPcc.Ecap_change", "NewPcc.Addr_change", "Exception", "Deferred"]:
-            wb_name = line_str
-            unit_src = "NewPcc" if "NewPcc" in wb_name else wb_name
-            writebacks[wb_name] = [(unit_src, section1_groups)]
+                        others_grps = section1_groups - explicit_grps
+                        for src_clean, mtype, grps in parsed:
+                            if mtype == "all":
+                                eff = section1_groups
+                            elif mtype == "others":
+                                eff = others_grps | grps
+                            else:
+                                eff = grps
+                            writebacks[wb_name].append((src_clean, eff))
+                    elif rest:
+                        writebacks[wb_name].append((rest, section1_groups))
+                else:
+                    # Writeback with no colon (e.g., "NewPcc", "Exception", "Deferred")
+                    wb_name = line_str
+                    unit_src = "NewPcc" if "NewPcc" in wb_name else wb_name
+                    writebacks[wb_name] = [(unit_src, section1_groups)]
 
     return section1_groups, s2_groups_found, units, writebacks, sec2_text
 
