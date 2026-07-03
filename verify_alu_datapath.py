@@ -228,7 +228,7 @@ def run_invariant_checks():
     # INVARIANT 2
     print("\n" + "-" * 80)
     print("INVARIANT 2:")
-    print("  Every element in InstGroup must have a dataflow path terminating at at least one writeback destination.")
+    print("  Every element in InstGroup must have a valid dataflow path through the functional units ending in at least one writeback destination.")
     print("-" * 80)
     inv2_failed = False
     for g in sorted(list(section1_groups)):
@@ -246,8 +246,8 @@ def run_invariant_checks():
         if not reached_wb:
             print(f"  [FAIL] InstGroup '{g}' has NO dataflow path to any writeback destination!")
             inv2_failed = True
-        else:
-            print(f"  [PASS] {g:<14} -> Reaches Writebacks: {sorted(list(reached_wb))}")
+    if not inv2_failed:
+        print("  [PASS] Every element in InstGroup has a valid dataflow path through the functional units ending in at least one writeback destination.")
 
     # INVARIANT 3
     print("\n" + "-" * 80)

@@ -425,9 +425,10 @@ Bounds:
   - SetBounds   : CSetBounds
   - ComputeCram : Cram
   - ComputeCrrl : Crrl
+  - RoundDown   : CSetBounds (when CSetBoundsRoundDown)
   Outputs: base, length, top, E, cram, crrl
-  cs1: cs1 (CSetBounds, Cram, Crrl)
-  reqLimit: cs2.addr (CSetBounds & !isImm), zimm12 (CSetBounds & isImm), cs1.addr (Cram, Crrl)
+  base: cs1.addr (CSetBounds, Cram, Crrl)
+  length: cs2.addr (CSetBounds & !isImm), zimm12 (CSetBounds & isImm), cs1.addr (Cram, Crrl)
 
 BoundsExact:
   - CalcBoundsExactTag : CSetBounds (when CSetBoundsExact)
