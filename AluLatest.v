@@ -620,6 +620,7 @@ Definition AluControl := STRUCT_TYPE {
   "Bounds_reqLimit_cs1Addr" :: Bool ;
   "Bounds_isRoundDown" :: Bool ;
   "Bounds_isExact" :: Bool ;
+  "Bounds_isImm" :: Bool ;
   (* Shifter_data_isCs1AddrNotConst1 = Shift *)
   "Shifter_shamt_cs2Addr" :: Bool ;
   "Shifter_shamt_shamt" :: Bool ; (* default option *)
@@ -723,8 +724,7 @@ Definition AluControl := STRUCT_TYPE {
   "BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr" :: Bool ;
   "SealOrSetAddr" :: Bool ;
   "SealOrUnsealOrSubset" :: Bool ;
-  "SealOrUnseal" :: Bool ;
-  "CSetBoundsImm" :: Bool
+  "SealOrUnseal" :: Bool
 }.
 
 Section DecodeInstGroup.
@@ -764,6 +764,7 @@ Section DecodeInstGroup.
       "Bounds_reqLimit_cs1Addr" ::= Or [ ##group`"Cram"; ##group`"Crrl" ] ;
       "Bounds_isRoundDown" ::= ##group`"CSetBounds_isRoundDown" ;
       "Bounds_isExact" ::= ##group`"CSetBounds_isExact" ;
+      "Bounds_isImm" ::= And [ ##group`"CSetBounds"; ##group`"isImm" ] ;
       "Shifter_shamt_cs2Addr" ::= And [ ##group`"Shift"; Not ##group`"isImm" ] ;
       "Shifter_shamt_shamt" ::= And [ ##group`"Shift"; ##group`"isImm" ] ;
       "Shifter_isArith" ::= ##group`"Shift_isArith" ;
@@ -874,8 +875,7 @@ Section DecodeInstGroup.
       "SealOrSetAddr" ::= Or [ ##group`"Seal"; ##group`"CSetAddr" ] ;
       "SealOrUnsealOrSubset" ::=
         Or [ ##group`"CTestSubset"; ##group`"Seal"; ##group`"Unseal" ] ;
-      "SealOrUnseal" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
-      "CSetBoundsImm" ::= And [ ##group`"CSetBounds"; ##group`"isImm" ]
+      "SealOrUnseal" ::= Or [ ##group`"Seal"; ##group`"Unseal" ]
     }).
 End DecodeInstGroup.
 
@@ -1491,7 +1491,7 @@ Section Alu.
             (##aluControl`"Cjal", #jimm20) ;
             (##aluControl`"AdderBeforeBoundsCheck_offset_uimm20_11", #uimm20_11) ;
             (##aluControl`"AdderBeforeBoundsCheck_offset_cs2Addr", #cs2Addr) ;
-            (##aluControl`"CSetBoundsImm", #zimm12) ]
+            (##aluControl`"Bounds_isImm", #zimm12) ]
           #simm12 ;
       LETE AdderBeforeBoundsCheckOut : Bit Xlen <-
         AdderBeforeBoundsCheck AdderBeforeBoundsCheck_base AdderBeforeBoundsCheck_offset ;
