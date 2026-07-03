@@ -1674,7 +1674,7 @@ Section Alu.
         caseDefault (k := ECap) [ (##aluControl`"Reg_ecap_pccEcap", ##pcc`"ecap") ;
                                    (##aluControl`"Reg_ecap_cs1Ecap", ##cs1`"ecap") ;
                                    (##aluControl`"Scr", ##cs2`"ecap") ;
-                                   (##aluControl`"CSetHigh", ##cs2`"ecap") ;
+                                   (##aluControl`"CSetHigh", ##cs2`"ecap") ; (* wrong, should use cs2Addr *)
                                    (##aluControl`"CAndPerm", ##CAndPermOut`"ecap") ;
                                    (##aluControl`"SealOrUnseal", ##SealerUnsealerOut`"ecap") ;
                                    (##aluControl`"CSetBounds", #Bounds_outECap) ]
@@ -1688,12 +1688,12 @@ Section Alu.
             (##aluControl`"Shift", #ShifterOut) ;
             (##aluControl`"Logical", #LogicalOut) ;
             (##aluControl`"Reg_addr_AdderToOutput", #AdderToOutputOut) ;
-            (##aluControl`"CGetPerm", #cs1Addr) ;
+            (##aluControl`"CGetPerm", ZeroExtendTo Xlen (ToBit (##cs1ECap`"perms"))) ;
             (##aluControl`"CGetType", ZeroExtendTo Xlen #cs1OType) ;
             (##aluControl`"CGetBase", TruncLsb 1 Xlen #cs1Base) ;
             (##aluControl`"CGetTag",  ZeroExtendTo Xlen (ToBit #cs1Tag)) ;
             (##aluControl`"CGetAddr", #cs1Addr) ;
-            (##aluControl`"CGetHigh", #cs1Addr) ;
+            (##aluControl`"CGetHigh", #cs1Addr) ; (* wrong, should use cs1High *)
             (##aluControl`"CGetTop",  TruncLsb 1 Xlen #cs1Top) ;
             (##aluControl`"Reg_addr_cs2Addr", #cs2Addr) ;
             (##aluControl`"Reg_addr_cs1Addr", #cs1Addr) ;
