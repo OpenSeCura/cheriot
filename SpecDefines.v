@@ -131,6 +131,8 @@ Definition FunctionalUnits := STRUCT_TYPE {
   "CapSubset" :: Bool ;
   "CapEq" :: Bool ;
   "ScrSanitizer" :: Bool ;
+  "EncodeCap" :: Bool ;
+  "DecodeCap" :: Bool ;
   "Deferred" :: Bool ;
   "Exception" :: Bool ;
   "NewPcc" :: Bool
@@ -602,51 +604,6 @@ Section CapEncoding.
                                 "base"   ::= #base;
                                 "length" ::= #length })).
   End BaseLength.
-
-  Section EncodeCap.
-    Variable ecap: ty ECap.
-
-    Definition encodeCap: LetExpr ty Cap :=
-      ( LetE decodedPerms <- #ecap`"perms";
-        LetE perms <- encodePerms decodedPerms;
-        LetE E <- #ecap`"E";
-        LetE ECorrected <- get_ECorrected_from_E E;
-        LetE B <- TruncLsb (AddrSz + 1 - CapBSz) CapBSz (Sll (#ecap`"base") #ECorrected);
-        LetE T <- TruncLsb (AddrSz + 1 - CapBSz) CapBSz (Sll (#ecap`"top") #ECorrected);
-        LetE M <- Sub #T #B;
-        @RetE _ Cap (STRUCT {
-                         "R" ::= #ecap`"R";
-                         "p" ::= #perms;
-                         "oType" ::= #ecap`"oType";
-                         "cE" ::= get_cE_from_E_M E M;
-                         "cM" ::= get_cM_from_M M;
-                         "B" ::= #B })).
-  End EncodeCap.
-
-  Section DecodeCap.
-    Variable cap: ty Cap.
-    Variable addr: ty Addr.
-
-    Definition decodeCap: LetExpr ty ECap :=
-      ( LetE encodedPerms <- #cap`"p";
-        LETE perms <- decodePerms encodedPerms;
-        LetE cap_cE <- #cap`"cE";
-        LetE cap_cM <- #cap`"cM";
-        LetE cap_B <- #cap`"B";
-        LetE E <- get_E_from_cE cap_cE;
-        LetE ECorrected <- get_ECorrected_from_E E;
-        LetE M <- get_M_from_cE_cM cap_cE cap_cM;
-        LETE base_length <- get_base_length_from_ECorrected_M_B addr ECorrected M cap_B;
-        LetE base <- #base_length`"base";
-        LetE length <- #base_length`"length";
-        @RetE _ ECap (STRUCT {
-                          "R" ::= ##cap`"R";
-                          "perms" ::= #perms;
-                          "oType" ::= #cap`"oType";
-                          "E" ::= #E;
-                          "top" ::= Add [#base; #length];
-                          "base" ::= #base })).
-  End DecodeCap.
 End CapEncoding.
 
 Definition isSealed ty (ecap: ty ECap) : Expr ty Bool := isNotZero (##ecap`"oType").

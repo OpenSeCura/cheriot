@@ -301,7 +301,7 @@ CGetAddr
 CGetHigh
 * CGetHigh rd, cs1
     Functional Units:
-      None (direct field extraction)
+      a) EncodeCap (computing compressed Cap from cs1.ecap)
 
 CGetTop
 * CGetTop rd, cs1
@@ -311,7 +311,7 @@ CGetTop
 CSetHigh
 * CSetHigh cd, cs1, rs2
     Functional Units:
-      None (direct high word substitution & clearing tag)
+      a) DecodeCap (computing full ECap from rs2 (as Cap) and cs1.addr)
 
 CClearTag
 * CClearTag cd, cs1
@@ -555,7 +555,7 @@ Reg.ecap: 0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGe
              CGetTop, CGetLen, Cram, Crrl, CSetEqual, CTestSubset, Csr, Load, Store),
           pcc.ecap (AuiPcc, Cjal, Cjalr),
           cs1.ecap (AuiCgp, CIncAddr, CSetAddr, CClearTag, CMove),
-          cs2.addr (CSetHigh), cs2.ecap (Scr), CAndPerm.ecap (CAndPerm),
+          DecodeCap (CSetHigh), cs2.ecap (Scr), CAndPerm.ecap (CAndPerm),
           SealerUnsealer.ecap (Seal, Unseal),
           {cs1.R, cs1.perms, cs1.otype, Bounds.E, Bounds.top, Bounds.base} (CSetBounds)
 
@@ -563,7 +563,7 @@ Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, 
           ComparatorGeneral.cond (Slt), Shifter (Shift), Logical (Logical),
           AdderToOutput (Cjal, Cjalr, AddSub, CGetLen),
           cs1.perms (CGetPerm), cs1.otype (CGetType), cs1.base (CGetBase), cs1.tag (CGetTag),
-          cs1.addr (CGetAddr), cs1.high (CGetHigh), cs1.top (CGetTop),
+          cs1.addr (CGetAddr), EncodeCap (CGetHigh), cs1.top (CGetTop),
           cs2.addr (CSetAddr, Csr, Scr), cs1.addr (CAndPerm, CClearTag, Seal, Unseal, CMove, CSetHigh),
           Bounds.base (CSetBounds), Bounds.cram (Cram), Bounds.crrl (Crrl),
           CapSubset (CTestSubset), CapEq (CSetEqual)
@@ -879,6 +879,8 @@ Section GetFunctionalUnits.
       "CapSubset" ::= ##group`"CTestSubset" ;
       "CapEq" ::= ##group`"CSetEqual" ;
       "ScrSanitizer" ::= ##group`"Scr" ;
+      "EncodeCap" ::= ##group`"CGetHigh" ;
+      "DecodeCap" ::= ##group`"CSetHigh" ;
       "Deferred" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"Fence" ] ;
       "Exception" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"ECall"; ##group`"EBreak" ] ;
       "NewPcc" ::= Or [ ##group`"Mret"; ##group`"Cjal"; ##group`"Cjalr"; ##group`"Branch" ]
@@ -1278,6 +1280,43 @@ Section Alu.
     LetE isMemOp : Bool <- Or [ #isLoad; #isStore ] ;
     RetE (ITE0 #isMemOp (mkSome (UNION (DeferredOpType, "MemOp" ::= #memOpVal)))).
 
+
+  Definition EncodeCap (ecap: ty ECap) : LetExpr ty Cap :=
+      ( LetE decodedPerms <- #ecap`"perms";
+        LetE perms <- encodePerms decodedPerms;
+        LetE E <- #ecap`"E";
+        LetE ECorrected <- get_ECorrected_from_E E;
+        LetE B <- TruncLsb (AddrSz + 1 - CapBSz) CapBSz (Sll (#ecap`"base") #ECorrected);
+        LetE T <- TruncLsb (AddrSz + 1 - CapBSz) CapBSz (Sll (#ecap`"top") #ECorrected);
+        LetE M <- Sub #T #B;
+        @RetE _ Cap (STRUCT {
+                         "R" ::= #ecap`"R";
+                         "p" ::= #perms;
+                         "oType" ::= #ecap`"oType";
+                         "cE" ::= get_cE_from_E_M E M;
+                         "cM" ::= get_cM_from_M M;
+                         "B" ::= #B })).
+
+  Definition DecodeCap (cap: ty Cap) (addr: ty Addr) : LetExpr ty ECap :=
+      ( LetE encodedPerms <- #cap`"p";
+        LETE perms <- decodePerms encodedPerms;
+        LetE cap_cE <- #cap`"cE";
+        LetE cap_cM <- #cap`"cM";
+        LetE cap_B <- #cap`"B";
+        LetE E <- get_E_from_cE cap_cE;
+        LetE ECorrected <- get_ECorrected_from_E E;
+        LetE M <- get_M_from_cE_cM cap_cE cap_cM;
+        LETE base_length <- get_base_length_from_ECorrected_M_B addr ECorrected M cap_B;
+        LetE base <- #base_length`"base";
+        LetE length <- #base_length`"length";
+        @RetE _ ECap (STRUCT {
+                          "R" ::= ##cap`"R";
+                          "perms" ::= #perms;
+                          "oType" ::= #cap`"oType";
+                          "E" ::= #E;
+                          "top" ::= Add [#base; #length];
+                          "base" ::= #base })).
+
   Definition Deferred (isLoad isStore isFence : ty Bool)
                        (cs1Perms : ty CapPerms)
                        (inst : ty (Bit Xlen))
@@ -1675,6 +1714,10 @@ Section Alu.
              And [ ##aluControl`"CAndPerm"               ; ##CAndPermOut`"tag" ] ;
              And [ ##aluControl`"SealOrUnseal"           ; ##SealerUnsealerOut`"tag" ] ] ;
 
+
+      LETE encodedCap : Cap <- EncodeCap cs1ECap ;
+      LetE cs2AddrAsCap : Cap <- FromBit Cap #cs2Addr ;
+      LETE decodedECap : ECap <- DecodeCap cs2AddrAsCap cs1Addr ;
       LetE Bounds_outECap : ECap <- STRUCT { "R"     ::= ##cs1ECap`"R" ;
                                              "perms" ::= ##cs1ECap`"perms" ;
                                              "oType" ::= ##cs1ECap`"oType" ;
@@ -1686,7 +1729,7 @@ Section Alu.
         caseDefault (k := ECap) [ (##aluControl`"Reg_ecap_pccEcap", ##pcc`"ecap") ;
                                    (##aluControl`"Reg_ecap_cs1Ecap", ##cs1`"ecap") ;
                                    (##aluControl`"Scr", ##cs2`"ecap") ;
-                                   (##aluControl`"CSetHigh", ##cs2`"ecap") ; (* wrong, should use cs2Addr *)
+                                   (##aluControl`"CSetHigh", #decodedECap) ;
                                    (##aluControl`"CAndPerm", ##CAndPermOut`"ecap") ;
                                    (##aluControl`"SealOrUnseal", ##SealerUnsealerOut`"ecap") ;
                                    (##aluControl`"CSetBounds", #Bounds_outECap) ]
@@ -1705,7 +1748,7 @@ Section Alu.
             (##aluControl`"CGetBase", TruncLsb 1 Xlen #cs1Base) ;
             (##aluControl`"CGetTag",  ZeroExtendTo Xlen (ToBit #cs1Tag)) ;
             (##aluControl`"CGetAddr", #cs1Addr) ;
-            (##aluControl`"CGetHigh", #cs1Addr) ; (* wrong, should use cs1High *)
+            (##aluControl`"CGetHigh", ZeroExtendTo Xlen (ToBit #encodedCap)) ;
             (##aluControl`"CGetTop",  TruncLsb 1 Xlen #cs1Top) ;
             (##aluControl`"Reg_addr_cs2Addr", #cs2Addr) ;
             (##aluControl`"Reg_addr_cs1Addr", #cs1Addr) ;
