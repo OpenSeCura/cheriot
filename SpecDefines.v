@@ -26,23 +26,40 @@ Import ListNotations.
 Local Open Scope Z_scope.
 Local Open Scope guru_scope.
 
-Definition Xlen := 32.
-Definition InstSz     := 32.
-Definition CompInstSz := 16.
+Definition Xlen         := 32.
+Definition InstSz       := 32.
+Definition CompInstSz   := 16.
 
-Definition CapOTypeSz := 3.
-Definition RegIdxSz   := 5.
-Definition Cra       := 1.
+Definition RegIdxSz     := 5.
+Definition CsrAddrSz    := 12.
+Definition Cra          := 1.
+Definition RegIdxSzReal := 4.
+Definition CapOTypeSz   := 3.
+Definition CapPermSz    := (6 : nat).
+Definition CapcMSz      := 8.
 
-Definition LgXlen   := Eval compute in Z.log2_up Xlen.
-Definition Data     := Eval compute in Bit Xlen.
-Definition AddrSz   := Eval compute in Xlen.
-Definition Addr     := Eval compute in Bit AddrSz.
-Definition Inst     := Eval compute in Bit InstSz.
-Definition LgAddrSz := Eval compute in Z.log2_up AddrSz.
-Definition ExpSz    := Eval compute in LgAddrSz.
+Definition ScrAddrSz    := Eval compute in RegIdxSz.
+Definition LgXlen       := Eval compute in Z.log2_up Xlen.
+Definition Data         := Eval compute in Bit Xlen.
+Definition AddrSz       := Eval compute in Xlen.
+Definition Addr         := Eval compute in Bit AddrSz.
+Definition Inst         := Eval compute in Bit InstSz.
+Definition LgAddrSz     := Eval compute in Z.log2_up AddrSz.
+Definition ExpSz        := Eval compute in LgAddrSz.
 Definition NumBytesXlen := Eval compute in (Xlen / 8).
-Definition FullCapSz := 64.
+
+Definition CapBSz          := Eval compute in (CapcMSz + 1).
+Definition CapMSz          := Eval compute in CapBSz.
+
+Definition Cap : Kind := STRUCT_TYPE {
+                             "R" :: Bool;
+                             "p" :: Array CapPermSz Bool;
+                             "oType" :: Bit CapOTypeSz;
+                             "cE" :: Bit ExpSz;
+                             "cM" :: Bit CapcMSz;
+                             "B" :: Bit CapBSz }.
+
+Definition FullCapSz := Eval compute in (kindSize Cap + Xlen).
 Definition NumBytesFullCapSz := Eval compute in (FullCapSz / 8).
 Definition LgNumBytesFullCapSz := Eval compute in Z.log2_up NumBytesFullCapSz.
 Definition LgLgNumBytesFullCapSz := Eval compute in Z.log2_up (LgNumBytesFullCapSz + 1).
@@ -50,15 +67,13 @@ Definition LgLgNumBytesFullCapSz := Eval compute in Z.log2_up (LgNumBytesFullCap
 Definition isCompressed ty (inst: ty Inst) : Expr ty (Bit 2) := TruncLsb (InstSz-2) 2 #inst.
 Definition getCd ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[11:7].
 Definition getCs1 ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[19:15].
-Definition getScr ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[24:20].
+Definition getScr ty (inst: ty Inst) : Expr ty (Bit ScrAddrSz) := #inst`[24:20].
 
 Definition CallSentryIh := 1.
 Definition CallSentryId := 2.
 Definition CallSentryIe := 3.
 Definition RetSentryId  := 4.
 Definition RetSentryIe  := 5.
-
-Definition RegIdxSzReal := 4.
 
 Definition InstGroup := STRUCT_TYPE {
   "isCompressed"                :: Bool ;
@@ -378,7 +393,7 @@ Section Decoders.
   Variable ty : Kind -> Type.
 
   (* Decodes 12-bit architectural CSR address to Option (Bit CsrIdxSz) *)
-  Definition csrAddrDecoder (csrAddr : ty (Bit 12)) : Expr ty (Option (Bit CsrIdxSz)) :=
+  Definition csrAddrDecoder (csrAddr : ty (Bit CsrAddrSz)) : Expr ty (Option (Bit CsrIdxSz)) :=
     caseDefault (k := Option (Bit CsrIdxSz)) [
       (Eq #csrAddr $0xc00, mkSome $0) ;
       (Eq #csrAddr $0xc80, mkSome $1) ;
@@ -395,7 +410,7 @@ Section Decoders.
     ] (mkNone ty).
 
   (* Decodes 5-bit architectural SCR address to Option (Bit ScrIdxSz) *)
-  Definition scrAddrDecoder (scrAddr : ty (Bit RegIdxSz)) : Expr ty (Option (Bit ScrIdxSz)) :=
+  Definition scrAddrDecoder (scrAddr : ty (Bit ScrAddrSz)) : Expr ty (Option (Bit ScrIdxSz)) :=
     caseDefault (k := Option (Bit ScrIdxSz)) [
       (Eq #scrAddr $27, mkSome $0) ;
       (Eq #scrAddr $28, mkSome $1) ;
@@ -404,26 +419,13 @@ Section Decoders.
       (Eq #scrAddr $31, mkSome $4)
     ] (mkNone ty).
 
-  Definition csrAllowReadNoAsrDecoder (csrAddr : ty (Bit 12)) : Expr ty Bool :=
+  Definition csrAllowReadNoAsrDecoder (csrAddr : ty (Bit CsrAddrSz)) : Expr ty Bool :=
     Or [ Eq #csrAddr $0xc00 ; Eq #csrAddr $0xc80 ; Eq #csrAddr $0xc01 ; Eq #csrAddr $0xc81 ;
          Eq #csrAddr $0xc02 ; Eq #csrAddr $0xc82 ; Eq #csrAddr $0xbc1 ; Eq #csrAddr $0xbc2 ].
 
-  Definition csrAllowWriteNoAsrDecoder (csrAddr : ty (Bit 12)) : Expr ty Bool :=
+  Definition csrAllowWriteNoAsrDecoder (csrAddr : ty (Bit CsrAddrSz)) : Expr ty Bool :=
     Or [ Eq #csrAddr $0xbc1 ; Eq #csrAddr $0xbc2 ].
 End Decoders.
-
-Definition CapPermSz := 6%nat.
-Definition CapcMSz := 8.
-Definition CapBSz := Eval compute in (CapcMSz + 1).
-Definition CapMSz := Eval compute in CapBSz.
-
-Definition Cap : Kind := STRUCT_TYPE {
-                             "R" :: Bool;
-                             "p" :: Array CapPermSz Bool;
-                             "oType" :: Bit CapOTypeSz;
-                             "cE" :: Bit ExpSz;
-                             "cM" :: Bit CapcMSz;
-                             "B" :: Bit CapBSz }.
 
 Definition CapPerms := STRUCT_TYPE { "U0" :: Bool ;
                                      "SE" :: Bool ;
