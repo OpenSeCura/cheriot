@@ -30,7 +30,7 @@ Theorem BoundsMonotonic cap addr base length isRoundDown:
   let ecap : type ECap := evalLetExpr (DecodeCap cap addr) in
   let bounds : type BoundsRes := evalLetExpr (Bounds base length isRoundDown) in
   (Zmod.to_Z base >= Zmod.to_Z (ecap@%"base") /\ Zmod.to_Z (base + length) <= Zmod.to_Z (ecap@%"top"))%Z ->
-  (Zmod.to_Z (bounds@%"base") >= Zmod.to_Z base /\ Zmod.to_Z (bounds@%"top") <= Zmod.to_Z (base + length))%Z.
+  (Zmod.to_Z (bounds@%"base") >= Zmod.to_Z (ecap@%"base") /\ Zmod.to_Z (bounds@%"top") <= Zmod.to_Z (ecap@%"top"))%Z.
 Proof.
   admit.
 Admitted.
