@@ -139,6 +139,7 @@ CSetBounds
       c) ComparatorTopOrRep (verifying requested top AdderBeforeBoundsCheck <= cs1.top)
       d) ComparatorBase (verifying requested base >= cs1.base)
       e) AddrBoundsCheck (ands the two comparator outputs correctly)
+      f) BoundsExact (checking if bounds are exact when CSetBoundsExact is used)
 
 Seal
 * CSeal cd, cs1, cs2
@@ -494,6 +495,17 @@ ScrSanitizer:
   tag: cs1.tag (Scr)
   addr: cs1.addr (Scr)
   inst: inst (Scr)
+
+EncodeCap:
+  - Compress : CGetHigh
+  Outputs: cap
+  ecap: cs1.ecap (CGetHigh)
+
+DecodeCap:
+  - Decompress : CSetHigh
+  Outputs: ecap
+  cap: cs2.addr (CSetHigh)
+  addr: cs1.addr (CSetHigh)
 
 Deferred (Output):
   - Load   : Load
@@ -856,6 +868,7 @@ Section GetFunctionalUnits.
       "CAndPerm" ::= ##group`"CAndPerm" ;
       "SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
       "Bounds" ::= Or [ ##group`"CSetBounds"; ##group`"Cram"; ##group`"Crrl" ] ;
+      "BoundsExact" ::= ##group`"CSetBounds_isExact" ;
       "Shifter" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
              ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"Shift" ] ;

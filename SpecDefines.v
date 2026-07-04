@@ -123,6 +123,7 @@ Definition FunctionalUnits := STRUCT_TYPE {
   "CAndPerm" :: Bool ;
   "SealerUnsealer" :: Bool ;
   "Bounds" :: Bool ;
+  "BoundsExact" :: Bool ;
   "Shifter" :: Bool ;
   "AdderBeforeRepCheck" :: Bool ;
   "ComparatorTopOrRep" :: Bool ;
