@@ -52,107 +52,11 @@ Definition getCd ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[11:7].
 Definition getCs1 ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[19:15].
 Definition getScr ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[24:20].
 
-Definition CapPerms := STRUCT_TYPE { "U0" :: Bool ;
-                                     "SE" :: Bool ;
-                                     "US" :: Bool ;
-                                     "EX" :: Bool ;
-                                     "SR" :: Bool ;
-                                     "MC" :: Bool ;
-                                     "LD" :: Bool ;
-                                     "SL" :: Bool ;
-                                     "LM" :: Bool ;
-                                     "SD" :: Bool ;
-                                     "LG" :: Bool ;
-                                     "GL" :: Bool }.
-
-Definition fixPerms ty (perms: ty CapPerms) : Expr ty CapPerms :=
-  (ITE (And [##perms`"EX"; ##perms`"LD"; ##perms`"MC"])
-     (##perms
-        `{ "U0" <- ConstTBool false }
-        `{ "SE" <- ConstTBool false }
-        `{ "US" <- ConstTBool false }
-        `{ "SL" <- ConstTBool false }
-        `{ "SD" <- ConstTBool false })
-     (ITE (And [##perms`"LD"; ##perms`"MC"; ##perms`"SD"])
-        (##perms
-           `{ "U0" <- ConstTBool false }
-           `{ "SE" <- ConstTBool false }
-           `{ "US" <- ConstTBool false }
-           `{ "EX" <- ConstTBool false }
-           `{ "SR" <- ConstTBool false })
-        (ITE (And [##perms`"LD"; ##perms`"MC"])
-           (##perms
-              `{ "U0" <- ConstTBool false }
-              `{ "SE" <- ConstTBool false }
-              `{ "US" <- ConstTBool false }
-              `{ "EX" <- ConstTBool false }
-              `{ "SR" <- ConstTBool false }
-              `{ "SL" <- ConstTBool false }
-              `{ "SD" <- ConstTBool false })
-           (ITE (And [##perms`"SD"; ##perms`"MC"])
-              (##perms
-                 `{ "U0" <- ConstTBool false }
-                 `{ "SE" <- ConstTBool false }
-                 `{ "US" <- ConstTBool false }
-                 `{ "EX" <- ConstTBool false }
-                 `{ "SR" <- ConstTBool false }
-                 `{ "LD" <- ConstTBool false }
-                 `{ "SL" <- ConstTBool false }
-                 `{ "LM" <- ConstTBool false }
-                 `{ "LG" <- ConstTBool false })
-              (ITE (Or [##perms`"LD"; ##perms`"SD"])
-                 (##perms
-                 `{ "U0" <- ConstTBool false }
-                 `{ "SE" <- ConstTBool false }
-                 `{ "US" <- ConstTBool false }
-                 `{ "EX" <- ConstTBool false }
-                 `{ "SR" <- ConstTBool false }
-                 `{ "MC" <- ConstTBool false }
-                 `{ "SL" <- ConstTBool false }
-                 `{ "LM" <- ConstTBool false }
-                 `{ "LG" <- ConstTBool false })
-                 (##perms
-                 `{ "EX" <- ConstTBool false }
-                 `{ "SR" <- ConstTBool false }
-                 `{ "MC" <- ConstTBool false }
-                 `{ "LD" <- ConstTBool false }
-                 `{ "SL" <- ConstTBool false }
-                 `{ "LM" <- ConstTBool false }
-                 `{ "SD" <- ConstTBool false }
-                 `{ "LG" <- ConstTBool false })))))).
-
-Definition ECap := STRUCT_TYPE { "R"     :: Bool;
-                                 "perms" :: CapPerms;
-                                 "oType" :: Bit CapOTypeSz;
-                                 "E"     :: Bit ExpSz;
-                                 "top"   :: Bit (AddrSz + 1);
-                                 "base"  :: Bit (AddrSz + 1) }.
-
-Definition FullECapWithTag := STRUCT_TYPE { "tag" :: Bool;
-                                            "ecap" :: ECap;
-                                            "addr" :: Addr }.
-
-Definition CapBSz := 9.
-
 Definition CallSentryIh := 1.
 Definition CallSentryId := 2.
 Definition CallSentryIe := 3.
 Definition RetSentryId  := 4.
 Definition RetSentryIe  := 5.
-
-Definition isSealed ty (ecap: ty ECap) : Expr ty Bool := isNotZero (##ecap`"oType").
-Definition isCallSentry ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
-  Or [ Eq #oType $CallSentryIh; Eq #oType $CallSentryId; Eq #oType $CallSentryIe ].
-Definition isRetSentry ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
-  Or [ Eq #oType $RetSentryId; Eq #oType $RetSentryIe ].
-Definition isSentry ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
-  Or [ isCallSentry oType; isRetSentry oType ].
-Definition isSentryIe ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
-  Or [ Eq #oType $CallSentryIe; Eq #oType $RetSentryIe ].
-Definition isSentryId ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
-  Or [ Eq #oType $CallSentryId; Eq #oType $RetSentryId ].
-Definition isSentryIh ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
-  Eq #oType $CallSentryIh.
 
 Definition RegIdxSzReal := 4.
 
@@ -504,3 +408,257 @@ Section Decoders.
   Definition csrAllowWriteNoAsrDecoder (csrAddr : ty (Bit 12)) : Expr ty Bool :=
     Or [ Eq #csrAddr $0xbc1 ; Eq #csrAddr $0xbc2 ].
 End Decoders.
+
+Definition CapPermSz := 6%nat.
+Definition CapcMSz := 8.
+Definition CapBSz := Eval compute in (CapcMSz + 1).
+Definition CapMSz := Eval compute in CapBSz.
+
+Definition Cap : Kind := STRUCT_TYPE {
+                             "R" :: Bool;
+                             "p" :: Array CapPermSz Bool;
+                             "oType" :: Bit CapOTypeSz;
+                             "cE" :: Bit ExpSz;
+                             "cM" :: Bit CapcMSz;
+                             "B" :: Bit CapBSz }.
+
+Definition CapPerms := STRUCT_TYPE { "U0" :: Bool ;
+                                     "SE" :: Bool ;
+                                     "US" :: Bool ;
+                                     "EX" :: Bool ;
+                                     "SR" :: Bool ;
+                                     "MC" :: Bool ;
+                                     "LD" :: Bool ;
+                                     "SL" :: Bool ;
+                                     "LM" :: Bool ;
+                                     "SD" :: Bool ;
+                                     "LG" :: Bool ;
+                                     "GL" :: Bool }.
+
+Definition ECap := STRUCT_TYPE { "R"     :: Bool;
+                                 "perms" :: CapPerms;
+                                 "oType" :: Bit CapOTypeSz;
+                                 "E"     :: Bit ExpSz;
+                                 "top"   :: Bit (AddrSz + 1);
+                                 "base"  :: Bit (AddrSz + 1) }.
+
+Definition FullECapWithTag := STRUCT_TYPE { "tag" :: Bool;
+                                            "ecap" :: ECap;
+                                            "addr" :: Addr }.
+
+
+
+Section CapEncoding.
+  Variable ty : Kind -> Type.
+
+  Section CapPerms.
+    Definition fixPerms (perms: ty CapPerms) : Expr ty CapPerms :=
+      (ITE (And [##perms`"EX"; ##perms`"LD"; ##perms`"MC"])
+         (##perms
+            `{ "U0" <- ConstTBool false }
+            `{ "SE" <- ConstTBool false }
+            `{ "US" <- ConstTBool false }
+            `{ "SL" <- ConstTBool false }
+            `{ "SD" <- ConstTBool false })
+         (ITE (And [##perms`"LD"; ##perms`"MC"; ##perms`"SD"])
+            (##perms
+               `{ "U0" <- ConstTBool false }
+               `{ "SE" <- ConstTBool false }
+               `{ "US" <- ConstTBool false }
+               `{ "EX" <- ConstTBool false }
+               `{ "SR" <- ConstTBool false })
+            (ITE (And [##perms`"LD"; ##perms`"MC"])
+               (##perms
+                  `{ "U0" <- ConstTBool false }
+                  `{ "SE" <- ConstTBool false }
+                  `{ "US" <- ConstTBool false }
+                  `{ "EX" <- ConstTBool false }
+                  `{ "SR" <- ConstTBool false }
+                  `{ "SL" <- ConstTBool false }
+                  `{ "SD" <- ConstTBool false })
+               (ITE (And [##perms`"SD"; ##perms`"MC"])
+                  (##perms
+                     `{ "U0" <- ConstTBool false }
+                     `{ "SE" <- ConstTBool false }
+                     `{ "US" <- ConstTBool false }
+                     `{ "EX" <- ConstTBool false }
+                     `{ "SR" <- ConstTBool false }
+                     `{ "LD" <- ConstTBool false }
+                     `{ "SL" <- ConstTBool false }
+                     `{ "LM" <- ConstTBool false }
+                     `{ "LG" <- ConstTBool false })
+                  (ITE (Or [##perms`"LD"; ##perms`"SD"])
+                     (##perms
+                     `{ "U0" <- ConstTBool false }
+                     `{ "SE" <- ConstTBool false }
+                     `{ "US" <- ConstTBool false }
+                     `{ "EX" <- ConstTBool false }
+                     `{ "SR" <- ConstTBool false }
+                     `{ "MC" <- ConstTBool false }
+                     `{ "SL" <- ConstTBool false }
+                     `{ "LM" <- ConstTBool false }
+                     `{ "LG" <- ConstTBool false })
+                     (##perms
+                     `{ "EX" <- ConstTBool false }
+                     `{ "SR" <- ConstTBool false }
+                     `{ "MC" <- ConstTBool false }
+                     `{ "LD" <- ConstTBool false }
+                     `{ "SL" <- ConstTBool false }
+                     `{ "LM" <- ConstTBool false }
+                     `{ "SD" <- ConstTBool false }
+                     `{ "LG" <- ConstTBool false })))))).
+
+    Definition decodePerms (rawPerms: ty (Array CapPermSz Bool)) : LetExpr ty CapPerms :=
+      ( LetE initPerms : CapPerms <- (ConstTDefK CapPerms) `{ "GL" <- #rawPerms $[5] };
+        RetE (ITE (##rawPerms $[4])
+                (ITE (##rawPerms $[3])
+                   (##initPerms
+                      `{ "MC" <- ConstTBool true }
+                      `{ "LD" <- ConstTBool true }
+                      `{ "SL" <- ##rawPerms $[2] }
+                      `{ "LM" <- ##rawPerms $[1] }
+                      `{ "SD" <- ConstTBool true }
+                      `{ "LG" <- ##rawPerms $[0] })
+                   (ITE (##rawPerms $[2])
+                      (##initPerms
+                         `{ "MC" <- ConstTBool true }
+                         `{ "LD" <- ConstTBool true }
+                         `{ "LM" <- ##rawPerms $[1] }
+                         `{ "LG" <- ##rawPerms $[0] })
+                      (ITE (Not (Or [##rawPerms $[1]; ##rawPerms $[0]]))
+                         (##initPerms
+                            `{ "MC" <- ConstTBool true }
+                            `{ "SD" <- ConstTBool true })
+                         (##initPerms
+                            `{ "LD" <- ##rawPerms $[1] }
+                            `{ "SD" <- ##rawPerms $[0] }))))
+                (ITE (##rawPerms $[3])
+                   (##initPerms
+                      `{ "EX" <- ConstTBool true }
+                      `{ "SR" <- ##rawPerms $[2] }
+                      `{ "MC" <- ConstTBool true }
+                      `{ "LD" <- ConstTBool true }
+                      `{ "LM" <- ##rawPerms $[1] }
+                      `{ "LG" <- ##rawPerms $[0] })
+                   (##initPerms
+                      `{ "U0" <- ##rawPerms $[2] }
+                      `{ "SE" <- ##rawPerms $[1] }
+                      `{ "US" <- ##rawPerms $[0] })))).
+
+    Definition encodePerms (perms: ty CapPerms) : Expr ty (Array CapPermSz Bool) :=
+      (ITE (And [##perms`"EX"; ##perms`"LD"; ##perms`"MC"])
+         (ARRAY [##perms`"GL"; ConstBool false; ConstBool true; ##perms`"SR"; ##perms`"LM"; ##perms`"LG"])
+         (ITE (And [##perms`"LD"; ##perms`"MC"; ##perms`"SD"])
+            (ARRAY [##perms`"GL"; ConstBool true; ConstBool true; ##perms`"SL"; ##perms`"LM"; ##perms`"LG"])
+            (ITE (And [##perms`"LD"; ##perms`"MC"])
+               (ARRAY [##perms`"GL"; ConstBool true; ConstBool false; ConstBool true; ##perms`"LM";
+                       ##perms`"LG"])
+               (ITE (And [##perms`"SD"; ##perms`"MC"])
+                  (ARRAY [##perms`"GL"; ConstBool true; ConstBool false; ConstBool false; ConstBool false;
+                          ConstBool false])
+                  (ITE (Or [##perms`"LD"; ##perms`"SD"])
+                     (ARRAY [##perms`"GL"; ConstBool true; ConstBool false; ConstBool false; ##perms`"LD";
+                             ##perms`"SD"])
+                     (ARRAY [##perms`"GL"; ConstBool false; ConstBool false; ##perms`"U0"; ##perms`"SE";
+                             ##perms`"US"])))))).
+
+  End CapPerms.
+
+  Section CapRelated.
+    Definition get_E_from_cE (cE: ty (Bit ExpSz)) : Expr ty (Bit ExpSz) := ITE (isAllOnes #cE) $0 #cE.
+    Definition get_Mmsb_from_cE (cE: ty (Bit ExpSz)) : Expr ty (Bit 1) := ToBit (isNotZero #cE).
+    Definition get_M_from_cE_cM (cE: ty (Bit ExpSz)) (cM: ty (Bit CapcMSz)) : Expr ty (Bit CapMSz) :=
+      ({< get_Mmsb_from_cE cE, #cM >}).
+
+    Definition get_Mmsb_from_M (M: ty (Bit CapMSz)) := TruncMsb 1 CapcMSz #M.
+    Definition get_cM_from_M (M: ty (Bit CapMSz)) := TruncLsb 1 CapcMSz #M.
+    Definition get_cE_from_E_M (E: ty (Bit ExpSz)) (M: ty (Bit CapMSz)) :=
+      ITE (And [isZero #E; FromBit Bool (get_Mmsb_from_M M)]) (Const _ (Bit ExpSz) (Zmod.of_Z _ (-1))) #E.
+    Definition Emax := Eval compute in (Z.shiftl 1 ExpSz - CapcMSz).
+    Definition get_ECorrected_from_E (E: ty (Bit ExpSz)) : Expr ty (Bit ExpSz) :=
+      (ITE (Sge #E $Emax) $Emax #E).
+    Definition get_E_from_ECorrected (ECorrected: ty (Bit ExpSz)): Expr ty (Bit ExpSz) := #ECorrected.
+  End CapRelated.
+
+  Section BaseLength.
+    Definition BaseLength :=
+      STRUCT_TYPE {
+          "base"   :: Bit (AddrSz + 1);
+          "length" :: Bit (AddrSz + 1) }.
+
+    Variable addr: ty Addr.
+    Variable ECorrected: ty (Bit ExpSz).
+    Variable M: ty (Bit CapMSz).
+    Variable B: ty (Bit CapBSz).
+
+    Definition get_base_length_from_ECorrected_M_B : LetExpr ty BaseLength :=
+      ( LetE aMidTop: Addr <- Srl #addr #ECorrected;
+        LetE aMid: Bit CapBSz <- TruncLsb (AddrSz - CapBSz) CapBSz #aMidTop;
+        LetE aTop: Bit (AddrSz - CapBSz) <- TruncMsb (AddrSz - CapBSz) CapBSz #aMidTop;
+        LetE aHi <- ZeroExtendTo (AddrSz - CapBSz) (ToBit (Slt #aMid #B));
+        LetE base <- Sll (ZeroExtendTo (AddrSz + 1) ({< Sub #aTop #aHi, #B >})) #ECorrected;
+        LetE length <- Sll (ZeroExtendTo (AddrSz + 1) #M) #ECorrected;
+        @RetE _ BaseLength (STRUCT {
+                                "base"   ::= #base;
+                                "length" ::= #length })).
+  End BaseLength.
+
+  Section EncodeCap.
+    Variable ecap: ty ECap.
+
+    Definition encodeCap: LetExpr ty Cap :=
+      ( LetE decodedPerms <- #ecap`"perms";
+        LetE perms <- encodePerms decodedPerms;
+        LetE E <- #ecap`"E";
+        LetE ECorrected <- get_ECorrected_from_E E;
+        LetE B <- TruncLsb (AddrSz + 1 - CapBSz) CapBSz (Sll (#ecap`"base") #ECorrected);
+        LetE T <- TruncLsb (AddrSz + 1 - CapBSz) CapBSz (Sll (#ecap`"top") #ECorrected);
+        LetE M <- Sub #T #B;
+        @RetE _ Cap (STRUCT {
+                         "R" ::= #ecap`"R";
+                         "p" ::= #perms;
+                         "oType" ::= #ecap`"oType";
+                         "cE" ::= get_cE_from_E_M E M;
+                         "cM" ::= get_cM_from_M M;
+                         "B" ::= #B })).
+  End EncodeCap.
+
+  Section DecodeCap.
+    Variable cap: ty Cap.
+    Variable addr: ty Addr.
+
+    Definition decodeCap: LetExpr ty ECap :=
+      ( LetE encodedPerms <- #cap`"p";
+        LETE perms <- decodePerms encodedPerms;
+        LetE cap_cE <- #cap`"cE";
+        LetE cap_cM <- #cap`"cM";
+        LetE cap_B <- #cap`"B";
+        LetE E <- get_E_from_cE cap_cE;
+        LetE ECorrected <- get_ECorrected_from_E E;
+        LetE M <- get_M_from_cE_cM cap_cE cap_cM;
+        LETE base_length <- get_base_length_from_ECorrected_M_B addr ECorrected M cap_B;
+        LetE base <- #base_length`"base";
+        LetE length <- #base_length`"length";
+        @RetE _ ECap (STRUCT {
+                          "R" ::= ##cap`"R";
+                          "perms" ::= #perms;
+                          "oType" ::= #cap`"oType";
+                          "E" ::= #E;
+                          "top" ::= Add [#base; #length];
+                          "base" ::= #base })).
+  End DecodeCap.
+End CapEncoding.
+
+Definition isSealed ty (ecap: ty ECap) : Expr ty Bool := isNotZero (##ecap`"oType").
+Definition isCallSentry ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
+  Or [ Eq #oType $CallSentryIh; Eq #oType $CallSentryId; Eq #oType $CallSentryIe ].
+Definition isRetSentry ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
+  Or [ Eq #oType $RetSentryId; Eq #oType $RetSentryIe ].
+Definition isSentry ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
+  Or [ isCallSentry oType; isRetSentry oType ].
+Definition isSentryIe ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
+  Or [ Eq #oType $CallSentryIe; Eq #oType $RetSentryIe ].
+Definition isSentryId ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
+  Or [ Eq #oType $CallSentryId; Eq #oType $RetSentryId ].
+Definition isSentryIh ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
+  Eq #oType $CallSentryIh.
