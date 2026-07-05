@@ -593,10 +593,6 @@ Import ListNotations.
 Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
-(* TODO:
- - CSetHigh and CGetHigh are wrong - we need caps encoder, decoder
- *)
-
 Definition AluControl := STRUCT_TYPE {
   (* AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr = BranchOrCjalOrAuiPcc *)
   (* AddCapBSz_baseExp_isPccExpNotCs1Exp = BranchOrCjalOrAuiPcc *)
