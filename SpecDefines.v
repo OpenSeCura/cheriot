@@ -279,6 +279,7 @@ Definition MemOp := STRUCT_TYPE {
   "isStore"    :: Bool ;
   "memSize"    :: Bit LgLgNumBytesFullCapSz ;
   "isUnsigned" :: Bool ;
+  "addr"       :: Addr ;
   "isLM"       :: Bool ;
   "isLG"       :: Bool
 }.

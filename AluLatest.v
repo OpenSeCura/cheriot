@@ -170,7 +170,7 @@ Load
       b) ComparatorTopOrRep (checking top AdderBeforeBoundsCheck < cs1.top)
       c) ComparatorBase (checking base AdderBeforeBoundsCheck >= cs1.base)
       d) AddrBoundsCheck (ands the two comparator outputs correctly)
-      e) Deferred (outputs memory operation info LG/LM etc)
+      e) Deferred (outputs memory operation info, address, and LG/LM)
       f) Exception (outputs exception if bounds/tag/permission/alignment violation)
 
 Store
@@ -184,7 +184,7 @@ Store
       b) ComparatorTopOrRep (checking top AdderBeforeBoundsCheck < cs1.top)
       c) ComparatorBase (checking base AdderBeforeBoundsCheck >= cs1.base)
       d) AddrBoundsCheck (ands the two comparator outputs correctly)
-      e) Deferred (outputs memory operation info)
+      e) Deferred (outputs memory operation info and address)
       f) Exception (outputs exception if bounds/tag/permission/alignment violation)
 
 AddSub
@@ -511,9 +511,10 @@ Deferred (Output):
   - Load   : Load
   - Store  : Store
   - Fence  : Fence
-  Outputs: MemOp {isStore, memSize, isUnsigned, isLM, isLG} OR FenceOp {isFenceI, RR, RW, WR, WW}
+  Outputs: MemOp {isStore, memSize, isUnsigned, addr, isLM, isLG} OR FenceOp {isFenceI, RR, RW, WR, WW}
   cs1Perms: cs1.perms (Load)
   inst: inst (Load, Store, Fence)
+  addr: AdderBeforeBoundsCheck (Load, Store)
 
 Exception (Output):
   - ECall  : ECall
@@ -1275,6 +1276,7 @@ Section Alu.
   Definition LoadStore (cs1Perms : ty CapPerms)
                        (memSize : ty (Bit LgLgNumBytesFullCapSz))
                        (isUnsigned isLoad isStore : ty Bool)
+                       (addr : ty Addr)
   : LetExpr ty (Option DeferredOp) :=
     LetE isLM : Bool <- And [ #isLoad ; ##cs1Perms`"LM" ] ;
     LetE isLG : Bool <- And [ #isLoad ; ##cs1Perms`"LG" ] ;
@@ -1283,6 +1285,7 @@ Section Alu.
       "isStore"    ::= #isStore ;
       "memSize"    ::= #memSize ;
       "isUnsigned" ::= #isUnsig ;
+      "addr"       ::= #addr ;
       "isLM"       ::= #isLM ;
       "isLG"       ::= #isLG
     } ;
@@ -1329,6 +1332,7 @@ Section Alu.
   Definition Deferred (isLoad isStore isFence : ty Bool)
                        (cs1Perms : ty CapPerms)
                        (inst : ty (Bit Xlen))
+                       (addr : ty Addr)
   : LetExpr ty (Option DeferredOp) :=
     LetE memSize : Bit LgLgNumBytesFullCapSz <- #inst`[13:12] ;
     LetE isUnsigned : Bool <- isNotZero (#inst`[14:14]) ;
@@ -1349,7 +1353,7 @@ Section Alu.
       "WR"       ::= #wr ;
       "WW"       ::= #ww
     } ;
-    LETE memOpOpt : Option DeferredOp <- LoadStore cs1Perms memSize isUnsigned isLoad isStore ;
+    LETE memOpOpt : Option DeferredOp <- LoadStore cs1Perms memSize isUnsigned isLoad isStore addr ;
     RetE (Or [ ITE0 #isFence (mkSome (UNION (DeferredOpType, "FenceOp" ::= #fenceVal))) ;
                #memOpOpt ]).
 
@@ -1781,7 +1785,7 @@ Section Alu.
 
       LetE isFence : Bool <- ##aluControl`"Fence" ;
       LETE DeferredOpRes : Option DeferredOp <-
-        Deferred isLoad isStore isFence cs1Perms inst ;
+        Deferred isLoad isStore isFence cs1Perms inst AdderBeforeBoundsCheckOut ;
 
       LetE NewPccVal : FullECapWithTag <-
         STRUCT { "tag" ::= #NewPcc_tag; "ecap" ::= #NewPcc_ecap;
