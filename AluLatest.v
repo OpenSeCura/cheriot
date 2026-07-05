@@ -1334,11 +1334,10 @@ Section Alu.
     LetE isUnsigned : Bool <- isNotZero (#inst`[14:14]) ;
     LetE isFenceI : Bool <- isNotZero (#inst`[12:12]) ;
     LetE isTso : Bool <- isNotZero (#inst`[31:31]) ;
-    LetE fenceOp : Bit 4 <- #inst`[27:24] ;
-    LetE pred_r : Bool <- isNotZero (#fenceOp`[3:3]) ;
-    LetE pred_w : Bool <- isNotZero (#fenceOp`[2:2]) ;
-    LetE succ_r : Bool <- isNotZero (#fenceOp`[1:1]) ;
-    LetE succ_w : Bool <- isNotZero (#fenceOp`[0:0]) ;
+    LetE pred_r : Bool <- isNotZero (#inst`[25:25]) ;
+    LetE pred_w : Bool <- isNotZero (#inst`[24:24]) ;
+    LetE succ_r : Bool <- isNotZero (#inst`[21:21]) ;
+    LetE succ_w : Bool <- isNotZero (#inst`[20:20]) ;
     LetE rr : Bool <- And [ Not #isFenceI ; #pred_r ; #succ_r ] ;
     LetE rw : Bool <- And [ Not #isFenceI ; #pred_r ; #succ_w ] ;
     LetE wr : Bool <- And [ Not #isFenceI ; Not #isTso ; #pred_w ; #succ_r ] ;
