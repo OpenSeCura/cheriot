@@ -1300,34 +1300,31 @@ Section Alu.
         LetE ECorrected <- get_ECorrected_from_E E;
         LetE B <- TruncLsb (AddrSz + 1 - CapBSz) CapBSz (Sll (#ecap`"base") #ECorrected);
         LetE T <- TruncLsb (AddrSz + 1 - CapBSz) CapBSz (Sll (#ecap`"top") #ECorrected);
-        LetE M <- Sub #T #B;
         @RetE _ Cap (STRUCT {
                          "R" ::= #ecap`"R";
                          "p" ::= #perms;
                          "oType" ::= #ecap`"oType";
-                         "cE" ::= get_cE_from_E_M E M;
-                         "cM" ::= get_cM_from_M M;
+                         "cE" ::= get_cE_from_E_T_B E T B;
+                         "cT" ::= get_cT_from_T T;
                          "B" ::= #B })).
 
   Definition DecodeCap (cap: ty Cap) (addr: ty Addr) : LetExpr ty ECap :=
       ( LetE encodedPerms <- #cap`"p";
         LETE perms <- decodePerms encodedPerms;
         LetE cap_cE <- #cap`"cE";
-        LetE cap_cM <- #cap`"cM";
+        LetE cap_cT <- #cap`"cT";
         LetE cap_B <- #cap`"B";
         LetE E <- get_E_from_cE cap_cE;
         LetE ECorrected <- get_ECorrected_from_E E;
-        LetE M <- get_M_from_cE_cM cap_cE cap_cM;
-        LETE base_length <- get_base_length_from_ECorrected_M_B addr ECorrected M cap_B;
-        LetE base <- #base_length`"base";
-        LetE length <- #base_length`"length";
+        LETE T <- get_T_from_cE_cT_B cap_cE cap_cT cap_B;
+        LETE base_top <- get_base_top_from_ECorrected_T_B addr ECorrected T cap_B;
         @RetE _ ECap (STRUCT {
                           "R" ::= ##cap`"R";
                           "perms" ::= #perms;
                           "oType" ::= #cap`"oType";
                           "E" ::= #E;
-                          "top" ::= Add [#base; #length];
-                          "base" ::= #base })).
+                          "top" ::= #base_top`"top";
+                          "base" ::= #base_top`"base" })).
 
   Definition Deferred (isLoad isStore isFence : ty Bool)
                        (cs1Perms : ty CapPerms)

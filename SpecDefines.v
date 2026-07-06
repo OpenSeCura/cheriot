@@ -36,7 +36,7 @@ Definition Cra          := 1.
 Definition RegIdxSzReal := 4.
 Definition CapOTypeSz   := 3.
 Definition CapPermSz    := (6 : nat).
-Definition CapcMSz      := 8.
+Definition CapcTSz      := 8.
 
 Definition ScrAddrSz    := Eval compute in RegIdxSz.
 Definition LgXlen       := Eval compute in Z.log2_up Xlen.
@@ -48,15 +48,15 @@ Definition LgAddrSz     := Eval compute in Z.log2_up AddrSz.
 Definition ExpSz        := Eval compute in LgAddrSz.
 Definition NumBytesXlen := Eval compute in (Xlen / 8).
 
-Definition CapBSz          := Eval compute in (CapcMSz + 1).
-Definition CapMSz          := Eval compute in CapBSz.
+Definition CapBSz          := Eval compute in (CapcTSz + 1).
+Definition CapTSz          := Eval compute in CapBSz.
 
 Definition Cap : Kind := STRUCT_TYPE {
                              "R" :: Bool;
                              "p" :: Array CapPermSz Bool;
                              "oType" :: Bit CapOTypeSz;
                              "cE" :: Bit ExpSz;
-                             "cM" :: Bit CapcMSz;
+                             "cT" :: Bit CapcTSz;
                              "B" :: Bit CapBSz }.
 
 Definition FullCapSz := Eval compute in (kindSize Cap + Xlen).
@@ -572,42 +572,70 @@ Section CapEncoding.
 
   Section CapRelated.
     Definition get_E_from_cE (cE: ty (Bit ExpSz)) : Expr ty (Bit ExpSz) := ITE (isAllOnes #cE) $0 #cE.
-    Definition get_Mmsb_from_cE (cE: ty (Bit ExpSz)) : Expr ty (Bit 1) := ToBit (isNotZero #cE).
-    Definition get_M_from_cE_cM (cE: ty (Bit ExpSz)) (cM: ty (Bit CapcMSz)) : Expr ty (Bit CapMSz) :=
-      ({< get_Mmsb_from_cE cE, #cM >}).
 
-    Definition get_Mmsb_from_M (M: ty (Bit CapMSz)) := TruncMsb 1 CapcMSz #M.
-    Definition get_cM_from_M (M: ty (Bit CapMSz)) := TruncLsb 1 CapcMSz #M.
-    Definition get_cE_from_E_M (E: ty (Bit ExpSz)) (M: ty (Bit CapMSz)) :=
-      ITE (And [isZero #E; FromBit Bool (get_Mmsb_from_M M)]) (Const _ (Bit ExpSz) (Zmod.of_Z _ (-1))) #E.
-    Definition Emax := Eval compute in (Z.shiftl 1 ExpSz - CapcMSz).
+    (* Mmsb is (cE != 0). This is a core property of our 5-bit cE hack *)
+    Definition get_Mmsb_from_cE (cE: ty (Bit ExpSz)) : Expr ty (Bit 1) := ToBit (isNotZero #cE).
+
+    (* Encode helpers *)
+    Definition get_cT_from_T (T: ty (Bit CapTSz)) := TruncLsb 1 CapcTSz #T.
+
+    (* We need to reconstruct Mmsb to get cE from E. Since M = T - B, Mmsb is T[8] ^ B[8] ^ (cT < cB) *)
+    Definition get_Mmsb_from_T_B (T B: ty (Bit CapTSz)) : LetExpr ty (Bit 1) :=
+      LetE cT <- get_cT_from_T T;
+      LetE cB <- TruncLsb 1 CapcTSz #B;
+      LetE Tmsb <- TruncMsb 1 CapcTSz #T;
+      LetE Bmsb <- TruncMsb 1 CapcTSz #B;
+      LetE carry_out <- ToBit (Slt #cT #cB);
+      @RetE _ (Bit 1) (Xor [#Tmsb; #Bmsb; #carry_out]).
+
+    Definition get_cE_from_E_T_B (E: ty (Bit ExpSz)) (T B: ty (Bit CapTSz)) : LetExpr ty (Bit ExpSz) :=
+      LETE Mmsb <- get_Mmsb_from_T_B T B;
+      @RetE _ (Bit ExpSz) (ITE (And [isZero #E; FromBit Bool #Mmsb]) (Const _ (Bit ExpSz) (Zmod.of_Z _ (-1))) #E).
+
+    (* Decode helpers *)
+    (* Reconstruct full 9-bit T from 8-bit cT, 9-bit B, and cE *)
+    Definition get_T_from_cE_cT_B (cE: ty (Bit ExpSz)) (cT: ty (Bit CapcTSz)) (B: ty (Bit CapBSz)) : LetExpr ty (Bit CapTSz) :=
+      LetE Mmsb <- get_Mmsb_from_cE cE;
+      LetE cB <- TruncLsb 1 CapcTSz #B;
+      LetE Bmsb <- TruncMsb 1 CapcTSz #B;
+      LetE carry_out <- ToBit (Slt #cT #cB);
+      LetE Tmsb <- Xor [#Bmsb; #Mmsb; #carry_out];
+      @RetE _ (Bit CapTSz) ({< #Tmsb, #cT >}).
+
+    Definition Emax := Eval compute in (Z.shiftl 1 ExpSz - CapcTSz).
     Definition get_ECorrected_from_E (E: ty (Bit ExpSz)) : Expr ty (Bit ExpSz) :=
       (ITE (Sge #E $Emax) $Emax #E).
     Definition get_E_from_ECorrected (ECorrected: ty (Bit ExpSz)): Expr ty (Bit ExpSz) := #ECorrected.
   End CapRelated.
 
-  Section BaseLength.
-    Definition BaseLength :=
+  Section BaseTop.
+    Definition BaseTop :=
       STRUCT_TYPE {
           "base"   :: Bit (AddrSz + 1);
-          "length" :: Bit (AddrSz + 1) }.
+          "top"    :: Bit (AddrSz + 1) }.
 
     Variable addr: ty Addr.
     Variable ECorrected: ty (Bit ExpSz).
-    Variable M: ty (Bit CapMSz).
+    Variable T: ty (Bit CapTSz).
     Variable B: ty (Bit CapBSz).
 
-    Definition get_base_length_from_ECorrected_M_B : LetExpr ty BaseLength :=
+    Definition get_base_top_from_ECorrected_T_B : LetExpr ty BaseTop :=
       ( LetE aMidTop: Addr <- Srl #addr #ECorrected;
         LetE aMid: Bit CapBSz <- TruncLsb (AddrSz - CapBSz) CapBSz #aMidTop;
         LetE aTop: Bit (AddrSz - CapBSz) <- TruncMsb (AddrSz - CapBSz) CapBSz #aMidTop;
+
         LetE aHi <- ZeroExtendTo (AddrSz - CapBSz) (ToBit (Slt #aMid #B));
-        LetE base <- Sll (ZeroExtendTo (AddrSz + 1) ({< Sub #aTop #aHi, #B >})) #ECorrected;
-        LetE length <- Sll (ZeroExtendTo (AddrSz + 1) #M) #ECorrected;
-        @RetE _ BaseLength (STRUCT {
+        LetE aTopB <- Sub #aTop #aHi;
+        LetE base <- Sll (ZeroExtendTo (AddrSz + 1) ({< #aTopB, #B >})) #ECorrected;
+
+        LetE tHi <- ZeroExtendTo (AddrSz - CapBSz) (ToBit (Slt #T #B));
+        LetE aTopT <- Add #aTopB #tHi;
+        LetE top <- Sll (ZeroExtendTo (AddrSz + 1) ({< #aTopT, #T >})) #ECorrected;
+
+        @RetE _ BaseTop (STRUCT {
                                 "base"   ::= #base;
-                                "length" ::= #length })).
-  End BaseLength.
+                                "top"    ::= #top })).
+  End BaseTop.
 End CapEncoding.
 
 Definition isSealed ty (ecap: ty ECap) : Expr ty Bool := isNotZero (##ecap`"oType").
