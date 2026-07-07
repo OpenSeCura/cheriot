@@ -196,7 +196,7 @@ Section DecodeUncompressed.
 
     LetE groupVal : InstGroup <- STRUCT {
       "isCompressed"                ::= #isComp ;
-      "isImm"                       ::= Or [ #isOpImm; #isLoad; #isStore; #isCIncAddrImm; #isCSetBoundsImm; #isCsrImm ] ;
+      "isImm"                       ::= Or [ #isOpImm; #isCIncAddrImm; #isCSetBoundsImm; #isCsrImm ] ;
       "isUnsigned"                  ::= #isUnsignedOp ;
       "Branch"                      ::= #isBranch ;
       "Cjal"                        ::= #isCjal ;
@@ -247,15 +247,28 @@ Section DecodeUncompressed.
       "ComparatorGeneral_invertRes" ::= #invertRes
     } ;
 
+    LetE readsRs1 : Bool <- Not (Or [ #isLui; #isAuiPcc; #isAuiCgp; #isCjal; #isFence;
+                                      #isECall; #isEBreak; #isMret; #isCsrImm ]);
+    LetE actualCs1Idx : Bit RegIdxSzReal <- ITE #isAuiCgp
+                                              (Const _ (Bit RegIdxSzReal) 3)
+                                              (ITE0 #readsRs1 #cs1Real);
+
+    LetE readsRs2 : Bool <- Not (Or [ #isImm; #isLoad; #isCjalr;
+                                      #isLui; #isAuiPcc; #isAuiCgp; #isCjal;
+                                      #isECall; #isEBreak; #isMret; #isFence;
+                                      #isCheriFunct0TwoArg;
+                                      #isCsr; #isScr ]);
+    LetE actualCs2Real : Bit RegIdxSzReal <- ITE0 #readsRs2 #cs2Real;
+
     LetE cs2SourceVal : TaggedUnion Cs2Source <-
       ITE #isMret (mkCs2Scr $(getScrIdx "MePcc"%string))
           (ITE #isScr (mkCs2Scr #scrMappedIdx)
                (ITE #isCsr (mkCs2Csr #csrMappedIdx)
-                    (mkCs2Reg #cs2Real))) ;
+                    (mkCs2Reg #actualCs2Real))) ;
 
     @RetE _ DecodeOut (STRUCT {
       "instGroup"    ::= #groupVal ;
-      "cs1Idx"       ::= #cs1Real ;
+      "cs1Idx"       ::= #actualCs1Idx ;
       "cs2Idx"       ::= #cs2SourceVal ;
       "instBits"     ::= #inst ;
       "illegalInst"  ::= #isIllegalInst ;

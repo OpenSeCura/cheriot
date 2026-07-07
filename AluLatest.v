@@ -576,8 +576,8 @@ Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, 
           ComparatorGeneral.cond (Slt), Shifter (Shift), Logical (Logical),
           AdderToOutput (Cjal, Cjalr, AddSub, CGetLen),
           cs1.perms (CGetPerm), cs1.otype (CGetType), cs1.base (CGetBase), cs1.tag (CGetTag),
-          cs1.addr (CGetAddr), EncodeCap (CGetHigh), cs1.top (CGetTop),
-          cs2.addr (CSetAddr, Csr, Scr), cs1.addr (CAndPerm, CClearTag, Seal, Unseal, CMove, CSetHigh),
+          cs1.addr (CGetAddr), EncodeCap (CGetHigh), cs1.top (CGetTop), zimm5 (Csr & isImm),
+          cs2.addr (CSetAddr, Csr & !isImm, Scr), cs1.addr (CAndPerm, CClearTag, Seal, Unseal, CMove, CSetHigh),
           Bounds.base (CSetBounds), Bounds.cram (Cram), Bounds.crrl (Crrl),
           CapSubset (CTestSubset), CapEq (CSetEqual)
 *)
@@ -683,6 +683,7 @@ Definition AluControl := STRUCT_TYPE {
   (* Reg_addr_CGetHigh = CGetHigh *)
   (* Reg_addr_CGetTop = CGetTop *)
   "Reg_addr_cs2Addr" :: Bool ;
+  "Reg_addr_zimm5" :: Bool ;
   "Reg_addr_cs1Addr" :: Bool ;
   (* Reg_addr_CAndPerm = CAndPerm *)
   (* Reg_addr_SealerUnsealer = SealOrUnseal *)
@@ -798,7 +799,8 @@ Section DecodeInstGroup.
              ##group`"Store" ] ;
       "Reg_addr_AdderToOutput" ::=
         Or [ ##group`"Cjal"; ##group`"Cjalr"; ##group`"AddSub"; ##group`"CGetLen" ] ;
-      "Reg_addr_cs2Addr" ::= Or [ ##group`"CSetAddr"; ##group`"Csr"; ##group`"Scr" ] ;
+      "Reg_addr_cs2Addr" ::= Or [ ##group`"CSetAddr"; ##group`"Scr"; And [ ##group`"Csr"; Not ##group`"isImm" ] ] ;
+      "Reg_addr_zimm5" ::= And [ ##group`"Csr"; ##group`"isImm" ] ;
       "Reg_addr_cs1Addr" ::=
         Or [ ##group`"CClearTag"; ##group`"CMove"; ##group`"CSetHigh" ] ;
       "ECall" ::= ##group`"ECall" ;
@@ -1760,6 +1762,7 @@ Section Alu.
             (##aluControl`"CGetHigh", ZeroExtendTo Xlen (ToBit #encodedCap)) ;
             (##aluControl`"CGetTop",  TruncLsb 1 Xlen #cs1Top) ;
             (##aluControl`"Reg_addr_cs2Addr", #cs2Addr) ;
+            (##aluControl`"Reg_addr_zimm5", ZeroExtendTo Xlen #zimm5) ;
             (##aluControl`"Reg_addr_cs1Addr", #cs1Addr) ;
             (##aluControl`"CAndPerm", #cs1Addr) ;
             (##aluControl`"SealOrUnseal", #cs1Addr) ;
