@@ -1851,9 +1851,14 @@ Section Alu.
     "NewInterruptStatus"   :: Bool
   }.
 
+  Definition ScrCsrOut := STRUCT_TYPE {
+    "Dest"  :: TaggedUnion ScrCsrIdx ;
+    "Value" :: FullECapWithTag
+  }.
+
   Definition WbOpType := [
     ("ControlFlow"%string, ControlFlowOut) ;
-    ("CsrScr"%string,      FullECapWithTag) ;
+    ("ScrCsr"%string,      ScrCsrOut) ;
     ("Deferred"%string,    DeferredOp)
   ].
   Definition WbOp := TaggedUnion WbOpType.
