@@ -252,11 +252,14 @@ Definition getScrIdx (s : string) := forceOption (getScrIdxByName s).
 Definition CsrIdxSz := Z.log2_up (Z.of_nat (length CsrTable)).
 Definition ScrIdxSz := Z.log2_up (Z.of_nat (length ScrTable)).
 
-(* TaggedUnion with 3 distinct sources: Reg (4-bit GPR), Csr (CsrIdxSz CSR), Scr (ScrIdxSz SCR) *)
-Definition Cs2Source := [
-  ("Reg"%string, Bit RegIdxSzReal) ;
+Definition CsrScrIdx := [
   ("Scr"%string, Bit ScrIdxSz) ;
   ("Csr"%string, Bit CsrIdxSz)
+].
+
+Definition Cs2Source := [
+  ("Reg"%string, Bit RegIdxSzReal) ;
+  ("CsrScr"%string, TaggedUnion CsrScrIdx)
 ].
 
 Section Cs2Constructors.
@@ -265,10 +268,10 @@ Section Cs2Constructors.
     UNION (Cs2Source, "Reg" ::= idx).
 
   Definition mkCs2Csr (idx : Expr ty (Bit CsrIdxSz)) : Expr ty (TaggedUnion Cs2Source) :=
-    UNION (Cs2Source, "Csr" ::= idx).
+    UNION (Cs2Source, "CsrScr" ::= UNION (CsrScrIdx, "Csr" ::= idx)).
 
   Definition mkCs2Scr (idx : Expr ty (Bit ScrIdxSz)) : Expr ty (TaggedUnion Cs2Source) :=
-    UNION (Cs2Source, "Scr" ::= idx).
+    UNION (Cs2Source, "CsrScr" ::= UNION (CsrScrIdx, "Scr" ::= idx)).
 End Cs2Constructors.
 
 
