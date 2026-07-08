@@ -716,6 +716,7 @@ Definition AluControl := STRUCT_TYPE {
   "Mret" :: Bool ;
   "Cjalr" :: Bool ;
   "Scr" :: Bool ;
+  "Csr" :: Bool ;
   "CAndPerm" :: Bool ;
   "isUnsigned" :: Bool ;
   "Lui" :: Bool ;
@@ -826,6 +827,7 @@ Section DecodeInstGroup.
       "Mret" ::= ##group`"Mret" ;
       "Cjalr" ::= ##group`"Cjalr" ;
       "Scr" ::= ##group`"Scr" ;
+      "Csr" ::= ##group`"Csr" ;
       "CAndPerm" ::= ##group`"CAndPerm" ;
       "isUnsigned" ::= ##group`"isUnsigned" ;
       "Lui" ::= ##group`"Lui" ;
@@ -1535,8 +1537,9 @@ Section Alu.
     Variable currInterruptStatus : ty Bool.
     Variable fetchExc : ty FetchException.
     Variable decodeExc : ty DecodeException.
+    Variable aluControl : ty AluControl.
 
-    Definition AluRouting (aluControl : ty AluControl) : LetExpr ty AluOut :=
+    Definition AluRouting : LetExpr ty AluOut :=
       LetE pccAddr : Bit Xlen <- ##pcc`"addr" ;
       LetE pccTag : Bool <- ##pcc`"tag" ;
       LetE pccBase : Bit (AddrSz + 1) <- ##pcc`"ecap"`"base" ;
