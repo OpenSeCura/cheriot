@@ -28,7 +28,7 @@ Local Open Scope string_scope.
 
 Definition DecodeOut := STRUCT_TYPE {
   "instGroup"    :: InstGroup ;
-  "cdIdx"        :: Bit RegIdxSzReal ;
+  "writesCd"     :: Bool ;
   "cs1Idx"       :: Bit RegIdxSzReal ;
   "cs2Idx"       :: TaggedUnion Cs2Source ;
   "instBits"     :: Inst ;
@@ -269,11 +269,10 @@ Section DecodeUncompressed.
                     (mkCs2Reg #actualCs2Real))) ;
 
     LetE writesCd : Bool <- Not (Or [ #isBranch; #isStore; #isFence; #isECall; #isEBreak; #isMret ]) ;
-    LetE actualCdIdx : Bit RegIdxSzReal <- ITE0 #writesCd #cdReal ;
 
     @RetE _ DecodeOut (STRUCT {
       "instGroup"    ::= #groupVal ;
-      "cdIdx"        ::= #actualCdIdx ;
+      "writesCd"     ::= #writesCd ;
       "cs1Idx"       ::= #actualCs1Idx ;
       "cs2Idx"       ::= #cs2SourceVal ;
       "instBits"     ::= #inst ;
