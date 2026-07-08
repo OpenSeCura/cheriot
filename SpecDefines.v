@@ -629,7 +629,7 @@ Section CapEncoding.
         LetE base <- Sll (ZeroExtendTo (AddrSz + 1) ({< #aTopB, #B >})) #ECorrected;
 
         LetE tHi <- ZeroExtendTo (AddrSz - CapBSz) (ToBit (Slt #T #B));
-        LetE aTopT <- Add #aTopB #tHi;
+        LetE aTopT <- Add [#aTopB; #tHi];
         LetE top <- Sll (ZeroExtendTo (AddrSz + 1) ({< #aTopT, #T >})) #ECorrected;
 
         @RetE _ BaseTop (STRUCT {

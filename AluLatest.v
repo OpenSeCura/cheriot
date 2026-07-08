@@ -1307,12 +1307,14 @@ Section Alu.
         LetE ECorrected <- get_ECorrected_from_E E;
         LetE B <- TruncLsb (AddrSz + 1 - CapBSz) CapBSz (Sll (#ecap`"base") #ECorrected);
         LetE T <- TruncLsb (AddrSz + 1 - CapBSz) CapBSz (Sll (#ecap`"top") #ECorrected);
+        LETE cE <- get_cE_from_E_T_B E T B;
+        LetE cT <- get_cT_from_T T;
         @RetE _ Cap (STRUCT {
                          "R" ::= #ecap`"R";
                          "p" ::= #perms;
                          "oType" ::= #ecap`"oType";
-                         "cE" ::= get_cE_from_E_T_B E T B;
-                         "cT" ::= get_cT_from_T T;
+                         "cE" ::= #cE;
+                         "cT" ::= #cT;
                          "B" ::= #B })).
 
   Definition DecodeCap (cap: ty Cap) (addr: ty Addr) : LetExpr ty ECap :=

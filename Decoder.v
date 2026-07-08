@@ -195,10 +195,11 @@ Section DecodeUncompressed.
     LetE checkEq    : Bool <- Or [ #isBranchEq; #isCSetEqual ] ;
 
     LetE invertRes  : Bool <- And [ #isBranch; FromBit Bool (#funct3`[0:0]) ] ;
+    LetE isImm      : Bool <- Or [ #isOpImm; #isCIncAddrImm; #isCSetBoundsImm; #isCsrImm ] ;
 
     LetE groupVal : InstGroup <- STRUCT {
       "isCompressed"                ::= #isComp ;
-      "isImm"                       ::= Or [ #isOpImm; #isCIncAddrImm; #isCSetBoundsImm; #isCsrImm ] ;
+      "isImm"                       ::= #isImm ;
       "isUnsigned"                  ::= #isUnsignedOp ;
       "Branch"                      ::= #isBranch ;
       "Cjal"                        ::= #isCjal ;
@@ -252,7 +253,7 @@ Section DecodeUncompressed.
     LetE readsRs1 : Bool <- Not (Or [ #isLui; #isAuiPcc; #isAuiCgp; #isCjal; #isFence;
                                       #isECall; #isEBreak; #isMret; #isCsrImm ]);
     LetE actualCs1Idx : Bit RegIdxSzReal <- ITE #isAuiCgp
-                                              (Const _ (Bit RegIdxSzReal) 3)
+                                              (Const _ (Bit RegIdxSzReal) (Zmod.of_Z _ 3))
                                               (ITE0 #readsRs1 #cs1Real);
 
     LetE readsRs2 : Bool <- Not (Or [ #isImm; #isLoad; #isCjalr;
