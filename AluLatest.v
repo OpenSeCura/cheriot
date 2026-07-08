@@ -579,7 +579,7 @@ Reg.ecap: 0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGe
           SealerUnsealer.ecap (Seal, Unseal),
           {cs1.R, cs1.perms, cs1.otype, Bounds.E, Bounds.top, Bounds.base} (CSetBounds)
 
-Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, Store),
+Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr),
           ComparatorGeneral.cond (Slt), Shifter (Shift), Logical (Logical),
           AdderToOutput (Cjal, Cjalr, AddSub, CGetLen),
           cs1.perms (CGetPerm), cs1.otype (CGetType), cs1.base (CGetBase), cs1.tag (CGetTag),
@@ -803,8 +803,7 @@ Section DecodeInstGroup.
         Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CClearTag";
              ##group`"CMove" ] ;
       "Reg_addr_AdderBeforeBoundsCheck" ::=
-        Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"Load";
-             ##group`"Store" ] ;
+        Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr" ] ;
       "Reg_addr_AdderToOutput" ::=
         Or [ ##group`"Cjal"; ##group`"Cjalr"; ##group`"AddSub"; ##group`"CGetLen" ] ;
       "Reg_addr_cs2Addr" ::= Or [ ##group`"CSetAddr"; ##group`"Scr"; And [ ##group`"Csr"; Not ##group`"isImm" ] ] ;
@@ -1837,4 +1836,33 @@ Section Alu.
         "Reg" ::= #RegVal
       }).
   End AluRouting.
+
+  (* ========================================================================= *)
+  (* AluOutUnion Definitions                                                   *)
+  (* ========================================================================= *)
+
+  Definition ControlFlowOut := STRUCT_TYPE {
+    "NewPcc"               :: FullECapWithTag ;
+    "NewPccTagEcap_change" :: Bool ;
+    "NewPccAddr_change"    :: Bool ;
+    "NewInterruptStatus"   :: Bool
+  }.
+
+  Definition WbOpType := [
+    ("ControlFlow"%string, ControlFlowOut) ;
+    ("CsrScr"%string,      FullECapWithTag) ;
+    ("Deferred"%string,    DeferredOp)
+  ].
+  Definition WbOp := TaggedUnion WbOpType.
+
+  Definition AluSuccessOut := STRUCT_TYPE {
+    "Reg"  :: FullECapWithTag ;
+    "WbOp" :: Option WbOp
+  }.
+
+  Definition AluOutUnionType := [
+    ("Exception"%string, ExceptionInfo) ;
+    ("Success"%string,   AluSuccessOut)
+  ].
+  Definition AluOutUnion := TaggedUnion AluOutUnionType.
 End Alu.
