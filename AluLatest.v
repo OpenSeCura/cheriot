@@ -542,7 +542,7 @@ NewPcc (Output):
   - Cjal   : Cjal
   - Cjalr  : Cjalr
   - Branch : Branch
-  Outputs: tag, ecap, addr, Addr_change, Ecap_change
+  Outputs: tag, ecap, addr, Addr_change, TagEcap_change
   isCond: ComparatorGeneral.cond (Branch)
   cs2: cs2 (Mret)
   addrIn: AdderBeforeBoundsCheck (Branch, Cjal, Cjalr)
@@ -1488,7 +1488,7 @@ Section Alu.
     "ecap" :: ECap ;
     "addr" :: Addr ;
     "NewPccAddr_change" :: Bool ;
-    "NewPccEcap_change" :: Bool
+    "NewPccTagEcap_change" :: Bool
   }.
 
   Definition NewPcc (isMret isCjal isCjalr isBranch : ty Bool)
@@ -1516,12 +1516,12 @@ Section Alu.
       "ecap" ::= #pccEcapOut ;
       "addr" ::= #pccAddrOut ;
       "NewPccAddr_change" ::= #addrChange ;
-      "NewPccEcap_change" ::= #ecapChange
+      "NewPccTagEcap_change" ::= #ecapChange
     }).
 
   Definition AluOut := STRUCT_TYPE {
     "NewPcc" :: FullECapWithTag ;
-    "NewPccEcap_change" :: Bool ;
+    "NewPccTagEcap_change" :: Bool ;
     "NewPccAddr_change" :: Bool ;
     "Exception" :: Option ExceptionInfo ;
     "DeferredOp" :: Option DeferredOp ;
@@ -1738,7 +1738,7 @@ Section Alu.
       LetE NewPcc_tag : Bool <- ##NewPccOut`"tag" ;
       LetE NewPcc_ecap : ECap <- ##NewPccOut`"ecap" ;
       LetE NewPcc_addr : Addr <- ##NewPccOut`"addr" ;
-      LetE NewPccEcap_change : Bool <- ##NewPccOut`"NewPccEcap_change" ;
+      LetE NewPccTagEcap_change : Bool <- ##NewPccOut`"NewPccTagEcap_change" ;
       LetE NewPccAddr_change : Bool <- ##NewPccOut`"NewPccAddr_change" ;
 
       LetE NewSpecial_tag : Bool <- #ScrSanitizerOut ;
@@ -1828,7 +1828,7 @@ Section Alu.
 
       @RetE _ AluOut (STRUCT {
         "NewPcc" ::= #NewPccVal ;
-        "NewPccEcap_change" ::= #NewPccEcap_change ;
+        "NewPccTagEcap_change" ::= #NewPccTagEcap_change ;
         "NewPccAddr_change" ::= #NewPccAddr_change ;
         "Exception" ::= #ExceptionRes ;
         "DeferredOp" ::= #DeferredOpRes ;
