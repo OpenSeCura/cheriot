@@ -271,57 +271,6 @@ Section Cs2Constructors.
     UNION (Cs2Source, "Scr" ::= idx).
 End Cs2Constructors.
 
-(* ===========================================================================
-   DEFERRED OPERATIONS (MemOp, FenceOp, MretOp)
-   =========================================================================== *)
-
-Definition MemOp := STRUCT_TYPE {
-  "isStore"    :: Bool ;
-  "memSize"    :: Bit LgLgNumBytesFullCapSz ;
-  "isUnsigned" :: Bool ;
-  "addr"       :: Addr ;
-  "isLM"       :: Bool ;
-  "isLG"       :: Bool
-}.
-
-Definition FenceOp := STRUCT_TYPE {
-  "isFenceI" :: Bool ;
-  "RR"       :: Bool ;
-  "RW"       :: Bool ;
-  "WR"       :: Bool ;
-  "WW"       :: Bool
-}.
-
-Definition DeferredOpType := [
-  ("MemOp"%string, MemOp) ;
-  ("FenceOp"%string, FenceOp)
-].
-
-Definition DeferredOp := TaggedUnion DeferredOpType.
-
-Section DeferredConstructors.
-  Variable ty : Kind -> Type.
-
-  Definition mkFenceI : LetExpr ty (TaggedUnion DeferredOpType) :=
-    LetE fenceVal : FenceOp <- STRUCT {
-      "isFenceI" ::= ConstTBool true ;
-      "RR"       ::= ConstTBool false ;
-      "RW"       ::= ConstTBool false ;
-      "WR"       ::= ConstTBool false ;
-      "WW"       ::= ConstTBool false
-    } ;
-    RetE (UNION (DeferredOpType, "FenceOp" ::= #fenceVal)).
-
-  Definition mkFenceData (rr rw wr ww : ty Bool) : LetExpr ty (TaggedUnion DeferredOpType) :=
-    LetE fenceVal : FenceOp <- STRUCT {
-      "isFenceI" ::= ConstTBool false ;
-      "RR"       ::= #rr ;
-      "RW"       ::= #rw ;
-      "WR"       ::= #wr ;
-      "WW"       ::= #ww
-    } ;
-    RetE (UNION (DeferredOpType, "FenceOp" ::= #fenceVal)).
-End DeferredConstructors.
 
 (* ===========================================================================
    RISC-V & CHERIoT EXCEPTION CONSTANTS & INFO
@@ -448,11 +397,75 @@ Definition ECap := STRUCT_TYPE { "R"     :: Bool;
                                  "top"   :: Bit (AddrSz + 1);
                                  "base"  :: Bit (AddrSz + 1) }.
 
-Definition FullECapWithTag := STRUCT_TYPE { "tag" :: Bool;
+Definition FullCapWithTag := STRUCT_TYPE { "tag"  :: Bool;
+                                           "cap"  :: Cap;
+                                           "addr" :: Addr }.
+
+Definition FullECapWithTag := STRUCT_TYPE { "tag"  :: Bool;
                                             "ecap" :: ECap;
                                             "addr" :: Addr }.
 
+(* ===========================================================================
+   DEFERRED OPERATIONS (MemOp, FenceOp, MretOp)
+   =========================================================================== *)
 
+Definition LoadOp := STRUCT_TYPE {
+  "isUnsigned" :: Bool ;
+  "isLM"       :: Bool ;
+  "isLG"       :: Bool
+}.
+
+Definition LoadOrStoreType := [
+  ("Load"%string, LoadOp) ;
+  ("Store"%string, FullCapWithTag)
+].
+
+Definition LoadOrStoreKind := TaggedUnion LoadOrStoreType.
+
+Definition MemOp := STRUCT_TYPE {
+  "addr"        :: Addr ;
+  "memSize"     :: Bit LgLgNumBytesFullCapSz ;
+  "loadOrStore" :: LoadOrStoreKind
+}.
+
+Definition FenceOp := STRUCT_TYPE {
+  "isFenceI" :: Bool ;
+  "RR"       :: Bool ;
+  "RW"       :: Bool ;
+  "WR"       :: Bool ;
+  "WW"       :: Bool
+}.
+
+Definition DeferredOpType := [
+  ("MemOp"%string, MemOp) ;
+  ("FenceOp"%string, FenceOp)
+].
+
+Definition DeferredOp := TaggedUnion DeferredOpType.
+
+Section DeferredConstructors.
+  Variable ty : Kind -> Type.
+
+  Definition mkFenceI : LetExpr ty (TaggedUnion DeferredOpType) :=
+    LetE fenceVal : FenceOp <- STRUCT {
+      "isFenceI" ::= ConstTBool true ;
+      "RR"       ::= ConstTBool false ;
+      "RW"       ::= ConstTBool false ;
+      "WR"       ::= ConstTBool false ;
+      "WW"       ::= ConstTBool false
+    } ;
+    RetE (UNION (DeferredOpType, "FenceOp" ::= #fenceVal)).
+
+  Definition mkFenceData (rr rw wr ww : ty Bool) : LetExpr ty (TaggedUnion DeferredOpType) :=
+    LetE fenceVal : FenceOp <- STRUCT {
+      "isFenceI" ::= ConstTBool false ;
+      "RR"       ::= #rr ;
+      "RW"       ::= #rw ;
+      "WR"       ::= #wr ;
+      "WW"       ::= #ww
+    } ;
+    RetE (UNION (DeferredOpType, "FenceOp" ::= #fenceVal)).
+End DeferredConstructors.
 
 Section CapEncoding.
   Variable ty : Kind -> Type.

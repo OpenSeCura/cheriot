@@ -189,8 +189,9 @@ Store
       b) ComparatorTopOrRep (checking top AdderBeforeBoundsCheck < cs1.top)
       c) ComparatorBase (checking base AdderBeforeBoundsCheck >= cs1.base)
       d) AddrBoundsCheck (ands the two comparator outputs correctly)
-      e) Deferred (outputs memory operation info and address)
-      f) Exception (outputs exception if bounds/tag/permission/alignment violation)
+      e) EncodeCap (compresses cs2.ecap into cs2.cap for storing)
+      f) Deferred (outputs memory operation info, address, and cap data)
+      g) Exception (outputs exception if bounds/tag/permission/alignment violation)
 
 AddSub
 * ADD rd, rs1, rs2
@@ -502,9 +503,9 @@ ScrSanitizer:
   inst: inst (Scr)
 
 EncodeCap:
-  - Compress : CGetHigh
+  - Compress : CGetHigh, Store
   Outputs: cap
-  ecap: cs1.ecap (CGetHigh)
+  ecap: cs1.ecap (CGetHigh), cs2.ecap (Store)
 
 DecodeCap:
   - Decompress : CSetHigh
@@ -516,7 +517,9 @@ Deferred (Output):
   - Load   : Load
   - Store  : Store
   - Fence  : Fence
-  Outputs: MemOp {isStore, memSize, isUnsigned, addr, isLM, isLG} OR FenceOp {isFenceI, RR, RW, WR, WW}
+  Outputs: MemOp {addr, memSize, LoadOp {isUnsigned, isLM, isLG} | Store {tag, cap, addr}} OR
+           FenceOp {isFenceI, RR, RW, WR, WW}
+  storeCap: cs2.tag, EncodeCap, cs2.addr (Store)
   cs1Perms: cs1.perms (Load)
   inst: inst (Load, Store, Fence)
   addr: AdderBeforeBoundsCheck (Load, Store)
@@ -657,6 +660,7 @@ Definition AluControl := STRUCT_TYPE {
   (* "ComparatorBase_base_cs1Base" :: Bool ; (* default option *) *)
   (* NewPcc_tag_cs2Tag = Scr *)
   (* NewPcc_tag_CjalrUnitTag = Cjalr *)
+  (* EncodeCap_ecap_isCs2EcapNotCs1Ecap = Store *)
   (* NewPcc_ecap_cs2Ecap = Scr *)
   (* NewPcc_ecap_CjalrUnitEcap = Cjalr *)
   (* NewPcc_addr_cs2Addr = Mret *)
@@ -896,7 +900,7 @@ Section GetFunctionalUnits.
       "CapSubset" ::= ##group`"CTestSubset" ;
       "CapEq" ::= ##group`"CSetEqual" ;
       "ScrSanitizer" ::= ##group`"Scr" ;
-      "EncodeCap" ::= ##group`"CGetHigh" ;
+      "EncodeCap" ::= Or [ ##group`"CGetHigh"; ##group`"Store" ] ;
       "DecodeCap" ::= ##group`"CSetHigh" ;
       "Deferred" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"Fence" ] ;
       "Exception" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"ECall"; ##group`"EBreak" ] ;
@@ -1284,17 +1288,30 @@ Section Alu.
                        (memSize : ty (Bit LgLgNumBytesFullCapSz))
                        (isUnsigned isLoad isStore : ty Bool)
                        (addr : ty Addr)
+                       (storeTag : ty Bool)
+                       (storeCap : ty Cap)
+                       (storeData : ty Addr)
   : LetExpr ty (Option DeferredOp) :=
     LetE isLM : Bool <- And [ #isLoad ; ##cs1Perms`"LM" ] ;
     LetE isLG : Bool <- And [ #isLoad ; ##cs1Perms`"LG" ] ;
     LetE isUnsig : Bool <- And [ #isLoad ; #isUnsigned ] ;
-    LetE memOpVal : MemOp <- STRUCT {
-      "isStore"    ::= #isStore ;
-      "memSize"    ::= #memSize ;
+    LetE loadOpVal : LoadOp <- STRUCT {
       "isUnsigned" ::= #isUnsig ;
-      "addr"       ::= #addr ;
       "isLM"       ::= #isLM ;
       "isLG"       ::= #isLG
+    } ;
+    LetE storeCapVal : FullCapWithTag <- STRUCT {
+      "tag"  ::= #storeTag ;
+      "cap"  ::= #storeCap ;
+      "addr" ::= #storeData
+    } ;
+    LetE loadOrStoreKind : LoadOrStoreKind <- ITE #isStore
+      (UNION (LoadOrStoreType, "Store" ::= #storeCapVal))
+      (UNION (LoadOrStoreType, "Load" ::= #loadOpVal)) ;
+    LetE memOpVal : MemOp <- STRUCT {
+      "addr"        ::= #addr ;
+      "memSize"     ::= #memSize ;
+      "loadOrStore" ::= #loadOrStoreKind
     } ;
     LetE isMemOp : Bool <- Or [ #isLoad; #isStore ] ;
     RetE (ITE0 #isMemOp (mkSome (UNION (DeferredOpType, "MemOp" ::= #memOpVal)))).
@@ -1339,6 +1356,9 @@ Section Alu.
                        (cs1Perms : ty CapPerms)
                        (inst : ty (Bit Xlen))
                        (addr : ty Addr)
+                       (storeTag : ty Bool)
+                       (storeCap : ty Cap)
+                       (storeData : ty Addr)
   : LetExpr ty (Option DeferredOp) :=
     LetE memSize : Bit LgLgNumBytesFullCapSz <- #inst`[13:12] ;
     LetE isUnsigned : Bool <- isNotZero (#inst`[14:14]) ;
@@ -1359,7 +1379,7 @@ Section Alu.
       "WR"       ::= #wr ;
       "WW"       ::= #ww
     } ;
-    LETE memOpOpt : Option DeferredOp <- LoadStore cs1Perms memSize isUnsigned isLoad isStore addr ;
+    LETE memOpOpt : Option DeferredOp <- LoadStore cs1Perms memSize isUnsigned isLoad isStore addr storeTag storeCap storeData ;
     RetE (Or [ ITE0 #isFence (mkSome (UNION (DeferredOpType, "FenceOp" ::= #fenceVal))) ;
                #memOpOpt ]).
 
@@ -1535,6 +1555,7 @@ Section Alu.
 
       LetE cs2Addr : Bit Xlen <- ##cs2`"addr" ;
       LetE cs2Tag : Bool <- ##cs2`"tag" ;
+      LetE cs2ECap : ECap <- ##cs2`"ecap" ;
       LetE cs2Base : Bit (AddrSz + 1) <- ##cs2`"ecap"`"base" ;
       LetE cs2Top : Bit (AddrSz + 1) <- ##cs2`"ecap"`"top" ;
       LetE cs2Perms : CapPerms <- ##cs2`"ecap"`"perms" ;
@@ -1698,7 +1719,6 @@ Section Alu.
       LETE CapSubsetOut : Bool <-
         CapSubset AddrBoundsCheck_topLt AddrBoundsCheck_baseGe cs1Tag cs2Tag cs1Perms cs2Perms ;
 
-      LetE cs2ECap : ECap <- ##cs2`"ecap" ;
       LetE CapEq_addrEq : Bool <- ##ComparatorGeneralOut`"eq" ;
       LETE CapEqOut : Bool <- CapEq CapEq_addrEq cs1Tag cs2Tag cs1ECap cs2ECap ;
 
@@ -1734,7 +1754,8 @@ Section Alu.
              And [ ##aluControl`"SealOrUnseal"           ; ##SealerUnsealerOut`"tag" ] ] ;
 
 
-      LETE encodedCap : Cap <- EncodeCap cs1ECap ;
+      LetE capToEncode : ECap <- ITE (##aluControl`"Store") (#cs2ECap) (#cs1ECap) ;
+      LETE encodedCap : Cap <- EncodeCap capToEncode ;
       LetE cs2AddrAsCap : Cap <- FromBit Cap #cs2Addr ;
       LETE decodedECap : ECap <- DecodeCap cs2AddrAsCap cs1Addr ;
       LetE Bounds_outECap : ECap <- STRUCT { "R"     ::= ##cs1ECap`"R" ;
@@ -1792,8 +1813,10 @@ Section Alu.
                       cs1Tag cs1ECap AddrBoundsCheckOut AdderBeforeBoundsCheckOut ;
 
       LetE isFence : Bool <- ##aluControl`"Fence" ;
+      LetE storeTag : Bool <- #cs2Tag ;
+      LetE storeData : Addr <- #cs2Addr ;
       LETE DeferredOpRes : Option DeferredOp <-
-        Deferred isLoad isStore isFence cs1Perms inst AdderBeforeBoundsCheckOut ;
+        Deferred isLoad isStore isFence cs1Perms inst AdderBeforeBoundsCheckOut storeTag encodedCap storeData ;
 
       LetE NewPccVal : FullECapWithTag <-
         STRUCT { "tag" ::= #NewPcc_tag; "ecap" ::= #NewPcc_ecap;
