@@ -15,7 +15,6 @@
  *)
 
 (* TODO:
-   - Add ecap also for StoreOp
    - Create AluOutCompressed - has normal, branch/jump, csr/scr, exception, deferred in one tagged union
  *)
 
