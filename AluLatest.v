@@ -1545,6 +1545,7 @@ Section Alu.
       LetE uimm20_11 : Bit Xlen <-
         ({< ##inst`[31:31], ##inst`[31:12], Const ty (Bit 11) Zmod.zero >}) ;
       LetE shamt <- ##inst`[24:20] ;
+      LetE zimm5 : Bit 5 <- ##inst`[19:15] ;
       LetE bimm13 : Bit 13 <-
         ({< ##inst`[31:31], ##inst`[7:7], ##inst`[30:25], ##inst`[11:8],
             Const _ (Bit 1) Zmod.zero >}) ;
