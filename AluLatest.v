@@ -518,10 +518,12 @@ Deferred (Output):
   - Fence  : Fence
   Outputs: MemOp {addr, memSize, LoadOp {isUnsigned, isLM, isLG} | Store {tag, cap, addr}} OR
            FenceOp {isFenceI, RR, RW, WR, WW}
-  storeCap: cs2.tag, EncodeCap, cs2.addr (Store)
   cs1Perms: cs1.perms (Load)
   inst: inst (Load, Store, Fence)
   addr: AdderBeforeBoundsCheck (Load, Store)
+  storeTag: cs2.tag (Store)
+  storeCap: EncodeCap (Store)
+  storeData: cs2.addr (Store)
 
 Exception (Output):
   - ECall  : ECall
@@ -716,7 +718,6 @@ Definition AluControl := STRUCT_TYPE {
   "Mret" :: Bool ;
   "Cjalr" :: Bool ;
   "Scr" :: Bool ;
-  "Csr" :: Bool ;
   "CAndPerm" :: Bool ;
   "isUnsigned" :: Bool ;
   "Lui" :: Bool ;
@@ -827,7 +828,6 @@ Section DecodeInstGroup.
       "Mret" ::= ##group`"Mret" ;
       "Cjalr" ::= ##group`"Cjalr" ;
       "Scr" ::= ##group`"Scr" ;
-      "Csr" ::= ##group`"Csr" ;
       "CAndPerm" ::= ##group`"CAndPerm" ;
       "isUnsigned" ::= ##group`"isUnsigned" ;
       "Lui" ::= ##group`"Lui" ;
