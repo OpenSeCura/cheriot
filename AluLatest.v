@@ -1896,7 +1896,7 @@ Section Alu.
         "SpecialDest" ::= #scrCsrIdx ;
         "SpecialValue" ::= #NewSpecialVal
       } ;
-      LetE ScrCsr : Option ScrCsrPayload <- ITE #isScrCsr (mkSome #scrCsrPayload) (mkNone ty) ;
+      LetE scrCsr : Option ScrCsrPayload <- ITE #isScrCsr (mkSome #scrCsrPayload) (mkNone ty) ;
 
       LetE cs2OType : Bit CapOTypeSz <- ##cs2`"ecap"`"oType" ;
       LetE mretIntStatus : Bool <-
