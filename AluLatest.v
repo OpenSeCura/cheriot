@@ -1531,6 +1531,66 @@ Section Alu.
     "Reg" :: FullECapWithTag
   }.
 
+  (* ========================================================================= *)
+  (* AluOpUnion Definitions                                                   *)
+  (* ========================================================================= *)
+
+  Definition ScrCsrPayload := STRUCT_TYPE {
+    "SpecialDest"  :: TaggedUnion ScrCsrIdx ;
+    "SpecialValue" :: FullECapWithTag
+  }.
+
+  Definition NewPccAddrOnlyOpType := [
+    ("Branch"%string, Bool) ;
+    ("Cjal"%string,   Bit 0)
+  ].
+  Definition NewPccAddrOnlyOp := TaggedUnion NewPccAddrOnlyOpType.
+
+  Definition NewPccAddrECapOpType := [
+    ("Cjalr"%string,  Bit 0) ;
+    ("Mret"%string,   Bit 0)
+  ].
+  Definition NewPccAddrECapOp := TaggedUnion NewPccAddrECapOpType.
+
+  Definition CfOpType := [
+       ("NewPccAddrOnly"%string, NewPccAddrOnlyOp) ;
+       ("NewPccAddrECap"%string, STRUCT_TYPE {
+                                   "op" :: NewPccAddrECapOp ;
+                                   "NewInterruptStatus" :: Bool
+                                 })
+  ].
+  Definition CfOp := TaggedUnion CfOpType.
+
+  Definition ControlFlowPayload := STRUCT_TYPE {
+    "NewPcc" :: FullECapWithTag ;
+    "CfOp"   :: CfOp
+  }.
+
+  Definition NotDeferredUnionType := [
+    ("Normal"%string,      Bit 0) ;
+    ("ScrCsr"%string,      ScrCsrPayload) ;
+    ("ControlFlow"%string, ControlFlowPayload)
+  ].
+  Definition NotDeferredUnion := TaggedUnion NotDeferredUnionType.
+
+  Definition NoExceptionUnionType := [
+    ("Deferred"%string,    DeferredUnion) ;
+    ("NotDeferred"%string, NotDeferredUnion)
+  ].
+  Definition NoExceptionUnion := TaggedUnion NoExceptionUnionType.
+
+  Definition AluOpUnionType := [
+    ("Exception"%string,   ExceptionInfo) ;
+    ("NoException"%string, NoExceptionUnion)
+  ].
+  Definition AluOpUnion := TaggedUnion AluOpUnionType.
+
+  Definition AluOutUnion := STRUCT_TYPE {
+    "dstIdx"   :: Bit RegIdxSz ;
+    "dstValue" :: FullECapWithTag ;
+    "Op"       :: AluOpUnion
+  }.
+
   Section AluRouting.
     Variables (pcc cs1 cs2 : ty FullECapWithTag).
     Variable inst : ty Inst.
@@ -1829,6 +1889,38 @@ Section Alu.
       LetE RegVal : FullECapWithTag <-
         STRUCT { "tag" ::= #Reg_tag; "ecap" ::= #Reg_ecap; "addr" ::= #Reg_addr } ;
 
+      (* TODO: This must be refactored *)
+      LetE isScrCsr : Bool <- #cs2Idx `? "ScrCsr" ;
+      LetE scrCsrIdx : (TaggedUnion ScrCsrIdx) <- #cs2Idx `! "ScrCsr" ;
+      LetE scrCsrPayload : ScrCsrPayload <- STRUCT {
+        "SpecialDest" ::= #scrCsrIdx ;
+        "SpecialValue" ::= #NewSpecialVal
+      } ;
+      LetE ScrCsr : Option ScrCsrPayload <- ITE #isScrCsr (mkSome #scrCsrPayload) (mkNone ty) ;
+
+      LetE cs2OType : Bit CapOTypeSz <- ##cs2`"ecap"`"oType" ;
+      LetE mretIntStatus : Bool <-
+        ITE (And [#cs2Tag; Not (isSentryIh cs2OType)])
+            (isSentryIe cs2OType)
+            #currInterruptStatus ;
+
+      LetE cfOpPayload : CfOp <-
+        ITE (Or [#isBranch; #isCjal])
+          (UNION (CfOpType, "NewPccAddrOnly" ::= ITE #isBranch
+                                                     (UNION (NewPccAddrOnlyOpType, "Branch" ::= #isCond))
+                                                     (UNION (NewPccAddrOnlyOpType, "Cjal" ::= ConstDef))))
+          (UNION (CfOpType, "NewPccAddrECap" ::=
+                    (STRUCT { "op" ::= ITE #isCjalr
+                                         (UNION (NewPccAddrECapOpType, "Cjalr" ::= ConstDef))
+                                         (UNION (NewPccAddrECapOpType, "Mret" ::= ConstDef));
+                              "NewInterruptStatus" ::= ITE #isCjalr
+                                                         ##CjalrUnitOut`"interruptStatus"
+                                                         ##mretIntStatus } ))) ;
+      LetE cfOp : Option CfOp <- ITE (Or [#isBranch; #isCjal; #isCjalr; #isMret])
+                                   (mkSome #cfOpPayload)
+                                   (mkNone _);
+      (* TODO: End of what must be refactored *)
+
       @RetE _ AluOut (STRUCT {
         "NewPcc" ::= #NewPccVal ;
         "NewPccTagEcap_change" ::= #NewPccTagEcap_change ;
@@ -1840,65 +1932,4 @@ Section Alu.
         "Reg" ::= #RegVal
       }).
   End AluRouting.
-
-  (* ========================================================================= *)
-  (* AluOpUnion Definitions                                                   *)
-  (* ========================================================================= *)
-
-  Definition ScrCsrPayload := STRUCT_TYPE {
-    "SpecialDest"  :: TaggedUnion ScrCsrIdx ;
-    "SpecialValue" :: FullECapWithTag
-  }.
-
-  Definition NewPccAddrOnlyOpType := [
-    ("Branch"%string, Bool) ;
-    ("Cjal"%string,   Bit 0)
-  ].
-  Definition NewPccAddrOnlyOp := TaggedUnion NewPccAddrOnlyOpType.
-
-  Definition NewPccAddrECapOpType := [
-    ("Cjalr"%string,  Bit 0) ;
-    ("Mret"%string,   Bit 0)
-  ].
-  Definition NewPccAddrECapOp := TaggedUnion NewPccAddrECapOpType.
-
-  Definition CfOpType := [
-       ("NewPccAddrOnly"%string, NewPccAddrOnlyOp) ;
-       ("NewPccAddrECap"%string, STRUCT_TYPE { 
-                                   "op" :: NewPccAddrECapOp ; 
-                                   "NewInterruptStatus" :: Bool 
-                                 })
-  ].
-  Definition CfOp := TaggedUnion CfOpType.
-
-  Definition ControlFlowPayload := STRUCT_TYPE {
-    "NewPcc" :: FullECapWithTag ;
-    "CfOp"   :: CfOp
-  }.
-
-  Definition NotDeferredUnionType := [
-    ("Normal"%string,      Bit 0) ;
-    ("ScrCsr"%string,      ScrCsrPayload) ;
-    ("ControlFlow"%string, ControlFlowPayload)
-  ].
-  Definition NotDeferredUnion := TaggedUnion NotDeferredUnionType.
-
-  Definition NoExceptionUnionType := [
-    ("Deferred"%string,    DeferredUnion) ;
-    ("NotDeferred"%string, NotDeferredUnion)
-  ].
-  Definition NoExceptionUnion := TaggedUnion NoExceptionUnionType.
-
-  Definition AluOpUnionType := [
-    ("Exception"%string,   ExceptionInfo) ;
-    ("NoException"%string, NoExceptionUnion)
-  ].
-  Definition AluOpUnion := TaggedUnion AluOpUnionType.
-
-  Definition AluOutUnion := STRUCT_TYPE {
-    "dstIdx"   :: Bit RegIdxSz ;
-    "dstValue" :: FullECapWithTag ;
-    "Op"       :: AluOpUnion
-  }.
-
 End Alu.
