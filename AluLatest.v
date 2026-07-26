@@ -15,6 +15,8 @@
  *)
 
 (* TODO:
+   - Create functional unit for ScrCsr, refactor dstIdx
+   - Fix MPIE for Mret (and CSR access stuff)
    - Create AluOutCompressed - has normal, branch/jump, csr/scr, exception, deferred in one tagged union
  *)
 
@@ -57,7 +59,7 @@ Branch
                              AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       g) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
       h) AddrBoundsCheck (ands the two comparator outputs correctly)
-      i) NewPcc (updates pcc address to AdderBeforeBoundsCheck, tag to AddrBoundsCheck)
+      i) ControlFlow (creates CfPayload from AddrBoundsCheck, AdderBeforeBoundsCheck and ComparatorGeneral.cond)
 
 Cjal
 * CJAL cd, jimm20
@@ -73,7 +75,7 @@ Cjal
                              AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       g) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
       h) AddrBoundsCheck (ands the two comparator outputs correctly)
-      i) NewPcc (updates pcc address to AdderBeforeBoundsCheck, tag to AddrBoundsCheck)
+      i) ControlFlow (creates CfPayload from AddrBoundsCheck and AdderBeforeBoundsCheck)
 
 AuiCgp/AuiPcc
 * AUICGP cd, uimm20_11
@@ -123,7 +125,7 @@ Cjalr
       a) AdderBeforeBoundsCheck (computing jump target address cs1.addr + simm12)
       b) AdderToOutput (computing return link address PC + 2 / PC + 4)
       c) CjalrUnit (sentry legality / unsealing check unit)
-      d) NewPcc (updates pcc address to AdderBeforeBoundsCheck, tag to CjalrUnit.tag, ecap to CjalrUnit.ecap)
+      d) ControlFlow (creates CfPayload from CjalrUnit.tag, CjalrUnit.ecap, AdderBeforeBoundsCheck and CjalrUnit.interruptStatus)
 
 CTestSubset
 * CTestSubset rd, cs1, cs2
@@ -351,7 +353,7 @@ Mret
     Implicit Write: pcc
     Note: Decoder will cause exceptions if no ASR
     Functional Units:
-      a) NewPcc (updates pcc address to cs2Addr)
+      a) ControlFlow (creates CfPayload from cs2.tag, cs2.ecap and cs2.addr)
 
 Fence
 * FENCE
@@ -516,8 +518,8 @@ Deferred (Output):
   - Load   : Load
   - Store  : Store
   - Fence  : Fence
-  Outputs: MemOp {addr, memSize, LoadOp {isUnsigned, isLM, isLG} | Store {tag, cap, addr}} OR
-           FenceOp {isFenceI, RR, RW, WR, WW}
+  Outputs: isDeferred, (MemPayload {addr, memSize, LoadOp {isUnsigned, isLM, isLG} OR Store {tag, cap, addr}} OR
+                        FenceOp {isFenceI, RR, RW, WR, WW})
   cs1Perms: cs1.perms (Load)
   inst: inst (Load, Store, Fence)
   addr: AdderBeforeBoundsCheck (Load, Store)
@@ -539,23 +541,25 @@ Exception (Output):
   inBounds: AddrBoundsCheck (Load, Store)
   addr: AdderBeforeBoundsCheck (Load, Store)
 
-NewPcc (Output):
+ControlFlow (Output):
   - Mret   : Mret
   - Cjal   : Cjal
   - Cjalr  : Cjalr
   - Branch : Branch
-  Outputs: tag, ecap, addr, Addr_change, TagEcap_change
+  Outputs: isCf, CfPayload {NewPcc, CfOp {ControlFlowAddrOnly {Branch {isTaken} OR Cjal} OR
+                                          ControlFlowAddrECap {Cjalr {newInterruptStatus} OR Mret}}}
   isCond: ComparatorGeneral.cond (Branch)
   cs2: cs2 (Mret)
   addrIn: AdderBeforeBoundsCheck (Branch, Cjal, Cjalr)
   inBounds: AddrBoundsCheck (Branch, Cjal)
   cjalrTag: CjalrUnit.tag (Cjalr)
   cjalrEcap: CjalrUnit.ecap (Cjalr)
-  pccTag: pcc.tag (all)
+  cjalrIntStatus: CjalrUnit.interruptStatus (Cjalr)
+  pccTag: pcc.tag (Branch, Cjal, Cjalr, Mret)
 
-NewPcc
 Exception
 Deferred
+ControlFlow
 
 NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
 
@@ -659,12 +663,8 @@ Definition AluControl := STRUCT_TYPE {
   (* ComparatorBase_addr_cs1OType = Unseal *)
   (* ComparatorBase_addr_cs1Base = CTestSubset *)
   (* "ComparatorBase_base_cs1Base" :: Bool ; (* default option *) *)
-  (* NewPcc_tag_cs2Tag = Scr *)
-  (* NewPcc_tag_CjalrUnitTag = Cjalr *)
+
   (* EncodeCap_ecap_isCs2EcapNotCs1Ecap = Store *)
-  (* NewPcc_ecap_cs2Ecap = Scr *)
-  (* NewPcc_ecap_CjalrUnitEcap = Cjalr *)
-  (* NewPcc_addr_cs2Addr = Mret *)
   (* Reg_tag_pccTag = Cjal *)
   "Reg_tag_cs1Tag" :: Bool ;
   (* Reg_tag_cs2Tag = Scr *)
@@ -904,7 +904,7 @@ Section GetFunctionalUnits.
       "DecodeCap" ::= ##group`"CSetHigh" ;
       "Deferred" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"Fence" ] ;
       "Exception" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"ECall"; ##group`"EBreak" ] ;
-      "NewPcc" ::= Or [ ##group`"Mret"; ##group`"Cjal"; ##group`"Cjalr"; ##group`"Branch" ]
+      "ControlFlow" ::= Or [ ##group`"Mret"; ##group`"Cjal"; ##group`"Cjalr"; ##group`"Branch" ]
     }).
 End GetFunctionalUnits.
 
@@ -974,9 +974,9 @@ Section Alu.
       And [ #cs1Tag; #cs1PermEx; #nextPccLegal; Or [ #notCs1Sealed; #immZero ] ] ;
     LetE nextPccECap : ECap <- ##cs1ECap `{ "oType" <- $0 } ;
 
-    LetE nextIntStatus : Bool <- ITE (And [#nextPccTag; Not (isSentryIh cs1OType)])
+    LetE nextIntStatus : Bool <- ITE (And [#nextPccTag; isSealed cs1ECap; Not (isSentryIh cs1OType)])
                                    (isSentryIe cs1OType)
-                                   #currIntStatus;
+                                   #currIntStatus ;
 
     @RetE _ CjalrUnitRes (STRUCT { "tag"             ::= #nextPccTag;
                                    "ecap"            ::= #nextPccECap;
@@ -1484,23 +1484,14 @@ Section Alu.
                     #sysCallExc))))))
     ).
 
-  Definition NewPccRes := STRUCT_TYPE {
-    "tag" :: Bool ;
-    "ecap" :: ECap ;
-    "addr" :: Addr ;
-    "NewPccAddr_change" :: Bool ;
-    "NewPccTagEcap_change" :: Bool
-  }.
 
-  Definition NewPcc (isMret isCjal isCjalr isBranch : ty Bool)
+
+  Definition ControlFlow (isMret isCjal isCjalr isBranch : ty Bool)
                     (isCond : ty Bool)
                     (cs2 : ty FullECapWithTag) (addrIn : ty Addr)
-                    (inBounds cjalrTag : ty Bool) (cjalrEcap : ty ECap)
+                    (inBounds cjalrTag : ty Bool) (cjalrEcap : ty ECap) (cjalrIntStatus : ty Bool)
                     (pccTag : ty Bool)
-  : LetExpr ty NewPccRes :=
-    LetE isTakenBranch : Bool <- And [ #isBranch ; #isCond ] ;
-    LetE addrChange : Bool <- Or [ #isMret ; #isCjal ; #isCjalr ; #isTakenBranch ] ;
-    LetE ecapChange : Bool <- Or [ #isMret ; #isCjalr ] ;
+  : LetExpr ty (Option CfPayload) :=
     LetE cs2Addr : Addr <- ##cs2`"addr" ;
     LetE pccAddrOut : Addr <- ITE (#isMret) #cs2Addr #addrIn ;
     LetE pccTagOut : Bool <-
@@ -1512,83 +1503,41 @@ Section Alu.
     LetE pccEcapOut : ECap <-
       Or [ ITE0 #isMret ##cs2`"ecap" ;
            ITE0 #isCjalr #cjalrEcap ] ;
-    @RetE _ NewPccRes (STRUCT {
-      "tag" ::= #pccTagOut ;
+
+    LetE cs2Tag : Bool <- ##cs2`"tag" ;
+    LetE cs2OType : Bit CapOTypeSz <- ##cs2`"ecap"`"oType" ;
+
+
+    LetE cfOpPayload : CfOp <-
+      ITE (Or [#isBranch; #isCjal])
+        (UNION (CfOpType, "ControlFlowAddrOnly" ::= ITE #isBranch
+                                                   (UNION (ControlFlowAddrOnlyOpType, "Branch" ::= #isCond))
+                                                   (UNION (ControlFlowAddrOnlyOpType, "Cjal" ::= ConstDef))))
+        (UNION (CfOpType, "ControlFlowAddrECap" ::= ITE #isCjalr
+                                                   (UNION (ControlFlowAddrECapOpType, "Cjalr" ::= #cjalrIntStatus))
+                                                   (UNION (ControlFlowAddrECapOpType, "Mret" ::= ConstDef)))) ;
+
+    LetE newPcc : FullECapWithTag <- STRUCT {
+      "tag"  ::= #pccTagOut ;
       "ecap" ::= #pccEcapOut ;
-      "addr" ::= #pccAddrOut ;
-      "NewPccAddr_change" ::= #addrChange ;
-      "NewPccTagEcap_change" ::= #ecapChange
-    }).
+      "addr" ::= #pccAddrOut
+    } ;
 
+    LetE cfPayload : CfPayload <- STRUCT {
+      "NewPcc" ::= #newPcc ;
+      "CfOp"   ::= #cfOpPayload
+    } ;
+
+    @RetE _ (Option CfPayload) (ITE (Or [#isBranch; #isCjal; #isCjalr; #isMret])
+                                             (mkSome #cfPayload)
+                                             (mkNone _)).
   Definition AluOut := STRUCT_TYPE {
-    "NewPcc" :: FullECapWithTag ;
-    "NewPccTagEcap_change" :: Bool ;
-    "NewPccAddr_change" :: Bool ;
-    "Exception" :: Option ExceptionInfo ;
-    "DeferredOp" :: Option DeferredUnion ;
-    "NewInterruptStatus" :: Bool ;
-    "NewSpecial" :: FullECapWithTag ;
-    "Reg" :: FullECapWithTag
-  }.
-
-  (* ========================================================================= *)
-  (* AluOpUnion Definitions                                                   *)
-  (* ========================================================================= *)
-
-  Definition ScrCsrPayload := STRUCT_TYPE {
-    "SpecialDest"  :: TaggedUnion ScrCsrIdx ;
-    "SpecialValue" :: FullECapWithTag
-  }.
-
-  Definition NewPccAddrOnlyOpType := [
-    ("Branch"%string, Bool) ;
-    ("Cjal"%string,   Bit 0)
-  ].
-  Definition NewPccAddrOnlyOp := TaggedUnion NewPccAddrOnlyOpType.
-
-  Definition NewPccAddrECapOpType := [
-    ("Cjalr"%string,  Bit 0) ;
-    ("Mret"%string,   Bit 0)
-  ].
-  Definition NewPccAddrECapOp := TaggedUnion NewPccAddrECapOpType.
-
-  Definition CfOpType := [
-       ("NewPccAddrOnly"%string, NewPccAddrOnlyOp) ;
-       ("NewPccAddrECap"%string, STRUCT_TYPE {
-                                   "op" :: NewPccAddrECapOp ;
-                                   "NewInterruptStatus" :: Bool
-                                 })
-  ].
-  Definition CfOp := TaggedUnion CfOpType.
-
-  Definition ControlFlowPayload := STRUCT_TYPE {
-    "NewPcc" :: FullECapWithTag ;
-    "CfOp"   :: CfOp
-  }.
-
-  Definition NotDeferredUnionType := [
-    ("Normal"%string,      Bit 0) ;
-    ("ScrCsr"%string,      ScrCsrPayload) ;
-    ("ControlFlow"%string, ControlFlowPayload)
-  ].
-  Definition NotDeferredUnion := TaggedUnion NotDeferredUnionType.
-
-  Definition NoExceptionUnionType := [
-    ("Deferred"%string,    DeferredUnion) ;
-    ("NotDeferred"%string, NotDeferredUnion)
-  ].
-  Definition NoExceptionUnion := TaggedUnion NoExceptionUnionType.
-
-  Definition AluOpUnionType := [
-    ("Exception"%string,   ExceptionInfo) ;
-    ("NoException"%string, NoExceptionUnion)
-  ].
-  Definition AluOpUnion := TaggedUnion AluOpUnionType.
-
-  Definition AluOutUnion := STRUCT_TYPE {
-    "dstIdx"   :: Bit RegIdxSz ;
+    "dstIdx" :: Bit RegIdxSz ;
     "dstValue" :: FullECapWithTag ;
-    "Op"       :: AluOpUnion
+    "Exception" :: Option ExceptionInfo ;
+    "Deferred" :: Option DeferredUnion ;
+    "ControlFlow" :: Option CfPayload ;
+    "ScrCsr" :: Option ScrCsrPayload
   }.
 
   Section AluRouting.
@@ -1599,6 +1548,7 @@ Section Alu.
     Variable decodeExc : ty DecodeException.
     Variable aluControl : ty AluControl.
     Variable cs2Idx : ty (TaggedUnion Cs2Source).
+    Variable writesCd: ty Bool.
 
     Definition AluRouting : LetExpr ty AluOut :=
       LetE pccAddr : Bit Xlen <- ##pcc`"addr" ;
@@ -1639,6 +1589,7 @@ Section Alu.
       LetE jimm20 : Bit Xlen <- SignExtendTo Xlen #jimm21 ;
       LetE scrIdx : Bit RegIdxSz <- ##inst`[24:20] ;
       LetE cs1Idx : Bit RegIdxSz <- ##inst`[19:15] ;
+      LetE dstIdx : Bit RegIdxSz <- ##inst`[11:7] ;
       LetE memSize : Bit LgLgNumBytesFullCapSz <- ##inst`[13:12] ;
       LetE isFenceI : Bool <- isNotZero (##inst`[12:12]) ;
 
@@ -1794,15 +1745,11 @@ Section Alu.
 
       LetE cjalrTag : Bool <- ##CjalrUnitOut`"tag" ;
       LetE cjalrEcap : ECap <- ##CjalrUnitOut`"ecap" ;
-      LETE NewPccOut : NewPccRes <-
-        NewPcc isMret isCjal isCjalr isBranch isCond cs2 AdderBeforeBoundsCheckOut
-               AddrBoundsCheckOut cjalrTag cjalrEcap pccTag ;
+      LetE cjalrIntStatus : Bool <- ##CjalrUnitOut`"interruptStatus" ;
+      LETE ControlFlowOut : Option CfPayload <-
+        ControlFlow isMret isCjal isCjalr isBranch isCond cs2 AdderBeforeBoundsCheckOut
+               AddrBoundsCheckOut cjalrTag cjalrEcap cjalrIntStatus pccTag ;
 
-      LetE NewPcc_tag : Bool <- ##NewPccOut`"tag" ;
-      LetE NewPcc_ecap : ECap <- ##NewPccOut`"ecap" ;
-      LetE NewPcc_addr : Addr <- ##NewPccOut`"addr" ;
-      LetE NewPccTagEcap_change : Bool <- ##NewPccOut`"NewPccTagEcap_change" ;
-      LetE NewPccAddr_change : Bool <- ##NewPccOut`"NewPccAddr_change" ;
 
       LetE NewSpecial_tag : Bool <- #ScrSanitizerOut ;
 
@@ -1880,56 +1827,30 @@ Section Alu.
       LETE DeferredOpRes : Option DeferredUnion <-
         Deferred isLoad isStore isFence cs1Perms inst AdderBeforeBoundsCheckOut storeTag encodedCap storeData ;
 
-      LetE NewPccVal : FullECapWithTag <-
-        STRUCT { "tag" ::= #NewPcc_tag; "ecap" ::= #NewPcc_ecap;
-                 "addr" ::= #NewPcc_addr } ;
-      LetE NewSpecialVal : FullECapWithTag <-
-        STRUCT { "tag" ::= #NewSpecial_tag; "ecap" ::= ##cs1`"ecap";
-                 "addr" ::= #cs1Addr } ;
       LetE RegVal : FullECapWithTag <-
         STRUCT { "tag" ::= #Reg_tag; "ecap" ::= #Reg_ecap; "addr" ::= #Reg_addr } ;
 
+      LetE cfPayload : Option CfPayload <- #ControlFlowOut ;
+  
       (* TODO: This must be refactored *)
       LetE isScrCsr : Bool <- #cs2Idx `? "ScrCsr" ;
       LetE scrCsrIdx : (TaggedUnion ScrCsrIdx) <- #cs2Idx `! "ScrCsr" ;
+      LetE NewSpecialVal : FullECapWithTag <-
+        STRUCT { "tag" ::= #NewSpecial_tag; "ecap" ::= ##cs1`"ecap"; "addr" ::= #cs1Addr } ;
       LetE scrCsrPayload : ScrCsrPayload <- STRUCT {
         "SpecialDest" ::= #scrCsrIdx ;
         "SpecialValue" ::= #NewSpecialVal
       } ;
-      LetE scrCsr : Option ScrCsrPayload <- ITE #isScrCsr (mkSome #scrCsrPayload) (mkNone ty) ;
-
-      LetE cs2OType : Bit CapOTypeSz <- ##cs2`"ecap"`"oType" ;
-      LetE mretIntStatus : Bool <-
-        ITE (And [#cs2Tag; Not (isSentryIh cs2OType)])
-            (isSentryIe cs2OType)
-            #currInterruptStatus ;
-
-      LetE cfOpPayload : CfOp <-
-        ITE (Or [#isBranch; #isCjal])
-          (UNION (CfOpType, "NewPccAddrOnly" ::= ITE #isBranch
-                                                     (UNION (NewPccAddrOnlyOpType, "Branch" ::= #isCond))
-                                                     (UNION (NewPccAddrOnlyOpType, "Cjal" ::= ConstDef))))
-          (UNION (CfOpType, "NewPccAddrECap" ::=
-                    (STRUCT { "op" ::= ITE #isCjalr
-                                         (UNION (NewPccAddrECapOpType, "Cjalr" ::= ConstDef))
-                                         (UNION (NewPccAddrECapOpType, "Mret" ::= ConstDef));
-                              "NewInterruptStatus" ::= ITE #isCjalr
-                                                         ##CjalrUnitOut`"interruptStatus"
-                                                         ##mretIntStatus } ))) ;
-      LetE cfOp : Option CfOp <- ITE (Or [#isBranch; #isCjal; #isCjalr; #isMret])
-                                   (mkSome #cfOpPayload)
-                                   (mkNone _);
+      LetE scrCsr : Option ScrCsrPayload <- ITE0 #isScrCsr (mkSome #scrCsrPayload) ;
       (* TODO: End of what must be refactored *)
 
       @RetE _ AluOut (STRUCT {
-        "NewPcc" ::= #NewPccVal ;
-        "NewPccTagEcap_change" ::= #NewPccTagEcap_change ;
-        "NewPccAddr_change" ::= #NewPccAddr_change ;
+        "dstIdx" ::= ITE0 (And [#writesCd; Not (isValid #ExceptionRes)]) #dstIdx ; (* TODO: This must be refactored *)
+        "dstValue" ::= #RegVal ;
         "Exception" ::= #ExceptionRes ;
-        "DeferredOp" ::= #DeferredOpRes ;
-        "NewInterruptStatus" ::= ##CjalrUnitOut`"interruptStatus" ;
-        "NewSpecial" ::= #NewSpecialVal ;
-        "Reg" ::= #RegVal
+        "Deferred" ::= #DeferredOpRes ;
+        "ControlFlow" ::= #cfPayload ;
+        "ScrCsr" ::= #scrCsr
       }).
   End AluRouting.
 End Alu.

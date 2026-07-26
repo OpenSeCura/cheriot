@@ -7,6 +7,61 @@ Written to verify the 6 formal architectural invariants.
 import re
 import sys
 
+def parse_outputs_tree(s):
+    tokens = [t.strip() for t in re.findall(r'\(|\)|\{|\}|,|OR|[a-zA-Z0-9_.]+', s) if t.strip()]
+    pos = 0
+
+    def parse_expr():
+        return parse_comma_list()
+
+    def parse_comma_list():
+        nonlocal pos
+        nodes = []
+        nodes.append(parse_or_list())
+        while pos < len(tokens) and tokens[pos] == ',':
+            pos += 1
+            nodes.append(parse_or_list())
+        if len(nodes) == 1:
+            return nodes[0]
+        return {"tuple": nodes}
+
+    def parse_or_list():
+        nonlocal pos
+        nodes = []
+        nodes.append(parse_term())
+        while pos < len(tokens) and tokens[pos] == 'OR':
+            pos += 1
+            nodes.append(parse_term())
+        if len(nodes) == 1:
+            return nodes[0]
+        return {"options": nodes}
+
+    def parse_term():
+        nonlocal pos
+        if pos >= len(tokens):
+            return None
+        
+        t = tokens[pos]
+        if t == '(':
+            pos += 1
+            node = parse_expr()
+            if pos < len(tokens) and tokens[pos] == ')':
+                pos += 1
+            return node
+        else:
+            ident = t
+            pos += 1
+            if pos < len(tokens) and tokens[pos] == '{':
+                pos += 1
+                inner = parse_expr()
+                if pos < len(tokens) and tokens[pos] == '}':
+                    pos += 1
+                return {"struct": ident, "fields": inner}
+            return ident
+
+    return parse_expr() if tokens else None
+
+
 def parse_alu_latest(file_path):
     with open(file_path, "r") as f:
         content = f.read()
@@ -71,33 +126,40 @@ def parse_alu_latest(file_path):
 
             units[unit_name] = {
                 "is_output": is_output,
-                "outputs": set(),
+                "outputs": [],
                 "ports": {}
             }
 
             port_lines = []
             curr_p = []
+            outputs_str = ""
+            in_outputs = False
             for line in lines[1:]:
                 l_str = line.strip()
                 if not l_str or l_str.startswith("-"):
                     continue
                 if l_str.startswith("Outputs:"):
-                    raw_outs = l_str[len("Outputs:"):].strip()
-                    fields = re.split(r",|\bOR\b", raw_outs)
-                    for f in fields:
-                        f_clean = re.sub(r"\{.*?\}", "", f).strip()
-                        if f_clean:
-                            units[unit_name]["outputs"].add(f_clean)
+                    in_outputs = True
+                    outputs_str += " " + l_str[len("Outputs:"):].strip()
                     continue
                 
                 # A new port starts if it has a colon
                 if ":" in l_str and not l_str.startswith("(") and re.match(r"^[a-zA-Z0-9_.]+\s*:", l_str):
+                    in_outputs = False
                     if curr_p:
                         port_lines.append(" ".join(curr_p))
                         curr_p = []
-                curr_p.append(l_str)
+                
+                if in_outputs:
+                    outputs_str += " " + l_str
+                else:
+                    curr_p.append(l_str)
             if curr_p:
                 port_lines.append(" ".join(curr_p))
+
+            if outputs_str.strip():
+                parsed_tree = parse_outputs_tree(outputs_str)
+                units[unit_name]["outputs"] = parsed_tree
 
             for p_str in port_lines:
                 if ":" not in p_str:

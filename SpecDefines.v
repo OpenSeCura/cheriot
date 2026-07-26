@@ -151,7 +151,7 @@ Definition FunctionalUnits := STRUCT_TYPE {
   "DecodeCap" :: Bool ;
   "Deferred" :: Bool ;
   "Exception" :: Bool ;
-  "NewPcc" :: Bool
+  "ControlFlow" :: Bool
 }.
 
 (* ===========================================================================
@@ -409,7 +409,7 @@ Definition FullECapWithTag := STRUCT_TYPE { "tag"  :: Bool;
                                             "addr" :: Addr }.
 
 (* ===========================================================================
-   DEFERRED OPERATIONS (MemOp, FenceOp, MretOp)
+   DEFERRED OPERATIONS (MemPayload, FenceOp)
    =========================================================================== *)
 
 Definition LoadOp := STRUCT_TYPE {
@@ -667,3 +667,70 @@ Definition isSentryId ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
   Or [ Eq #oType $CallSentryId; Eq #oType $RetSentryId ].
 Definition isSentryIh ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
   Eq #oType $CallSentryIh.
+
+(* ========================================================================= *)
+(* DataTypes                                                                 *)
+(* ========================================================================= *)
+
+Definition DecodeOut := STRUCT_TYPE {
+  "instGroup"    :: InstGroup ;
+  "writesCd"     :: Bool ;
+  "cs1Idx"       :: Bit RegIdxSzReal ;
+  "cs2Idx"       :: TaggedUnion Cs2Source ;
+  "instBits"     :: Inst ;
+  "illegalInst"  :: Bool ;
+  "asrViolation" :: Bool
+}.
+
+Definition ControlFlowAddrOnlyOpType := [
+  ("Branch"%string, Bool) ;
+  ("Cjal"%string,   Bit 0)
+].
+Definition ControlFlowAddrOnlyOp := TaggedUnion ControlFlowAddrOnlyOpType.
+
+Definition ControlFlowAddrECapOpType := [
+  ("Cjalr"%string,  Bool) ;
+  ("Mret"%string,   Bit 0)
+].
+Definition ControlFlowAddrECapOp := TaggedUnion ControlFlowAddrECapOpType.
+
+Definition CfOpType := [
+     ("ControlFlowAddrOnly"%string, ControlFlowAddrOnlyOp) ;
+     ("ControlFlowAddrECap"%string, ControlFlowAddrECapOp)
+].
+Definition CfOp := TaggedUnion CfOpType.
+
+Definition CfPayload := STRUCT_TYPE {
+  "NewPcc" :: FullECapWithTag ;
+  "CfOp"   :: CfOp
+}.
+
+Definition ScrCsrPayload := STRUCT_TYPE {
+  "SpecialDest"  :: TaggedUnion ScrCsrIdx ;
+  "SpecialValue" :: FullECapWithTag
+}.
+
+Definition NotDeferredUnionType := [
+  ("Normal"%string,      Bit 0) ;
+  ("ControlFlow"%string, CfPayload) ;
+  ("ScrCsr"%string,      ScrCsrPayload)
+].
+Definition NotDeferredUnion := TaggedUnion NotDeferredUnionType.
+
+Definition NoExceptionUnionType := [
+  ("Deferred"%string,    DeferredUnion) ;
+  ("NotDeferred"%string, NotDeferredUnion)
+].
+Definition NoExceptionUnion := TaggedUnion NoExceptionUnionType.
+
+Definition AluOpUnionType := [
+  ("Exception"%string,   ExceptionInfo) ;
+  ("NoException"%string, NoExceptionUnion)
+].
+Definition AluOpUnion := TaggedUnion AluOpUnionType.
+
+Definition AluOutUnion := STRUCT_TYPE {
+  "dstIdx"   :: Bit RegIdxSz ;
+  "dstValue" :: FullECapWithTag ;
+  "Op"       :: AluOpUnion
+}.

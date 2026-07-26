@@ -26,16 +26,6 @@ Import ListNotations.
 Local Open Scope guru_scope.
 Local Open Scope string_scope.
 
-Definition DecodeOut := STRUCT_TYPE {
-  "instGroup"    :: InstGroup ;
-  "writesCd"     :: Bool ;
-  "cs1Idx"       :: Bit RegIdxSzReal ;
-  "cs2Idx"       :: TaggedUnion Cs2Source ;
-  "instBits"     :: Inst ;
-  "illegalInst"  :: Bool ;
-  "asrViolation" :: Bool
-}.
-
 Section DecodeUncompressed.
   Variable ty : Kind -> Type.
   Variable inst : ty Inst.
