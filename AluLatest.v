@@ -1291,7 +1291,7 @@ Section Alu.
                        (storeTag : ty Bool)
                        (storeCap : ty Cap)
                        (storeData : ty Addr)
-  : LetExpr ty (Option DeferredOp) :=
+  : LetExpr ty (Option DeferredUnion) :=
     LetE isLM : Bool <- And [ #isLoad ; ##cs1Perms`"LM" ] ;
     LetE isLG : Bool <- And [ #isLoad ; ##cs1Perms`"LG" ] ;
     LetE isUnsig : Bool <- And [ #isLoad ; #isUnsigned ] ;
@@ -1308,13 +1308,13 @@ Section Alu.
     LetE loadOrStoreKind : LoadOrStoreKind <- ITE #isStore
       (UNION (LoadOrStoreType, "Store" ::= #storeCapVal))
       (UNION (LoadOrStoreType, "Load" ::= #loadOpVal)) ;
-    LetE memOpVal : MemOp <- STRUCT {
+    LetE memOpVal : MemPayload <- STRUCT {
       "addr"        ::= #addr ;
       "memSize"     ::= #memSize ;
-      "loadOrStore" ::= #loadOrStoreKind
+      "memOp"       ::= #loadOrStoreKind
     } ;
     LetE isMemOp : Bool <- Or [ #isLoad; #isStore ] ;
-    RetE (ITE0 #isMemOp (mkSome (UNION (DeferredOpType, "MemOp" ::= #memOpVal)))).
+    RetE (ITE0 #isMemOp (mkSome (UNION (DeferredUnionType, "Mem" ::= #memOpVal)))).
 
 
   Definition EncodeCap (ecap: ty ECap) : LetExpr ty Cap :=
@@ -1359,7 +1359,7 @@ Section Alu.
                        (storeTag : ty Bool)
                        (storeCap : ty Cap)
                        (storeData : ty Addr)
-  : LetExpr ty (Option DeferredOp) :=
+  : LetExpr ty (Option DeferredUnion) :=
     LetE memSize : Bit LgLgNumBytesFullCapSz <- #inst`[13:12] ;
     LetE isUnsigned : Bool <- isNotZero (#inst`[14:14]) ;
     LetE isFenceI : Bool <- isNotZero (#inst`[12:12]) ;
@@ -1379,8 +1379,8 @@ Section Alu.
       "WR"       ::= #wr ;
       "WW"       ::= #ww
     } ;
-    LETE memOpOpt : Option DeferredOp <- LoadStore cs1Perms memSize isUnsigned isLoad isStore addr storeTag storeCap storeData ;
-    RetE (Or [ ITE0 #isFence (mkSome (UNION (DeferredOpType, "FenceOp" ::= #fenceVal))) ;
+    LETE memOpOpt : Option DeferredUnion <- LoadStore cs1Perms memSize isUnsigned isLoad isStore addr storeTag storeCap storeData ;
+    RetE (Or [ ITE0 #isFence (mkSome (UNION (DeferredUnionType, "Fence" ::= #fenceVal))) ;
                #memOpOpt ]).
 
   Definition MemException (isStore : ty Bool)
@@ -1525,7 +1525,7 @@ Section Alu.
     "NewPccTagEcap_change" :: Bool ;
     "NewPccAddr_change" :: Bool ;
     "Exception" :: Option ExceptionInfo ;
-    "DeferredOp" :: Option DeferredOp ;
+    "DeferredOp" :: Option DeferredUnion ;
     "NewInterruptStatus" :: Bool ;
     "NewSpecial" :: FullECapWithTag ;
     "Reg" :: FullECapWithTag
@@ -1817,7 +1817,7 @@ Section Alu.
       LetE isFence : Bool <- ##aluControl`"Fence" ;
       LetE storeTag : Bool <- #cs2Tag ;
       LetE storeData : Addr <- #cs2Addr ;
-      LETE DeferredOpRes : Option DeferredOp <-
+      LETE DeferredOpRes : Option DeferredUnion <-
         Deferred isLoad isStore isFence cs1Perms inst AdderBeforeBoundsCheckOut storeTag encodedCap storeData ;
 
       LetE NewPccVal : FullECapWithTag <-
@@ -1850,46 +1850,55 @@ Section Alu.
     "SpecialValue" :: FullECapWithTag
   }.
 
-  Definition NewPccAddrOnlyOp := TaggedUnion [
-    ("Branch"%string, STRUCT_TYPE { "isTaken" :: Bool }) ;
+  Definition NewPccAddrOnlyOpType := [
+    ("Branch"%string, Bool) ;
     ("Cjal"%string,   Bit 0)
   ].
+  Definition NewPccAddrOnlyOp := TaggedUnion NewPccAddrOnlyOpType.
 
-  Definition NewPccAddrECapOp := TaggedUnion [
+  Definition NewPccAddrECapOpType := [
     ("Cjalr"%string,  Bit 0) ;
     ("Mret"%string,   Bit 0)
   ].
+  Definition NewPccAddrECapOp := TaggedUnion NewPccAddrECapOpType.
 
-  Definition ControlFlowPayload := STRUCT_TYPE {
-    "NewPcc" :: FullECapWithTag ;
-    "CfOp"   :: TaggedUnion [
+  Definition CfOpType := [
        ("NewPccAddrOnly"%string, NewPccAddrOnlyOp) ;
        ("NewPccAddrECap"%string, STRUCT_TYPE { 
                                    "op" :: NewPccAddrECapOp ; 
                                    "NewInterruptStatus" :: Bool 
                                  })
-    ]
+  ].
+  Definition CfOp := TaggedUnion CfOpType.
+
+  Definition ControlFlowPayload := STRUCT_TYPE {
+    "NewPcc" :: FullECapWithTag ;
+    "CfOp"   :: CfOp
   }.
 
-  Definition NotDeferredUnion := TaggedUnion [
+  Definition NotDeferredUnionType := [
     ("Normal"%string,      Bit 0) ;
     ("ScrCsr"%string,      ScrCsrPayload) ;
     ("ControlFlow"%string, ControlFlowPayload)
   ].
+  Definition NotDeferredUnion := TaggedUnion NotDeferredUnionType.
 
-  Definition NoExceptionUnion := TaggedUnion [
-    ("Deferred"%string,    DeferredOp) ;
+  Definition NoExceptionUnionType := [
+    ("Deferred"%string,    DeferredUnion) ;
     ("NotDeferred"%string, NotDeferredUnion)
   ].
+  Definition NoExceptionUnion := TaggedUnion NoExceptionUnionType.
 
-  Definition AluOpUnion := TaggedUnion [
+  Definition AluOpUnionType := [
     ("Exception"%string,   ExceptionInfo) ;
     ("NoException"%string, NoExceptionUnion)
   ].
+  Definition AluOpUnion := TaggedUnion AluOpUnionType.
 
   Definition AluOutUnion := STRUCT_TYPE {
     "dstIdx"   :: Bit RegIdxSz ;
     "dstValue" :: FullECapWithTag ;
     "Op"       :: AluOpUnion
   }.
+
 End Alu.

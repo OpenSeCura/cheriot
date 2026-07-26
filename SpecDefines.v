@@ -425,10 +425,10 @@ Definition LoadOrStoreType := [
 
 Definition LoadOrStoreKind := TaggedUnion LoadOrStoreType.
 
-Definition MemOp := STRUCT_TYPE {
-  "addr"        :: Addr ;
-  "memSize"     :: Bit LgLgNumBytesFullCapSz ;
-  "loadOrStore" :: LoadOrStoreKind
+Definition MemPayload := STRUCT_TYPE {
+  "addr"    :: Addr ;
+  "memSize" :: Bit LgLgNumBytesFullCapSz ;
+  "memOp"   :: LoadOrStoreKind
 }.
 
 Definition FenceOp := STRUCT_TYPE {
@@ -439,17 +439,17 @@ Definition FenceOp := STRUCT_TYPE {
   "WW"       :: Bool
 }.
 
-Definition DeferredOpType := [
-  ("MemOp"%string, MemOp) ;
-  ("FenceOp"%string, FenceOp)
+Definition DeferredUnionType := [
+  ("Mem"%string, MemPayload) ;
+  ("Fence"%string, FenceOp)
 ].
 
-Definition DeferredOp := TaggedUnion DeferredOpType.
+Definition DeferredUnion := TaggedUnion DeferredUnionType.
 
 Section DeferredConstructors.
   Variable ty : Kind -> Type.
 
-  Definition mkFenceI : LetExpr ty (TaggedUnion DeferredOpType) :=
+  Definition mkFenceI : LetExpr ty (TaggedUnion DeferredUnionType) :=
     LetE fenceVal : FenceOp <- STRUCT {
       "isFenceI" ::= ConstTBool true ;
       "RR"       ::= ConstTBool false ;
@@ -457,9 +457,9 @@ Section DeferredConstructors.
       "WR"       ::= ConstTBool false ;
       "WW"       ::= ConstTBool false
     } ;
-    RetE (UNION (DeferredOpType, "FenceOp" ::= #fenceVal)).
+    RetE (UNION (DeferredUnionType, "Fence" ::= #fenceVal)).
 
-  Definition mkFenceData (rr rw wr ww : ty Bool) : LetExpr ty (TaggedUnion DeferredOpType) :=
+  Definition mkFenceData (rr rw wr ww : ty Bool) : LetExpr ty (TaggedUnion DeferredUnionType) :=
     LetE fenceVal : FenceOp <- STRUCT {
       "isFenceI" ::= ConstTBool false ;
       "RR"       ::= #rr ;
@@ -467,7 +467,7 @@ Section DeferredConstructors.
       "WR"       ::= #wr ;
       "WW"       ::= #ww
     } ;
-    RetE (UNION (DeferredOpType, "FenceOp" ::= #fenceVal)).
+    RetE (UNION (DeferredUnionType, "Fence" ::= #fenceVal)).
 End DeferredConstructors.
 
 Section CapEncoding.
