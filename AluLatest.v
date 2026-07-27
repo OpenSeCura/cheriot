@@ -15,9 +15,8 @@
  *)
 
 (* TODO:
-   - Create functional unit for ScrCsr, refactor dstIdx
    - Fix MPIE for Mret (and CSR access stuff)
-   - Create AluOutCompressed - has normal, branch/jump, csr/scr, exception, deferred in one tagged union
+   - Create AluOutCompressed
  *)
 
 (*
@@ -265,7 +264,7 @@ Csr
 * CSRRCI rd, csr, zimm5
     Note: Decode can cause exceptions for accessing certain CSRs if no ASR
     Functional Units:
-      None (direct CSR read routing)
+      a) ScrCsr (creates ScrCsrPayload with CSR write info)
 
 Scr
 * CSpecialRw cd, cSpecial, cs1
@@ -275,6 +274,7 @@ Scr
     Note: ScrSanitizer only checks for LSB = 1'b0 for MePcc, Mtcc and MePrevPcc
     Functional Units:
       a) ScrSanitizer (check if the last LSB bit is 0 for certain SCR writes)
+      b) ScrCsr (creates ScrCsrPayload with SCR write info using ScrSanitizer tag)
 
 Lui
 * LUI rd, uimm20
@@ -560,6 +560,13 @@ ControlFlow (Output):
 Exception
 Deferred
 ControlFlow
+
+ScrCsr (Output):
+  Outputs: isScrCsr, SpecialDest, SpecialValue
+  cs2Idx: cs2Idx (Csr, Scr)
+  newTag: ScrSanitizerOut (Scr)
+  cs1Ecap: cs1.ecap (Scr)
+  cs1Addr: cs1.addr (Csr, Scr)
 
 NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
 
@@ -904,7 +911,8 @@ Section GetFunctionalUnits.
       "DecodeCap" ::= ##group`"CSetHigh" ;
       "Deferred" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"Fence" ] ;
       "Exception" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"ECall"; ##group`"EBreak" ] ;
-      "ControlFlow" ::= Or [ ##group`"Mret"; ##group`"Cjal"; ##group`"Cjalr"; ##group`"Branch" ]
+      "ControlFlow" ::= Or [ ##group`"Mret"; ##group`"Cjal"; ##group`"Cjalr"; ##group`"Branch" ] ;
+      "ScrCsr" ::= Or [ ##group`"Scr"; ##group`"Csr" ]
     }).
 End GetFunctionalUnits.
 
@@ -1527,10 +1535,25 @@ Section Alu.
       "NewPcc" ::= #newPcc ;
       "CfOp"   ::= #cfOpPayload
     } ;
+    LetE isCf : Bool <- Or [ #isBranch ; #isCjal ; #isCjalr ; #isMret ] ;
+    LetE cfPayloadOpt : Option CfPayload <- ITE0 #isCf (mkSome #cfPayload) ;
+    RetE #cfPayloadOpt.
 
-    @RetE _ (Option CfPayload) (ITE (Or [#isBranch; #isCjal; #isCjalr; #isMret])
-                                             (mkSome #cfPayload)
-                                             (mkNone _)).
+  Definition ScrCsr (cs2Idx : ty (TaggedUnion Cs2Source))
+                    (newTag : ty Bool)
+                    (cs1Ecap : ty ECap)
+                    (cs1Addr : ty (Bit Xlen)) : LetExpr ty (Option ScrCsrPayload) :=
+    LetE isScrCsr : Bool <- #cs2Idx `? "ScrCsr" ;
+    LetE scrCsrIdx : (TaggedUnion ScrCsrIdx) <- #cs2Idx `! "ScrCsr" ;
+    LetE NewSpecialVal : FullECapWithTag <-
+      STRUCT { "tag" ::= #newTag; "ecap" ::= #cs1Ecap; "addr" ::= #cs1Addr } ;
+    LetE scrCsrPayload : ScrCsrPayload <- STRUCT {
+      "SpecialDest" ::= #scrCsrIdx ;
+      "SpecialValue" ::= #NewSpecialVal
+    } ;
+    LetE scrCsr : Option ScrCsrPayload <- ITE0 #isScrCsr (mkSome #scrCsrPayload) ;
+    RetE #scrCsr.
+
   Definition AluOut := STRUCT_TYPE {
     "dstIdx" :: Bit RegIdxSz ;
     "dstValue" :: FullECapWithTag ;
@@ -1750,9 +1773,6 @@ Section Alu.
         ControlFlow isMret isCjal isCjalr isBranch isCond cs2 AdderBeforeBoundsCheckOut
                AddrBoundsCheckOut cjalrTag cjalrEcap cjalrIntStatus pccTag ;
 
-
-      LetE NewSpecial_tag : Bool <- #ScrSanitizerOut ;
-
       LetE Reg_tag : Bool <-
         Or [ And [ ##aluControl`"Cjal"                  ; #pccTag ] ;
              And [ ##aluControl`"Reg_tag_cs1Tag"         ; #cs1Tag ] ;
@@ -1832,25 +1852,15 @@ Section Alu.
 
       LetE cfPayload : Option CfPayload <- #ControlFlowOut ;
   
-      (* TODO: This must be refactored *)
-      LetE isScrCsr : Bool <- #cs2Idx `? "ScrCsr" ;
-      LetE scrCsrIdx : (TaggedUnion ScrCsrIdx) <- #cs2Idx `! "ScrCsr" ;
-      LetE NewSpecialVal : FullECapWithTag <-
-        STRUCT { "tag" ::= #NewSpecial_tag; "ecap" ::= ##cs1`"ecap"; "addr" ::= #cs1Addr } ;
-      LetE scrCsrPayload : ScrCsrPayload <- STRUCT {
-        "SpecialDest" ::= #scrCsrIdx ;
-        "SpecialValue" ::= #NewSpecialVal
-      } ;
-      LetE scrCsr : Option ScrCsrPayload <- ITE0 #isScrCsr (mkSome #scrCsrPayload) ;
-      (* TODO: End of what must be refactored *)
+      LETE ScrCsrOut : Option ScrCsrPayload <- ScrCsr cs2Idx ScrSanitizerOut cs1ECap cs1Addr ;
 
       @RetE _ AluOut (STRUCT {
-        "dstIdx" ::= ITE0 (And [#writesCd; Not (isValid #ExceptionRes)]) #dstIdx ; (* TODO: This must be refactored *)
+        "dstIdx" ::= ITE0 (And [#writesCd; Not (isValid #ExceptionRes)]) #dstIdx ;
         "dstValue" ::= #RegVal ;
         "Exception" ::= #ExceptionRes ;
         "Deferred" ::= #DeferredOpRes ;
         "ControlFlow" ::= #cfPayload ;
-        "ScrCsr" ::= #scrCsr
+        "ScrCsr" ::= #ScrCsrOut
       }).
   End AluRouting.
 End Alu.

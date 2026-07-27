@@ -151,7 +151,8 @@ Definition FunctionalUnits := STRUCT_TYPE {
   "DecodeCap" :: Bool ;
   "Deferred" :: Bool ;
   "Exception" :: Bool ;
-  "ControlFlow" :: Bool
+  "ControlFlow" :: Bool ;
+  "ScrCsr" :: Bool
 }.
 
 (* ===========================================================================
