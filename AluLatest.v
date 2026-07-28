@@ -1868,7 +1868,7 @@ Section Alu.
       LetE excOpt      : Option ExceptionInfo <- ##routingOut`"Exception" ;
       LetE deferredOpt : Option DeferredUnion <- ##routingOut`"Deferred" ;
       LetE cfOpt       : Option CfPayload <- ##routingOut`"ControlFlow" ;
-      LetE scOpt       : Option ScrCsrPayload <- ##routingOut`"ScrCsr" ;
+      LetE scrCsrOpt   : Option ScrCsrPayload <- ##routingOut`"ScrCsr" ;
 
       LetE isExc : Bool <- isValid #excOpt ;
       LetE excVal : ExceptionInfo <- getData #excOpt ;
@@ -1879,14 +1879,14 @@ Section Alu.
       LetE isCf : Bool <- isValid #cfOpt ;
       LetE cfVal : CfPayload <- getData #cfOpt ;
 
-      LetE isSc : Bool <- isValid #scOpt ;
-      LetE scVal : ScrCsrPayload <- getData #scOpt ;
+      LetE isScrCsr : Bool <- isValid #scrCsrOpt ;
+      LetE scrCsrVal : ScrCsrPayload <- getData #scrCsrOpt ;
 
       LetE notDeferredUnion : NotDeferredUnion <-
         ITE #isCf
             (UNION (NotDeferredUnionType, "ControlFlow" ::= #cfVal))
-            (ITE #isSc
-                 (UNION (NotDeferredUnionType, "ScrCsr" ::= #scVal))
+            (ITE #isScrCsr
+                 (UNION (NotDeferredUnionType, "ScrCsr" ::= #scrCsrVal))
                  (UNION (NotDeferredUnionType, "Normal" ::= ConstDef))) ;
                  
       LetE noExcUnion : NoExceptionUnion <-
