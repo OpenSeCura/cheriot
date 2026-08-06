@@ -57,7 +57,8 @@ Section Spec.
       Leaf "interrupts_in" (ERecv Interrupts)
     ].
 
-  Definition np_mem: NodePath specTree mem_t := ltac:(solveNodePath specTree ".mem"%string mem_t).
+  Definition np_mem: NodePath specTree :=
+    embedNodeIntoPath (getNodePath specTree ".mem"%string) singletonChildPath.
 
   Local Close Scope string_scope.
 
@@ -263,7 +264,8 @@ Section Uncore.
       ]
     ].
 
-  Definition uncore_np_mem: NodePath uncore mem_t := ltac:(solveNodePath uncore "uncore.mem"%string mem_t).
+  Definition uncore_np_mem: NodePath uncore :=
+    embedNodeIntoPath (getNodePath uncore "uncore.mem"%string) singletonChildPath.
 
   Definition revokerEndAddr : Z :=
     config.(revokerStartAddr) + RevokerSizeBytes - 1.
@@ -595,8 +597,8 @@ Section RevBits.
       );
       Retv.
 
-    Definition np_revBitsAndMainMem_mem : NodePath revBitsAndMainMem mem_t := 
-      ltac:(solveNodePath revBitsAndMainMem "uncoreL2.mem"%string mem_t).
+    Definition np_revBitsAndMainMem_mem : NodePath revBitsAndMainMem := 
+      embedNodeIntoPath (getNodePath revBitsAndMainMem "uncoreL2.mem"%string) singletonChildPath.
 
     Definition readRevBytes (addr: ty Addr) : Action ty revBitsAndMainMem (Bit DXlen) :=
       ( Let is_valid <- isRevBitsAddr addr;
@@ -668,11 +670,11 @@ Section AllMem.
   Definition uncoreState : Tree Elem :=
     uncore revokerConfig revBitsAndMainMemState.
 
-  Definition mainMemPath : NodePath mainMemState (mainMem mainMemConfig) :=
-    ltac:(solveNodePath mainMemState "mainMemState.mainMem"%string (mainMem mainMemConfig)).
+  Definition mainMemPath : NodePath mainMemState :=
+    getNodePath mainMemState "mainMemState.mainMem"%string.
 
-  Definition tagsPath : NodePath mainMemState (tags mainMemConfig) :=
-    ltac:(solveNodePath mainMemState "mainMemState.tags"%string (tags mainMemConfig)).
+  Definition tagsPath : NodePath mainMemState :=
+    getNodePath mainMemState "mainMemState.tags"%string.
 
   Section Ty.
     Variable ty : Kind -> Type.
