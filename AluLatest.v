@@ -1183,24 +1183,22 @@ Section Alu.
    *)
 
   Definition Bounds (base length : ty (Bit Xlen)) (isRoundDown : ty Bool) : LetExpr ty BoundsRes :=
-    ( LetE lengthExt : Bit (AddrSz + 1) <- ZeroExtend 1 #length;
-      LetE baseExt : Bit (AddrSz + 1) <- ZeroExtend 1 #base;
-      LetE lenTrunc : Bit (AddrSz + 1 - CapBSz) <- TruncMsb (AddrSz + 1 - CapBSz) CapBSz #lengthExt;
-      LETE clz: Bit ExpSz <- countLeadingZerosArray (mkBoolArray (AddrSz + 1 - CapBSz) #lenTrunc) _;
-      LetE e_init: Bit ExpSz <- Add [$(AddrSz + 2 - CapBSz); Not #clz];
-      LetE d : Bit (CapBSz + 1) <- TruncLsb (AddrSz - CapBSz) (CapBSz + 1) (Srl #lengthExt #e_init);
+    ( LetE lenTrunc : Bit (AddrSz - CapBSz) <- TruncMsb (AddrSz - CapBSz) CapBSz #length;
+      LETE clz: Bit ExpSz <- countLeadingZerosArray (mkBoolArray (AddrSz - CapBSz) #lenTrunc) _;
+      LetE e_init: Bit ExpSz <- Add [$(AddrSz + 1 - CapBSz); Not #clz];
+      LetE d : Bit (CapBSz + 1) <- TruncLsb (AddrSz - CapBSz - 1) (CapBSz + 1) (Srl #length #e_init);
       LetE mask_e : Bit (AddrSz + 2 - CapBSz) <- Not (Sll (ConstBit (Zmod.of_Z _ (-1))) #e_init);
       LetE base_mod_e : Bit (AddrSz + 2 - CapBSz) <-
-                          And [TruncLsb (CapBSz - 1) (AddrSz + 2 - CapBSz) #baseExt; #mask_e];
+                          And [TruncLsb (CapBSz - 2) (AddrSz + 2 - CapBSz) #base; #mask_e];
       LetE length_mod_e : Bit (AddrSz + 2 - CapBSz) <-
-                            And [TruncLsb (CapBSz - 1) (AddrSz + 2 - CapBSz) #lengthExt; #mask_e];
+                            And [TruncLsb (CapBSz - 2) (AddrSz + 2 - CapBSz) #length; #mask_e];
       LetE sum_mod_e : Bit (AddrSz + 2 - CapBSz) <- Add [#base_mod_e; #length_mod_e];
       LetE iFloor : Bit 2 <- TruncLsb (AddrSz - CapBSz) 2 (Srl #sum_mod_e #e_init);
       LetE lost_sum : Bool <- isNotZero (And [#sum_mod_e; #mask_e]);
       LetE iCeil : Bit 2 <- Add [#iFloor; ZeroExtendTo 2 (ToBit #lost_sum)];
       LetE m_raw : Bit (CapBSz + 1) <- Add [#d; ZeroExtend (CapBSz-1) #iCeil];
 
-      LetE b_e : Bool <- (mkBoolArray (AddrSz + 1) #baseExt) @[ #e_init ];
+      LetE b_e : Bool <- (mkBoolArray AddrSz #base) @[ #e_init ];
       LetE isOverflow : Bool <- FromBit Bool (TruncMsb 1 CapBSz #m_raw);
       LetE e_unsat : Bit ExpSz <- Add [#e_init; ITE #isOverflow $1 $0];
       LetE isESaturated : Bool <- Sgt #e_unsat $(AddrSz - CapBSz);
@@ -1212,7 +1210,7 @@ Section Alu.
         {< Const _ (Bit (CapBSz - 1)) (Zmod.of_Z _ (2^(CapBSz - 2))), ToBit #inc_ovf >};
       LetE m_normal : Bit CapBSz <- ITE #isOverflow #m_ovf (TruncLsb 1 CapBSz #m_raw);
 
-      LETE e_b: Bit ExpSz <- countTrailingZerosArray (mkBoolArray (AddrSz + 1) #baseExt) _;
+      LETE e_b: Bit ExpSz <- countTrailingZerosArray (mkBoolArray AddrSz #base) _;
       LetE pick_b: Bool <- Slt #e_b #e_init;
       LetE e_roundDown: Bit ExpSz <- ITE #pick_b #e_b #e_init;
       LetE m_roundDown: Bit CapBSz <-
@@ -1222,7 +1220,7 @@ Section Alu.
       LetE mf: Bit CapBSz <- ITE #isRoundDown #m_roundDown #m_normal;
 
       LetE cram: Bit (AddrSz + 1) <- Sll (ConstBit (Zmod.of_Z _ (-1))) #ef;
-      LetE outBase : Bit (AddrSz + 1) <- And [#baseExt; #cram];
+      LetE outBase : Bit (AddrSz + 1) <- And [ZeroExtend 1 #base; #cram];
       LetE outLen: Bit (AddrSz + 1) <- Sll (ZeroExtendTo (AddrSz + 1) #mf) #ef;
       LetE outTop : Bit (AddrSz + 1) <- Add [#outBase; #outLen] ;
       @RetE _ BoundsRes (STRUCT {
