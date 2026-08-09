@@ -1040,7 +1040,7 @@ Section Alu.
   Definition BoundsRes := STRUCT_TYPE {
     "E" :: Bit ExpSz ;
     "base" :: Bit (Xlen + 1) ;
-    "top" :: Bit (Xlen + 1) ;
+    "top" :: Bit (Xlen + 2) ;
     "cram" :: Bit (Xlen + 1) ;
     "length" :: Bit (Xlen + 1) ;
     "exact" :: Bool }.
@@ -1221,7 +1221,7 @@ Section Alu.
       LetE cram: Bit (AddrSz + 1) <- Sll (ConstBit (Zmod.of_Z _ (-1))) #ef;
       LetE outBase : Bit (AddrSz + 1) <- And [ZeroExtend 1 #base; #cram];
       LetE outLen: Bit (AddrSz + 1) <- Sll (ZeroExtendTo (AddrSz + 1) #mf) #ef;
-      LetE outTop : Bit (AddrSz + 1) <- Add [#outBase; #outLen] ;
+      LetE outTop : Bit (AddrSz + 2) <- Add [ZeroExtendTo (AddrSz + 2) #outBase; ZeroExtendTo (AddrSz + 2) #outLen] ;
       @RetE _ BoundsRes (STRUCT {
                           "E" ::= #ef;
                           "base" ::= #outBase;
@@ -1254,7 +1254,7 @@ Section Alu.
     "lt" :: Bool ;
     "eq" :: Bool }.
 
-  Definition ComparatorTopOrRep (addr topRep : ty (Bit (Xlen + 1))) (checkLte : ty Bool) : LetExpr ty ComparatorOut :=
+  Definition ComparatorTopOrRep (addr topRep : ty (Bit (Xlen + 2))) (checkLte : ty Bool) : LetExpr ty ComparatorOut :=
     LetE ltRes : Bool <- Slt #addr #topRep;
     LetE eqRes : Bool <- Eq #addr #topRep;
     LetE lteRes : Bool <- Or [ #ltRes; #eqRes ];
@@ -1330,7 +1330,7 @@ Section Alu.
         LetE E <- #ecap`"E";
         LetE ECorrected <- get_ECorrected_from_E E;
         LetE B <- TruncLsb (AddrSz + 1 - CapBSz) CapBSz (Sll (#ecap`"base") #ECorrected);
-        LetE T <- TruncLsb (AddrSz + 1 - CapBSz) CapBSz (Sll (#ecap`"top") #ECorrected);
+        LetE T <- TruncLsb (AddrSz + 2 - CapBSz) CapBSz (Sll (#ecap`"top") #ECorrected);
         LETE cE <- get_cE_from_E_T_B E T B;
         LetE cT <- get_cT_from_T T;
         @RetE _ Cap (STRUCT {
@@ -1582,7 +1582,7 @@ Section Alu.
       LetE cs1Tag : Bool <- ##cs1`"tag" ;
       LetE cs1ECap : ECap <- ##cs1`"ecap" ;
       LetE cs1Base : Bit (AddrSz + 1) <- ##cs1ECap`"base" ;
-      LetE cs1Top : Bit (AddrSz + 1) <- ##cs1ECap`"top" ;
+      LetE cs1Top : Bit (AddrSz + 2) <- ##cs1ECap`"top" ;
       LetE cs1Exp : Bit ExpSz <- ##cs1ECap`"E" ;
       LetE cs1Perms : CapPerms <- ##cs1ECap`"perms" ;
       LetE cs1OType : Bit CapOTypeSz <- ##cs1ECap`"oType" ;
@@ -1591,7 +1591,7 @@ Section Alu.
       LetE cs2Tag : Bool <- ##cs2`"tag" ;
       LetE cs2ECap : ECap <- ##cs2`"ecap" ;
       LetE cs2Base : Bit (AddrSz + 1) <- ##cs2`"ecap"`"base" ;
-      LetE cs2Top : Bit (AddrSz + 1) <- ##cs2`"ecap"`"top" ;
+      LetE cs2Top : Bit (AddrSz + 2) <- ##cs2`"ecap"`"top" ;
       LetE cs2Perms : CapPerms <- ##cs2`"ecap"`"perms" ;
 
       LetE simm12 : Bit Xlen <- SignExtendTo Xlen (##inst`[31:20]) ;
@@ -1635,7 +1635,7 @@ Section Alu.
       LetE AdderToOutput_base : Bit Xlen <-
         caseDefault (k := Bit Xlen) [
             (##aluControl`"AdderToOutput_base_pccAddr", #pccAddr) ;
-            (##aluControl`"CGetLen", TruncLsb 1 Xlen #cs1Top) ]
+            (##aluControl`"CGetLen", TruncLsb 2 Xlen #cs1Top) ]
           #cs1Addr ;
       LetE AdderToOutput_offset : Bit Xlen <-
         caseDefault (k := Bit Xlen) [
@@ -1671,17 +1671,17 @@ Section Alu.
       LETE AdderBeforeRepCheckOut : Bit (Xlen + 1) <-
         AdderBeforeRepCheck AdderBeforeRepCheck_base AdderBeforeRepCheck_shifter ;
 
-      LetE ComparatorTopOrRep_addr : Bit (Xlen + 1) <-
-        caseDefault (k := Bit (Xlen + 1)) [
+      LetE ComparatorTopOrRep_addr : Bit (Xlen + 2) <-
+        caseDefault (k := Bit (Xlen + 2)) [
             (##aluControl`"ComparatorTopOrRep_addr_AdderBeforeBoundsCheck",
-             ZeroExtendTo (Xlen + 1) #AdderBeforeBoundsCheckOut) ;
-            (##aluControl`"SealOrSetAddr", ZeroExtendTo (Xlen + 1) #cs2Addr) ;
-            (##aluControl`"Unseal", ZeroExtendTo (Xlen + 1) #cs1OType) ;
+             ZeroExtendTo (Xlen + 2) #AdderBeforeBoundsCheckOut) ;
+            (##aluControl`"SealOrSetAddr", ZeroExtendTo (Xlen + 2) #cs2Addr) ;
+            (##aluControl`"Unseal", ZeroExtendTo (Xlen + 2) #cs1OType) ;
             (##aluControl`"CTestSubset", #cs1Top) ]
-          (ZeroExtendTo (Xlen + 1) #cs1Addr) ;
-      LetE ComparatorTopOrRep_topRep : Bit (Xlen + 1) <-
-        caseDefault (k := Bit (Xlen + 1)) [
-            (#BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr, #AdderBeforeRepCheckOut) ;
+          (ZeroExtendTo (Xlen + 2) #cs1Addr) ;
+      LetE ComparatorTopOrRep_topRep : Bit (Xlen + 2) <-
+        caseDefault (k := Bit (Xlen + 2)) [
+            (#BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr, ZeroExtendTo (Xlen + 2) #AdderBeforeRepCheckOut) ;
             (##aluControl`"SealOrUnsealOrSubset", #cs2Top) ]
           #cs1Top ;
       LetE ComparatorTopOrRep_checkLte : Bool <- ##aluControl`"ComparatorTopOrRep_checkLte" ;
@@ -1780,7 +1780,6 @@ Section Alu.
              And [ ##aluControl`"CAndPerm"               ; ##CAndPermOut`"tag" ] ;
              And [ ##aluControl`"SealOrUnseal"           ; ##SealerUnsealerOut`"tag" ] ] ;
 
-
       LetE capToEncode : ECap <- ITE (##aluControl`"Store") (#cs2ECap) (#cs1ECap) ;
       LETE encodedCap : Cap <- EncodeCap capToEncode ;
       LetE cs2AddrAsCap : Cap <- FromBit Cap #cs2Addr ;
@@ -1816,7 +1815,7 @@ Section Alu.
             (##aluControl`"CGetTag",  ZeroExtendTo Xlen (ToBit #cs1Tag)) ;
             (##aluControl`"CGetAddr", #cs1Addr) ;
             (##aluControl`"CGetHigh", ZeroExtendTo Xlen (ToBit #encodedCap)) ;
-            (##aluControl`"CGetTop",  TruncLsb 1 Xlen #cs1Top) ;
+            (##aluControl`"CGetTop",  TruncLsb 2 Xlen #cs1Top) ;
             (##aluControl`"Reg_addr_cs2Addr", #cs2Addr) ;
             (##aluControl`"Reg_addr_zimm5", ZeroExtendTo Xlen #zimm5) ;
             (##aluControl`"Reg_addr_cs1Addr", #cs1Addr) ;

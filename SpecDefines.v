@@ -398,7 +398,7 @@ Definition ECap := STRUCT_TYPE { "R"     :: Bool;
                                  "perms" :: CapPerms;
                                  "oType" :: Bit CapOTypeSz;
                                  "E"     :: Bit ExpSz;
-                                 "top"   :: Bit (AddrSz + 1);
+                                 "top"   :: Bit (AddrSz + 2);
                                  "base"  :: Bit (AddrSz + 1) }.
 
 Definition FullCapWithTag := STRUCT_TYPE { "tag"  :: Bool;
@@ -629,7 +629,7 @@ Section CapEncoding.
     Definition BaseTop :=
       STRUCT_TYPE {
           "base"   :: Bit (AddrSz + 1);
-          "top"    :: Bit (AddrSz + 1) }.
+          "top"    :: Bit (AddrSz + 2) }.
 
     Variable addr: ty Addr.
     Variable ECorrected: ty (Bit ExpSz).
@@ -647,7 +647,7 @@ Section CapEncoding.
 
         LetE tHi <- ZeroExtendTo (AddrSz - CapBSz) (ToBit (Slt #T #B));
         LetE aTopT <- Add [#aTopB; #tHi];
-        LetE top <- Sll (ZeroExtendTo (AddrSz + 1) ({< #aTopT, #T >})) #ECorrected;
+        LetE top <- Sll (ZeroExtendTo (AddrSz + 2) ({< #aTopT, #T >})) #ECorrected;
 
         @RetE _ BaseTop (STRUCT {
                                 "base"   ::= #base;
