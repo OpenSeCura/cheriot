@@ -1554,6 +1554,7 @@ Section Alu.
     RetE #scrCsr.
 
   Definition AluOut := STRUCT_TYPE {
+    "isComp" :: Bool ;
     "dstIdx" :: Bit RegIdxSz ;
     "dstValue" :: FullECapWithTag ;
     "Exception" :: Option ExceptionInfo ;
@@ -1573,6 +1574,7 @@ Section Alu.
     Variable writesCd: ty Bool.
 
     Definition AluRouting : LetExpr ty AluOut :=
+      LetE isComp  : Bool     <- isCompressed inst ;
       LetE pccAddr : Bit Xlen <- ##pcc`"addr" ;
       LetE pccTag : Bool <- ##pcc`"tag" ;
       LetE pccBase : Bit (AddrSz + 1) <- ##pcc`"ecap"`"base" ;
@@ -1852,6 +1854,7 @@ Section Alu.
       LETE ScrCsrOut : Option ScrCsrPayload <- ScrCsr cs2Idx ScrSanitizerOut cs1ECap cs1Addr ;
 
       @RetE _ AluOut (STRUCT {
+        "isComp" ::= #isComp ;
         "dstIdx" ::= ITE0 (And [#writesCd; Not (isValid #ExceptionRes)]) #dstIdx ;
         "dstValue" ::= #RegVal ;
         "Exception" ::= #ExceptionRes ;
@@ -1859,47 +1862,63 @@ Section Alu.
         "ControlFlow" ::= #cfPayload ;
         "ScrCsr" ::= #ScrCsrOut
       }).
-
-    Definition Alu : LetExpr ty AluOutUnion :=
-      LETE routingOut : AluOut <- AluRouting ;
-      LetE excOpt      : Option ExceptionInfo <- ##routingOut`"Exception" ;
-      LetE deferredOpt : Option DeferredUnion <- ##routingOut`"Deferred" ;
-      LetE cfOpt       : Option CfPayload <- ##routingOut`"ControlFlow" ;
-      LetE scrCsrOpt   : Option ScrCsrPayload <- ##routingOut`"ScrCsr" ;
-
-      LetE isExc : Bool <- isValid #excOpt ;
-      LetE excVal : ExceptionInfo <- getData #excOpt ;
-
-      LetE isDeferred : Bool <- isValid #deferredOpt ;
-      LetE deferredVal : DeferredUnion <- getData #deferredOpt ;
-
-      LetE isCf : Bool <- isValid #cfOpt ;
-      LetE cfVal : CfPayload <- getData #cfOpt ;
-
-      LetE isScrCsr : Bool <- isValid #scrCsrOpt ;
-      LetE scrCsrVal : ScrCsrPayload <- getData #scrCsrOpt ;
-
-      LetE notDeferredUnion : NotDeferredUnion <-
-        ITE #isCf
-            (UNION (NotDeferredUnionType, "ControlFlow" ::= #cfVal))
-            (ITE #isScrCsr
-                 (UNION (NotDeferredUnionType, "ScrCsr" ::= #scrCsrVal))
-                 (UNION (NotDeferredUnionType, "Normal" ::= ConstDef))) ;
-                 
-      LetE noExcUnion : NoExceptionUnion <-
-        ITE #isDeferred
-            (UNION (NoExceptionUnionType, "Deferred" ::= #deferredVal))
-            (UNION (NoExceptionUnionType, "NotDeferred" ::= #notDeferredUnion)) ;
-
-      LetE opUnion : AluOpUnion <-
-        ITE #isExc
-            (UNION (AluOpUnionType, "Exception" ::= #excVal))
-            (UNION (AluOpUnionType, "NoException" ::= #noExcUnion)) ;
-
-      @RetE _ AluOutUnion (STRUCT {
-        "dstIdx" ::= ##routingOut`"dstIdx" ;
-        "dstValue" ::= ##routingOut`"dstValue" ;
-        "Op" ::= #opUnion
-      }).
   End AluRouting.
+
+  Definition Alu (routingOut : ty AluOut) : LetExpr ty AluOutUnion :=
+    LetE excOpt      : Option ExceptionInfo <- ##routingOut`"Exception" ;
+    LetE deferredOpt : Option DeferredUnion <- ##routingOut`"Deferred" ;
+    LetE cfOpt       : Option CfPayload <- ##routingOut`"ControlFlow" ;
+    LetE scrCsrOpt   : Option ScrCsrPayload <- ##routingOut`"ScrCsr" ;
+
+    LetE isExc : Bool <- isValid #excOpt ;
+    LetE excVal : ExceptionInfo <- getData #excOpt ;
+
+    LetE isDeferred : Bool <- isValid #deferredOpt ;
+    LetE deferredVal : DeferredUnion <- getData #deferredOpt ;
+
+    LetE isCf : Bool <- isValid #cfOpt ;
+    LetE cfVal : CfPayload <- getData #cfOpt ;
+
+    LetE isScrCsr : Bool <- isValid #scrCsrOpt ;
+    LetE scrCsrVal : ScrCsrPayload <- getData #scrCsrOpt ;
+
+    LetE notDeferredUnion : NotDeferredUnion <-
+      ITE #isCf
+          (UNION (NotDeferredUnionType, "ControlFlow" ::= #cfVal))
+          (ITE #isScrCsr
+               (UNION (NotDeferredUnionType, "ScrCsr" ::= #scrCsrVal))
+               (UNION (NotDeferredUnionType, "Normal" ::= ConstDef))) ;
+
+    LetE noExcUnion : NoExceptionUnion <-
+      ITE #isDeferred
+          (UNION (NoExceptionUnionType, "Deferred" ::= #deferredVal))
+          (UNION (NoExceptionUnionType, "NotDeferred" ::= #notDeferredUnion)) ;
+
+    LetE opUnion : AluOpUnion <-
+      ITE #isExc
+          (UNION (AluOpUnionType, "Exception" ::= #excVal))
+          (UNION (AluOpUnionType, "NoException" ::= #noExcUnion)) ;
+
+    @RetE _ AluOutUnion (STRUCT {
+      "isComp" ::= ##routingOut`"isComp" ;
+      "dstIdx" ::= ##routingOut`"dstIdx" ;
+      "dstValue" ::= ##routingOut`"dstValue" ;
+      "Op" ::= #opUnion
+    }).
+
+  Definition compressAluOut (aluOut : ty AluOutUnion) : LetExpr ty AluOutUnionCompressed :=
+    LetE dstVal    : FullECapWithTag <- ##aluOut`"dstValue" ;
+    LetE dstECap   : ECap            <- ##dstVal`"ecap" ;
+    LETE dstCap    : Cap             <- EncodeCap dstECap ;
+    LetE dstValC   : FullCapWithTag  <- STRUCT {
+      "tag"  ::= ##dstVal`"tag" ;
+      "cap"  ::= #dstCap ;
+      "addr" ::= ##dstVal`"addr"
+    } ;
+    @RetE _ AluOutUnionCompressed (STRUCT {
+      "isComp"   ::= ##aluOut`"isComp" ;
+      "dstIdx"   ::= ##aluOut`"dstIdx" ;
+      "dstValue" ::= #dstValC ;
+      "Op"       ::= ##aluOut`"Op"
+    }).
 End Alu.

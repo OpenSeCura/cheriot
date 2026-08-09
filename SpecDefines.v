@@ -64,7 +64,7 @@ Definition NumBytesFullCapSz := Eval compute in (FullCapSz / 8).
 Definition LgNumBytesFullCapSz := Eval compute in Z.log2_up NumBytesFullCapSz.
 Definition LgLgNumBytesFullCapSz := Eval compute in Z.log2_up (LgNumBytesFullCapSz + 1).
 
-Definition isCompressed ty (inst: ty Inst) : Expr ty (Bit 2) := TruncLsb (InstSz-2) 2 #inst.
+Definition isCompressed ty (inst: ty Inst) : Expr ty Bool := Not (isAllOnes (TruncLsb (InstSz-2) 2 #inst)).
 Definition getCd ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[11:7].
 Definition getCs1 ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[19:15].
 Definition getScr ty (inst: ty Inst) : Expr ty (Bit ScrAddrSz) := #inst`[24:20].
@@ -731,7 +731,15 @@ Definition AluOpUnionType := [
 Definition AluOpUnion := TaggedUnion AluOpUnionType.
 
 Definition AluOutUnion := STRUCT_TYPE {
+  "isComp"   :: Bool ;
   "dstIdx"   :: Bit RegIdxSz ;
   "dstValue" :: FullECapWithTag ;
+  "Op"       :: AluOpUnion
+}.
+
+Definition AluOutUnionCompressed := STRUCT_TYPE {
+  "isComp"   :: Bool ;
+  "dstIdx"   :: Bit RegIdxSz ;
+  "dstValue" :: FullCapWithTag ;
   "Op"       :: AluOpUnion
 }.
