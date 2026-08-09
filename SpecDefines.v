@@ -643,10 +643,7 @@ Section CapEncoding.
 
         LetE aHi <- ZeroExtendTo (AddrSz - CapBSz) (ToBit (Slt #aMid #B));
         LetE aTopB <- ITE0 (isNotZero #aTop) (Sub #aTop #aHi);
-        LetE baseInit <- Sll (ZeroExtendTo (AddrSz + 1) ({< #aTopB, #B >})) #ECorrected;
-        LetE base <- ITE (And [isNotZero (TruncMsb 1 (CapBSz-1) #B); Eq #ECorrected $Emax])
-                       $(Z.pow 2 Xlen)
-                       #baseInit;
+        LetE base <- Sll (ZeroExtendTo (AddrSz + 1) ({< #aTopB, #B >})) #ECorrected;
 
         LetE tHi <- ZeroExtendTo (AddrSz - CapBSz) (ToBit (Slt #T #B));
         LetE aTopT <- Add [#aTopB; #tHi];
