@@ -392,7 +392,18 @@ Qed.
 Lemma to_Z_app_0 : forall (b : bits Xlen),
   Zmod.to_Z (Zmod.app b (0%Zmod : bits 1)) = Zmod.to_Z b.
 Proof.
-Admitted.
+  intros.
+  unfold Zmod.to_Z, Zmod.app.
+  change (@Zmod.Private_to_Z ?m) with (@Zmod.unsigned m).
+  rewrite Zmod.unsigned_of_Z.
+  change (Zmod.unsigned (0%Zmod : bits 1)) with 0.
+  rewrite Z.shiftl_0_l, Z.lor_0_r.
+  change (Xlen + 1) with 33.
+  rewrite Z.mod_small; [ reflexivity | ].
+  unfold Xlen in *.
+  generalize (Zmod.unsigned_range b).
+  lia.
+Qed.
 
 Lemma bounds_base_math : forall base length isRoundDown bounds,
   bounds = evalLetExpr (Bounds base length isRoundDown) ->
