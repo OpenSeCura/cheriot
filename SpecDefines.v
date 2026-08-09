@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Zmod.
-Require Import Guru.Library Guru.Syntax Guru.Notations.
+Require Import Guru.Library Guru.Syntax Guru.Notations Guru.Composition.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -47,6 +47,7 @@ Definition Inst         := Eval compute in Bit InstSz.
 Definition LgAddrSz     := Eval compute in Z.log2_up AddrSz.
 Definition ExpSz        := Eval compute in LgAddrSz.
 Definition NumBytesXlen := Eval compute in (Xlen / 8).
+Definition NumRegs      := Eval compute in (2 ^ RegIdxSzReal).
 
 Definition CapBSz          := Eval compute in (CapcTSz + 1).
 Definition CapTSz          := Eval compute in CapBSz.
@@ -743,3 +744,77 @@ Definition AluOutUnionCompressed := STRUCT_TYPE {
   "dstValue" :: FullCapWithTag ;
   "Op"       :: AluOpUnion
 }.
+
+(* ===========================================================================
+   REGISTER FILE SUBTREE AND REGPATH DEFINITIONS
+   =========================================================================== *)
+
+(* 1. Child Leaf Lists *)
+
+Definition gprLeaves : list (Tree Elem) :=
+  map (fun '(_, idx) =>
+    Leaf ("gpr_" ++ hex_string_of_Z idx)%string
+         (EReg (Build_Reg FullCapWithTag (Some (getDefault _))))
+  ) (enumerate (repeat tt (Z.to_nat NumRegs))).
+
+Definition waitGprLeaves : list (Tree Elem) :=
+  map (fun '(_, idx) =>
+    Leaf ("waitGpr_" ++ hex_string_of_Z idx)%string
+         (EReg (Build_Reg Bool (Some (getDefault _))))
+  ) (enumerate (repeat tt (Z.to_nat NumRegs))).
+
+Definition scrLeaves : list (Tree Elem) :=
+  map (fun '(name, _) =>
+    Leaf name (EReg (Build_Reg FullCapWithTag (Some (getDefault _))))
+  ) ScrTable.
+
+Definition csrLeaves : list (Tree Elem) :=
+  map (fun '(name, _, _, _) =>
+    Leaf name (EReg (Build_Reg (Bit Xlen) (Some (getDefault _))))
+  ) CsrTable.
+
+(* 2. Top-Level Register File Tree *)
+
+Definition rfTree : Tree Elem :=
+  Node "rf" [
+    Node "gprs"     gprLeaves ;
+    Node "waitGprs" waitGprLeaves ;
+    Node "scrs"     scrLeaves ;
+    Node "csrs"     csrLeaves
+  ].
+
+(* 3. Raw RegPaths into rfTree *)
+
+Definition gprPaths : list (RegPath rfTree) :=
+  map (embedRegPath (getNodePath rfTree "rf.gprs"))
+      (getTreeRegPaths (getNode (getNodePath rfTree "rf.gprs"))).
+
+Definition waitGprPaths : list (RegPath rfTree) :=
+  map (embedRegPath (getNodePath rfTree "rf.waitGprs"))
+      (getTreeRegPaths (getNode (getNodePath rfTree "rf.waitGprs"))).
+
+Definition scrPaths : list (RegPath rfTree) :=
+  map (embedRegPath (getNodePath rfTree "rf.scrs"))
+      (getTreeRegPaths (getNode (getNodePath rfTree "rf.scrs"))).
+
+Definition csrPaths : list (RegPath rfTree) :=
+  map (embedRegPath (getNodePath rfTree "rf.csrs"))
+      (getTreeRegPaths (getNode (getNodePath rfTree "rf.csrs"))).
+
+(* 4. Typed RegOfKind Lists for readRegsList / writeRegsList *)
+
+Definition gprPathsWithKind : list (RegOfKind (t:=rfTree) FullCapWithTag) :=
+  map (embedRegOfKind (getNodePath rfTree "rf.gprs"))
+      (getTreeRegsOfKind FullCapWithTag (getNode (getNodePath rfTree "rf.gprs"))).
+
+Definition waitGprPathsWithKind : list (RegOfKind (t:=rfTree) Bool) :=
+  map (embedRegOfKind (getNodePath rfTree "rf.waitGprs"))
+      (getTreeRegsOfKind Bool (getNode (getNodePath rfTree "rf.waitGprs"))).
+
+Definition scrPathsWithKind : list (RegOfKind (t:=rfTree) FullCapWithTag) :=
+  map (embedRegOfKind (getNodePath rfTree "rf.scrs"))
+      (getTreeRegsOfKind FullCapWithTag (getNode (getNodePath rfTree "rf.scrs"))).
+
+Definition csrPathsWithKind : list (RegOfKind (t:=rfTree) (Bit Xlen)) :=
+  map (embedRegOfKind (getNodePath rfTree "rf.csrs"))
+      (getTreeRegsOfKind (Bit Xlen) (getNode (getNodePath rfTree "rf.csrs"))).
