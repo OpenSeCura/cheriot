@@ -15,7 +15,6 @@
  *)
 
 (* TODO:
-   - Optimize Bounds to not ZeroExtend length and base.
    - Fix MPIE for Mret (and CSR access stuff)
  *)
 
@@ -1051,7 +1050,7 @@ Section Alu.
       ===================================================================
 
       Problem Statement:
-      Given input base (AddrSz + 1 bits) and length (AddrSz + 1 bits),
+      Given input base (AddrSz bits) and length (AddrSz bits),
       compute mantissa m (CapBSz bits), exponent e (LgAddrSz bits) s.t.:
         1) outBase = floor(base / 2^e) * 2^e
         2) outLength = m * 2^e
@@ -1064,13 +1063,13 @@ Section Alu.
 
       Step 1: Initial Canonical Exponent Selection & Sub-Algorithm
         Sub-Algorithm to obtain e_init:
-          Let lenTrunc : Bit (AddrSz + 1 - CapBSz) = floor(length / 2^CapBSz).
+          Let lenTrunc : Bit (AddrSz - CapBSz) = floor(length / 2^CapBSz).
           Let clz : Bit LgAddrSz = countLeadingZeros(lenTrunc).
           Let e_init : Bit LgAddrSz = (AddrSz + 1 - CapBSz) - clz.
 
         Bit-Width Justifications:
-          - lenTrunc: length is AddrSz + 1 bits. Right shift by CapBSz leaves AddrSz + 1 - CapBSz bits.
-          - clz, e_init: Since CapBSz >= 2, lenTrunc width W = AddrSz + 1 - CapBSz < AddrSz = 2^LgAddrSz.
+          - lenTrunc: length is AddrSz bits. Right shift by CapBSz leaves AddrSz - CapBSz bits.
+          - clz, e_init: Since CapBSz >= 2, lenTrunc width W = AddrSz - CapBSz < AddrSz = 2^LgAddrSz.
            Thus max count W <= 2^LgAddrSz - 1, fitting in LgAddrSz bits.
 
         Condition Satisfied:
@@ -1078,10 +1077,10 @@ Section Alu.
           if length >= 2^CapBSz, then 2^e_init > length / 2^CapBSz >= 2^(e_init - 1).
 
         Proof of Condition:
-          Let W = AddrSz + 1 - CapBSz be bit-width of lenTrunc.
+          Let W = AddrSz - CapBSz be bit-width of lenTrunc.
           - If lenTrunc == 0 (length < 2^CapBSz): clz = W implies e_init = 0.
           - If lenTrunc >= 1 (length >= 2^CapBSz): Top '1' bit of lenTrunc is at index
-            (W - 1) - clz = e_init - 1. Thus 2^(e_init - 1) <= lenTrunc <= 2^e_init - 1 < 2^e_init.
+            (W - 1) - clz = e_init - 2. Thus 2^(e_init - 1) <= lenTrunc <= 2^e_init - 1 < 2^e_init.
             Since lenTrunc = floor(length / 2^CapBSz) <= length / 2^CapBSz, we have:
               length / 2^CapBSz >= lenTrunc >= 2^(e_init - 1).
             And since length / 2^CapBSz < lenTrunc + 1 (lenTrunc is the floor(length/2^CapBSz)) <= 2^e_init,
