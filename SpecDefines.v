@@ -428,7 +428,6 @@ Definition LoadOrStoreType := [
 Definition LoadOrStoreKind := TaggedUnion LoadOrStoreType.
 
 Definition MemPayload := STRUCT_TYPE {
-  "addr"    :: Addr ;
   "memSize" :: Bit LgLgNumBytesFullCapSz ;
   "memOp"   :: LoadOrStoreKind
 }.
@@ -738,11 +737,40 @@ Definition AluOutUnion := STRUCT_TYPE {
   "Op"       :: AluOpUnion
 }.
 
+Definition CfPayloadCompressed := STRUCT_TYPE {
+  "NewPcc" :: FullCapWithTag ;
+  "CfOp"   :: CfOp
+}.
+
+Definition ScrCsrPayloadCompressed := STRUCT_TYPE {
+  "SpecialDest"  :: TaggedUnion ScrCsrIdx ;
+  "SpecialValue" :: FullCapWithTag
+}.
+
+Definition NotDeferredUnionCompressedType := [
+  ("Normal"%string,      Bit 0) ;
+  ("ControlFlow"%string, CfPayloadCompressed) ;
+  ("ScrCsr"%string,      ScrCsrPayloadCompressed)
+].
+Definition NotDeferredUnionCompressed := TaggedUnion NotDeferredUnionCompressedType.
+
+Definition NoExceptionUnionCompressedType := [
+  ("Deferred"%string,    DeferredUnion) ;
+  ("NotDeferred"%string, NotDeferredUnionCompressed)
+].
+Definition NoExceptionUnionCompressed := TaggedUnion NoExceptionUnionCompressedType.
+
+Definition AluOpUnionCompressedType := [
+  ("Exception"%string,   ExceptionInfo) ;
+  ("NoException"%string, NoExceptionUnionCompressed)
+].
+Definition AluOpUnionCompressed := TaggedUnion AluOpUnionCompressedType.
+
 Definition AluOutUnionCompressed := STRUCT_TYPE {
   "isComp"   :: Bool ;
   "dstIdx"   :: Bit RegIdxSz ;
   "dstValue" :: FullCapWithTag ;
-  "Op"       :: AluOpUnion
+  "Op"       :: AluOpUnionCompressed
 }.
 
 (* ===========================================================================

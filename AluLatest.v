@@ -170,11 +170,11 @@ Load
 * LC cd, simm12(cs1)
     Can cause exceptions
     Functional Units:
-      a) AdderBeforeBoundsCheck (memory address cs1.addr + simm12)
+      a) AdderBeforeBoundsCheck (memory address cs1.addr + simm12 -> routed to dstValue.addr)
       b) ComparatorTopOrRep (checking top AdderBeforeBoundsCheck < cs1.top)
       c) ComparatorBase (checking base AdderBeforeBoundsCheck >= cs1.base)
       d) AddrBoundsCheck (ands the two comparator outputs correctly)
-      e) Deferred (outputs memory operation info, address, and LG/LM)
+      e) Deferred (outputs memory operation info: memSize and LoadOp {isUnsigned, isLM, isLG})
       f) Exception (outputs exception if bounds/tag/permission/alignment violation)
 
 Store
@@ -184,12 +184,12 @@ Store
 * SC cs2, simm12(cs1)
     Can cause exceptions
     Functional Units:
-      a) AdderBeforeBoundsCheck (memory address cs1.addr + simm12)
+      a) AdderBeforeBoundsCheck (memory address cs1.addr + simm12 -> routed to dstValue.addr)
       b) ComparatorTopOrRep (checking top AdderBeforeBoundsCheck < cs1.top)
       c) ComparatorBase (checking base AdderBeforeBoundsCheck >= cs1.base)
       d) AddrBoundsCheck (ands the two comparator outputs correctly)
       e) EncodeCap (compresses cs2.ecap into cs2.cap for storing)
-      f) Deferred (outputs memory operation info, address, and cap data)
+      f) Deferred (outputs memory operation info: memSize and Store {tag, cap, addr})
       g) Exception (outputs exception if bounds/tag/permission/alignment violation)
 
 AddSub
@@ -517,11 +517,11 @@ Deferred (Output):
   - Load   : Load
   - Store  : Store
   - Fence  : Fence
-  Outputs: isDeferred, (MemPayload {addr, memSize, LoadOp {isUnsigned, isLM, isLG} OR Store {tag, cap, addr}} OR
+  Outputs: isDeferred, (MemPayload {memSize, LoadOp {isUnsigned, isLM, isLG} OR Store {tag, cap, addr}} OR
                         FenceOp {isFenceI, RR, RW, WR, WW})
+  (Note: memory address is routed directly in dstValue.addr)
   cs1Perms: cs1.perms (Load)
   inst: inst (Load, Store, Fence)
-  addr: AdderBeforeBoundsCheck (Load, Store)
   storeTag: cs2.tag (Store)
   storeCap: EncodeCap (Store)
   storeData: cs2.addr (Store)
@@ -591,7 +591,7 @@ Reg.ecap: 0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGe
           SealerUnsealer.ecap (Seal, Unseal),
           {cs1.R, cs1.perms, cs1.otype, Bounds.E, Bounds.top, Bounds.base} (CSetBounds)
 
-Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr),
+Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, Store),
           ComparatorGeneral.cond (Slt), Shifter (Shift), Logical (Logical),
           AdderToOutput (Cjal, Cjalr, AddSub, CGetLen),
           cs1.perms (CGetPerm), cs1.otype (CGetType), cs1.base (CGetBase), cs1.tag (CGetTag),
@@ -811,7 +811,7 @@ Section DecodeInstGroup.
         Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CClearTag";
              ##group`"CMove" ] ;
       "Reg_addr_AdderBeforeBoundsCheck" ::=
-        Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr" ] ;
+        Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"Load"; ##group`"Store" ] ;
       "Reg_addr_AdderToOutput" ::=
         Or [ ##group`"Cjal"; ##group`"Cjalr"; ##group`"AddSub"; ##group`"CGetLen" ] ;
       "Reg_addr_cs2Addr" ::= Or [ ##group`"CSetAddr"; ##group`"Scr"; And [ ##group`"Csr"; Not ##group`"isImm" ] ] ;
@@ -1316,7 +1316,6 @@ Section Alu.
       (UNION (LoadOrStoreType, "Store" ::= #storeCapVal))
       (UNION (LoadOrStoreType, "Load" ::= #loadOpVal)) ;
     LetE memOpVal : MemPayload <- STRUCT {
-      "addr"        ::= #addr ;
       "memSize"     ::= #memSize ;
       "memOp"       ::= #loadOrStoreKind
     } ;
@@ -1915,10 +1914,66 @@ Section Alu.
       "cap"  ::= #dstCap ;
       "addr" ::= ##dstVal`"addr"
     } ;
+    LetE aluOp       : AluOpUnion       <- ##aluOut`"Op" ;
+    LetE isExc       : Bool             <- #aluOp `? "Exception" ;
+    LetE excVal      : ExceptionInfo    <- #aluOp `! "Exception" ;
+    LetE noExc       : NoExceptionUnion <- #aluOp `! "NoException" ;
+    LetE isDeferred  : Bool             <- #noExc `? "Deferred" ;
+    LetE deferredVal : DeferredUnion    <- #noExc `! "Deferred" ;
+    LetE notDef      : NotDeferredUnion <- #noExc `! "NotDeferred" ;
+    LetE isNorm      : Bool             <- #notDef `? "Normal" ;
+    LetE isCf        : Bool             <- #notDef `? "ControlFlow" ;
+    LetE cfVal       : CfPayload        <- #notDef `! "ControlFlow" ;
+    LetE isScrCsr    : Bool             <- #notDef `? "ScrCsr" ;
+    LetE scrCsrVal   : ScrCsrPayload    <- #notDef `! "ScrCsr" ;
+
+    LetE newPccVal   : FullECapWithTag <- #cfVal`"NewPcc" ;
+    LetE newPccECap  : ECap            <- #newPccVal`"ecap" ;
+    LETE newPccCap   : Cap             <- EncodeCap newPccECap ;
+    LetE newPccC     : FullCapWithTag  <- STRUCT {
+      "tag"  ::= ##newPccVal`"tag" ;
+      "cap"  ::= #newPccCap ;
+      "addr" ::= ##newPccVal`"addr"
+    } ;
+    LetE cfC        : CfPayloadCompressed <- STRUCT {
+      "NewPcc" ::= #newPccC ;
+      "CfOp"   ::= ##cfVal`"CfOp"
+    } ;
+
+    LetE sVal       : FullECapWithTag <- #scrCsrVal`"SpecialValue" ;
+    LetE sECap      : ECap            <- #sVal`"ecap" ;
+    LETE sCap       : Cap             <- EncodeCap sECap ;
+    LetE sValC      : FullCapWithTag  <- STRUCT {
+      "tag"  ::= ##sVal`"tag" ;
+      "cap"  ::= #sCap ;
+      "addr" ::= ##sVal`"addr"
+    } ;
+    LetE scrCsrC    : ScrCsrPayloadCompressed <- STRUCT {
+      "SpecialDest"  ::= ##scrCsrVal`"SpecialDest" ;
+      "SpecialValue" ::= #sValC
+    } ;
+
+    LetE notDefC : NotDeferredUnionCompressed <-
+      ITE #isCf
+        (UNION (NotDeferredUnionCompressedType, "ControlFlow" ::= #cfC))
+        (ITE #isScrCsr
+          (UNION (NotDeferredUnionCompressedType, "ScrCsr" ::= #scrCsrC))
+          (UNION (NotDeferredUnionCompressedType, "Normal" ::= ConstDef))) ;
+
+    LetE noExcC : NoExceptionUnionCompressed <-
+      ITE #isDeferred
+        (UNION (NoExceptionUnionCompressedType, "Deferred" ::= #deferredVal))
+        (UNION (NoExceptionUnionCompressedType, "NotDeferred" ::= #notDefC)) ;
+
+    LetE aluOpC : AluOpUnionCompressed <-
+      ITE #isExc
+        (UNION (AluOpUnionCompressedType, "Exception" ::= #excVal))
+        (UNION (AluOpUnionCompressedType, "NoException" ::= #noExcC)) ;
+
     @RetE _ AluOutUnionCompressed (STRUCT {
       "isComp"   ::= ##aluOut`"isComp" ;
       "dstIdx"   ::= ##aluOut`"dstIdx" ;
       "dstValue" ::= #dstValC ;
-      "Op"       ::= ##aluOut`"Op"
+      "Op"       ::= #aluOpC
     }).
 End Alu.
