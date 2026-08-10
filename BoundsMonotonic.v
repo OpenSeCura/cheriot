@@ -90,31 +90,33 @@ Proof.
 Qed.
 
 Lemma add_0_r_bits5 : forall (accum: bits 5),
-  (accum + 0)%Zmod = accum.
+  (accum + Zmod.zero)%Zmod = accum.
 Proof.
   intros.
   apply Zmod.unsigned_inj.
   rewrite Zmod.unsigned_add.
-  change (0%Zmod) with (Zmod.of_Z 32 0).
-  rewrite Zmod.unsigned_of_Z.
-  rewrite Z.mod_0_l by lia.
+  rewrite Zmod.unsigned_0.
   rewrite Z.add_0_r.
+  change (2^5) with 32.
   rewrite Z.mod_small.
   - reflexivity.
-  - generalize (Zmod.unsigned_range accum); intros [H | [H | H]]; lia.
+  - pose proof (Zmod.unsigned_range accum) as [[H0 H1] | [H0 | [H0 H1]]];
+      change (2^5) with 32 in *; lia.
 Qed.
 
 Lemma unsigned_add_1_bits5 : forall (accum: bits 5),
   Zmod.unsigned accum + 1 < 32 ->
-  Zmod.unsigned (accum + 1)%Zmod = Zmod.unsigned accum + 1.
+  Zmod.unsigned (accum + Zmod.one)%Zmod = Zmod.unsigned accum + 1.
 Proof.
   intros accum H.
   rewrite Zmod.unsigned_add.
-  change (1%Zmod) with (Zmod.of_Z 32 1).
-  rewrite Zmod.unsigned_of_Z.
-  rewrite Z.mod_1_l by lia.
-  rewrite Z.mod_small; [ reflexivity | ].
-  generalize (Zmod.unsigned_range accum); intros [H0 | [H0 | H0]]; lia.
+  rewrite Zmod.unsigned_1 by lia.
+  change (2^5) with 32.
+  rewrite (Z.mod_1_l 32) by lia.
+  rewrite Z.mod_small.
+  - reflexivity.
+  - pose proof (Zmod.unsigned_range accum) as [[H0 H1] | [H0 | [H0 H1]]];
+      change (2^5) with 32 in *; lia.
 Qed.
 
 Lemma countLeadingZerosLoop_bound_5 : forall ni arr count over (accum: bits 5),
@@ -145,10 +147,10 @@ Proof.
       end end.
     + rewrite !Zmod.add_0_l.
       assert (Hbound1: Zmod.unsigned accum + 1 < 32) by lia.
-      assert (Hmod: Zmod.unsigned (accum + 1)%Zmod = Zmod.unsigned accum + 1) by (apply unsigned_add_1_bits5; lia).
-      assert (Hacc': 0 <= Zmod.unsigned (accum + 1)%Zmod) by (rewrite Hmod; lia).
-      assert (Hstep: Zmod.unsigned (accum + 1)%Zmod + Z.of_nat m < 32) by (rewrite Hmod; lia).
-      generalize (IHm false (accum + 1)%Zmod Hacc' Hstep); intros Hih.
+      assert (Hmod: Zmod.unsigned (accum + Zmod.one)%Zmod = Zmod.unsigned accum + 1) by (apply unsigned_add_1_bits5; lia).
+      assert (Hacc': 0 <= Zmod.unsigned (accum + Zmod.one)%Zmod) by (rewrite Hmod; lia).
+      assert (Hstep: Zmod.unsigned (accum + Zmod.one)%Zmod + Z.of_nat m < 32) by (rewrite Hmod; lia).
+      generalize (IHm false (accum + Zmod.one)%Zmod Hacc' Hstep); intros Hih.
       rewrite Hmod in Hih.
       change (PosDef.Pos.of_succ_nat m) with (Pos.of_succ_nat m).
       replace (Z.pos (Pos.of_succ_nat m)) with (Z.succ (Z.of_nat m)) by (symmetry; apply Nat2Z.inj_succ).
@@ -190,10 +192,10 @@ Proof.
       end end.
     + rewrite !Zmod.add_0_l.
       assert (Hbound1: Zmod.unsigned accum + 1 < 32) by lia.
-      assert (Hmod: Zmod.unsigned (accum + 1)%Zmod = Zmod.unsigned accum + 1) by (apply unsigned_add_1_bits5; lia).
-      assert (Hacc': 0 <= Zmod.unsigned (accum + 1)%Zmod) by (rewrite Hmod; lia).
-      assert (Hstep: Zmod.unsigned (accum + 1)%Zmod + Z.of_nat m < 32) by (rewrite Hmod; lia).
-      generalize (IHm (S idx) false (accum + 1)%Zmod Hacc' Hstep); intros Hih.
+      assert (Hmod: Zmod.unsigned (accum + Zmod.one)%Zmod = Zmod.unsigned accum + 1) by (apply unsigned_add_1_bits5; lia).
+      assert (Hacc': 0 <= Zmod.unsigned (accum + Zmod.one)%Zmod) by (rewrite Hmod; lia).
+      assert (Hstep: Zmod.unsigned (accum + Zmod.one)%Zmod + Z.of_nat m < 32) by (rewrite Hmod; lia).
+      generalize (IHm (S idx) false (accum + Zmod.one)%Zmod Hacc' Hstep); intros Hih.
       rewrite Hmod in Hih.
       change (PosDef.Pos.of_succ_nat m) with (Pos.of_succ_nat m).
       replace (Z.pos (Pos.of_succ_nat m)) with (Z.succ (Z.of_nat m)) by (symmetry; apply Nat2Z.inj_succ).
@@ -214,11 +216,11 @@ Proof.
   intros ni arr Hni.
   unfold countLeadingZerosArray.
   cbn [evalLetExpr evalExpr].
-  assert (H_zero: Zmod.unsigned (0%Zmod : bits 5) = 0).
-  { change (0%Zmod : bits 5) with (Zmod.of_Z 32 0). rewrite Zmod.unsigned_of_Z. reflexivity. }
-  assert (H_acc: 0 <= Zmod.unsigned (0%Zmod : bits 5)) by (rewrite H_zero; lia).
-  assert (H_bound: Zmod.unsigned (0%Zmod : bits 5) + Z.of_nat ni < 32) by (rewrite H_zero; lia).
-  pose proof (@countLeadingZerosLoop_bound_5 ni arr ni false 0%Zmod H_acc H_bound) as Hloop.
+  assert (H_zero: Zmod.unsigned (Zmod.zero : bits 5) = 0).
+  { apply Zmod.unsigned_0. }
+  assert (H_acc: 0 <= Zmod.unsigned (Zmod.zero : bits 5)) by (rewrite H_zero; lia).
+  assert (H_bound: Zmod.unsigned (Zmod.zero : bits 5) + Z.of_nat ni < 32) by (rewrite H_zero; lia).
+  pose proof (@countLeadingZerosLoop_bound_5 ni arr ni false Zmod.zero H_acc H_bound) as Hloop.
   rewrite H_zero in Hloop.
   lia.
 Qed.
@@ -420,13 +422,13 @@ Qed.
 
 Lemma to_Z_app_0 : forall (n : Z) (b : bits n),
   0 <= n ->
-  Zmod.to_Z (Zmod.app b (0%Zmod : bits 1)) = Zmod.to_Z b.
+  Zmod.to_Z (Zmod.app b (Zmod.zero : bits 1)) = Zmod.to_Z b.
 Proof.
   intros n b Hn.
   unfold Zmod.to_Z, Zmod.app.
   change (@Zmod.Private_to_Z ?m) with (@Zmod.unsigned m).
   rewrite Zmod.unsigned_of_Z.
-  change (Zmod.unsigned (0%Zmod : bits 1)) with 0.
+  rewrite Zmod.unsigned_0.
   rewrite Z.shiftl_0_l, Z.lor_0_r.
   rewrite Z.mod_small; [ reflexivity | ].
   generalize (Zmod.unsigned_range b).
