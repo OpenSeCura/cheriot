@@ -1568,10 +1568,10 @@ Section Alu.
     Variable inst : ty Inst.
     Variable decodeExc : ty DecodeException.
 
-    Variables (pcc cs1 cs2 : ty FullECapWithTag).
     Variable fetchExc : ty FetchException.
-    Variable aluControl : ty AluControl.
+    Variables (pcc cs1 cs2 : ty FullECapWithTag).
     Variable currInterruptStatus : ty Bool.
+    Variable aluControl : ty AluControl.
 
     Definition AluRouting : LetExpr ty AluOut :=
       LetE isComp  : Bool     <- isCompressed inst ;
