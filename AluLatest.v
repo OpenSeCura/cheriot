@@ -1987,7 +1987,8 @@ Section ExecuteNonDeferred.
     Let  aluOp          : AluOpUnionCompressed       <- ##aluOutC`"Op" ;
     Let  pcStep         : Addr                       <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
 
-    LetA currPcc        : FullCapWithTag             <- readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) ;
+    LetA currPcc        : FullCapWithTag             <- readRegsList gprPathsWithKind
+                                                          ($0 : Expr ty (Bit RegIdxSzReal)) ;
     Let  seqPcc         : FullCapWithTag             <- #currPcc `{ "addr" <- Add [ ##currPcc`"addr" ; #pcStep ] } ;
 
     Let  isExc          : Bool                       <- #aluOp `? "Exception" ;
@@ -1998,15 +1999,19 @@ Section ExecuteNonDeferred.
     If #isExc Then
       (
         Let  excVal     : ExceptionInfo  <- #aluOp `! "Exception" ;
-        LetA mtcc       : FullCapWithTag <- readRegsList scrPathsWithKind ($(getScrIdx "Mtcc") : Expr ty (Bit ScrIdxSz)) ;
-        LetA mstatus    : Bit Xlen       <- readRegsList csrPathsWithKind ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+        LetA mtcc       : FullCapWithTag <- readRegsList scrPathsWithKind
+                                              ($(getScrIdx "Mtcc") : Expr ty (Bit ScrIdxSz)) ;
+        LetA mstatus    : Bit Xlen       <- readRegsList csrPathsWithKind
+                                              ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
         Let  currMIE    : Bool           <- getMstatusMIE #mstatus ;
         Let  mstatus1   : Bit Xlen       <- setMstatusMPIE #mstatus #currMIE ;
         Let  newMstatus : Bit Xlen       <- setMstatusMIE #mstatus1 (ConstBool false) ;
 
         Act (writeRegsList scrPathsWithKind ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) #currPcc) ;
-        Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mcause") : Expr ty (Bit CsrIdxSz)) (encodeMcause ##excVal`"mcause")) ;
-        Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mtval") : Expr ty (Bit CsrIdxSz)) (encodeCheriMtval ##excVal`"mtval")) ;
+        Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mcause") : Expr ty (Bit CsrIdxSz))
+               (encodeMcause ##excVal`"mcause")) ;
+        Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mtval") : Expr ty (Bit CsrIdxSz))
+               (encodeCheriMtval ##excVal`"mtval")) ;
         Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
         writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #mtcc
       )
@@ -2078,18 +2083,23 @@ Section ExecuteNonDeferred.
                         If (##addrECapOp `? "Cjalr") Then
                           (
                             Let  newMIE     : Bool           <- #addrECapOp `! "Cjalr" ;
-                            LetA mstatus    : Bit Xlen       <- readRegsList csrPathsWithKind ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+                            LetA mstatus    : Bit Xlen       <- readRegsList csrPathsWithKind
+                                                                  ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
                             Let  newMstatus : Bit Xlen       <- setMstatusMIE #mstatus #newMIE ;
-                            Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
+                            Act (writeRegsList csrPathsWithKind
+                                   ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
                             writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #newPcc
                           )
                         Else
                           (
-                            LetA mePcc      : FullCapWithTag <- readRegsList scrPathsWithKind ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) ;
-                            LetA mstatus    : Bit Xlen       <- readRegsList csrPathsWithKind ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+                            LetA mePcc      : FullCapWithTag <- readRegsList scrPathsWithKind
+                                                                  ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) ;
+                            LetA mstatus    : Bit Xlen       <- readRegsList csrPathsWithKind
+                                                                  ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
                             Let  currMPIE   : Bool           <- getMstatusMPIE #mstatus ;
                             Let  newMstatus : Bit Xlen       <- setMstatusMIE #mstatus #currMPIE ;
-                            Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
+                            Act (writeRegsList csrPathsWithKind
+                                   ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
                             writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #mePcc
                           ) ;
                         Retv
