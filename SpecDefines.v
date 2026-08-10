@@ -696,13 +696,12 @@ Definition isSentryIh ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
 (* ========================================================================= *)
 
 Definition DecodeOut := STRUCT_TYPE {
-  "instGroup"    :: InstGroup ;
-  "writesCd"     :: Bool ;
-  "cs1Idx"       :: Bit RegIdxSzReal ;
-  "cs2Idx"       :: TaggedUnion Cs2Source ;
-  "instBits"     :: Inst ;
-  "illegalInst"  :: Bool ;
-  "asrViolation" :: Bool
+  "instGroup" :: InstGroup ;
+  "cs1Idx"    :: Bit RegIdxSzReal ;
+  "cs2Idx"    :: TaggedUnion Cs2Source ;
+  "writesCd"  :: Bool ;
+  "instBits"  :: Inst ;
+  "decodeExc" :: DecodeException
 }.
 
 Definition ControlFlowAddrOnlyOpType := [

@@ -1563,14 +1563,15 @@ Section Alu.
   }.
 
   Section AluRouting.
-    Variables (pcc cs1 cs2 : ty FullECapWithTag).
-    Variable inst : ty Inst.
-    Variable currInterruptStatus : ty Bool.
-    Variable fetchExc : ty FetchException.
-    Variable decodeExc : ty DecodeException.
-    Variable aluControl : ty AluControl.
     Variable cs2Idx : ty (TaggedUnion Cs2Source).
     Variable writesCd: ty Bool.
+    Variable inst : ty Inst.
+    Variable decodeExc : ty DecodeException.
+
+    Variables (pcc cs1 cs2 : ty FullECapWithTag).
+    Variable fetchExc : ty FetchException.
+    Variable aluControl : ty AluControl.
+    Variable currInterruptStatus : ty Bool.
 
     Definition AluRouting : LetExpr ty AluOut :=
       LetE isComp  : Bool     <- isCompressed inst ;

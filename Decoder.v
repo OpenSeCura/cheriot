@@ -261,14 +261,18 @@ Section DecodeUncompressed.
 
     LetE writesCd : Bool <- Not (Or [ #isBranch; #isStore; #isFence; #isECall; #isEBreak; #isMret ]) ;
 
+    LetE decodeExcVal : DecodeException <- STRUCT {
+      "illegal" ::= #isIllegalInst ;
+      "asr"     ::= #asrViolation
+    } ;
+
     @RetE _ DecodeOut (STRUCT {
-      "instGroup"    ::= #groupVal ;
-      "writesCd"     ::= #writesCd ;
-      "cs1Idx"       ::= #actualCs1Idx ;
-      "cs2Idx"       ::= #cs2SourceVal ;
-      "instBits"     ::= #inst ;
-      "illegalInst"  ::= #isIllegalInst ;
-      "asrViolation" ::= #asrViolation
+      "instGroup" ::= #groupVal ;
+      "cs1Idx"    ::= #actualCs1Idx ;
+      "cs2Idx"    ::= #cs2SourceVal ;
+      "writesCd"  ::= #writesCd ;
+      "instBits"  ::= #inst ;
+      "decodeExc" ::= #decodeExcVal
     }).
 End DecodeUncompressed.
 
