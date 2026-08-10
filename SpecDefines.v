@@ -354,6 +354,28 @@ Section ExceptionConstructors.
     }.
 End ExceptionConstructors.
 
+Section CsrHelpers.
+  Variable ty : Kind -> Type.
+
+  Definition getMstatusMIE (mstatus : Expr ty (Bit Xlen)) : Expr ty Bool :=
+    (FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[3].
+
+  Definition getMstatusMPIE (mstatus : Expr ty (Bit Xlen)) : Expr ty Bool :=
+    (FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[7].
+
+  Definition setMstatusMIE (mstatus : Expr ty (Bit Xlen)) (mie : Expr ty Bool) : Expr ty (Bit Xlen) :=
+    ToBit ((FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[3 <- mie]).
+
+  Definition setMstatusMPIE (mstatus : Expr ty (Bit Xlen)) (mpie : Expr ty Bool) : Expr ty (Bit Xlen) :=
+    ToBit ((FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[7 <- mpie]).
+
+  Definition encodeCheriMtval (mtval : Expr ty CheriMtval) : Expr ty (Bit Xlen) :=
+    ZeroExtendTo Xlen (ToBit mtval).
+
+  Definition encodeMcause (mcause : Expr ty (Bit 5)) : Expr ty (Bit Xlen) :=
+    ZeroExtendTo Xlen mcause.
+End CsrHelpers.
+
 Section Decoders.
   Variable ty : Kind -> Type.
 
