@@ -79,11 +79,11 @@ Qed.
 
 Lemma bounds_E_nonneg : forall base length isRoundDown bounds,
   bounds = evalLetExpr (Bounds base length isRoundDown) ->
-  0 <= Zmod.to_Z (bounds@%"E").
+  0 <= Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))).
 Proof.
   intros. unfold Zmod.to_Z.
   assert (H_pos: 0 < 2 ^ ExpSz) by reflexivity.
-  destruct (Zmod.unsigned_range (bounds@%"E")) as [[H0 H1] | [H0 | [H0 H1]]].
+  destruct (Zmod.unsigned_range (evalExpr (get_E_from_cE (bounds@%"cE")))) as [[H0 H1] | [H0 | [H0 H1]]].
   - exact H0.
   - lia.
   - lia.
@@ -246,6 +246,34 @@ Proof.
   [ symmetry; apply Z.mod_unique with (q := -1); lia | lia | lia ].
 Qed.
 
+Lemma e_init_not_31 : forall ni (arr: @Expr type (Array ni Bool)),
+  (ni <= 23)%nat ->
+  (0 + Zmod.of_Z 32 24 + Zmod.not (evalLetExpr (@countLeadingZerosLoop type ni 5 arr ni false 0%Zmod)))%Zmod <> Zmod.of_Z 32 (-1).
+Proof.
+  intros ni arr Hni H_eq.
+  apply Nat2Z.inj_le in Hni.
+  assert (H_zero: Zmod.unsigned (0%Zmod : bits 5) = 0).
+  { change (0%Zmod : bits 5) with (Zmod.of_Z 32 0). rewrite Zmod.unsigned_of_Z. reflexivity. }
+  assert (H_acc: 0 <= Zmod.unsigned (0%Zmod : bits 5)) by (rewrite H_zero; lia).
+  assert (H_bound: Zmod.unsigned (0%Zmod : bits 5) + Z.of_nat ni < 32) by (rewrite H_zero; lia).
+  pose proof (@countLeadingZerosLoop_bound_5 ni arr ni false 0%Zmod H_acc H_bound) as Hloop.
+  rewrite H_zero in Hloop.
+  apply (f_equal (@Zmod.unsigned 32)) in H_eq.
+  rewrite !Zmod.unsigned_add in H_eq.
+  rewrite not_bits5_val in H_eq.
+  rewrite !Zmod.unsigned_of_Z in H_eq.
+  change (24 mod 32) with 24 in H_eq.
+  change ((-1) mod 32) with 31 in H_eq.
+  change (Zmod.unsigned 0) with 0 in H_eq.
+  change ((0 + 24) mod 32) with 24 in H_eq.
+  set (z := Zmod.unsigned (evalLetExpr (countLeadingZerosLoop 5 arr ni false 0%Zmod))) in *.
+  assert (Hz_range: 0 <= z <= 31) by (apply bits_ExpSz_range).
+  assert (Hz_le: z <= 23) by lia.
+  assert (Hmod: (24 + (31 - z)) mod 32 = 23 - z) by (symmetry; apply Z.mod_unique with (q := 1); lia).
+  rewrite Hmod in H_eq.
+  lia.
+Qed.
+
 Lemma e_init_val : forall (clz: bits 5),
   Zmod.unsigned clz <= 24 ->
   Zmod.unsigned (Zmod.add (Zmod.of_Z 32 25) (Zmod.not clz)) = 24 - Zmod.unsigned clz.
@@ -262,7 +290,7 @@ Proof.
 Qed.
 
 Lemma bounds_E_bound : forall (bounds: type BoundsRes),
-  0 <= Zmod.to_Z (bounds@%"E") <= 31.
+  0 <= Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) <= 31.
 Proof.
   intros.
   unfold Zmod.to_Z.
@@ -304,8 +332,8 @@ Qed.
 Lemma bounds_E_le_ecap_ECorrected : forall cap addr base length isRoundDown ecap bounds,
   ecap = evalLetExpr (DecodeCap cap addr) ->
   bounds = evalLetExpr (Bounds base length isRoundDown) ->
-  Zmod.to_Z base >= Zmod.to_Z (ecap@%"base") /\ Zmod.to_Z (base + length) <= Zmod.to_Z (ecap@%"top") ->
-  Zmod.to_Z (bounds@%"E") <= (Zmod.to_Z (evalExpr (get_ECorrected_from_E (evalExpr (get_E_from_cE (cap@%"cE")))))).
+  Zmod.to_Z base >= Zmod.to_Z (ecap@%"base") /\ Zmod.to_Z base + Zmod.to_Z length <= Zmod.to_Z (ecap@%"top") ->
+  Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) <= (Zmod.to_Z (evalExpr (get_ECorrected_from_E (evalExpr (get_E_from_cE (cap@%"cE")))))).
 Proof.
   intros cap addr base length isRoundDown ecap bounds H_ecap H_bounds [H_base_ge H_top_le].
   pose proof (bounds_E_bound bounds) as [Hb_min Hb_max].
@@ -314,7 +342,7 @@ Proof.
   change (Zmod.Private_to_Z ?x) with (Zmod.unsigned x) in *.
   generalize (bits_ExpSz_range (evalExpr (get_ECorrected_from_E (evalExpr (get_E_from_cE (cap@%"cE")))))).
   intros [H_e1 H_e2].
-  destruct (Z_le_gt_dec (Zmod.unsigned (bounds@%"E")) (Zmod.unsigned (evalExpr (get_ECorrected_from_E (evalExpr (get_E_from_cE (cap@%"cE"))))))).
+  destruct (Z_le_gt_dec (Zmod.unsigned (evalExpr (get_E_from_cE (bounds@%"cE")))) (Zmod.unsigned (evalExpr (get_ECorrected_from_E (evalExpr (get_E_from_cE (cap@%"cE"))))))).
   - exact l.
   - admit.
 Admitted.
@@ -439,24 +467,74 @@ Proof.
   lia.
 Qed.
 
+Lemma cE_decode_id : forall (ef : bits 5) (cond : bool),
+  ef <> Zmod.of_Z 32 (-1) ->
+  (if Zmod.eqb (if (Zmod.eqb ef 0 && cond)%bool then Zmod.of_Z 32 (-1) else ef) (Zmod.of_Z 32 (-1))
+   then (0%Zmod : bits 5)
+   else (if (Zmod.eqb ef 0 && cond)%bool then Zmod.of_Z 32 (-1) else ef)) = ef.
+Proof.
+  intros ef cond H31.
+  destruct (Zmod.eqb_spec (if (Zmod.eqb ef 0 && cond)%bool then Zmod.of_Z 32 (-1) else ef) (Zmod.of_Z 32 (-1))) as [H_eq | H_neq].
+  - destruct (Zmod.eqb ef 0 && cond)%bool eqn:H_and.
+    + apply andb_true_iff in H_and as [H_ef0 H_cond].
+      apply Zmod.eqb_eq in H_ef0. subst ef.
+      reflexivity.
+    + congruence.
+  - destruct (Zmod.eqb ef 0 && cond)%bool eqn:H_and.
+    + congruence.
+    + reflexivity.
+Qed.
+
+Ltac solve_not_31 :=
+  intros H_disc;
+  apply (f_equal (@Zmod.unsigned 32)) in H_disc;
+  rewrite !Zmod.unsigned_of_Z in H_disc;
+  change (24 mod 32) with 24 in H_disc;
+  change ((-1) mod 32) with 31 in H_disc;
+  discriminate.
+
 Lemma bounds_base_math : forall base length isRoundDown bounds,
   bounds = evalLetExpr (Bounds base length isRoundDown) ->
-  let ef := Zmod.to_Z (bounds@%"E") in
+  let ef := Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) in
   Zmod.to_Z (bounds@%"base") = (Zmod.to_Z base / 2^ef) * 2^ef.
 Proof.
   evalSimplGoal; intros; subst.
+  unfold ExpSz in *.
   cbn [evalLetExpr readDiffTupleStr getFinStructOption String.eqb Ascii.eqb fst eqb readDiffTuple
-         finNum Fst Snd evalExpr
+         finNum Fst Snd evalExpr get_E_from_cE isAllOnes
          mapDiffTuple Fst Snd snd evalAndBinary fold_left map InvDefault evalFromBit countTrailingZerosArray
          countTrailingZerosLoop] in *.
-  fold ef.
-  rewrite and_slu_mask.
-  - rewrite and_all_ones.
-    rewrite (to_Z_app_0 (n := 32)); [ | lia ].
-    reflexivity.
-  - unfold ef.
-    destruct isRoundDown; [ destruct (_ <? _) | destruct (_ <? _) ];
-    apply bits_ExpSz_range.
+  unfold ef.
+  rewrite and_slu_mask by (destruct isRoundDown; [ destruct (_ <? _) | destruct (_ <? _) ]; apply bits_ExpSz_range).
+  rewrite and_all_ones.
+  rewrite (to_Z_app_0 (n := 32)); [ | lia ].
+  unfold Zmod.to_Z.
+  change (@Zmod.Private_to_Z ?m) with (@Zmod.unsigned m).
+  destruct isRoundDown.
+  - destruct (Zmod.unsigned _ <? Zmod.unsigned _) eqn:H_slt.
+    + rewrite cE_decode_id; [ reflexivity | ].
+      intros H_eq.
+      apply (f_equal (@Zmod.unsigned 32)) in H_eq.
+      rewrite Zmod.unsigned_of_Z in H_eq.
+      change ((-1) mod 32) with 31 in H_eq.
+      apply Z.ltb_lt in H_slt.
+      rewrite H_eq in H_slt.
+      match type of H_slt with
+      | 31 < Zmod.unsigned ?X =>
+          destruct (Zmod.unsigned_range X) as [[H1 H2] | [H1 | [H1 H2]]]; lia
+      end.
+    + rewrite cE_decode_id; [ reflexivity | ].
+      apply e_init_not_31; lia.
+  - destruct (_ <? _) eqn:H_sat.
+    + rewrite cE_decode_id; [ reflexivity | solve_not_31 ].
+    + rewrite cE_decode_id; [ reflexivity | ].
+      intros H_eq.
+      apply (f_equal (@Zmod.unsigned 32)) in H_eq.
+      rewrite Zmod.unsigned_of_Z in H_eq.
+      change ((-1) mod 32) with 31 in H_eq.
+      apply Z.ltb_ge in H_sat.
+      change (if negb (Z.sgn (23 mod 32) =? -1) && (Z.abs (23 mod 32) <? 32) then 23 mod 32 else 0) with 23 in H_sat.
+      lia.
 Qed.
 
 Lemma div_add_exact : forall b len e,
@@ -476,19 +554,12 @@ Qed.
 Lemma bounds_top_math : forall base length isRoundDown bounds,
   bounds = evalLetExpr (Bounds base length isRoundDown) ->
   Zmod.to_Z base + Zmod.to_Z length < 8589934592 ->
-  let ef := Zmod.to_Z (bounds@%"E") in
-  Zmod.to_Z (bounds@%"top") <= ((Zmod.to_Z (base + length) + 2^ef - 1) / 2^ef) * 2^ef.
+  let ef := Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) in
+  Zmod.to_Z (bounds@%"top") <= ((Zmod.to_Z base + Zmod.to_Z length + 2^ef - 1) / 2^ef) * 2^ef.
 Proof.
   intros base length isRoundDown bounds H_bounds H_no_wrap.
-  remember (Zmod.to_Z (bounds@%"E")) as ef eqn:Heq_ef.
+  remember (Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE")))) as ef eqn:Heq_ef.
   subst bounds.
-  cbn [evalLetExpr readDiffTupleStr getFinStructOption String.eqb Ascii.eqb fst eqb readDiffTuple
-         finNum Fst Snd evalExpr
-         mapDiffTuple Fst Snd snd evalAndBinary fold_left map InvDefault evalFromBit countTrailingZerosArray
-         countTrailingZerosLoop] in *.
-  unfold Zmod.to_Z in *.
-  change (@Zmod.Private_to_Z ?m) with (@Zmod.unsigned m) in *.
-  repeat rewrite Zmod.add_0_l.
   admit.
 Admitted.
 
@@ -653,7 +724,7 @@ Qed.
 Theorem BoundsMonotonic cap addr base length isRoundDown:
   let ecap : type ECap := evalLetExpr (DecodeCap cap addr) in
   let bounds : type BoundsRes := evalLetExpr (Bounds base length isRoundDown) in
-  (Zmod.to_Z base >= Zmod.to_Z (ecap@%"base") /\ Zmod.to_Z (base + length) <= Zmod.to_Z (ecap@%"top")) ->
+  (Zmod.to_Z base >= Zmod.to_Z (ecap@%"base") /\ Zmod.to_Z base + Zmod.to_Z length <= Zmod.to_Z (ecap@%"top")) ->
   (Zmod.to_Z (bounds@%"base") >= Zmod.to_Z (ecap@%"base") /\ Zmod.to_Z (bounds@%"top") <= Zmod.to_Z (ecap@%"top")).
 Proof.
   intros ecap bounds H_in_bounds.
@@ -675,32 +746,32 @@ Proof.
     lia.
   }
 
-  assert (H_E_nonneg : 0 <= Zmod.to_Z (bounds@%"E")).
+  assert (H_E_nonneg : 0 <= Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE")))).
   { eapply bounds_E_nonneg with (base:=base) (length:=length) (isRoundDown:=isRoundDown); reflexivity. }
 
   assert (H_ecap_E_nonneg : 0 <= (Zmod.to_Z (evalExpr (get_ECorrected_from_E (evalExpr (get_E_from_cE (cap@%"cE"))))))).
   { eapply ecap_E_nonneg with (cap:=cap) (addr:=addr); reflexivity. }
 
-  assert (HE : Zmod.to_Z (bounds@%"E") <= (Zmod.to_Z (evalExpr (get_ECorrected_from_E (evalExpr (get_E_from_cE (cap@%"cE"))))))).
+  assert (HE : Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) <= (Zmod.to_Z (evalExpr (get_ECorrected_from_E (evalExpr (get_E_from_cE (cap@%"cE"))))))).
   { eapply bounds_E_le_ecap_ECorrected with (cap:=cap) (addr:=addr) (base:=base) (length:=length) (isRoundDown:=isRoundDown).
     - reflexivity.
     - reflexivity.
     - split; assumption.
   }
 
-  assert (H_base_math: Zmod.to_Z (bounds@%"base") = (Zmod.to_Z base / 2^(Zmod.to_Z (bounds@%"E"))) * 2^(Zmod.to_Z (bounds@%"E"))) by (eapply bounds_base_math with (base:=base) (length:=length) (isRoundDown:=isRoundDown); reflexivity).
+  assert (H_base_math: Zmod.to_Z (bounds@%"base") = (Zmod.to_Z base / 2^(Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))))) * 2^(Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))))) by (eapply bounds_base_math with (base:=base) (length:=length) (isRoundDown:=isRoundDown); reflexivity).
 
-  assert (H_top_math: Zmod.to_Z (bounds@%"top") <= ((Zmod.to_Z (base + length) + 2^(Zmod.to_Z (bounds@%"E")) - 1) / 2^(Zmod.to_Z (bounds@%"E"))) * 2^(Zmod.to_Z (bounds@%"E"))).
+  assert (H_top_math: Zmod.to_Z (bounds@%"top") <= ((Zmod.to_Z base + Zmod.to_Z length + 2^(Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE")))) - 1) / 2^(Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))))) * 2^(Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))))).
   { eapply bounds_top_math with (base:=base) (length:=length) (isRoundDown:=isRoundDown); auto. }
 
   assert (H_ecap_base: Zmod.to_Z (ecap@%"base") mod 2^((Zmod.to_Z (evalExpr (get_ECorrected_from_E (evalExpr (get_E_from_cE (cap@%"cE"))))))) = 0) by (eapply ecap_base_multiple with (cap:=cap) (addr:=addr); reflexivity).
 
   assert (H_ecap_top: Zmod.to_Z (ecap@%"top") mod 2^((Zmod.to_Z (evalExpr (get_ECorrected_from_E (evalExpr (get_E_from_cE (cap@%"cE"))))))) = 0) by (eapply ecap_top_multiple with (cap:=cap) (addr:=addr); reflexivity).
 
-  assert (H_ecap_base_mod_eb: Zmod.to_Z (ecap@%"base") mod 2^(Zmod.to_Z (bounds@%"E")) = 0).
+  assert (H_ecap_base_mod_eb: Zmod.to_Z (ecap@%"base") mod 2^(Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE")))) = 0).
   { eapply multiple_divides; try eassumption; lia. }
 
-  assert (H_ecap_top_mod_eb: Zmod.to_Z (ecap@%"top") mod 2^(Zmod.to_Z (bounds@%"E")) = 0).
+  assert (H_ecap_top_mod_eb: Zmod.to_Z (ecap@%"top") mod 2^(Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE")))) = 0).
   { eapply multiple_divides; try eassumption; lia. }
 
   split.

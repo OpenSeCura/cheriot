@@ -420,7 +420,7 @@ Definition CapPerms := STRUCT_TYPE { "U0" :: Bool ;
 Definition ECap := STRUCT_TYPE { "R"     :: Bool;
                                  "perms" :: CapPerms;
                                  "oType" :: Bit CapOTypeSz;
-                                 "E"     :: Bit ExpSz;
+                                 "cE"    :: Bit ExpSz;
                                  "top"   :: Bit (AddrSz + 2);
                                  "base"  :: Bit (AddrSz + 1) }.
 

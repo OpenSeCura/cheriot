@@ -1038,7 +1038,7 @@ Section Alu.
     @RetE _ TagECap (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap }).
 
   Definition BoundsRes := STRUCT_TYPE {
-    "E" :: Bit ExpSz ;
+    "cE" :: Bit ExpSz ;
     "base" :: Bit (Xlen + 1) ;
     "top" :: Bit (Xlen + 2) ;
     "cram" :: Bit (Xlen + 1) ;
@@ -1222,8 +1222,11 @@ Section Alu.
       LetE outBase : Bit (AddrSz + 1) <- And [ZeroExtend 1 #base; #cram];
       LetE outLen: Bit (AddrSz + 1) <- Sll (ZeroExtendTo (AddrSz + 1) #mf) #ef;
       LetE outTop : Bit (AddrSz + 2) <- Add [ZeroExtendTo (AddrSz + 2) #outBase; ZeroExtendTo (AddrSz + 2) #outLen] ;
+      LetE cE : Bit ExpSz <- ITE (And [isZero #ef; isNotZero (TruncMsb 1 (CapBSz - 1) #mf)])
+                               (ConstBit (InvDefault _))
+                               #ef;
       @RetE _ BoundsRes (STRUCT {
-                          "E" ::= #ef;
+                          "cE" ::= #cE;
                           "base" ::= #outBase;
                           "top" ::= #outTop;
                           "cram" ::= #cram;
@@ -1326,7 +1329,8 @@ Section Alu.
   Definition EncodeCap (ecap: ty ECap) : LetExpr ty Cap :=
       ( LetE decodedPerms <- #ecap`"perms";
         LetE perms <- encodePerms decodedPerms;
-        LetE E <- #ecap`"E";
+        LetE cE <- #ecap`"cE";
+        LetE E <- get_E_from_cE cE;
         LetE ECorrected <- get_ECorrected_from_E E;
         LetE B <- TruncLsb (AddrSz + 1 - CapBSz) CapBSz (Sll (#ecap`"base") #ECorrected);
         LetE T <- TruncLsb (AddrSz + 2 - CapBSz) CapBSz (Sll (#ecap`"top") #ECorrected);
@@ -1354,7 +1358,7 @@ Section Alu.
                           "R" ::= ##cap`"R";
                           "perms" ::= #perms;
                           "oType" ::= #cap`"oType";
-                          "E" ::= #E;
+                          "cE" ::= #cap_cE;
                           "top" ::= #base_top`"top";
                           "base" ::= #base_top`"base" })).
 
@@ -1578,14 +1582,14 @@ Section Alu.
       LetE pccAddr : Bit Xlen <- ##pcc`"addr" ;
       LetE pccTag : Bool <- ##pcc`"tag" ;
       LetE pccBase : Bit (AddrSz + 1) <- ##pcc`"ecap"`"base" ;
-      LetE pccExp : Bit ExpSz <- ##pcc`"ecap"`"E" ;
+      LetE pccExp : Bit ExpSz <- ##pcc`"ecap"`"cE" ;
 
       LetE cs1Addr : Bit Xlen <- ##cs1`"addr" ;
       LetE cs1Tag : Bool <- ##cs1`"tag" ;
       LetE cs1ECap : ECap <- ##cs1`"ecap" ;
       LetE cs1Base : Bit (AddrSz + 1) <- ##cs1ECap`"base" ;
       LetE cs1Top : Bit (AddrSz + 2) <- ##cs1ECap`"top" ;
-      LetE cs1Exp : Bit ExpSz <- ##cs1ECap`"E" ;
+      LetE cs1Exp : Bit ExpSz <- ##cs1ECap`"cE" ;
       LetE cs1Perms : CapPerms <- ##cs1ECap`"perms" ;
       LetE cs1OType : Bit CapOTypeSz <- ##cs1ECap`"oType" ;
 
@@ -1789,7 +1793,7 @@ Section Alu.
       LetE Bounds_outECap : ECap <- STRUCT { "R"     ::= ##cs1ECap`"R" ;
                                              "perms" ::= ##cs1ECap`"perms" ;
                                              "oType" ::= ##cs1ECap`"oType" ;
-                                             "E"     ::= ##BoundsOut`"E" ;
+                                             "cE"    ::= ##BoundsOut`"cE" ;
                                              "top"   ::= ##BoundsOut`"top" ;
                                              "base"  ::= ##BoundsOut`"base" };
 
