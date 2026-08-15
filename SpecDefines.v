@@ -705,6 +705,152 @@ Definition DecodeOut := STRUCT_TYPE {
   "decodeExc" :: DecodeException
 }.
 
+Definition AluControl := STRUCT_TYPE {
+  (* AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr = BranchOrCjalOrAuiPcc *)
+  (* AddCapBSz_baseExp_isPccExpNotCs1Exp = BranchOrCjalOrAuiPcc *)
+  (* AdderBeforeRepCheck_base_isPccBaseNotCs1Base = BranchOrCjalOrAuiPcc *)
+  (* ComparatorBase_base_pccBase = BranchOrCjalOrAuiPcc *)
+  (* AddrBoundsCheck_tag_isPccTagNotCs1Tag = BranchOrCjalOrAuiPcc *)
+  (* AdderBeforeBoundsCheck_offset_bimm12 = Branch *)
+  (* AdderBeforeBoundsCheck_offset_jimm20 = Cjal *)
+  "AdderBeforeBoundsCheck_offset_uimm20_11" :: Bool ;
+  "AdderBeforeBoundsCheck_offset_cs2Addr" :: Bool ;
+  (* AdderBeforeBoundsCheck_offset_zimm12 = Bounds_isImm *)
+  (* "AdderBeforeBoundsCheck_offset_simm12" :: Bool ; (* default option *) *)
+  "AdderToOutput_base_pccAddr" :: Bool ;
+  (* AdderToOutput_base_cs1Addr = AddSub (* default option *) *)
+  (* AdderToOutput_base_cs1Top = CGetLen *)
+  "AdderToOutput_offset_const2" :: Bool ;
+  (* "AdderToOutput_offset_const4" :: Bool ; (* default option *) *)
+  "AdderToOutput_offset_cs2Addr" :: Bool ;
+  "AdderToOutput_offset_simm12" :: Bool ;
+  (* AdderToOutput_offset_cs1Base = CGetLen *)
+  "AdderToOutput_isSub" :: Bool ;
+  "ComparatorGeneral_op2_isCs2AddrNotSimm12" :: Bool ;
+  (* ComparatorGeneral_isUnsigned = isUnsigned *)
+  "ComparatorGeneral_checkLt" :: Bool ;
+  "ComparatorGeneral_checkEq" :: Bool ;
+  "ComparatorGeneral_invertRes" :: Bool ;
+  "Logical_op2_isCs2AddrNotSimm12" :: Bool ;
+  (* SealerUnsealer_isUnseal = Unseal *)
+  "Bounds_reqLimit_cs2Addr" :: Bool ;
+  (* Bounds_reqLimit_zimm12 = Bounds_isImm (* default option *) *)
+  "Bounds_reqLimit_cs1Addr" :: Bool ;
+  "Bounds_isRoundDown" :: Bool ;
+  "Bounds_isExact" :: Bool ;
+  "Bounds_isImm" :: Bool ;
+  (* Shifter_data_isCs1AddrNotConst1 = Shift *)
+  "Shifter_shamt_cs2Addr" :: Bool ;
+  (* "Shifter_shamt_shamt" :: Bool ; (* default option *) *)
+  (* Shifter_shamt_AddCapBSz = BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr *)
+  "Shifter_isArith" :: Bool ;
+  "Shifter_isRight" :: Bool ;
+  "ComparatorTopOrRep_addr_AdderBeforeBoundsCheck" :: Bool ;
+  (* "ComparatorTopOrRep_addr_cs1Addr" :: Bool ; (* default option *) *)
+  (* ComparatorTopOrRep_addr_cs2Addr = SealOrSetAddr *)
+  (* ComparatorTopOrRep_addr_cs1OType = Unseal *)
+  (* ComparatorTopOrRep_addr_cs1Top = CTestSubset *)
+  (* "ComparatorTopOrRep_topRep_cs1Top" :: Bool ; (* default option *) *)
+  (* ComparatorTopOrRep_topRep_AdderBeforeRepCheck = BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr *)
+  (* ComparatorTopOrRep_topRep_cs2Top = SealOrUnsealOrSubset *)
+  (* ComparatorBase_base_cs2Base = SealOrUnsealOrSubset *)
+  "ComparatorTopOrRep_checkLte" :: Bool ;
+  "ComparatorBase_addr_AdderBeforeBoundsCheck" :: Bool ;
+  (* ComparatorBase_addr_cs2Addr = SealOrSetAddr *)
+  (* ComparatorBase_addr_cs1Addr = CSetBounds (* default option *) *)
+  (* ComparatorBase_addr_cs1OType = Unseal *)
+  (* ComparatorBase_addr_cs1Base = CTestSubset *)
+  (* "ComparatorBase_base_cs1Base" :: Bool ; (* default option *) *)
+
+  (* EncodeCap_ecap_isCs2EcapNotCs1Ecap = Store *)
+  (* Reg_tag_pccTag = Cjal *)
+  "Reg_tag_cs1Tag" :: Bool ;
+  (* Reg_tag_cs2Tag = Scr *)
+  "Reg_tag_AddrBoundsCheck" :: Bool ;
+  (* Reg_tag_BoundsExact = CSetBounds *)
+  (* Reg_tag_CAndPerm = CAndPerm *)
+  (* Reg_tag_SealerUnsealer = SealOrUnseal *)
+  "Reg_ecap_pccEcap" :: Bool ;
+  "Reg_ecap_cs1Ecap" :: Bool ;
+  (* Reg_ecap_cs2Ecap = Scr *)
+  (* Reg_ecap_cs2Addr = CSetHigh *)
+  (* Reg_ecap_CAndPerm = CAndPerm *)
+  (* Reg_ecap_Bounds = CSetBounds *)
+  (* Reg_ecap_SealerUnsealer = SealOrUnseal *)
+  (* Reg_addr_uimm20 = Lui *)
+  "Reg_addr_AdderBeforeBoundsCheck" :: Bool ;
+  (* Reg_addr_ComparatorGeneralLt = Slt *)
+  (* Reg_addr_Shifter = Shift *)
+  (* Reg_addr_Logical = Logical *)
+  "Reg_addr_AdderToOutput" :: Bool ;
+  "Reg_addr_Saturater" :: Bool ;
+  (* Reg_addr_CGetPerm = CGetPerm *)
+  (* Reg_addr_CGetType = CGetType *)
+  (* Reg_addr_CGetTag = CGetTag *)
+  (* Reg_addr_CGetAddr = CGetAddr *)
+  (* Reg_addr_CGetHigh = CGetHigh *)
+  "Reg_addr_cs2Addr" :: Bool ;
+  "Reg_addr_zimm5" :: Bool ;
+  "Reg_addr_cs1Addr" :: Bool ;
+  (* Reg_addr_CAndPerm = CAndPerm *)
+  (* Reg_addr_SealerUnsealer = SealOrUnseal *)
+  (* Reg_addr_BoundsBase = CSetBounds *)
+  (* Reg_addr_BoundsCram = Cram *)
+  (* Reg_addr_BoundsCrrl = Crrl *)
+  (* Reg_addr_CapSubset = CTestSubset *)
+  (* Reg_addr_CapEq = CSetEqual *)
+  "ECall" :: Bool ;
+  "EBreak" :: Bool ;
+  "Load" :: Bool ;
+  "Store" :: Bool ;
+  "Fence" :: Bool ;
+  "Branch" :: Bool ;
+  "Cjal" :: Bool ;
+  "AddSub" :: Bool ;
+  "CGetLen" :: Bool ;
+  "Unseal" :: Bool ;
+  "Shift" :: Bool ;
+  "CTestSubset" :: Bool ;
+  "CSetBounds" :: Bool ;
+  "Mret" :: Bool ;
+  "Cjalr" :: Bool ;
+  "Scr" :: Bool ;
+  "CAndPerm" :: Bool ;
+  "isUnsigned" :: Bool ;
+  "Lui" :: Bool ;
+  "Slt" :: Bool ;
+  "Logical" :: Bool ;
+  "CGetPerm" :: Bool ;
+  "CGetType" :: Bool ;
+  "CGetBase" :: Bool ;
+  "CGetTag" :: Bool ;
+  "CGetAddr" :: Bool ;
+  "CGetHigh" :: Bool ;
+  "CGetTop" :: Bool ;
+  "Cram" :: Bool ;
+  "Crrl" :: Bool ;
+  "CSetEqual" :: Bool ;
+  "CSetHigh" :: Bool ;
+  "BranchOrCjalOrAuiPcc" :: Bool ;
+  "BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr" :: Bool ;
+  "SealOrSetAddr" :: Bool ;
+  "SealOrUnsealOrSubset" :: Bool ;
+  "SealOrUnseal" :: Bool
+}.
+
+Definition AluIn := STRUCT_TYPE {
+  "cs2Idx"              :: TaggedUnion Cs2Source ;
+  "writesCd"            :: Bool ;
+  "inst"                :: Inst ;
+  "decodeExc"           :: DecodeException ;
+  "fetchExc"            :: FetchException ;
+  "pcc"                 :: FullECapWithTag ;
+  "cs1"                 :: FullECapWithTag ;
+  "cs2"                 :: FullECapWithTag ;
+  "currInterruptStatus" :: Bool ;
+  "aluControl"          :: AluControl
+}.
+
 Definition ControlFlowAddrOnlyOpType := [
   ("Branch"%string, Bool) ;
   ("Cjal"%string,   Bit 0)
