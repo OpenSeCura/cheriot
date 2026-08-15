@@ -153,7 +153,8 @@ Definition FunctionalUnits := STRUCT_TYPE {
   "Deferred" :: Bool ;
   "Exception" :: Bool ;
   "ControlFlow" :: Bool ;
-  "ScrCsr" :: Bool
+  "ScrCsr" :: Bool ;
+  "Saturater" :: Bool
 }.
 
 (* ===========================================================================

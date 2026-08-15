@@ -204,6 +204,7 @@ CGetLen
 * CGetLen rd, cs1
     Functional Units:
       a) AdderToOutput (length calculation: cs1.top - cs1.base)
+      b) Saturater (saturating length to 2^32-1)
 
 Slt
 * SLT rd, rs1, rs2
@@ -293,7 +294,7 @@ CGetType
 CGetBase
 * CGetBase rd, cs1
     Functional Units:
-      None (direct field extraction)
+      a) Saturater (saturating cs1.base to 2^32-1)
 
 CGetTag
 * CGetTag rd, cs1
@@ -313,7 +314,7 @@ CGetHigh
 CGetTop
 * CGetTop rd, cs1
     Functional Units:
-      None (direct field extraction)
+      a) Saturater (saturating cs1.top to 2^32-1)
 
 CSetHigh
 * CSetHigh cd, cs1, rs2
@@ -438,6 +439,14 @@ BoundsExact:
   inBounds: AddrBoundsCheck (CSetBounds)
   boundsAreExact: Bounds.exact (CSetBounds)
 
+Saturater (Mux):
+  - CGetBase : CGetBase
+  - CGetTop  : CGetTop
+  - CGetLen  : CGetLen
+  base: cs1.base (CGetBase, CGetLen)
+  top: cs1.top (CGetTop, CGetLen)
+  adderToOutput: AdderToOutput (CGetLen)
+
 Shifter:
   - ShiftLeftLogical     : Shift (when SLL/SLLI), Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
   - ShiftRightLogical    : Shift (when SRL/SRLI)
@@ -512,7 +521,7 @@ DecodeCap:
   cap: cs2.addr (CSetHigh)
   addr: cs1.addr (CSetHigh)
 
-Deferred (Output):
+Deferred (Mux):
   - Load   : Load
   - Store  : Store
   - Fence  : Fence
@@ -524,7 +533,7 @@ Deferred (Output):
   storeCap: EncodeCap (Store)
   storeData: cs2.addr (Store)
 
-Exception (Output):
+Exception (Mux):
   - ECall  : ECall
   - EBreak : EBreak
   - Load   : Load
@@ -538,7 +547,7 @@ Exception (Output):
   inBounds: AddrBoundsCheck (Load, Store)
   addr: AdderBeforeBoundsCheck (Load, Store)
 
-ControlFlow (Output):
+ControlFlow (Mux):
   - Mret   : Mret
   - Cjal   : Cjal
   - Cjalr  : Cjalr
@@ -554,16 +563,17 @@ ControlFlow (Output):
   cjalrIntStatus: CjalrUnit.interruptStatus (Cjalr)
   pccTag: pcc.tag (Branch, Cjal, Cjalr, Mret)
 
-Exception
-Deferred
-ControlFlow
-
-ScrCsr (Output):
+ScrCsr (Mux):
   Outputs: isScrCsr, SpecialDest, SpecialValue
   cs2Idx: cs2Idx (Csr, Scr)
   newTag: ScrSanitizerOut (Scr)
   cs1Ecap: cs1.ecap (Scr)
   cs1Addr: cs1.addr (Csr, Scr)
+
+Exception
+Deferred
+ControlFlow
+ScrCsr
 
 NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
 
@@ -591,12 +601,13 @@ Reg.ecap: 0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGe
 
 Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, Store),
           ComparatorGeneral.cond (Slt), Shifter (Shift), Logical (Logical),
-          AdderToOutput (Cjal, Cjalr, AddSub, CGetLen),
-          cs1.perms (CGetPerm), cs1.otype (CGetType), cs1.base (CGetBase), cs1.tag (CGetTag),
-          cs1.addr (CGetAddr), EncodeCap (CGetHigh), cs1.top (CGetTop), zimm5 (Csr & isImm),
+          AdderToOutput (Cjal, Cjalr, AddSub),
+          cs1.perms (CGetPerm), cs1.otype (CGetType), cs1.tag (CGetTag),
+          cs1.addr (CGetAddr), EncodeCap (CGetHigh), zimm5 (Csr & isImm),
           cs2.addr (CSetAddr, Csr & !isImm, Scr), cs1.addr (CAndPerm, CClearTag, Seal, Unseal, CMove, CSetHigh),
           Bounds.base (CSetBounds), Bounds.cram (Cram), Bounds.crrl (Crrl),
-          CapSubset (CTestSubset), CapEq (CSetEqual)
+          CapSubset (CTestSubset), CapEq (CSetEqual),
+          Saturater (CGetBase, CGetLen, CGetTop)
 *)
 
 From Stdlib Require Import String List ZArith Zmod.
@@ -689,13 +700,12 @@ Definition AluControl := STRUCT_TYPE {
   (* Reg_addr_Shifter = Shift *)
   (* Reg_addr_Logical = Logical *)
   "Reg_addr_AdderToOutput" :: Bool ;
+  "Reg_addr_Saturater" :: Bool ;
   (* Reg_addr_CGetPerm = CGetPerm *)
   (* Reg_addr_CGetType = CGetType *)
-  (* Reg_addr_CGetBase = CGetBase *)
   (* Reg_addr_CGetTag = CGetTag *)
   (* Reg_addr_CGetAddr = CGetAddr *)
   (* Reg_addr_CGetHigh = CGetHigh *)
-  (* Reg_addr_CGetTop = CGetTop *)
   "Reg_addr_cs2Addr" :: Bool ;
   "Reg_addr_zimm5" :: Bool ;
   "Reg_addr_cs1Addr" :: Bool ;
@@ -811,7 +821,9 @@ Section DecodeInstGroup.
       "Reg_addr_AdderBeforeBoundsCheck" ::=
         Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"Load"; ##group`"Store" ] ;
       "Reg_addr_AdderToOutput" ::=
-        Or [ ##group`"Cjal"; ##group`"Cjalr"; ##group`"AddSub"; ##group`"CGetLen" ] ;
+        Or [ ##group`"Cjal"; ##group`"Cjalr"; ##group`"AddSub" ] ;
+      "Reg_addr_Saturater" ::=
+        Or [ ##group`"CGetBase"; ##group`"CGetLen"; ##group`"CGetTop" ] ;
       "Reg_addr_cs2Addr" ::= Or [ ##group`"CSetAddr"; ##group`"Scr"; And [ ##group`"Csr"; Not ##group`"isImm" ] ] ;
       "Reg_addr_zimm5" ::= And [ ##group`"Csr"; ##group`"isImm" ] ;
       "Reg_addr_cs1Addr" ::=
@@ -909,7 +921,8 @@ Section GetFunctionalUnits.
       "Deferred" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"Fence" ] ;
       "Exception" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"ECall"; ##group`"EBreak" ] ;
       "ControlFlow" ::= Or [ ##group`"Mret"; ##group`"Cjal"; ##group`"Cjalr"; ##group`"Branch" ] ;
-      "ScrCsr" ::= Or [ ##group`"Scr"; ##group`"Csr" ]
+      "ScrCsr" ::= Or [ ##group`"Scr"; ##group`"Csr" ] ;
+      "Saturater" ::= Or [ ##group`"CGetBase"; ##group`"CGetLen"; ##group`"CGetTop" ]
     }).
 End GetFunctionalUnits.
 
@@ -1233,6 +1246,30 @@ Section Alu.
 
   Definition BoundsExact (inBounds boundsAreExact instIsExact : ty Bool) : LetExpr ty Bool :=
     @RetE _ Bool (And [ #inBounds; Or [ Not #instIsExact; #boundsAreExact ] ]).
+
+  Definition Saturater (base : ty (Bit (AddrSz + 1))) (len : ty (Bit Xlen))
+                       (top : ty (Bit (AddrSz + 2))) (isBase isLen isTop : ty Bool)
+  : LetExpr ty (Bit Xlen) :=
+    LetE T31 : Bool <- FromBit Bool (TruncMsb 1 (Xlen - 1) (TruncLsb 2 Xlen #top)) ;
+    LetE B31 : Bool <- FromBit Bool (TruncMsb 1 (Xlen - 1) (TruncLsb 1 Xlen #base)) ;
+    LetE S31 : Bool <- FromBit Bool (TruncMsb 1 (Xlen - 1) #len) ;
+    LetE borrow : Bool <- ITE (Xor [ #T31; #B31 ]) #B31 #S31 ;
+    LetE top_hi : Bit 2 <- TruncMsb 2 Xlen #top ;
+    LetE base_hi : Bit 2 <- ZeroExtend 1 (TruncMsb 1 Xlen #base) ;
+    LetE borrow_bit : Bit 2 <- ZeroExtend 1 (ToBit #borrow) ;
+    LetE isSaturatedLen : Bool <- Sgt #top_hi (Add [ #base_hi; #borrow_bit ]) ;
+    LetE isSaturatedTop : Bool <- isNotZero (TruncMsb 2 Xlen #top) ;
+    LetE isSaturatedBase : Bool <- isNotZero (TruncMsb 1 Xlen #base) ;
+    LetE isSaturated : Bool <-
+      caseDefault [ (#isBase, #isSaturatedBase) ;
+                    (#isTop, #isSaturatedTop) ]
+        #isSaturatedLen ;
+    LetE rawData : Bit Xlen <-
+      caseDefault (k := Bit Xlen) [
+          (#isBase, TruncLsb 1 Xlen #base) ;
+          (#isTop, TruncLsb 2 Xlen #top) ]
+        #len ;
+    @RetE _ (Bit Xlen) (ITE #isSaturated (Const ty (Bit Xlen) (InvDefault _)) #rawData).
 
   (* If isArith is set for left shift, results are wrong *)
   Definition Shifter (data : ty (Bit Xlen)) (shamt : ty (Bit 5)) (isRight isArith : ty Bool)
@@ -1756,6 +1793,12 @@ Section Alu.
       LetE Bounds_instIsExact : Bool <- ##aluControl`"Bounds_isExact" ;
       LETE BoundsExactOut : Bool <- BoundsExact AddrBoundsCheckOut Bounds_boundsExact Bounds_instIsExact ;
 
+      LetE Saturater_isBase : Bool <- ##aluControl`"CGetBase" ;
+      LetE Saturater_isLen : Bool <- ##aluControl`"CGetLen" ;
+      LetE Saturater_isTop : Bool <- ##aluControl`"CGetTop" ;
+      LETE SaturaterOut : Bit Xlen <-
+        Saturater cs1Base AdderToOutputOut cs1Top Saturater_isBase Saturater_isLen Saturater_isTop ;
+
       LETE CapSubsetOut : Bool <-
         CapSubset AddrBoundsCheck_topLt AddrBoundsCheck_baseGe cs1Tag cs2Tag cs1Perms cs2Perms ;
 
@@ -1817,11 +1860,10 @@ Section Alu.
             (##aluControl`"Reg_addr_AdderToOutput", #AdderToOutputOut) ;
             (##aluControl`"CGetPerm", ZeroExtendTo Xlen (ToBit (##cs1ECap`"perms"))) ;
             (##aluControl`"CGetType", ZeroExtendTo Xlen #cs1OType) ;
-            (##aluControl`"CGetBase", TruncLsb 1 Xlen #cs1Base) ;
             (##aluControl`"CGetTag",  ZeroExtendTo Xlen (ToBit #cs1Tag)) ;
             (##aluControl`"CGetAddr", #cs1Addr) ;
             (##aluControl`"CGetHigh", ZeroExtendTo Xlen (ToBit #encodedCap)) ;
-            (##aluControl`"CGetTop",  TruncLsb 2 Xlen #cs1Top) ;
+            (##aluControl`"Reg_addr_Saturater", #SaturaterOut) ;
             (##aluControl`"Reg_addr_cs2Addr", #cs2Addr) ;
             (##aluControl`"Reg_addr_zimm5", ZeroExtendTo Xlen #zimm5) ;
             (##aluControl`"Reg_addr_cs1Addr", #cs1Addr) ;
