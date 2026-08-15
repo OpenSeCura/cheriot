@@ -445,7 +445,7 @@ Saturater (Mux):
   - CGetLen  : CGetLen
   base: cs1.base (CGetBase, CGetLen)
   top: cs1.top (CGetTop, CGetLen)
-  adderToOutput: AdderToOutput (CGetLen)
+  sub: AdderToOutput (CGetLen)
 
 Shifter:
   - ShiftLeftLogical     : Shift (when SLL/SLLI), Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
@@ -1247,12 +1247,12 @@ Section Alu.
   Definition BoundsExact (inBounds boundsAreExact instIsExact : ty Bool) : LetExpr ty Bool :=
     @RetE _ Bool (And [ #inBounds; Or [ Not #instIsExact; #boundsAreExact ] ]).
 
-  Definition Saturater (base : ty (Bit (AddrSz + 1))) (len : ty (Bit Xlen))
-                       (top : ty (Bit (AddrSz + 2))) (isBase isLen isTop : ty Bool)
+  Definition Saturater (base : ty (Bit (AddrSz + 1))) (top : ty (Bit (AddrSz + 2)))
+                       (sub : ty (Bit Xlen)) (isBase isTop isLen : ty Bool)
   : LetExpr ty (Bit Xlen) :=
     LetE T31 : Bool <- FromBit Bool (TruncMsb 1 (Xlen - 1) (TruncLsb 2 Xlen #top)) ;
     LetE B31 : Bool <- FromBit Bool (TruncMsb 1 (Xlen - 1) (TruncLsb 1 Xlen #base)) ;
-    LetE S31 : Bool <- FromBit Bool (TruncMsb 1 (Xlen - 1) #len) ;
+    LetE S31 : Bool <- FromBit Bool (TruncMsb 1 (Xlen - 1) #sub) ;
     LetE borrow : Bool <- ITE (Xor [ #T31; #B31 ]) #B31 #S31 ;
     LetE top_hi : Bit 2 <- TruncMsb 2 Xlen #top ;
     LetE base_hi : Bit 2 <- ZeroExtend 1 (TruncMsb 1 Xlen #base) ;
@@ -1268,7 +1268,7 @@ Section Alu.
       caseDefault (k := Bit Xlen) [
           (#isBase, TruncLsb 1 Xlen #base) ;
           (#isTop, TruncLsb 2 Xlen #top) ]
-        #len ;
+        #sub ;
     @RetE _ (Bit Xlen) (ITE #isSaturated (Const ty (Bit Xlen) (InvDefault _)) #rawData).
 
   (* If isArith is set for left shift, results are wrong *)
@@ -1794,10 +1794,10 @@ Section Alu.
       LETE BoundsExactOut : Bool <- BoundsExact AddrBoundsCheckOut Bounds_boundsExact Bounds_instIsExact ;
 
       LetE Saturater_isBase : Bool <- ##aluControl`"CGetBase" ;
-      LetE Saturater_isLen : Bool <- ##aluControl`"CGetLen" ;
       LetE Saturater_isTop : Bool <- ##aluControl`"CGetTop" ;
+      LetE Saturater_isLen : Bool <- ##aluControl`"CGetLen" ;
       LETE SaturaterOut : Bit Xlen <-
-        Saturater cs1Base AdderToOutputOut cs1Top Saturater_isBase Saturater_isLen Saturater_isTop ;
+        Saturater cs1Base cs1Top AdderToOutputOut Saturater_isBase Saturater_isTop Saturater_isLen ;
 
       LETE CapSubsetOut : Bool <-
         CapSubset AddrBoundsCheck_topLt AddrBoundsCheck_baseGe cs1Tag cs2Tag cs1Perms cs2Perms ;
