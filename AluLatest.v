@@ -1582,14 +1582,16 @@ Section Alu.
       LetE pccAddr : Bit Xlen <- ##pcc`"addr" ;
       LetE pccTag : Bool <- ##pcc`"tag" ;
       LetE pccBase : Bit (AddrSz + 1) <- ##pcc`"ecap"`"base" ;
-      LetE pccExp : Bit ExpSz <- ##pcc`"ecap"`"cE" ;
+      LetE pcc_cE : Bit ExpSz <- ##pcc`"ecap"`"cE" ;
+      LetE pccExp : Bit ExpSz <- get_E_from_cE pcc_cE ;
 
       LetE cs1Addr : Bit Xlen <- ##cs1`"addr" ;
       LetE cs1Tag : Bool <- ##cs1`"tag" ;
       LetE cs1ECap : ECap <- ##cs1`"ecap" ;
       LetE cs1Base : Bit (AddrSz + 1) <- ##cs1ECap`"base" ;
       LetE cs1Top : Bit (AddrSz + 2) <- ##cs1ECap`"top" ;
-      LetE cs1Exp : Bit ExpSz <- ##cs1ECap`"cE" ;
+      LetE cs1_cE : Bit ExpSz <- ##cs1ECap`"cE" ;
+      LetE cs1Exp : Bit ExpSz <- get_E_from_cE cs1_cE ;
       LetE cs1Perms : CapPerms <- ##cs1ECap`"perms" ;
       LetE cs1OType : Bit CapOTypeSz <- ##cs1ECap`"oType" ;
 
