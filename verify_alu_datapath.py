@@ -61,6 +61,26 @@ def parse_outputs_tree(s):
 
     return parse_expr() if tokens else None
 
+def get_all_fields_from_tree(node):
+    fields = set()
+    if isinstance(node, str):
+        fields.add(node)
+    elif isinstance(node, dict):
+        if "tuple" in node:
+            for item in node["tuple"]:
+                fields.update(get_all_fields_from_tree(item))
+        elif "options" in node:
+            for item in node["options"]:
+                fields.update(get_all_fields_from_tree(item))
+        elif "struct" in node:
+            fields.add(node["struct"])
+            if "fields" in node and node["fields"]:
+                fields.update(get_all_fields_from_tree(node["fields"]))
+    elif isinstance(node, list):
+        for item in node:
+            fields.update(get_all_fields_from_tree(item))
+    return fields
+
 
 def parse_alu_latest(file_path):
     with open(file_path, "r") as f:
@@ -110,6 +130,7 @@ def parse_alu_latest(file_path):
     units = {}
     writebacks = {}
     s2_groups_found = set()
+    raw_selector_tokens = []
 
     blocks = re.split(r"\n\n+", sec2_text.strip())
     
@@ -117,16 +138,15 @@ def parse_alu_latest(file_path):
         lines = block.split("\n")
         header_line = lines[0].strip()
         
-        # A Unit block's header ends with a colon and has nothing after it on the same line
-        # e.g., "AdderBeforeBoundsCheck:" or "NewPcc (Output):"
         if header_line.endswith(":"):
             header_raw = header_line[:-1].strip()
             unit_name = header_raw.split("(")[0].strip()
-            is_output = "(Output)" in header_raw
+            is_mux = "(Mux)" in header_raw
 
             units[unit_name] = {
-                "is_output": is_output,
+                "is_mux": is_mux,
                 "outputs": [],
+                "output_fields": set(),
                 "ports": {}
             }
 
@@ -143,7 +163,6 @@ def parse_alu_latest(file_path):
                     outputs_str += " " + l_str[len("Outputs:"):].strip()
                     continue
                 
-                # A new port starts if it has a colon
                 if ":" in l_str and not l_str.startswith("(") and re.match(r"^[a-zA-Z0-9_.]+\s*:", l_str):
                     in_outputs = False
                     if curr_p:
@@ -160,6 +179,7 @@ def parse_alu_latest(file_path):
             if outputs_str.strip():
                 parsed_tree = parse_outputs_tree(outputs_str)
                 units[unit_name]["outputs"] = parsed_tree
+                units[unit_name]["output_fields"] = get_all_fields_from_tree(parsed_tree)
 
             for p_str in port_lines:
                 if ":" not in p_str:
@@ -174,6 +194,7 @@ def parse_alu_latest(file_path):
                     parsed = []
                     for src_expr, paren in matches:
                         src_clean = re.sub(r"^.*?,\s*", "", src_expr).strip()
+                        raw_selector_tokens.append((paren, rest))
                         grps = extract_groups_from_paren(paren)
                         s2_groups_found.update(grps)
                         if "all" in paren:
@@ -197,7 +218,6 @@ def parse_alu_latest(file_path):
                     units[unit_name]["ports"][port_name].append((rest, section1_groups))
 
         else:
-            # It's a Writeback block!
             wb_joined_blocks = []
             curr_wb = []
             for l in lines:
@@ -205,8 +225,7 @@ def parse_alu_latest(file_path):
                 if not l_str:
                     continue
                 
-                # A new writeback starts if it has a colon OR if it is exactly the name of an (Output) unit
-                is_new_wb = (":" in l_str) or (l_str in [u for u, info in units.items() if info["is_output"]])
+                is_new_wb = (":" in l_str) or (l_str in units)
                 if is_new_wb:
                     if curr_wb:
                         wb_joined_blocks.append(" ".join(curr_wb))
@@ -227,6 +246,7 @@ def parse_alu_latest(file_path):
                         parsed = []
                         for src_expr, paren in matches:
                             src_clean = re.sub(r"^.*?,\s*", "", src_expr).strip()
+                            raw_selector_tokens.append((paren, rest))
                             grps = extract_groups_from_paren(paren)
                             s2_groups_found.update(grps)
                             if "all" in paren:
@@ -248,17 +268,23 @@ def parse_alu_latest(file_path):
                             writebacks[wb_name].append((src_clean, eff))
                     elif rest:
                         writebacks[wb_name].append((rest, section1_groups))
-    return section1_groups, s2_groups_found, units, writebacks, sec2_text
+                elif line_str in units:
+                    sink_unit = line_str
+                    driven_grps = set()
+                    for _, src_list in units[sink_unit]["ports"].items():
+                        for _, grps in src_list:
+                            driven_grps.update(grps)
+                    writebacks[sink_unit] = [(sink_unit, driven_grps)]
+    return section1_groups, s2_groups_found, units, writebacks, raw_selector_tokens
 
 def run_invariant_checks():
     spec_path = "AluLatest.v"
-    section1_groups, s2_groups_found, units, writebacks, sec2_text = parse_alu_latest(spec_path)
+    section1_groups, s2_groups_found, units, writebacks, raw_selector_tokens = parse_alu_latest(spec_path)
 
     print("=" * 80)
     print(" FORMAL ARCHITECTURAL INVARIANT VERIFIER (AluLatest.v)")
     print("=" * 80)
 
-    # INVARIANT 1
     print("\n" + "-" * 80)
     print("INVARIANT 1:")
     print("  Every element in InstGroup defined in the instruction classification must be used by a functional unit or writeback, and every element of InstGroup used in the functional unit or writeback must have an instruction classification.")
@@ -275,7 +301,6 @@ def run_invariant_checks():
     if not inv1_failed:
         print(f"  [PASS] Every element in InstGroup defined in the instruction classification is used by a functional unit or writeback, and vice-versa.")
 
-    # INVARIANT 2
     print("\n" + "-" * 80)
     print("INVARIANT 2:")
     print("  Every element in InstGroup must have a valid dataflow path through the functional units ending in at least one writeback destination.")
@@ -287,43 +312,30 @@ def run_invariant_checks():
             for src_expr, grps in src_list:
                 if g in grps:
                     reached_wb.add(wb_name)
-        for u_name, u_info in units.items():
-            if u_info["is_output"]:
-                for p_name, src_list in u_info["ports"].items():
-                    for src_expr, grps in src_list:
-                        if g in grps:
-                            reached_wb.add(u_name)
         if not reached_wb:
             print(f"  [FAIL] InstGroup '{g}' has NO dataflow path to any writeback destination!")
             inv2_failed = True
     if not inv2_failed:
         print("  [PASS] Every element in InstGroup has a valid dataflow path through the functional units ending in at least one writeback destination.")
 
-    # INVARIANT 3
     print("\n" + "-" * 80)
     print("INVARIANT 3:")
     print("  Every selector tag in parenthesis must be a valid element in InstGroup, all, others, or an explicit condition modifier (isImm, !isImm, IF Compressed, IF !Compressed, or when <sub-opcode>).")
     print("-" * 80)
     inv3_failed = False
     valid_elements = section1_groups | {"others", "all"}
-    for line in sec2_text.split("\n"):
-        l_str = line.strip()
-        if not l_str or l_str.startswith("-") or l_str.startswith("Outputs:"):
-            continue
-        matches = re.findall(r"\(([^)]+)\)", l_str)
-        for paren in matches:
-            p_clean = re.sub(r"\bIF\s+!?Compressed\b", "", paren, flags=re.IGNORECASE)
-            p_clean = re.sub(r"&\s*!?isImm\b", "", p_clean, flags=re.IGNORECASE)
-            p_clean = re.sub(r"\bwhen\s+[A-Z0-9_/.]+\b", "", p_clean, flags=re.IGNORECASE).strip()
-            tokens = [t.strip() for t in p_clean.split(",") if t.strip()]
-            for t in tokens:
-                if t not in valid_elements and not t.isdigit() and t != "Output":
-                    print(f"  [FAIL] Entry contains invalid selector component '{t}' in '({paren})'")
-                    inv3_failed = True
+    for paren, context_line in raw_selector_tokens:
+        p_clean = re.sub(r"\bIF\s+!?Compressed\b", "", paren, flags=re.IGNORECASE)
+        p_clean = re.sub(r"&\s*!?isImm\b", "", p_clean, flags=re.IGNORECASE)
+        p_clean = re.sub(r"\bwhen\s+[A-Z0-9_/.]+\b", "", p_clean, flags=re.IGNORECASE).strip()
+        tokens = [t.strip() for t in p_clean.split(",") if t.strip()]
+        for t in tokens:
+            if t not in valid_elements and not t.isdigit():
+                print(f"  [FAIL] Entry contains invalid selector component '{t}' in '({paren})' on line: {context_line}")
+                inv3_failed = True
     if not inv3_failed:
         print("  [PASS] All selector tags strictly conform to syntax rules.")
 
-    # INVARIANT 4
     print("\n" + "-" * 80)
     print("INVARIANT 4:")
     print("  If unit B consumes unit A for an element in InstGroup, unit A must have valid input selectors on one of its input ports for that element.")
@@ -347,7 +359,6 @@ def run_invariant_checks():
     if not inv4_failed:
         print("  [PASS] If unit B consumes unit A for an element in InstGroup, unit A has valid input selectors on one of its input ports for that element.")
 
-    # INVARIANT 5
     print("\n" + "-" * 80)
     print("INVARIANT 5:")
     print("  If an element in InstGroup drives inputs into unit A, unit A's output must be consumed by a unit or writeback for that element.")
@@ -376,25 +387,24 @@ def run_invariant_checks():
             if not consumed:
                 for wb_name, src_list_wb in writebacks.items():
                     for src_expr, grps_wb in src_list_wb:
-                        if src_expr.split(".")[0].strip() == u_name_a and g in grps_wb:
+                        if (src_expr.split(".")[0].strip() == u_name_a or wb_name == u_name_a) and g in grps_wb:
                             consumed = True
                             break
                     if consumed:
                         break
-            if not consumed and not u_info_a["is_output"]:
+            if not consumed:
                 print(f"  [FAIL] InstGroup '{g}' drives Unit '{u_name_a}', but Unit '{u_name_a}' output is NEVER consumed under InstGroup '{g}'!")
                 inv5_failed = True
     if not inv5_failed:
         print("  [PASS] If an element in InstGroup drives inputs into unit A, unit A's output is consumed by a unit or writeback for that element.")
 
-    # INVARIANT 6
     print("\n" + "-" * 80)
     print("INVARIANT 6:")
-    print("  If an element in InstGroup drives an input port of a non Output unit A, that element must provide inputs for all required ports of non Output unit A.")
+    print("  If an element in InstGroup drives an input port of a non Mux unit A, that element must provide inputs for all required ports of non Mux unit A.")
     print("-" * 80)
     inv6_failed = False
     for u_name, u_info in units.items():
-        if u_info["is_output"]:
+        if u_info["is_mux"]:
             continue
         ports = u_info["ports"]
         if not ports:
@@ -408,19 +418,50 @@ def run_invariant_checks():
             for p_name, src_list in ports.items():
                 driven = any(g in grps for _, grps in src_list)
                 if not driven:
-                    print(f"  [FAIL] InstGroup '{g}' drives non-Output Unit '{u_name}', but input port '{p_name}' has NO selector for InstGroup '{g}'!")
+                    print(f"  [FAIL] InstGroup '{g}' drives non-Mux Unit '{u_name}', but input port '{p_name}' has NO selector for InstGroup '{g}'!")
                     inv6_failed = True
     if not inv6_failed:
-        print("  [PASS] Every active non-Output unit port is 100% fully driven across all inputs for each selected instruction group.")
+        print("  [PASS] Every active non-Mux unit port is 100% fully driven across all inputs for each selected instruction group.")
 
-    # SUMMARY
-    all_failed = inv1_failed or inv2_failed or inv3_failed or inv4_failed or inv5_failed or inv6_failed
+    # INVARIANT 7
+    print("\n" + "-" * 80)
+    print("INVARIANT 7:")
+    print("  If a unit or writeback consumes a sub-field 'Unit.field', 'field' must be declared in the Outputs of 'Unit'.")
+    print("-" * 80)
+    inv7_failed = False
+
+    def check_field_references(context_name, src_expr):
+        nonlocal inv7_failed
+        dot_matches = re.findall(r"\b([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\b", src_expr)
+        for unit_a, field_a in dot_matches:
+            if unit_a in units:
+                declared = units[unit_a]["output_fields"]
+                if not declared:
+                    print(f"  [FAIL] {context_name} consumes '{unit_a}.{field_a}', but Unit '{unit_a}' declares NO Outputs!")
+                    inv7_failed = True
+                elif field_a not in declared:
+                    print(f"  [FAIL] {context_name} consumes '{unit_a}.{field_a}', but '{field_a}' is NOT in Outputs of Unit '{unit_a}'! (Declared: {sorted(list(declared))})")
+                    inv7_failed = True
+
+    for u_name_b, u_info_b in units.items():
+        for p_name_b, src_list_b in u_info_b["ports"].items():
+            for src_expr, _ in src_list_b:
+                check_field_references(f"Unit '{u_name_b}' port '{p_name_b}'", src_expr)
+
+    for wb_name, src_list_wb in writebacks.items():
+        for src_expr, _ in src_list_wb:
+            check_field_references(f"Writeback '{wb_name}'", src_expr)
+
+    if not inv7_failed:
+        print("  [PASS] Every referenced 'Unit.field' is a valid declared output of 'Unit'.")
+
+    all_failed = inv1_failed or inv2_failed or inv3_failed or inv4_failed or inv5_failed or inv6_failed or inv7_failed
     print("\n" + "=" * 80)
     if all_failed:
         print(" [-] SUMMARY: VERIFICATION FAILED - ONE OR MORE INVARIANTS VIOLATED")
         sys.exit(1)
     else:
-        print(" [+] SUMMARY: ALL 6 ARCHITECTURAL INVARIANTS VERIFIED SUCCESSFULLY (100% PASS)")
+        print(" [+] SUMMARY: ALL 7 ARCHITECTURAL INVARIANTS VERIFIED SUCCESSFULLY (100% PASS)")
         sys.exit(0)
 
 if __name__ == "__main__":
