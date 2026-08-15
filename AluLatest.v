@@ -1883,8 +1883,8 @@ Section Alu.
 End Alu.
 
 Section ExecuteNonDeferred.
-  Definition executeNonDeferred ty (aluOutC : ty AluOutUnionCompressed)
-    : Action ty rfTree (Option DeferredUnion) :=
+  Definition executeNonDeferredCompressed ty (aluOutC : ty AluOutUnionCompressed)
+    : Action ty rfTreeCompressed (Option DeferredUnion) :=
     LetIf deferredRes : Option DeferredUnion <-
       If (##aluOutC`"isStalled") Then
         (
