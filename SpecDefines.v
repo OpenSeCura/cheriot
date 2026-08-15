@@ -848,7 +848,8 @@ Definition AluIn := STRUCT_TYPE {
   "cs1"                 :: FullECapWithTag ;
   "cs2"                 :: FullECapWithTag ;
   "currInterruptStatus" :: Bool ;
-  "aluControl"          :: AluControl
+  "aluControl"          :: AluControl ;
+  "isStalled"           :: Bool
 }.
 
 Definition ControlFlowAddrOnlyOpType := [
@@ -886,7 +887,8 @@ Definition AluOut := STRUCT_TYPE {
   "Exception"   :: Option ExceptionInfo ;
   "Deferred"    :: Option DeferredUnion ;
   "ControlFlow" :: Option CfPayload ;
-  "ScrCsr"      :: Option ScrCsrPayload
+  "ScrCsr"      :: Option ScrCsrPayload ;
+  "isStalled"   :: Bool
 }.
 
 Definition NotDeferredUnionType := [
@@ -909,10 +911,11 @@ Definition AluOpUnionType := [
 Definition AluOpUnion := TaggedUnion AluOpUnionType.
 
 Definition AluOutUnion := STRUCT_TYPE {
-  "isComp"   :: Bool ;
-  "dstIdx"   :: Bit RegIdxSz ;
-  "dstValue" :: FullECapWithTag ;
-  "Op"       :: AluOpUnion
+  "isComp"    :: Bool ;
+  "dstIdx"    :: Bit RegIdxSz ;
+  "dstValue"  :: FullECapWithTag ;
+  "Op"        :: AluOpUnion ;
+  "isStalled" :: Bool
 }.
 
 Definition CfPayloadCompressed := STRUCT_TYPE {
@@ -945,10 +948,11 @@ Definition AluOpUnionCompressedType := [
 Definition AluOpUnionCompressed := TaggedUnion AluOpUnionCompressedType.
 
 Definition AluOutUnionCompressed := STRUCT_TYPE {
-  "isComp"   :: Bool ;
-  "dstIdx"   :: Bit RegIdxSz ;
-  "dstValue" :: FullCapWithTag ;
-  "Op"       :: AluOpUnionCompressed
+  "isComp"    :: Bool ;
+  "dstIdx"    :: Bit RegIdxSz ;
+  "dstValue"  :: FullCapWithTag ;
+  "Op"        :: AluOpUnionCompressed ;
+  "isStalled" :: Bool
 }.
 
 (* ===========================================================================
