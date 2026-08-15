@@ -1461,22 +1461,19 @@ Section Alu.
   Section AluRouting.
     Definition AluRouting (aluIn : ty AluIn) : LetExpr ty AluOut :=
       LetE cs2Idx : TaggedUnion Cs2Source <- ##aluIn`"cs2Idx" ;
-      LetE writesCd : Bool <- ##aluIn`"writesCd" ;
       LetE inst : Inst <- ##aluIn`"inst" ;
       LetE decodeExc : DecodeException <- ##aluIn`"decodeExc" ;
       LetE fetchExc : FetchException <- ##aluIn`"fetchExc" ;
-      LetE pcc : FullECapWithTag <- ##aluIn`"pcc" ;
       LetE cs1 : FullECapWithTag <- ##aluIn`"cs1" ;
       LetE cs2 : FullECapWithTag <- ##aluIn`"cs2" ;
       LetE currInterruptStatus : Bool <- ##aluIn`"currInterruptStatus" ;
       LetE aluControl : AluControl <- ##aluIn`"aluControl" ;
-      LetE isStalled : Bool <- ##aluIn`"isStalled" ;
 
       LetE isComp  : Bool     <- isCompressed inst ;
-      LetE pccAddr : Bit Xlen <- ##pcc`"addr" ;
-      LetE pccTag : Bool <- ##pcc`"tag" ;
-      LetE pccBase : Bit (AddrSz + 1) <- ##pcc`"ecap"`"base" ;
-      LetE pcc_cE : Bit ExpSz <- ##pcc`"ecap"`"cE" ;
+      LetE pccAddr : Bit Xlen <- ##aluIn`"pcc"`"addr" ;
+      LetE pccTag : Bool <- ##aluIn`"pcc"`"tag" ;
+      LetE pccBase : Bit (AddrSz + 1) <- ##aluIn`"pcc"`"ecap"`"base" ;
+      LetE pcc_cE : Bit ExpSz <- ##aluIn`"pcc"`"ecap"`"cE" ;
       LetE pccExp : Bit ExpSz <- get_E_from_cE pcc_cE ;
 
       LetE cs1Addr : Bit Xlen <- ##cs1`"addr" ;
@@ -1492,9 +1489,9 @@ Section Alu.
       LetE cs2Addr : Bit Xlen <- ##cs2`"addr" ;
       LetE cs2Tag : Bool <- ##cs2`"tag" ;
       LetE cs2ECap : ECap <- ##cs2`"ecap" ;
-      LetE cs2Base : Bit (AddrSz + 1) <- ##cs2`"ecap"`"base" ;
-      LetE cs2Top : Bit (AddrSz + 2) <- ##cs2`"ecap"`"top" ;
-      LetE cs2Perms : CapPerms <- ##cs2`"ecap"`"perms" ;
+      LetE cs2Base : Bit (AddrSz + 1) <- ##cs2ECap`"base" ;
+      LetE cs2Top : Bit (AddrSz + 2) <- ##cs2ECap`"top" ;
+      LetE cs2Perms : CapPerms <- ##cs2ECap`"perms" ;
 
       LetE simm12 : Bit Xlen <- SignExtendTo Xlen (##inst`[31:20]) ;
       LetE zimm12 : Bit Xlen <- ZeroExtendTo Xlen (##inst`[31:20]) ;
@@ -1613,8 +1610,6 @@ Section Alu.
         AddrBoundsCheck AddrBoundsCheck_tag AddrBoundsCheck_topLt
                         AddrBoundsCheck_baseGe ;
 
-      LetE cs1ECap : ECap <- ##cs1`"ecap" ;
-
       LetE SealerUnsealer_isUnseal : Bool <- ##aluControl`"Unseal" ;
       LETE SealerUnsealerOut : TagECap <-
         SealerUnsealer SealerUnsealer_isUnseal AddrBoundsCheckOut cs1Tag cs1ECap cs2 ;
@@ -1700,9 +1695,9 @@ Section Alu.
                                              "base"  ::= ##BoundsOut`"base" };
 
       LetE Reg_ecap : ECap <-
-        caseDefault (k := ECap) [ (##aluControl`"Reg_ecap_pccEcap", ##pcc`"ecap") ;
+        caseDefault (k := ECap) [ (##aluControl`"Reg_ecap_pccEcap", ##aluIn`"pcc"`"ecap") ;
                                    (##aluControl`"Reg_ecap_cs1Ecap", ##cs1`"ecap") ;
-                                   (##aluControl`"Scr", ##cs2`"ecap") ;
+                                   (##aluControl`"Scr", #cs2ECap) ;
                                    (##aluControl`"CSetHigh", #decodedECap) ;
                                    (##aluControl`"CAndPerm", ##CAndPermOut`"ecap") ;
                                    (##aluControl`"SealOrUnseal", ##SealerUnsealerOut`"ecap") ;
@@ -1760,13 +1755,13 @@ Section Alu.
 
       @RetE _ AluOut (STRUCT {
         "isComp"      ::= #isComp ;
-        "dstIdx"      ::= ITE0 (And [#writesCd; Not (isValid #ExceptionRes)]) #dstIdx ;
+        "dstIdx"      ::= ITE0 (And [##aluIn`"writesCd"; Not (isValid #ExceptionRes)]) #dstIdx ;
         "dstValue"    ::= #RegVal ;
         "Exception"   ::= #ExceptionRes ;
         "Deferred"    ::= #DeferredOpRes ;
         "ControlFlow" ::= #cfPayload ;
         "ScrCsr"      ::= #ScrCsrOut ;
-        "isStalled"   ::= #isStalled
+        "isStalled"   ::= ##aluIn`"isStalled"
       }).
   End AluRouting.
 
