@@ -471,7 +471,6 @@ ComparatorBase:
 
 AddrBoundsCheck:
   - CheckInBounds : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal
-                    (ands the two comparator outputs correctly)
   tag: cs1.tag (AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal),
         pcc.tag (Branch, Cjal, AuiPcc)
   topLt: ComparatorTopOrRep.lt
@@ -519,7 +518,6 @@ Deferred (Output):
   - Fence  : Fence
   Outputs: isDeferred, (MemPayload {memSize, LoadOp {isUnsigned, isLM, isLG} OR Store {tag, cap, addr}} OR
                         FenceOp {isFenceI, RR, RW, WR, WW})
-  (Note: memory address is routed directly in dstValue.addr)
   cs1Perms: cs1.perms (Load)
   inst: inst (Load, Store, Fence)
   storeTag: cs2.tag (Store)

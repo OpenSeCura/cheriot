@@ -312,8 +312,6 @@ def run_invariant_checks():
             continue
         matches = re.findall(r"\(([^)]+)\)", l_str)
         for paren in matches:
-            if "ands the two comparator" in paren: # ignore documentation comment
-                continue
             p_clean = re.sub(r"\bIF\s+!?Compressed\b", "", paren, flags=re.IGNORECASE)
             p_clean = re.sub(r"&\s*!?isImm\b", "", p_clean, flags=re.IGNORECASE)
             p_clean = re.sub(r"\bwhen\s+[A-Z0-9_/.]+\b", "", p_clean, flags=re.IGNORECASE).strip()
