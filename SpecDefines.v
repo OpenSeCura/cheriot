@@ -733,6 +733,16 @@ Definition ScrCsrPayload := STRUCT_TYPE {
   "SpecialValue" :: FullECapWithTag
 }.
 
+Definition AluOut := STRUCT_TYPE {
+  "isComp"      :: Bool ;
+  "dstIdx"      :: Bit RegIdxSz ;
+  "dstValue"    :: FullECapWithTag ;
+  "Exception"   :: Option ExceptionInfo ;
+  "Deferred"    :: Option DeferredUnion ;
+  "ControlFlow" :: Option CfPayload ;
+  "ScrCsr"      :: Option ScrCsrPayload
+}.
+
 Definition NotDeferredUnionType := [
   ("Normal"%string,      Bit 0) ;
   ("ControlFlow"%string, CfPayload) ;

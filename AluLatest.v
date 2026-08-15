@@ -1591,16 +1591,6 @@ Section Alu.
     LetE scrCsr : Option ScrCsrPayload <- ITE0 #isScrCsr (mkSome #scrCsrPayload) ;
     RetE #scrCsr.
 
-  Definition AluOut := STRUCT_TYPE {
-    "isComp" :: Bool ;
-    "dstIdx" :: Bit RegIdxSz ;
-    "dstValue" :: FullECapWithTag ;
-    "Exception" :: Option ExceptionInfo ;
-    "Deferred" :: Option DeferredUnion ;
-    "ControlFlow" :: Option CfPayload ;
-    "ScrCsr" :: Option ScrCsrPayload
-  }.
-
   Section AluRouting.
     Variable cs2Idx : ty (TaggedUnion Cs2Source).
     Variable writesCd: ty Bool.
