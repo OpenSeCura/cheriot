@@ -852,6 +852,20 @@ Definition AluIn := STRUCT_TYPE {
   "isStalled"           :: Bool
 }.
 
+Definition AluInInstGroup := STRUCT_TYPE {
+  "cs2Idx"              :: TaggedUnion Cs2Source ;
+  "writesCd"            :: Bool ;
+  "inst"                :: Inst ;
+  "decodeExc"           :: DecodeException ;
+  "fetchExc"            :: FetchException ;
+  "pcc"                 :: FullECapWithTag ;
+  "cs1"                 :: FullECapWithTag ;
+  "cs2"                 :: FullECapWithTag ;
+  "currInterruptStatus" :: Bool ;
+  "instGroup"           :: InstGroup ;
+  "isStalled"           :: Bool
+}.
+
 Definition ControlFlowAddrOnlyOpType := [
   ("Branch"%string, Bool) ;
   ("Cjal"%string,   Bit 0)

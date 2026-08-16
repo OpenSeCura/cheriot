@@ -739,6 +739,28 @@ Section DecodeInstGroup.
     }).
 End DecodeInstGroup.
 
+Section ConstructAluIn.
+  Variable ty : Kind -> Type.
+  Variable aluInGroup : ty AluInInstGroup.
+
+  Definition constructAluIn : LetExpr ty AluIn :=
+    LetE group : InstGroup  <- ##aluInGroup`"instGroup" ;
+    LETE ctrl  : AluControl <- decodeInstGroup group ;
+    @RetE _ AluIn (STRUCT {
+      "cs2Idx"              ::= ##aluInGroup`"cs2Idx" ;
+      "writesCd"            ::= ##aluInGroup`"writesCd" ;
+      "inst"                ::= ##aluInGroup`"inst" ;
+      "decodeExc"           ::= ##aluInGroup`"decodeExc" ;
+      "fetchExc"            ::= ##aluInGroup`"fetchExc" ;
+      "pcc"                 ::= ##aluInGroup`"pcc" ;
+      "cs1"                 ::= ##aluInGroup`"cs1" ;
+      "cs2"                 ::= ##aluInGroup`"cs2" ;
+      "currInterruptStatus" ::= ##aluInGroup`"currInterruptStatus" ;
+      "aluControl"          ::= #ctrl ;
+      "isStalled"           ::= ##aluInGroup`"isStalled"
+    }).
+End ConstructAluIn.
+
 Section GetFunctionalUnits.
   Variable ty : Kind -> Type.
   Variable group : ty InstGroup.
