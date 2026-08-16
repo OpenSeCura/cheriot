@@ -705,6 +705,11 @@ Definition DecodeOut := STRUCT_TYPE {
   "decodeExc" :: DecodeException
 }.
 
+Definition RegReadIn := STRUCT_TYPE {
+  "decodeOut" :: DecodeOut ;
+  "fetchExc"  :: FetchException
+}.
+
 Definition AluControl := STRUCT_TYPE {
   (* AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr = BranchOrCjalOrAuiPcc *)
   (* AddCapBSz_baseExp_isPccExpNotCs1Exp = BranchOrCjalOrAuiPcc *)

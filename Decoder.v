@@ -422,3 +422,77 @@ Section DecodeCompressed.
                                          (Eq #quad $2, #q2)] #unc ;
     RetE #res.
 End DecodeCompressed.
+
+Section RegReadSection.
+  Variable ty : Kind -> Type.
+  Variable regReadIn : ty RegReadIn.
+  Definition regRead : Action ty rfTree AluInInstGroup :=
+    Let  decodeOut  : DecodeOut             <- ##regReadIn`"decodeOut" ;
+    Let  fetchExc   : FetchException        <- ##regReadIn`"fetchExc" ;
+    Let  cs1Idx     : Bit RegIdxSzReal      <- ##decodeOut`"cs1Idx" ;
+    Let  cs2Source  : TaggedUnion Cs2Source <- ##decodeOut`"cs2Idx" ;
+
+    LetA pcc        : FullECapWithTag       <- readRegsList gprPathsWithKindECap ($0 : Expr ty (Bit RegIdxSzReal)) ;
+    LetA cs1        : FullECapWithTag       <- readRegsList gprPathsWithKindECap #cs1Idx ;
+    LetA waitCs1    : Bool                  <- readRegsList waitGprPathsWithKindECap #cs1Idx ;
+    Let  cs1Stalled : Bool                  <- And [ Not (Eq #cs1Idx $0) ; #waitCs1 ] ;
+
+    LetIf cs2Stalled : Bool <-
+      If (#cs2Source `? "Reg") Then
+        (
+          Let  cs2Idx  : Bit RegIdxSzReal <- #cs2Source `! "Reg" ;
+          LetA waitCs2 : Bool             <- readRegsList waitGprPathsWithKindECap #cs2Idx ;
+          Return (And [ Not (Eq #cs2Idx $0) ; #waitCs2 ])
+        )
+      Else
+        (
+          Return (Const ty Bool false)
+        ) ;
+
+    LetIf cs2 : FullECapWithTag <-
+      If (#cs2Source `? "Reg") Then
+        (
+          Let  cs2Idx : Bit RegIdxSzReal <- #cs2Source `! "Reg" ;
+          readRegsList gprPathsWithKindECap #cs2Idx
+        )
+      Else
+        (
+          Let scrCsr : TaggedUnion ScrCsrIdx <- #cs2Source `! "ScrCsr" ;
+          LetIf scrCsrVal : FullECapWithTag <-
+            If (#scrCsr `? "Scr") Then
+              (
+                Let scrIdx : Bit ScrIdxSz <- #scrCsr `! "Scr" ;
+                readRegsList scrPathsWithKindECap #scrIdx
+              )
+            Else
+              (
+                Let  csrIdx : Bit CsrIdxSz    <- #scrCsr `! "Csr" ;
+                LetA csrVal : Bit Xlen        <- readRegsList csrPathsWithKindECap #csrIdx ;
+                Let  csrCap : FullECapWithTag <- STRUCT {
+                  "tag"  ::= Const ty Bool false ;
+                  "ecap" ::= Const ty ECap (getDefault _) ;
+                  "addr" ::= #csrVal
+                } ;
+                Return #csrCap
+              ) ;
+          Return #scrCsrVal
+        ) ;
+
+    Let isStalled : Bool     <- Or [ #cs1Stalled ; #cs2Stalled ] ;
+    LetA mstatus  : Bit Xlen <- readRegsList csrPathsWithKindECap ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+    Let  currMIE  : Bool     <- getMstatusMIE #mstatus ;
+
+    @Return ty rfTree AluInInstGroup (STRUCT {
+      "cs2Idx"              ::= #cs2Source ;
+      "writesCd"            ::= ##decodeOut`"writesCd" ;
+      "inst"                ::= ##decodeOut`"instBits" ;
+      "decodeExc"           ::= ##decodeOut`"decodeExc" ;
+      "fetchExc"            ::= #fetchExc ;
+      "pcc"                 ::= #pcc ;
+      "cs1"                 ::= #cs1 ;
+      "cs2"                 ::= #cs2 ;
+      "currInterruptStatus" ::= #currMIE ;
+      "instGroup"           ::= ##decodeOut`"instGroup" ;
+      "isStalled"           ::= #isStalled
+    }).
+End RegReadSection.
