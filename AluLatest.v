@@ -14,10 +14,6 @@
  * limitations under the License.
  *)
 
-(* TODO:
-   - Fix MPIE for Mret (and CSR access stuff)
- *)
-
 (*
 1. INSTRUCTION GROUPS
 -------------------------------------------------------------------------------
