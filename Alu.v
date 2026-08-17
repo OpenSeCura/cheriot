@@ -758,7 +758,8 @@ Section ConstructAluIn.
       "cs1"                 ::= ##aluInGroup`"cs1" ;
       "cs2"                 ::= ##aluInGroup`"cs2" ;
       "currInterruptStatus" ::= ##aluInGroup`"currInterruptStatus" ;
-      "aluControl"          ::= #ctrl
+      "aluControl"          ::= #ctrl ;
+      "isFenceIAck"         ::= ##aluInGroup`"isFenceIAck"
     }).
 End ConstructAluIn.
 
@@ -1789,7 +1790,8 @@ Section Alu.
         "Deferred"    ::= #DeferredOpRes ;
         "ControlFlow" ::= #cfPayload ;
         "ScrCsr"      ::= #ScrCsrOut ;
-        "isFenceI"    ::= #isFenceIOut
+        "isFenceI"    ::= #isFenceIOut ;
+        "isFenceIAck" ::= ##aluIn`"isFenceIAck"
       }).
   End AluRouting.
 
@@ -1799,6 +1801,7 @@ Section Alu.
     LetE cfOpt       : Option CfPayload <- ##routingOut`"ControlFlow" ;
     LetE scrCsrOpt   : Option ScrCsrPayload <- ##routingOut`"ScrCsr" ;
     LetE isFenceI    : Bool <- ##routingOut`"isFenceI" ;
+    LetE isFenceIAck : Bool <- ##routingOut`"isFenceIAck" ;
 
     LetE isExc : Bool <- isValid #excOpt ;
     LetE excVal : ExceptionInfo <- getData #excOpt ;
@@ -1838,10 +1841,11 @@ Section Alu.
           (UNION (AluOpUnionType, "NoException" ::= #noExcUnion)) ;
 
     @RetE _ AluOutUnion (STRUCT {
-      "isComp"   ::= ##routingOut`"isComp" ;
-      "dstIdx"   ::= ##routingOut`"dstIdx" ;
-      "dstValue" ::= ##routingOut`"dstValue" ;
-      "Op"       ::= #opUnion
+      "isComp"      ::= ##routingOut`"isComp" ;
+      "dstIdx"      ::= ##routingOut`"dstIdx" ;
+      "dstValue"    ::= ##routingOut`"dstValue" ;
+      "Op"          ::= #opUnion ;
+      "isFenceIAck" ::= #isFenceIAck
     }).
 End Alu.
 
@@ -1852,6 +1856,7 @@ Section ExecuteNonDeferred.
     Let  dstIdx         : Bit RegIdxSz               <- ##aluOut`"dstIdx" ;
     Let  dstVal         : FullECapWithTag            <- ##aluOut`"dstValue" ;
     Let  aluOp          : AluOpUnion                 <- ##aluOut`"Op" ;
+    Let  isFenceIAck    : Bool                       <- ##aluOut`"isFenceIAck" ;
     Let  pcStep         : Addr                       <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
 
     LetA currPcc        : FullECapWithTag            <- readRegsList gprPathsWithKind

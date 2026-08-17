@@ -66,10 +66,11 @@ Definition AluOpUnionCompressedType := [
 Definition AluOpUnionCompressed := TaggedUnion AluOpUnionCompressedType.
 
 Definition AluOutUnionCompressed := STRUCT_TYPE {
-  "isComp"   :: Bool ;
-  "dstIdx"   :: Bit RegIdxSz ;
-  "dstValue" :: FullCapWithTag ;
-  "Op"       :: AluOpUnionCompressed
+  "isComp"      :: Bool ;
+  "dstIdx"      :: Bit RegIdxSz ;
+  "dstValue"    :: FullCapWithTag ;
+  "Op"          :: AluOpUnionCompressed ;
+  "isFenceIAck" :: Bool
 }.
 
 (* ===========================================================================
@@ -210,10 +211,11 @@ Section CompressAluOut.
         (UNION (AluOpUnionCompressedType, "NoException" ::= #noExcC)) ;
 
     @RetE _ AluOutUnionCompressed (STRUCT {
-      "isComp"   ::= ##aluOut`"isComp" ;
-      "dstIdx"   ::= ##aluOut`"dstIdx" ;
-      "dstValue" ::= #dstValC ;
-      "Op"       ::= #aluOpC
+      "isComp"      ::= ##aluOut`"isComp" ;
+      "dstIdx"      ::= ##aluOut`"dstIdx" ;
+      "dstValue"    ::= #dstValC ;
+      "Op"          ::= #aluOpC ;
+      "isFenceIAck" ::= ##aluOut`"isFenceIAck"
     }).
 End CompressAluOut.
 
@@ -224,6 +226,7 @@ Section ExecuteNonDeferredCompressed.
     Let  dstIdx         : Bit RegIdxSz               <- ##aluOutC`"dstIdx" ;
     Let  dstVal         : FullCapWithTag             <- ##aluOutC`"dstValue" ;
     Let  aluOp          : AluOpUnionCompressed       <- ##aluOutC`"Op" ;
+    Let  isFenceIAck    : Bool                       <- ##aluOutC`"isFenceIAck" ;
     Let  pcStep         : Addr                       <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
 
     LetA currPcc        : FullCapWithTag             <- readRegsList gprPathsWithKindCompressed

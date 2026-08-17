@@ -477,6 +477,7 @@ Section RegReadSection.
       "cs1"                 ::= #cs1 ;
       "cs2"                 ::= #cs2 ;
       "currInterruptStatus" ::= #currMIE ;
-      "instGroup"           ::= ##decodeOut`"instGroup"
+      "instGroup"           ::= ##decodeOut`"instGroup" ;
+      "isFenceIAck"         ::= ##regReadIn`"isFenceIAck"
     }).
 End RegReadSection.

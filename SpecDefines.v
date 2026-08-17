@@ -695,8 +695,9 @@ Definition DecodeOut := STRUCT_TYPE {
 }.
 
 Definition RegReadIn := STRUCT_TYPE {
-  "decodeOut" :: DecodeOut ;
-  "fetchExc"  :: FetchException
+  "decodeOut"   :: DecodeOut ;
+  "fetchExc"    :: FetchException ;
+  "isFenceIAck" :: Bool
 }.
 
 Definition AluControl := STRUCT_TYPE {
@@ -842,7 +843,8 @@ Definition AluIn := STRUCT_TYPE {
   "cs1"                 :: FullECapWithTag ;
   "cs2"                 :: FullECapWithTag ;
   "currInterruptStatus" :: Bool ;
-  "aluControl"          :: AluControl
+  "aluControl"          :: AluControl ;
+  "isFenceIAck"         :: Bool
 }.
 
 Definition AluInInstGroup := STRUCT_TYPE {
@@ -855,7 +857,8 @@ Definition AluInInstGroup := STRUCT_TYPE {
   "cs1"                 :: FullECapWithTag ;
   "cs2"                 :: FullECapWithTag ;
   "currInterruptStatus" :: Bool ;
-  "instGroup"           :: InstGroup
+  "instGroup"           :: InstGroup ;
+  "isFenceIAck"         :: Bool
 }.
 
 Definition ControlFlowAddrOnlyOpType := [
@@ -894,7 +897,8 @@ Definition AluOut := STRUCT_TYPE {
   "Deferred"    :: Option DeferredUnion ;
   "ControlFlow" :: Option CfPayload ;
   "ScrCsr"      :: Option ScrCsrPayload ;
-  "isFenceI"    :: Bool
+  "isFenceI"    :: Bool ;
+  "isFenceIAck" :: Bool
 }.
 
 Definition NormalFenceIType := [
@@ -928,10 +932,11 @@ Definition AluOpUnionType := [
 Definition AluOpUnion := TaggedUnion AluOpUnionType.
 
 Definition AluOutUnion := STRUCT_TYPE {
-  "isComp"   :: Bool ;
-  "dstIdx"   :: Bit RegIdxSz ;
-  "dstValue" :: FullECapWithTag ;
-  "Op"       :: AluOpUnion
+  "isComp"      :: Bool ;
+  "dstIdx"      :: Bit RegIdxSz ;
+  "dstValue"    :: FullECapWithTag ;
+  "Op"          :: AluOpUnion ;
+  "isFenceIAck" :: Bool
 }.
 (* ===========================================================================
    REGISTER FILE SUBTREE AND REGPATH DEFINITIONS (UNCOMPRESSED)
