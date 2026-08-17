@@ -432,14 +432,14 @@ Section RegReadSection.
     Let  cs1Idx     : Bit RegIdxSzReal      <- ##decodeOut`"cs1Idx" ;
     Let  cs2Source  : TaggedUnion Cs2Source <- ##decodeOut`"cs2Idx" ;
 
-    LetA pcc        : FullECapWithTag       <- readRegsList gprPathsWithKindECap ($0 : Expr ty (Bit RegIdxSzReal)) ;
-    LetA cs1        : FullECapWithTag       <- readRegsList gprPathsWithKindECap #cs1Idx ;
+    LetA pcc        : FullECapWithTag       <- readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) ;
+    LetA cs1        : FullECapWithTag       <- readRegsList gprPathsWithKind #cs1Idx ;
 
     LetIf cs2 : FullECapWithTag <-
       If (#cs2Source `? "Reg") Then
         (
           Let  cs2Idx : Bit RegIdxSzReal <- #cs2Source `! "Reg" ;
-          readRegsList gprPathsWithKindECap #cs2Idx
+          readRegsList gprPathsWithKind #cs2Idx
         )
       Else
         (
@@ -448,12 +448,12 @@ Section RegReadSection.
             If (#scrCsr `? "Scr") Then
               (
                 Let scrIdx : Bit ScrIdxSz <- #scrCsr `! "Scr" ;
-                readRegsList scrPathsWithKindECap #scrIdx
+                readRegsList scrPathsWithKind #scrIdx
               )
             Else
               (
                 Let  csrIdx : Bit CsrIdxSz    <- #scrCsr `! "Csr" ;
-                LetA csrVal : Bit Xlen        <- readRegsList csrPathsWithKindECap #csrIdx ;
+                LetA csrVal : Bit Xlen        <- readRegsList csrPathsWithKind #csrIdx ;
                 Let  csrCap : FullECapWithTag <- STRUCT {
                   "tag"  ::= Const ty Bool false ;
                   "ecap" ::= Const ty ECap (getDefault _) ;
@@ -464,7 +464,7 @@ Section RegReadSection.
           Return #scrCsrVal
         ) ;
 
-    LetA mstatus  : Bit Xlen <- readRegsList csrPathsWithKindECap ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+    LetA mstatus  : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
     Let  currMIE  : Bool     <- getMstatusMIE #mstatus ;
 
     @Return ty rfTree AluInInstGroup (STRUCT {

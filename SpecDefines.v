@@ -973,17 +973,72 @@ Definition AluOutUnionCompressed := STRUCT_TYPE {
    REGISTER FILE SUBTREE AND REGPATH DEFINITIONS
    =========================================================================== *)
 
-(* 1. Child Leaf Lists *)
+(* 1. Child Leaf Lists (Compressed) *)
 
-Definition gprLeaves : list (Tree Elem) :=
+Definition gprLeavesCompressed : list (Tree Elem) :=
   map (fun '(_, idx) =>
     Leaf ("gpr_" ++ hex_string_of_Z idx)%string
          (EReg (Build_Reg FullCapWithTag (Some (getDefault _))))
   ) (enumerate (repeat tt (Z.to_nat NumRegs))).
 
-Definition scrLeaves : list (Tree Elem) :=
+Definition scrLeavesCompressed : list (Tree Elem) :=
   map (fun '(name, _) =>
     Leaf name (EReg (Build_Reg FullCapWithTag (Some (getDefault _))))
+  ) ScrTable.
+
+Definition csrLeavesCompressed : list (Tree Elem) :=
+  map (fun '(name, _, _, _) =>
+    Leaf name (EReg (Build_Reg (Bit Xlen) (Some (getDefault _))))
+  ) CsrTable.
+
+(* 2. Top-Level Register File Tree (Compressed) *)
+
+Definition rfTreeCompressed : Tree Elem :=
+  Node "rf" [
+    Node "gprs" gprLeavesCompressed ;
+    Node "scrs" scrLeavesCompressed ;
+    Node "csrs" csrLeavesCompressed
+  ].
+
+(* 3. Raw RegPaths into rfTreeCompressed *)
+
+Definition gprPathsCompressed : list (RegPath rfTreeCompressed) :=
+  map (embedRegPath (getNodePath rfTreeCompressed "rf.gprs"))
+      (getTreeRegPaths (getNode (getNodePath rfTreeCompressed "rf.gprs"))).
+
+Definition scrPathsCompressed : list (RegPath rfTreeCompressed) :=
+  map (embedRegPath (getNodePath rfTreeCompressed "rf.scrs"))
+      (getTreeRegPaths (getNode (getNodePath rfTreeCompressed "rf.scrs"))).
+
+Definition csrPathsCompressed : list (RegPath rfTreeCompressed) :=
+  map (embedRegPath (getNodePath rfTreeCompressed "rf.csrs"))
+      (getTreeRegPaths (getNode (getNodePath rfTreeCompressed "rf.csrs"))).
+
+(* 4. Typed RegOfKind Lists for readRegsList / writeRegsList (Compressed) *)
+
+Definition gprPathsWithKindCompressed : list (RegOfKind (t:=rfTreeCompressed) FullCapWithTag) :=
+  map (embedRegOfKind (getNodePath rfTreeCompressed "rf.gprs"))
+      (getTreeRegsOfKind FullCapWithTag (getNode (getNodePath rfTreeCompressed "rf.gprs"))).
+
+Definition scrPathsWithKindCompressed : list (RegOfKind (t:=rfTreeCompressed) FullCapWithTag) :=
+  map (embedRegOfKind (getNodePath rfTreeCompressed "rf.scrs"))
+      (getTreeRegsOfKind FullCapWithTag (getNode (getNodePath rfTreeCompressed "rf.scrs"))).
+
+Definition csrPathsWithKindCompressed : list (RegOfKind (t:=rfTreeCompressed) (Bit Xlen)) :=
+  map (embedRegOfKind (getNodePath rfTreeCompressed "rf.csrs"))
+      (getTreeRegsOfKind (Bit Xlen) (getNode (getNodePath rfTreeCompressed "rf.csrs"))).
+
+(* 5. Uncompressed Register File Tree and Paths *)
+
+Definition gprLeaves : list (Tree Elem) :=
+  map (fun '(_, idx) =>
+    Leaf ("gpr_" ++ hex_string_of_Z idx)%string
+         (EReg (Build_Reg FullECapWithTag (Some (getDefault _))))
+  ) (enumerate (repeat tt (Z.to_nat NumRegs))).
+
+Definition scrLeaves : list (Tree Elem) :=
+  map (fun '(name, _) =>
+    Leaf name (EReg (Build_Reg FullECapWithTag (Some (getDefault _))))
   ) ScrTable.
 
 Definition csrLeaves : list (Tree Elem) :=
@@ -991,71 +1046,33 @@ Definition csrLeaves : list (Tree Elem) :=
     Leaf name (EReg (Build_Reg (Bit Xlen) (Some (getDefault _))))
   ) CsrTable.
 
-(* 2. Top-Level Register File Tree *)
-
-Definition rfTreeCompressed : Tree Elem :=
+Definition rfTree : Tree Elem :=
   Node "rf" [
     Node "gprs" gprLeaves ;
     Node "scrs" scrLeaves ;
     Node "csrs" csrLeaves
   ].
 
-(* 3. Raw RegPaths into rfTreeCompressed *)
+Definition gprPaths : list (RegPath rfTree) :=
+  map (embedRegPath (getNodePath rfTree "rf.gprs"))
+      (getTreeRegPaths (getNode (getNodePath rfTree "rf.gprs"))).
 
-Definition gprPaths : list (RegPath rfTreeCompressed) :=
-  map (embedRegPath (getNodePath rfTreeCompressed "rf.gprs"))
-      (getTreeRegPaths (getNode (getNodePath rfTreeCompressed "rf.gprs"))).
+Definition scrPaths : list (RegPath rfTree) :=
+  map (embedRegPath (getNodePath rfTree "rf.scrs"))
+      (getTreeRegPaths (getNode (getNodePath rfTree "rf.scrs"))).
 
-Definition scrPaths : list (RegPath rfTreeCompressed) :=
-  map (embedRegPath (getNodePath rfTreeCompressed "rf.scrs"))
-      (getTreeRegPaths (getNode (getNodePath rfTreeCompressed "rf.scrs"))).
+Definition csrPaths : list (RegPath rfTree) :=
+  map (embedRegPath (getNodePath rfTree "rf.csrs"))
+      (getTreeRegPaths (getNode (getNodePath rfTree "rf.csrs"))).
 
-Definition csrPaths : list (RegPath rfTreeCompressed) :=
-  map (embedRegPath (getNodePath rfTreeCompressed "rf.csrs"))
-      (getTreeRegPaths (getNode (getNodePath rfTreeCompressed "rf.csrs"))).
-
-(* 4. Typed RegOfKind Lists for readRegsList / writeRegsList *)
-
-Definition gprPathsWithKind : list (RegOfKind (t:=rfTreeCompressed) FullCapWithTag) :=
-  map (embedRegOfKind (getNodePath rfTreeCompressed "rf.gprs"))
-      (getTreeRegsOfKind FullCapWithTag (getNode (getNodePath rfTreeCompressed "rf.gprs"))).
-
-Definition scrPathsWithKind : list (RegOfKind (t:=rfTreeCompressed) FullCapWithTag) :=
-  map (embedRegOfKind (getNodePath rfTreeCompressed "rf.scrs"))
-      (getTreeRegsOfKind FullCapWithTag (getNode (getNodePath rfTreeCompressed "rf.scrs"))).
-
-Definition csrPathsWithKind : list (RegOfKind (t:=rfTreeCompressed) (Bit Xlen)) :=
-  map (embedRegOfKind (getNodePath rfTreeCompressed "rf.csrs"))
-      (getTreeRegsOfKind (Bit Xlen) (getNode (getNodePath rfTreeCompressed "rf.csrs"))).
-
-(* 5. Uncompressed Register File Tree and Paths *)
-
-Definition gprLeavesECap : list (Tree Elem) :=
-  map (fun '(_, idx) =>
-    Leaf ("gpr_" ++ hex_string_of_Z idx)%string
-         (EReg (Build_Reg FullECapWithTag (Some (getDefault _))))
-  ) (enumerate (repeat tt (Z.to_nat NumRegs))).
-
-Definition scrLeavesECap : list (Tree Elem) :=
-  map (fun '(name, _) =>
-    Leaf name (EReg (Build_Reg FullECapWithTag (Some (getDefault _))))
-  ) ScrTable.
-
-Definition rfTree : Tree Elem :=
-  Node "rf" [
-    Node "gprs" gprLeavesECap ;
-    Node "scrs" scrLeavesECap ;
-    Node "csrs" csrLeaves
-  ].
-
-Definition gprPathsWithKindECap : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
+Definition gprPathsWithKind : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
   map (embedRegOfKind (getNodePath rfTree "rf.gprs"))
       (getTreeRegsOfKind FullECapWithTag (getNode (getNodePath rfTree "rf.gprs"))).
 
-Definition scrPathsWithKindECap : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
+Definition scrPathsWithKind : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
   map (embedRegOfKind (getNodePath rfTree "rf.scrs"))
       (getTreeRegsOfKind FullECapWithTag (getNode (getNodePath rfTree "rf.scrs"))).
 
-Definition csrPathsWithKindECap : list (RegOfKind (t:=rfTree) (Bit Xlen)) :=
+Definition csrPathsWithKind : list (RegOfKind (t:=rfTree) (Bit Xlen)) :=
   map (embedRegOfKind (getNodePath rfTree "rf.csrs"))
       (getTreeRegsOfKind (Bit Xlen) (getNode (getNodePath rfTree "rf.csrs"))).
