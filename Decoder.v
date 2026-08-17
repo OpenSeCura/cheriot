@@ -434,20 +434,6 @@ Section RegReadSection.
 
     LetA pcc        : FullECapWithTag       <- readRegsList gprPathsWithKindECap ($0 : Expr ty (Bit RegIdxSzReal)) ;
     LetA cs1        : FullECapWithTag       <- readRegsList gprPathsWithKindECap #cs1Idx ;
-    LetA waitCs1    : Bool                  <- readRegsList waitGprPathsWithKindECap #cs1Idx ;
-    Let  cs1Stalled : Bool                  <- And [ Not (Eq #cs1Idx $0) ; #waitCs1 ] ;
-
-    LetIf cs2Stalled : Bool <-
-      If (#cs2Source `? "Reg") Then
-        (
-          Let  cs2Idx  : Bit RegIdxSzReal <- #cs2Source `! "Reg" ;
-          LetA waitCs2 : Bool             <- readRegsList waitGprPathsWithKindECap #cs2Idx ;
-          Return (And [ Not (Eq #cs2Idx $0) ; #waitCs2 ])
-        )
-      Else
-        (
-          Return (Const ty Bool false)
-        ) ;
 
     LetIf cs2 : FullECapWithTag <-
       If (#cs2Source `? "Reg") Then
@@ -478,7 +464,6 @@ Section RegReadSection.
           Return #scrCsrVal
         ) ;
 
-    Let isStalled : Bool     <- Or [ #cs1Stalled ; #cs2Stalled ] ;
     LetA mstatus  : Bit Xlen <- readRegsList csrPathsWithKindECap ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
     Let  currMIE  : Bool     <- getMstatusMIE #mstatus ;
 
@@ -492,7 +477,6 @@ Section RegReadSection.
       "cs1"                 ::= #cs1 ;
       "cs2"                 ::= #cs2 ;
       "currInterruptStatus" ::= #currMIE ;
-      "instGroup"           ::= ##decodeOut`"instGroup" ;
-      "isStalled"           ::= #isStalled
+      "instGroup"           ::= ##decodeOut`"instGroup"
     }).
 End RegReadSection.

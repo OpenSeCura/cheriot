@@ -853,8 +853,7 @@ Definition AluIn := STRUCT_TYPE {
   "cs1"                 :: FullECapWithTag ;
   "cs2"                 :: FullECapWithTag ;
   "currInterruptStatus" :: Bool ;
-  "aluControl"          :: AluControl ;
-  "isStalled"           :: Bool
+  "aluControl"          :: AluControl
 }.
 
 Definition AluInInstGroup := STRUCT_TYPE {
@@ -867,8 +866,7 @@ Definition AluInInstGroup := STRUCT_TYPE {
   "cs1"                 :: FullECapWithTag ;
   "cs2"                 :: FullECapWithTag ;
   "currInterruptStatus" :: Bool ;
-  "instGroup"           :: InstGroup ;
-  "isStalled"           :: Bool
+  "instGroup"           :: InstGroup
 }.
 
 Definition ControlFlowAddrOnlyOpType := [
@@ -906,8 +904,7 @@ Definition AluOut := STRUCT_TYPE {
   "Exception"   :: Option ExceptionInfo ;
   "Deferred"    :: Option DeferredUnion ;
   "ControlFlow" :: Option CfPayload ;
-  "ScrCsr"      :: Option ScrCsrPayload ;
-  "isStalled"   :: Bool
+  "ScrCsr"      :: Option ScrCsrPayload
 }.
 
 Definition NotDeferredUnionType := [
@@ -930,11 +927,10 @@ Definition AluOpUnionType := [
 Definition AluOpUnion := TaggedUnion AluOpUnionType.
 
 Definition AluOutUnion := STRUCT_TYPE {
-  "isComp"    :: Bool ;
-  "dstIdx"    :: Bit RegIdxSz ;
-  "dstValue"  :: FullECapWithTag ;
-  "Op"        :: AluOpUnion ;
-  "isStalled" :: Bool
+  "isComp"   :: Bool ;
+  "dstIdx"   :: Bit RegIdxSz ;
+  "dstValue" :: FullECapWithTag ;
+  "Op"       :: AluOpUnion
 }.
 
 Definition CfPayloadCompressed := STRUCT_TYPE {
@@ -967,11 +963,10 @@ Definition AluOpUnionCompressedType := [
 Definition AluOpUnionCompressed := TaggedUnion AluOpUnionCompressedType.
 
 Definition AluOutUnionCompressed := STRUCT_TYPE {
-  "isComp"    :: Bool ;
-  "dstIdx"    :: Bit RegIdxSz ;
-  "dstValue"  :: FullCapWithTag ;
-  "Op"        :: AluOpUnionCompressed ;
-  "isStalled" :: Bool
+  "isComp"   :: Bool ;
+  "dstIdx"   :: Bit RegIdxSz ;
+  "dstValue" :: FullCapWithTag ;
+  "Op"       :: AluOpUnionCompressed
 }.
 
 (* ===========================================================================
@@ -984,12 +979,6 @@ Definition gprLeaves : list (Tree Elem) :=
   map (fun '(_, idx) =>
     Leaf ("gpr_" ++ hex_string_of_Z idx)%string
          (EReg (Build_Reg FullCapWithTag (Some (getDefault _))))
-  ) (enumerate (repeat tt (Z.to_nat NumRegs))).
-
-Definition waitGprLeaves : list (Tree Elem) :=
-  map (fun '(_, idx) =>
-    Leaf ("waitGpr_" ++ hex_string_of_Z idx)%string
-         (EReg (Build_Reg Bool (Some (getDefault _))))
   ) (enumerate (repeat tt (Z.to_nat NumRegs))).
 
 Definition scrLeaves : list (Tree Elem) :=
@@ -1006,10 +995,9 @@ Definition csrLeaves : list (Tree Elem) :=
 
 Definition rfTreeCompressed : Tree Elem :=
   Node "rf" [
-    Node "gprs"     gprLeaves ;
-    Node "waitGprs" waitGprLeaves ;
-    Node "scrs"     scrLeaves ;
-    Node "csrs"     csrLeaves
+    Node "gprs" gprLeaves ;
+    Node "scrs" scrLeaves ;
+    Node "csrs" csrLeaves
   ].
 
 (* 3. Raw RegPaths into rfTreeCompressed *)
@@ -1017,10 +1005,6 @@ Definition rfTreeCompressed : Tree Elem :=
 Definition gprPaths : list (RegPath rfTreeCompressed) :=
   map (embedRegPath (getNodePath rfTreeCompressed "rf.gprs"))
       (getTreeRegPaths (getNode (getNodePath rfTreeCompressed "rf.gprs"))).
-
-Definition waitGprPaths : list (RegPath rfTreeCompressed) :=
-  map (embedRegPath (getNodePath rfTreeCompressed "rf.waitGprs"))
-      (getTreeRegPaths (getNode (getNodePath rfTreeCompressed "rf.waitGprs"))).
 
 Definition scrPaths : list (RegPath rfTreeCompressed) :=
   map (embedRegPath (getNodePath rfTreeCompressed "rf.scrs"))
@@ -1035,10 +1019,6 @@ Definition csrPaths : list (RegPath rfTreeCompressed) :=
 Definition gprPathsWithKind : list (RegOfKind (t:=rfTreeCompressed) FullCapWithTag) :=
   map (embedRegOfKind (getNodePath rfTreeCompressed "rf.gprs"))
       (getTreeRegsOfKind FullCapWithTag (getNode (getNodePath rfTreeCompressed "rf.gprs"))).
-
-Definition waitGprPathsWithKind : list (RegOfKind (t:=rfTreeCompressed) Bool) :=
-  map (embedRegOfKind (getNodePath rfTreeCompressed "rf.waitGprs"))
-      (getTreeRegsOfKind Bool (getNode (getNodePath rfTreeCompressed "rf.waitGprs"))).
 
 Definition scrPathsWithKind : list (RegOfKind (t:=rfTreeCompressed) FullCapWithTag) :=
   map (embedRegOfKind (getNodePath rfTreeCompressed "rf.scrs"))
@@ -1063,19 +1043,14 @@ Definition scrLeavesECap : list (Tree Elem) :=
 
 Definition rfTree : Tree Elem :=
   Node "rf" [
-    Node "gprs"     gprLeavesECap ;
-    Node "waitGprs" waitGprLeaves ;
-    Node "scrs"     scrLeavesECap ;
-    Node "csrs"     csrLeaves
+    Node "gprs" gprLeavesECap ;
+    Node "scrs" scrLeavesECap ;
+    Node "csrs" csrLeaves
   ].
 
 Definition gprPathsWithKindECap : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
   map (embedRegOfKind (getNodePath rfTree "rf.gprs"))
       (getTreeRegsOfKind FullECapWithTag (getNode (getNodePath rfTree "rf.gprs"))).
-
-Definition waitGprPathsWithKindECap : list (RegOfKind (t:=rfTree) Bool) :=
-  map (embedRegOfKind (getNodePath rfTree "rf.waitGprs"))
-      (getTreeRegsOfKind Bool (getNode (getNodePath rfTree "rf.waitGprs"))).
 
 Definition scrPathsWithKindECap : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
   map (embedRegOfKind (getNodePath rfTree "rf.scrs"))

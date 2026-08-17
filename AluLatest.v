@@ -752,8 +752,7 @@ Section ConstructAluIn.
       "cs1"                 ::= ##aluInGroup`"cs1" ;
       "cs2"                 ::= ##aluInGroup`"cs2" ;
       "currInterruptStatus" ::= ##aluInGroup`"currInterruptStatus" ;
-      "aluControl"          ::= #ctrl ;
-      "isStalled"           ::= ##aluInGroup`"isStalled"
+      "aluControl"          ::= #ctrl
     }).
 End ConstructAluIn.
 
@@ -1778,8 +1777,7 @@ Section Alu.
         "Exception"   ::= #ExceptionRes ;
         "Deferred"    ::= #DeferredOpRes ;
         "ControlFlow" ::= #cfPayload ;
-        "ScrCsr"      ::= #ScrCsrOut ;
-        "isStalled"   ::= ##aluIn`"isStalled"
+        "ScrCsr"      ::= #ScrCsrOut
       }).
   End AluRouting.
 
@@ -1819,11 +1817,10 @@ Section Alu.
           (UNION (AluOpUnionType, "NoException" ::= #noExcUnion)) ;
 
     @RetE _ AluOutUnion (STRUCT {
-      "isComp"    ::= ##routingOut`"isComp" ;
-      "dstIdx"    ::= ##routingOut`"dstIdx" ;
-      "dstValue"  ::= ##routingOut`"dstValue" ;
-      "Op"        ::= #opUnion ;
-      "isStalled" ::= ##routingOut`"isStalled"
+      "isComp"   ::= ##routingOut`"isComp" ;
+      "dstIdx"   ::= ##routingOut`"dstIdx" ;
+      "dstValue" ::= ##routingOut`"dstValue" ;
+      "Op"       ::= #opUnion
     }).
 
   Definition compressAluOut (aluOut : ty AluOutUnion) : LetExpr ty AluOutUnionCompressed :=
@@ -1892,11 +1889,10 @@ Section Alu.
         (UNION (AluOpUnionCompressedType, "NoException" ::= #noExcC)) ;
 
     @RetE _ AluOutUnionCompressed (STRUCT {
-      "isComp"    ::= ##aluOut`"isComp" ;
-      "dstIdx"    ::= ##aluOut`"dstIdx" ;
-      "dstValue"  ::= #dstValC ;
-      "Op"        ::= #aluOpC ;
-      "isStalled" ::= ##aluOut`"isStalled"
+      "isComp"   ::= ##aluOut`"isComp" ;
+      "dstIdx"   ::= ##aluOut`"dstIdx" ;
+      "dstValue" ::= #dstValC ;
+      "Op"       ::= #aluOpC
     }).
 End Alu.
 
@@ -1941,8 +1937,6 @@ Section ExecuteNonDeferred.
       (
         If (#noExc `? "Deferred") Then
           (
-            If (Not (Eq #dstIdx $0)) Then
-              (writeRegsList waitGprPathsWithKind #dstIdx (ConstBool true)) ;
             writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
           )
         Else
@@ -2076,8 +2070,6 @@ Section ExecuteNonDeferred.
       (
         If (#noExc `? "Deferred") Then
           (
-            If (Not (Eq #dstIdx $0)) Then
-              (writeRegsList waitGprPathsWithKindECap #dstIdx (ConstBool true)) ;
             writeRegsList gprPathsWithKindECap ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
           )
         Else
