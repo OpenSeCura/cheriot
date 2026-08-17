@@ -41,10 +41,15 @@ Definition ScrCsrPayloadCompressed := STRUCT_TYPE {
   "SpecialValue" :: FullCapWithTag
 }.
 
-Definition NotDeferredUnionCompressedType := [
-  ("Normal"%string,      Bit 0) ;
+Definition CfScrCsrCompressedType := [
   ("ControlFlow"%string, CfPayloadCompressed) ;
   ("ScrCsr"%string,      ScrCsrPayloadCompressed)
+].
+Definition CfScrCsrUnionCompressed := TaggedUnion CfScrCsrCompressedType.
+
+Definition NotDeferredUnionCompressedType := [
+  ("NormalFenceI"%string, NormalFenceIUnion) ;
+  ("CfScrCsr"%string,     CfScrCsrUnionCompressed)
 ].
 Definition NotDeferredUnionCompressed := TaggedUnion NotDeferredUnionCompressedType.
 
@@ -142,23 +147,25 @@ Section CompressAluOut.
       "cap"  ::= #dstCap ;
       "addr" ::= ##dstVal`"addr"
     } ;
-    LetE aluOp       : AluOpUnion       <- ##aluOut`"Op" ;
-    LetE isExc       : Bool             <- #aluOp `? "Exception" ;
-    LetE excVal      : ExceptionInfo    <- #aluOp `! "Exception" ;
-    LetE noExc       : NoExceptionUnion <- #aluOp `! "NoException" ;
-    LetE isDeferred  : Bool             <- #noExc `? "Deferred" ;
-    LetE deferredVal : DeferredUnion    <- #noExc `! "Deferred" ;
-    LetE notDef      : NotDeferredUnion <- #noExc `! "NotDeferred" ;
-    LetE isNorm      : Bool             <- #notDef `? "Normal" ;
-    LetE isCf        : Bool             <- #notDef `? "ControlFlow" ;
-    LetE cfVal       : CfPayload        <- #notDef `! "ControlFlow" ;
-    LetE isScrCsr    : Bool             <- #notDef `? "ScrCsr" ;
-    LetE scrCsrVal   : ScrCsrPayload    <- #notDef `! "ScrCsr" ;
+    LetE aluOp        : AluOpUnion        <- ##aluOut`"Op" ;
+    LetE isExc        : Bool              <- #aluOp `? "Exception" ;
+    LetE excVal       : ExceptionInfo     <- #aluOp `! "Exception" ;
+    LetE noExc        : NoExceptionUnion  <- #aluOp `! "NoException" ;
+    LetE isDeferred   : Bool              <- #noExc `? "Deferred" ;
+    LetE deferredVal  : DeferredUnion     <- #noExc `! "Deferred" ;
+    LetE notDef       : NotDeferredUnion  <- #noExc `! "NotDeferred" ;
+    LetE isNormFence  : Bool              <- #notDef `? "NormalFenceI" ;
+    LetE normFenceVal : NormalFenceIUnion <- #notDef `! "NormalFenceI" ;
+    LetE cfScrCsrVal  : CfScrCsrUnion     <- #notDef `! "CfScrCsr" ;
+    LetE isCf         : Bool              <- #cfScrCsrVal `? "ControlFlow" ;
+    LetE cfVal        : CfPayload         <- #cfScrCsrVal `! "ControlFlow" ;
+    LetE isScrCsr     : Bool              <- #cfScrCsrVal `? "ScrCsr" ;
+    LetE scrCsrVal    : ScrCsrPayload     <- #cfScrCsrVal `! "ScrCsr" ;
 
-    LetE newPccVal   : FullECapWithTag <- #cfVal`"NewPcc" ;
-    LetE newPccECap  : ECap            <- #newPccVal`"ecap" ;
-    LETE newPccCap   : Cap             <- EncodeCap newPccECap ;
-    LetE newPccC     : FullCapWithTag  <- STRUCT {
+    LetE newPccVal    : FullECapWithTag   <- #cfVal`"NewPcc" ;
+    LetE newPccECap   : ECap              <- #newPccVal`"ecap" ;
+    LETE newPccCap    : Cap               <- EncodeCap newPccECap ;
+    LetE newPccC      : FullCapWithTag    <- STRUCT {
       "tag"  ::= ##newPccVal`"tag" ;
       "cap"  ::= #newPccCap ;
       "addr" ::= ##newPccVal`"addr"
@@ -181,12 +188,15 @@ Section CompressAluOut.
       "SpecialValue" ::= #sValC
     } ;
 
-    LetE notDefC : NotDeferredUnionCompressed <-
+    LetE cfScrCsrC : CfScrCsrUnionCompressed <-
       ITE #isCf
-        (UNION (NotDeferredUnionCompressedType, "ControlFlow" ::= #cfC))
-        (ITE #isScrCsr
-          (UNION (NotDeferredUnionCompressedType, "ScrCsr" ::= #scrCsrC))
-          (UNION (NotDeferredUnionCompressedType, "Normal" ::= ConstDef))) ;
+        (UNION (CfScrCsrCompressedType, "ControlFlow" ::= #cfC))
+        (UNION (CfScrCsrCompressedType, "ScrCsr" ::= #scrCsrC)) ;
+
+    LetE notDefC : NotDeferredUnionCompressed <-
+      ITE #isNormFence
+        (UNION (NotDeferredUnionCompressedType, "NormalFenceI" ::= #normFenceVal))
+        (UNION (NotDeferredUnionCompressedType, "CfScrCsr" ::= #cfScrCsrC)) ;
 
     LetE noExcC : NoExceptionUnionCompressed <-
       ITE #isDeferred
@@ -256,15 +266,16 @@ Section ExecuteNonDeferredCompressed.
             If (Not (Eq #dstIdx $0)) Then
               (writeRegsList gprPathsWithKindCompressed #dstIdx #dstVal) ;
 
-            If (##notDeferredVal `? "Normal") Then
+            If (##notDeferredVal `? "NormalFenceI") Then
               (
                 writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
               )
             Else
               (
-                If (##notDeferredVal `? "ScrCsr") Then
+                Let cfScrCsr : CfScrCsrUnionCompressed <- #notDeferredVal `! "CfScrCsr" ;
+                If (##cfScrCsr `? "ScrCsr") Then
                   (
-                    Let scrCsr : ScrCsrPayloadCompressed <- #notDeferredVal `! "ScrCsr" ;
+                    Let scrCsr : ScrCsrPayloadCompressed <- #cfScrCsr `! "ScrCsr" ;
                     Let sDest  : TaggedUnion ScrCsrIdx   <- ##scrCsr`"SpecialDest" ;
                     Let sVal   : FullCapWithTag          <- ##scrCsr`"SpecialValue" ;
 
@@ -282,7 +293,7 @@ Section ExecuteNonDeferredCompressed.
                   )
                 Else
                   (
-                    Let cf     : CfPayloadCompressed <- #notDeferredVal `! "ControlFlow" ;
+                    Let cf     : CfPayloadCompressed <- #cfScrCsr `! "ControlFlow" ;
                     Let newPcc : FullCapWithTag      <- ##cf`"NewPcc" ;
                     Let cfOp   : CfOp                <- ##cf`"CfOp" ;
 

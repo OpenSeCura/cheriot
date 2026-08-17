@@ -517,12 +517,17 @@ DecodeCap:
   cap: cs2.addr (CSetHigh)
   addr: cs1.addr (CSetHigh)
 
+FenceI:
+  - FenceI : Fence
+  Outputs: isFenceI
+  inst: inst (Fence)
+
 Deferred (Mux):
   - Load   : Load
   - Store  : Store
   - Fence  : Fence
   Outputs: isDeferred, (MemPayload {memSize, LoadOp {isUnsigned, isLM, isLG} OR Store {tag, cap, addr}} OR
-                        FenceOp {isFenceI, RR, RW, WR, WW})
+                        FenceOp {RR, RW, WR, WW})
   cs1Perms: cs1.perms (Load)
   inst: inst (Load, Store, Fence)
   storeTag: cs2.tag (Store)
@@ -570,6 +575,7 @@ Exception
 Deferred
 ControlFlow
 ScrCsr
+FenceI
 
 NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
 
@@ -806,7 +812,8 @@ Section GetFunctionalUnits.
       "Exception" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"ECall"; ##group`"EBreak" ] ;
       "ControlFlow" ::= Or [ ##group`"Mret"; ##group`"Cjal"; ##group`"Cjalr"; ##group`"Branch" ] ;
       "ScrCsr" ::= Or [ ##group`"Scr"; ##group`"Csr" ] ;
-      "Saturater" ::= Or [ ##group`"CGetBase"; ##group`"CGetLen"; ##group`"CGetTop" ]
+      "Saturater" ::= Or [ ##group`"CGetBase"; ##group`"CGetLen"; ##group`"CGetTop" ] ;
+      "FenceI" ::= ##group`"Fence"
     }).
 End GetFunctionalUnits.
 
@@ -1282,12 +1289,12 @@ Section Alu.
                           "base" ::= #base_top`"base" })).
 
   Definition Deferred (isLoad isStore isFence : ty Bool)
-                       (cs1Perms : ty CapPerms)
-                       (inst : ty (Bit Xlen))
-                       (addr : ty Addr)
-                       (storeTag : ty Bool)
-                       (storeCap : ty Cap)
-                       (storeData : ty Addr)
+                      (cs1Perms : ty CapPerms)
+                      (inst : ty (Bit Xlen))
+                      (addr : ty Addr)
+                      (storeTag : ty Bool)
+                      (storeCap : ty Cap)
+                      (storeData : ty Addr)
   : LetExpr ty (Option DeferredUnion) :=
     LetE memSize : Bit LgLgNumBytesFullCapSz <- #inst`[13:12] ;
     LetE isUnsigned : Bool <- isNotZero (#inst`[14:14]) ;
@@ -1297,19 +1304,18 @@ Section Alu.
     LetE pred_w : Bool <- isNotZero (#inst`[24:24]) ;
     LetE succ_r : Bool <- isNotZero (#inst`[21:21]) ;
     LetE succ_w : Bool <- isNotZero (#inst`[20:20]) ;
-    LetE rr : Bool <- And [ Not #isFenceI ; #pred_r ; #succ_r ] ;
-    LetE rw : Bool <- And [ Not #isFenceI ; #pred_r ; #succ_w ] ;
-    LetE wr : Bool <- And [ Not #isFenceI ; Not #isTso ; #pred_w ; #succ_r ] ;
-    LetE ww : Bool <- And [ Not #isFenceI ; #pred_w ; #succ_w ] ;
+    LetE rr : Bool <- And [ #pred_r ; #succ_r ] ;
+    LetE rw : Bool <- And [ #pred_r ; #succ_w ] ;
+    LetE wr : Bool <- And [ Not #isTso ; #pred_w ; #succ_r ] ;
+    LetE ww : Bool <- And [ #pred_w ; #succ_w ] ;
     LetE fenceVal : FenceOp <- STRUCT {
-      "isFenceI" ::= #isFenceI ;
       "RR"       ::= #rr ;
       "RW"       ::= #rw ;
       "WR"       ::= #wr ;
       "WW"       ::= #ww
     } ;
     LETE memOpOpt : Option DeferredUnion <- LoadStore cs1Perms memSize isUnsigned isLoad isStore addr storeTag storeCap storeData ;
-    RetE (Or [ ITE0 #isFence (mkSome (UNION (DeferredUnionType, "Fence" ::= #fenceVal))) ;
+    RetE (Or [ ITE0 (And [ #isFence ; Not #isFenceI ]) (mkSome (UNION (DeferredUnionType, "Fence" ::= #fenceVal))) ;
                #memOpOpt ]).
 
   Definition MemException (isStore : ty Bool)
@@ -1474,6 +1480,9 @@ Section Alu.
     } ;
     LetE scrCsr : Option ScrCsrPayload <- ITE0 #isScrCsr (mkSome #scrCsrPayload) ;
     RetE #scrCsr.
+
+  Definition FenceI (inst : ty Inst) (isFence : ty Bool) : LetExpr ty Bool :=
+    RetE (And [ #isFence ; isNotZero (#inst`[12:12]) ]).
 
   Section AluRouting.
     Definition AluRouting (aluIn : ty AluIn) : LetExpr ty AluOut :=
@@ -1763,6 +1772,8 @@ Section Alu.
       LETE DeferredOpRes : Option DeferredUnion <-
         Deferred isLoad isStore isFence cs1Perms inst AdderBeforeBoundsCheckOut storeTag encodedCap storeData ;
 
+      LETE isFenceIOut : Bool <- FenceI inst isFence ;
+
       LetE RegVal : FullECapWithTag <-
         STRUCT { "tag" ::= #Reg_tag; "ecap" ::= #Reg_ecap; "addr" ::= #Reg_addr } ;
 
@@ -1777,7 +1788,8 @@ Section Alu.
         "Exception"   ::= #ExceptionRes ;
         "Deferred"    ::= #DeferredOpRes ;
         "ControlFlow" ::= #cfPayload ;
-        "ScrCsr"      ::= #ScrCsrOut
+        "ScrCsr"      ::= #ScrCsrOut ;
+        "isFenceI"    ::= #isFenceIOut
       }).
   End AluRouting.
 
@@ -1786,6 +1798,7 @@ Section Alu.
     LetE deferredOpt : Option DeferredUnion <- ##routingOut`"Deferred" ;
     LetE cfOpt       : Option CfPayload <- ##routingOut`"ControlFlow" ;
     LetE scrCsrOpt   : Option ScrCsrPayload <- ##routingOut`"ScrCsr" ;
+    LetE isFenceI    : Bool <- ##routingOut`"isFenceI" ;
 
     LetE isExc : Bool <- isValid #excOpt ;
     LetE excVal : ExceptionInfo <- getData #excOpt ;
@@ -1799,12 +1812,20 @@ Section Alu.
     LetE isScrCsr : Bool <- isValid #scrCsrOpt ;
     LetE scrCsrVal : ScrCsrPayload <- getData #scrCsrOpt ;
 
-    LetE notDeferredUnion : NotDeferredUnion <-
+    LetE cfScrCsrUnion : CfScrCsrUnion <-
       ITE #isCf
-          (UNION (NotDeferredUnionType, "ControlFlow" ::= #cfVal))
-          (ITE #isScrCsr
-               (UNION (NotDeferredUnionType, "ScrCsr" ::= #scrCsrVal))
-               (UNION (NotDeferredUnionType, "Normal" ::= ConstDef))) ;
+          (UNION (CfScrCsrType, "ControlFlow" ::= #cfVal))
+          (UNION (CfScrCsrType, "ScrCsr" ::= #scrCsrVal)) ;
+
+    LetE normalFenceIUnion : NormalFenceIUnion <-
+      ITE #isFenceI
+          (UNION (NormalFenceIType, "FenceI" ::= ConstDef))
+          (UNION (NormalFenceIType, "Normal" ::= ConstDef)) ;
+
+    LetE notDeferredUnion : NotDeferredUnion <-
+      ITE (Or [ #isCf ; #isScrCsr ])
+          (UNION (NotDeferredUnionType, "CfScrCsr" ::= #cfScrCsrUnion))
+          (UNION (NotDeferredUnionType, "NormalFenceI" ::= #normalFenceIUnion)) ;
 
     LetE noExcUnion : NoExceptionUnion <-
       ITE #isDeferred
@@ -1874,15 +1895,16 @@ Section ExecuteNonDeferred.
             If (Not (Eq #dstIdx $0)) Then
               (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
 
-            If (##notDeferredVal `? "Normal") Then
+            If (##notDeferredVal `? "NormalFenceI") Then
               (
                 writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
               )
             Else
               (
-                If (##notDeferredVal `? "ScrCsr") Then
+                Let cfScrCsr : CfScrCsrUnion <- #notDeferredVal `! "CfScrCsr" ;
+                If (##cfScrCsr `? "ScrCsr") Then
                   (
-                    Let scrCsr : ScrCsrPayload       <- #notDeferredVal `! "ScrCsr" ;
+                    Let scrCsr : ScrCsrPayload       <- #cfScrCsr `! "ScrCsr" ;
                     Let sDest  : TaggedUnion ScrCsrIdx <- ##scrCsr`"SpecialDest" ;
                     Let sVal   : FullECapWithTag      <- ##scrCsr`"SpecialValue" ;
 
@@ -1900,7 +1922,7 @@ Section ExecuteNonDeferred.
                   )
                 Else
                   (
-                    Let cf     : CfPayload           <- #notDeferredVal `! "ControlFlow" ;
+                    Let cf     : CfPayload           <- #cfScrCsr `! "ControlFlow" ;
                     Let newPcc : FullECapWithTag     <- ##cf`"NewPcc" ;
                     Let cfOp   : CfOp                <- ##cf`"CfOp" ;
 
