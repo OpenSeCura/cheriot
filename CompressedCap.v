@@ -222,142 +222,156 @@ End CompressAluOut.
 Section ExecuteNonDeferredCompressed.
   Definition executeNonDeferredCompressed ty (aluOutC : ty AluOutUnionCompressed)
     : Action ty rfTreeCompressed (Option DeferredUnion) :=
-    Let  isComp         : Bool                       <- ##aluOutC`"isComp" ;
-    Let  dstIdx         : Bit RegIdxSz               <- ##aluOutC`"dstIdx" ;
-    Let  dstVal         : FullCapWithTag             <- ##aluOutC`"dstValue" ;
-    Let  aluOp          : AluOpUnionCompressed       <- ##aluOutC`"Op" ;
     Let  isFenceIAck    : Bool                       <- ##aluOutC`"isFenceIAck" ;
-    Let  pcStep         : Addr                       <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
 
-    LetA currPcc        : FullCapWithTag             <- readRegsList gprPathsWithKindCompressed
-                                                          ($0 : Expr ty (Bit RegIdxSzReal)) ;
-    Let  seqPcc         : FullCapWithTag             <- #currPcc `{ "addr" <- Add [ ##currPcc`"addr" ; #pcStep ] } ;
-
-    Let  isExc          : Bool                       <- #aluOp `? "Exception" ;
-    Let  noExc          : NoExceptionUnionCompressed <- #aluOp `! "NoException" ;
-    Let  isDeferred     : Bool                       <- And [ Not #isExc ; #noExc `? "Deferred" ] ;
-    Let  deferredVal    : DeferredUnion              <- #noExc `! "Deferred" ;
-
-    If #isExc Then
+    If #isFenceIAck Then
       (
-        Let  excVal     : ExceptionInfo  <- #aluOp `! "Exception" ;
-        LetA mtcc       : FullCapWithTag <- readRegsList scrPathsWithKindCompressed
-                                              ($(getScrIdx "Mtcc") : Expr ty (Bit ScrIdxSz)) ;
-        LetA mstatus    : Bit Xlen       <- readRegsList csrPathsWithKindCompressed
-                                              ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-        Let  currMIE    : Bool           <- getMstatusMIE #mstatus ;
-        Let  mstatus1   : Bit Xlen       <- setMstatusMPIE #mstatus #currMIE ;
-        Let  newMstatus : Bit Xlen       <- setMstatusMIE #mstatus1 (ConstBool false) ;
-
-        Act (writeRegsList scrPathsWithKindCompressed ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) #currPcc) ;
-        Act (writeRegsList csrPathsWithKindCompressed ($(getCsrIdx "mcause") : Expr ty (Bit CsrIdxSz))
-               (encodeMcause ##excVal`"mcause")) ;
-        Act (writeRegsList csrPathsWithKindCompressed ($(getCsrIdx "mtval") : Expr ty (Bit CsrIdxSz))
-               (encodeCheriMtval ##excVal`"mtval")) ;
-        Act (writeRegsList csrPathsWithKindCompressed ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
-        writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #mtcc
-      )
-    Else
-      (
-        If (#noExc `? "Deferred") Then
-          (
-            writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
-          )
-        Else
-          (
-            Let notDeferredVal : NotDeferredUnionCompressed <- #noExc `! "NotDeferred" ;
-
-            If (Not (Eq #dstIdx $0)) Then
-              (writeRegsList gprPathsWithKindCompressed #dstIdx #dstVal) ;
-
-            If (##notDeferredVal `? "NormalFenceI") Then
-              (
-                Let normFence : NormalFenceIUnion <- #notDeferredVal `! "NormalFenceI" ;
-                If (##normFence `? "FenceI") Then
-                  (
-                    RegWrite "rf.waitForFenceIAck" in rfTreeCompressed <- ConstBool true ;
-                    Retv
-                  ) ;
-                writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
-              )
-            Else
-              (
-                Let cfScrCsr : CfScrCsrUnionCompressed <- #notDeferredVal `! "CfScrCsr" ;
-                If (##cfScrCsr `? "ScrCsr") Then
-                  (
-                    Let scrCsr : ScrCsrPayloadCompressed <- #cfScrCsr `! "ScrCsr" ;
-                    Let sDest  : TaggedUnion ScrCsrIdx   <- ##scrCsr`"SpecialDest" ;
-                    Let sVal   : FullCapWithTag          <- ##scrCsr`"SpecialValue" ;
-
-                    If (#sDest `? "Scr") Then
-                      (
-                        Let scrIdx : Bit ScrIdxSz <- #sDest `! "Scr" ;
-                        writeRegsList scrPathsWithKindCompressed #scrIdx #sVal
-                      )
-                    Else
-                      (
-                        Let csrIdx : Bit CsrIdxSz <- #sDest `! "Csr" ;
-                        writeRegsList csrPathsWithKindCompressed #csrIdx ##sVal`"addr"
-                      ) ;
-                    writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
-                  )
-                Else
-                  (
-                    Let cf     : CfPayloadCompressed <- #cfScrCsr `! "ControlFlow" ;
-                    Let newPcc : FullCapWithTag      <- ##cf`"NewPcc" ;
-                    Let cfOp   : CfOp                <- ##cf`"CfOp" ;
-
-                    If (#cfOp `? "ControlFlowAddrOnly") Then
-                      (
-                        Let addrOnlyOp : ControlFlowAddrOnlyOp <- #cfOp `! "ControlFlowAddrOnly" ;
-                        If (##addrOnlyOp `? "Branch") Then
-                          (
-                            Let isTaken   : Bool           <- #addrOnlyOp `! "Branch" ;
-                            Let targetPcc : FullCapWithTag <- #currPcc `{ "addr" <- ##newPcc`"addr" } ;
-                            Let nextPcc   : FullCapWithTag <- ITE #isTaken #targetPcc #seqPcc ;
-                            writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #nextPcc
-                          )
-                        Else
-                          (
-                            Let targetPcc : FullCapWithTag <- #currPcc `{ "addr" <- ##newPcc`"addr" } ;
-                            writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #targetPcc
-                          ) ;
-                        Retv
-                      )
-                    Else
-                      (
-                        Let addrECapOp : ControlFlowAddrECapOp <- #cfOp `! "ControlFlowAddrECap" ;
-                        If (##addrECapOp `? "Cjalr") Then
-                          (
-                            Let  newMIE     : Bool           <- #addrECapOp `! "Cjalr" ;
-                            LetA mstatus    : Bit Xlen       <- readRegsList csrPathsWithKindCompressed
-                                                                  ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-                            Let  newMstatus : Bit Xlen       <- setMstatusMIE #mstatus #newMIE ;
-                            Act (writeRegsList csrPathsWithKindCompressed
-                                   ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
-                            writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #newPcc
-                          )
-                        Else
-                          (
-                            LetA mePcc      : FullCapWithTag <- readRegsList scrPathsWithKindCompressed
-                                                                  ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) ;
-                            LetA mstatus    : Bit Xlen       <- readRegsList csrPathsWithKindCompressed
-                                                                  ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-                            Let  currMPIE   : Bool           <- getMstatusMPIE #mstatus ;
-                            Let  newMstatus : Bit Xlen       <- setMstatusMIE #mstatus #currMPIE ;
-                            Act (writeRegsList csrPathsWithKindCompressed
-                                   ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
-                            writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #mePcc
-                          ) ;
-                        Retv
-                      ) ;
-                    Retv
-                  ) ;
-                Retv
-              ) ;
-            Retv
-          ) ;
+        RegWrite "rf.waitForFenceIAck" in rfTreeCompressed <- ConstBool false ;
         Retv
       ) ;
-    Return (ITE0 #isDeferred (mkSome #deferredVal)).
+
+    RegRead currWait <- "rf.waitForFenceIAck" in rfTreeCompressed ;
+
+    LetIf res : Option DeferredUnion <-
+      If (Not #currWait) Then
+        (
+          Let  isComp         : Bool                       <- ##aluOutC`"isComp" ;
+          Let  dstIdx         : Bit RegIdxSz               <- ##aluOutC`"dstIdx" ;
+          Let  dstVal         : FullCapWithTag             <- ##aluOutC`"dstValue" ;
+          Let  aluOp          : AluOpUnionCompressed       <- ##aluOutC`"Op" ;
+          Let  pcStep         : Addr                       <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
+
+          LetA currPcc        : FullCapWithTag             <- readRegsList gprPathsWithKindCompressed
+                                                                ($0 : Expr ty (Bit RegIdxSzReal)) ;
+          Let  seqPcc         : FullCapWithTag             <- #currPcc `{ "addr" <- Add [ ##currPcc`"addr" ; #pcStep ] } ;
+
+          Let  isExc          : Bool                       <- #aluOp `? "Exception" ;
+          Let  noExc          : NoExceptionUnionCompressed <- #aluOp `! "NoException" ;
+          Let  isDeferred     : Bool                       <- And [ Not #isExc ; #noExc `? "Deferred" ] ;
+          Let  deferredVal    : DeferredUnion              <- #noExc `! "Deferred" ;
+
+          If #isExc Then
+            (
+              Let  excVal     : ExceptionInfo  <- #aluOp `! "Exception" ;
+              LetA mtcc       : FullCapWithTag <- readRegsList scrPathsWithKindCompressed
+                                                    ($(getScrIdx "Mtcc") : Expr ty (Bit ScrIdxSz)) ;
+              LetA mstatus    : Bit Xlen       <- readRegsList csrPathsWithKindCompressed
+                                                    ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+              Let  currMIE    : Bool           <- getMstatusMIE #mstatus ;
+              Let  mstatus1   : Bit Xlen       <- setMstatusMPIE #mstatus #currMIE ;
+              Let  newMstatus : Bit Xlen       <- setMstatusMIE #mstatus1 (ConstBool false) ;
+
+              Act (writeRegsList scrPathsWithKindCompressed ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) #currPcc) ;
+              Act (writeRegsList csrPathsWithKindCompressed ($(getCsrIdx "mcause") : Expr ty (Bit CsrIdxSz))
+                     (encodeMcause ##excVal`"mcause")) ;
+              Act (writeRegsList csrPathsWithKindCompressed ($(getCsrIdx "mtval") : Expr ty (Bit CsrIdxSz))
+                     (encodeCheriMtval ##excVal`"mtval")) ;
+              Act (writeRegsList csrPathsWithKindCompressed ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
+              writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #mtcc
+            )
+          Else
+            (
+              If (#noExc `? "Deferred") Then
+                (
+                  writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
+                )
+              Else
+                (
+                  Let notDeferredVal : NotDeferredUnionCompressed <- #noExc `! "NotDeferred" ;
+
+                  If (Not (Eq #dstIdx $0)) Then
+                    (writeRegsList gprPathsWithKindCompressed #dstIdx #dstVal) ;
+
+                  If (##notDeferredVal `? "NormalFenceI") Then
+                    (
+                      Let normFence : NormalFenceIUnion <- #notDeferredVal `! "NormalFenceI" ;
+                      If (##normFence `? "FenceI") Then
+                        (
+                          RegWrite "rf.waitForFenceIAck" in rfTreeCompressed <- ConstBool true ;
+                          Retv
+                        ) ;
+                      writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
+                    )
+                  Else
+                    (
+                      Let cfScrCsr : CfScrCsrUnionCompressed <- #notDeferredVal `! "CfScrCsr" ;
+                      If (##cfScrCsr `? "ScrCsr") Then
+                        (
+                          Let scrCsr : ScrCsrPayloadCompressed <- #cfScrCsr `! "ScrCsr" ;
+                          Let sDest  : TaggedUnion ScrCsrIdx   <- ##scrCsr`"SpecialDest" ;
+                          Let sVal   : FullCapWithTag          <- ##scrCsr`"SpecialValue" ;
+
+                          If (#sDest `? "Scr") Then
+                            (
+                              Let scrIdx : Bit ScrIdxSz <- #sDest `! "Scr" ;
+                              writeRegsList scrPathsWithKindCompressed #scrIdx #sVal
+                            )
+                          Else
+                            (
+                              Let csrIdx : Bit CsrIdxSz <- #sDest `! "Csr" ;
+                              writeRegsList csrPathsWithKindCompressed #csrIdx ##sVal`"addr"
+                            ) ;
+                          writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
+                        )
+                      Else
+                        (
+                          Let cf     : CfPayloadCompressed <- #cfScrCsr `! "ControlFlow" ;
+                          Let newPcc : FullCapWithTag      <- ##cf`"NewPcc" ;
+                          Let cfOp   : CfOp                <- ##cf`"CfOp" ;
+
+                          If (#cfOp `? "ControlFlowAddrOnly") Then
+                            (
+                              Let addrOnlyOp : ControlFlowAddrOnlyOp <- #cfOp `! "ControlFlowAddrOnly" ;
+                              If (##addrOnlyOp `? "Branch") Then
+                                (
+                                  Let isTaken   : Bool           <- #addrOnlyOp `! "Branch" ;
+                                  Let targetPcc : FullCapWithTag <- #currPcc `{ "addr" <- ##newPcc`"addr" } ;
+                                  Let nextPcc   : FullCapWithTag <- ITE #isTaken #targetPcc #seqPcc ;
+                                  writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #nextPcc
+                                )
+                              Else
+                                (
+                                  Let targetPcc : FullCapWithTag <- #currPcc `{ "addr" <- ##newPcc`"addr" } ;
+                                  writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #targetPcc
+                                ) ;
+                              Retv
+                            )
+                          Else
+                            (
+                              Let addrECapOp : ControlFlowAddrECapOp <- #cfOp `! "ControlFlowAddrECap" ;
+                              If (##addrECapOp `? "Cjalr") Then
+                                (
+                                  Let  newMIE     : Bool           <- #addrECapOp `! "Cjalr" ;
+                                  LetA mstatus    : Bit Xlen       <- readRegsList csrPathsWithKindCompressed
+                                                                        ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+                                  Let  newMstatus : Bit Xlen       <- setMstatusMIE #mstatus #newMIE ;
+                                  Act (writeRegsList csrPathsWithKindCompressed
+                                         ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
+                                  writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #newPcc
+                                )
+                              Else
+                                (
+                                  LetA mePcc      : FullCapWithTag <- readRegsList scrPathsWithKindCompressed
+                                                                        ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) ;
+                                  LetA mstatus    : Bit Xlen       <- readRegsList csrPathsWithKindCompressed
+                                                                        ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+                                  Let  currMPIE   : Bool           <- getMstatusMPIE #mstatus ;
+                                  Let  newMstatus : Bit Xlen       <- setMstatusMIE #mstatus #currMPIE ;
+                                  Act (writeRegsList csrPathsWithKindCompressed
+                                         ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
+                                  writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #mePcc
+                                ) ;
+                              Retv
+                            ) ;
+                          Retv
+                        ) ;
+                      Retv
+                    ) ;
+                  Retv
+                ) ;
+              Retv
+            ) ;
+          Return (ITE0 #isDeferred (mkSome #deferredVal))
+        ) ;
+    Return #res.
 End ExecuteNonDeferredCompressed.
