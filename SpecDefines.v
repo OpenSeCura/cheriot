@@ -957,7 +957,8 @@ Definition rfTree : Tree Elem :=
   Node "rf" [
     Node "gprs" gprLeaves ;
     Node "scrs" scrLeaves ;
-    Node "csrs" csrLeaves
+    Node "csrs" csrLeaves ;
+    Leaf "waitForFenceIAck" (EReg (Build_Reg Bool (Some false)))
   ].
 
 Definition gprPaths : list (RegPath rfTree) :=

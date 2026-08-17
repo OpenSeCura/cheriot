@@ -100,7 +100,8 @@ Definition rfTreeCompressed : Tree Elem :=
   Node "rf" [
     Node "gprs" gprLeavesCompressed ;
     Node "scrs" scrLeavesCompressed ;
-    Node "csrs" csrLeavesCompressed
+    Node "csrs" csrLeavesCompressed ;
+    Leaf "waitForFenceIAck" (EReg (Build_Reg Bool (Some false)))
   ].
 
 (* 3. Raw RegPaths into rfTreeCompressed *)
@@ -268,6 +269,12 @@ Section ExecuteNonDeferredCompressed.
 
             If (##notDeferredVal `? "NormalFenceI") Then
               (
+                Let normFence : NormalFenceIUnion <- #notDeferredVal `! "NormalFenceI" ;
+                If (##normFence `? "FenceI") Then
+                  (
+                    RegWrite "rf.waitForFenceIAck" in rfTreeCompressed <- ConstBool true ;
+                    Retv
+                  ) ;
                 writeRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
               )
             Else

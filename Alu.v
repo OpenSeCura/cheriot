@@ -1897,6 +1897,12 @@ Section ExecuteNonDeferred.
 
             If (##notDeferredVal `? "NormalFenceI") Then
               (
+                Let normFence : NormalFenceIUnion <- #notDeferredVal `! "NormalFenceI" ;
+                If (##normFence `? "FenceI") Then
+                  (
+                    RegWrite "rf.waitForFenceIAck" in rfTree <- ConstBool true ;
+                    Retv
+                  ) ;
                 writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
               )
             Else
