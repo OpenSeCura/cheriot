@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Formal Architectural Invariant Verifier for CHERIoT ALU Datapath Specification (AluLatest.v)
-Written to verify the 6 formal architectural invariants.
+Formal Architectural Invariant Verifier for CHERIoT Functional Units Datapath Specification (FunctionalUnits.v)
+Written to verify the 7 formal architectural invariants.
 """
 
 import re
@@ -82,7 +82,7 @@ def get_all_fields_from_tree(node):
     return fields
 
 
-def parse_alu_latest(file_path):
+def parse_functional_units_spec(file_path):
     with open(file_path, "r") as f:
         content = f.read()
 
@@ -91,7 +91,7 @@ def parse_alu_latest(file_path):
     sec2_match = re.search(r"2\.\s+FUNCTIONAL UNIT/RESOURCE MAPPING\s*[-=]*\n(.*?)\*\)", content, re.DOTALL)
 
     if not sec1_match or not sec2_match:
-        print("ERROR: Could not locate Section 1 or Section 2 in Alu.v")
+        print(f"ERROR: Could not locate Section 1 or Section 2 in {file_path}")
         sys.exit(1)
 
     sec1_text = sec1_match.group(1)
@@ -278,11 +278,11 @@ def parse_alu_latest(file_path):
     return section1_groups, s2_groups_found, units, writebacks, raw_selector_tokens
 
 def run_invariant_checks():
-    spec_path = "Alu.v"
-    section1_groups, s2_groups_found, units, writebacks, raw_selector_tokens = parse_alu_latest(spec_path)
+    spec_path = "FunctionalUnits.v"
+    section1_groups, s2_groups_found, units, writebacks, raw_selector_tokens = parse_functional_units_spec(spec_path)
 
     print("=" * 80)
-    print(" FORMAL ARCHITECTURAL INVARIANT VERIFIER (Alu.v)")
+    print(" FORMAL ARCHITECTURAL INVARIANT VERIFIER (FunctionalUnits.v)")
     print("=" * 80)
 
     print("\n" + "-" * 80)

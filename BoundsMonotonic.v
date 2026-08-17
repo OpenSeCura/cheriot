@@ -1,6 +1,6 @@
 From Stdlib Require Import List String Ascii ZArith Znumtheory Zmod Lia Bool.
 From Guru Require Import Library Syntax Semantics Notations.
-From Cheriot Require Import SpecDefines Alu.
+From Cheriot Require Import SpecDefines FunctionalUnits.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
