@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Bool.
-Require Import Guru.Library Guru.Syntax Guru.Notations.
+From Guru Require Import Library Syntax Notations.
 
 Import ListNotations.
 

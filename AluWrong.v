@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List Zmod ZArith.
-Require Import Guru.Library Guru.Syntax Guru.Notations.
+From Guru Require Import Library Syntax Notations.
 
 Import ListNotations.
 
@@ -2001,7 +2001,7 @@ End MemPipeline.
 (* TODO: Pipelines (Load, LoadCap, Store, Fetch, hardware-revoker), Split binary into membanks *)
 
 (*
-Require Import Guru.Semantics.
+From Guru Require Import Semantics.
 Local Set Printing Depth 1000.
 
 Time

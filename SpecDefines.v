@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Zmod.
-Require Import Guru.Library Guru.Syntax Guru.Notations Guru.Composition.
+From Guru Require Import Library Syntax Notations Composition.
 
 Set Implicit Arguments.
 Unset Strict Implicit.

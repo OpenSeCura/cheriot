@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Zmod.
-Require Import Guru.Library Guru.Syntax Guru.Notations Guru.Composition.
+From Guru Require Import Library Syntax Notations Composition.
 From Cheriot Require Import SpecDefines Alu.
 
 Set Implicit Arguments.
