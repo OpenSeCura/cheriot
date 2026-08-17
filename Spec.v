@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Bool Psatz.
 Require Import Guru.Syntax Guru.Notations Guru.Semantics Guru.Library Guru.Composition.
-Require Import Cheriot.Alu Cheriot.Binary.
+Require Import Cheriot.AluWrong Cheriot.Binary.
 
 Set Implicit Arguments.
 Unset Strict Implicit.

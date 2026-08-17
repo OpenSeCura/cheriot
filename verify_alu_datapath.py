@@ -91,7 +91,7 @@ def parse_alu_latest(file_path):
     sec2_match = re.search(r"2\.\s+FUNCTIONAL UNIT/RESOURCE MAPPING\s*[-=]*\n(.*?)\*\)", content, re.DOTALL)
 
     if not sec1_match or not sec2_match:
-        print("ERROR: Could not locate Section 1 or Section 2 in AluLatest.v")
+        print("ERROR: Could not locate Section 1 or Section 2 in Alu.v")
         sys.exit(1)
 
     sec1_text = sec1_match.group(1)
@@ -278,11 +278,11 @@ def parse_alu_latest(file_path):
     return section1_groups, s2_groups_found, units, writebacks, raw_selector_tokens
 
 def run_invariant_checks():
-    spec_path = "AluLatest.v"
+    spec_path = "Alu.v"
     section1_groups, s2_groups_found, units, writebacks, raw_selector_tokens = parse_alu_latest(spec_path)
 
     print("=" * 80)
-    print(" FORMAL ARCHITECTURAL INVARIANT VERIFIER (AluLatest.v)")
+    print(" FORMAL ARCHITECTURAL INVARIANT VERIFIER (Alu.v)")
     print("=" * 80)
 
     print("\n" + "-" * 80)
