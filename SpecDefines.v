@@ -943,7 +943,6 @@ Definition LoadResult := STRUCT_TYPE {
   "dstIdx"     :: Bit RegIdxSz ;
   "memSize"    :: Bit LgLgNumBytesFullCapSz ;
   "isUnsigned" :: Bool ;
-  "byteOffset" :: Bit LgNumBytesFullCapSz ;
   "data"       :: Bit FullCapSz ;
   "tag"        :: Bool
 }.
