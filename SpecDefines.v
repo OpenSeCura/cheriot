@@ -953,6 +953,7 @@ Definition AluOutUnion := STRUCT_TYPE {
 
 Definition LoadResult := STRUCT_TYPE {
   "dstIdx"     :: Bit RegIdxSz ;
+  "byteOffset" :: Bit LgNumBytesFullCapSz ;
   "memSize"    :: Bit LgLgNumBytesFullCapSz ;
   "isUnsigned" :: Bool ;
   "data"       :: Bit FullCapSz ;
