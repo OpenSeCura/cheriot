@@ -406,3 +406,98 @@ Section LoadWritebackCompressed.
       (writeRegsList gprPathsWithKindCompressed #dstIdx #dstValC) ;
     Retv.
 End LoadWritebackCompressed.
+
+Section RegReadCompressedSection.
+  Variable ty : Kind -> Type.
+  Variable regReadIn : ty RegReadIn.
+
+  Definition regReadCompressed : Action ty rfTreeCompressed AluInInstGroup :=
+    Let  decodeOut  : DecodeOut             <- ##regReadIn`"decodeOut" ;
+    Let  fetchExc   : FetchException        <- ##regReadIn`"fetchExc" ;
+    Let  cs1Idx     : Bit RegIdxSzReal      <- ##decodeOut`"cs1Idx" ;
+    Let  cs2Source  : TaggedUnion Cs2Source <- ##decodeOut`"cs2Idx" ;
+
+    LetA pccC       : FullCapWithTag        <- readRegsList gprPathsWithKindCompressed ($0 : Expr ty (Bit RegIdxSzReal)) ;
+    Let  pccAddr    : Addr                  <- ##pccC`"addr" ;
+    Let  pccCap     : Cap                   <- ##pccC`"cap" ;
+    LetL pccECap    : ECap                  <- DecodeCap pccCap pccAddr ;
+    Let  pcc        : FullECapWithTag       <- STRUCT {
+                                                 "tag"  ::= ##pccC`"tag" ;
+                                                 "ecap" ::= #pccECap ;
+                                                 "addr" ::= #pccAddr
+                                               } ;
+
+    LetA cs1C       : FullCapWithTag        <- readRegsList gprPathsWithKindCompressed #cs1Idx ;
+    Let  cs1Addr    : Addr                  <- ##cs1C`"addr" ;
+    Let  cs1Cap     : Cap                   <- ##cs1C`"cap" ;
+    LetL cs1ECap    : ECap                  <- DecodeCap cs1Cap cs1Addr ;
+    Let  cs1        : FullECapWithTag       <- STRUCT {
+                                                 "tag"  ::= ##cs1C`"tag" ;
+                                                 "ecap" ::= #cs1ECap ;
+                                                 "addr" ::= #cs1Addr
+                                               } ;
+
+    LetIf cs2 : FullECapWithTag <-
+      If (#cs2Source `? "Reg") Then
+        (
+          Let  cs2Idx  : Bit RegIdxSzReal <- #cs2Source `! "Reg" ;
+          LetA cs2C    : FullCapWithTag   <- readRegsList gprPathsWithKindCompressed #cs2Idx ;
+          Let  cs2Addr : Addr             <- ##cs2C`"addr" ;
+          Let  cs2Cap  : Cap              <- ##cs2C`"cap" ;
+          LetL cs2ECap : ECap             <- DecodeCap cs2Cap cs2Addr ;
+          Let  cs2Val  : FullECapWithTag  <- STRUCT {
+                                               "tag"  ::= ##cs2C`"tag" ;
+                                               "ecap" ::= #cs2ECap ;
+                                               "addr" ::= #cs2Addr
+                                             } ;
+          Return #cs2Val
+        )
+      Else
+        (
+          Let scrCsr : TaggedUnion ScrCsrIdx <- #cs2Source `! "ScrCsr" ;
+          LetIf scrCsrVal : FullECapWithTag <-
+            If (#scrCsr `? "Scr") Then
+              (
+                Let  scrIdx  : Bit ScrIdxSz    <- #scrCsr `! "Scr" ;
+                LetA scrC    : FullCapWithTag  <- readRegsList scrPathsWithKindCompressed #scrIdx ;
+                Let  scrAddr : Addr            <- ##scrC`"addr" ;
+                Let  scrCap  : Cap             <- ##scrC`"cap" ;
+                LetL scrECap : ECap            <- DecodeCap scrCap scrAddr ;
+                Let  scrVal  : FullECapWithTag <- STRUCT {
+                                                    "tag"  ::= ##scrC`"tag" ;
+                                                    "ecap" ::= #scrECap ;
+                                                    "addr" ::= #scrAddr
+                                                  } ;
+                Return #scrVal
+              )
+            Else
+              (
+                Let  csrIdx : Bit CsrIdxSz    <- #scrCsr `! "Csr" ;
+                LetA csrVal : Bit Xlen        <- readRegsList csrPathsWithKindCompressed #csrIdx ;
+                Let  csrCap : FullECapWithTag <- STRUCT {
+                  "tag"  ::= Const ty Bool false ;
+                  "ecap" ::= Const ty ECap (getDefault _) ;
+                  "addr" ::= #csrVal
+                } ;
+                Return #csrCap
+              ) ;
+          Return #scrCsrVal
+        ) ;
+
+    LetA mstatus  : Bit Xlen <- readRegsList csrPathsWithKindCompressed ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+    Let  currMIE  : Bool     <- getMstatusMIE #mstatus ;
+
+    @Return ty rfTreeCompressed AluInInstGroup (STRUCT {
+      "cs2Idx"              ::= #cs2Source ;
+      "writesCd"            ::= ##decodeOut`"writesCd" ;
+      "inst"                ::= ##decodeOut`"instBits" ;
+      "decodeExc"           ::= ##decodeOut`"decodeExc" ;
+      "fetchExc"            ::= #fetchExc ;
+      "pcc"                 ::= #pcc ;
+      "cs1"                 ::= #cs1 ;
+      "cs2"                 ::= #cs2 ;
+      "currInterruptStatus" ::= #currMIE ;
+      "instGroup"           ::= ##decodeOut`"instGroup" ;
+      "isFenceIAck"         ::= ##regReadIn`"isFenceIAck"
+    }).
+End RegReadCompressedSection.
