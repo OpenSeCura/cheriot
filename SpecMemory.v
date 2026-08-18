@@ -124,7 +124,7 @@ Section MemoryModel.
     Definition readInstRq (addr : Expr ty Addr) : Action ty memoryTree (Bit 0) :=
       Let is_valid : Bool <- isMemAddr addr ;
       If #is_valid Then (
-        Let offset : Addr <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr))) ;
+        Let offset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) addr ;
         RegRead memVal <- "mem.mainMem" in memoryTree ;
         Let instBytes : Array (Z.to_nat (InstSz / 8)) (Bit 8) <- slice #memVal #offset (Z.to_nat (InstSz / 8)) ;
         RegWrite "mem.instRpReg" in memoryTree <- ToBit #instBytes ;
@@ -143,7 +143,7 @@ Section MemoryModel.
     Definition readBytesRq (addr : Expr ty Addr) : Action ty memoryTree (Bit 0) :=
       Let is_valid : Bool <- isMemAddr addr ;
       If #is_valid Then (
-        Let offset : Addr <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr))) ;
+        Let offset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) addr ;
         RegRead memVal <- "mem.mainMem" in memoryTree ;
         Let dataBytes : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <- slice #memVal #offset (Z.to_nat NumBytesFullCapSz) ;
         RegWrite "mem.bytesRpReg" in memoryTree <- ToBit #dataBytes ;
@@ -162,7 +162,7 @@ Section MemoryModel.
     Definition readTagRq (addr : Expr ty (Bit TagAddrWidth)) : Action ty memoryTree (Bit 0) :=
       Let is_valid : Bool <- isTagsAddr addr ;
       If #is_valid Then (
-        Let offset : Bit TagAddrWidth <- Sub addr (Const ty (Bit TagAddrWidth) (bits.of_Z TagAddrWidth tagsStartAddr)) ;
+        Let offset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) addr ;
         RegRead tagsVal <- "mem.tags" in memoryTree ;
         RegWrite "mem.tagRpReg" in memoryTree <- (ReadArray #tagsVal #offset) ;
         Retv
@@ -189,7 +189,7 @@ Section MemoryModel.
     Definition writeBytes (addr : Expr ty Addr) (data : Expr ty (Bit FullCapSz)) (memSize : Expr ty (Bit LgLgNumBytesFullCapSz)) : Action ty memoryTree (Bit 0) :=
       Let is_valid : Bool <- isMemAddr addr ;
       If #is_valid Then (
-        Let offset : Addr <- Sub addr (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr))) ;
+        Let offset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) addr ;
         Let num_bytes : Bit (LgNumBytesFullCapSz + 1) <- Sll $1 memSize ;
         RegRead memVal <- "mem.mainMem" in memoryTree ;
         LetL updatedMem : Array config.(mainMemSize) (Bit 8) <-
@@ -202,7 +202,7 @@ Section MemoryModel.
     Definition writeTag (addr : Expr ty (Bit TagAddrWidth)) (tag : Expr ty Bool) : Action ty memoryTree (Bit 0) :=
       Let is_valid : Bool <- isTagsAddr addr ;
       If #is_valid Then (
-        Let offset : Bit TagAddrWidth <- Sub addr (Const ty (Bit TagAddrWidth) (bits.of_Z TagAddrWidth tagsStartAddr)) ;
+        Let offset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) addr ;
         RegRead tagsVal <- "mem.tags" in memoryTree ;
         RegWrite "mem.tags" in memoryTree <- UpdateArray #tagsVal #offset tag ;
         Retv
