@@ -951,14 +951,6 @@ Definition AluOutUnion := STRUCT_TYPE {
   "isFenceIAck" :: Bool
 }.
 
-Definition LoadResult := STRUCT_TYPE {
-  "dstIdx"     :: Bit RegIdxSz ;
-  "byteOffset" :: Bit LgNumBytesFullCapSz ;
-  "memSize"    :: Bit LgLgNumBytesFullCapSz ;
-  "isUnsigned" :: Bool ;
-  "data"       :: Bit FullCapSz ;
-  "tag"        :: Bool
-}.
 Definition StoredCapWithTag (compressed : bool) : Kind :=
   if compressed then FullCapWithTag else FullECapWithTag.
 

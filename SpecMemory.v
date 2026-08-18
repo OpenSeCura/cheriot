@@ -30,31 +30,31 @@ Local Open Scope guru_scope.
 Definition TagAddrWidth : Z := AddrSz - LgNumBytesFullCapSz.
 
 Record MemIfc {ty: Kind -> Type} := {
-  mem_t : Tree Elem ;
+  memTree : Tree Elem ;
 
   (* Instruction memory channel *)
-  mem_readInstRq   : Expr ty Addr -> Action ty mem_t (Bit 0) ;
-  mem_readInstRp   : Action ty mem_t (Option Inst) ;
+  mem_readInstRq   : Expr ty Addr -> Action ty memTree (Bit 0) ;
+  mem_readInstRp   : Action ty memTree (Option Inst) ;
 
   (* Data memory bytes channel (FullCapSz = 64 bits = 8 bytes) *)
-  mem_readBytesRq  : Expr ty Addr -> Action ty mem_t (Bit 0) ;
-  mem_readBytesRp  : Action ty mem_t (Option (Bit FullCapSz)) ;
+  mem_readBytesRq  : Expr ty Addr -> Action ty memTree (Bit 0) ;
+  mem_readBytesRp  : Action ty memTree (Option (Bit FullCapSz)) ;
 
   (* Capability tag memory channel *)
-  mem_readTagRq    : Expr ty (Bit TagAddrWidth) -> Action ty mem_t (Bit 0) ;
-  mem_readTagRp    : Action ty mem_t (Option Bool) ;
+  mem_readTagRq    : Expr ty (Bit TagAddrWidth) -> Action ty memTree (Bit 0) ;
+  mem_readTagRp    : Action ty memTree (Option Bool) ;
 
   (* Revocation bit memory channel *)
-  mem_readRevBitRq : Expr ty (Bit (AddrSz + 1)) -> Action ty mem_t (Bit 0) ;
-  mem_readRevBitRp : Action ty mem_t (Option Bool) ;
+  mem_readRevBitRq : Expr ty (Bit (AddrSz + 1)) -> Action ty memTree (Bit 0) ;
+  mem_readRevBitRp : Action ty memTree (Option Bool) ;
 
   (* Memory write channels *)
-  mem_writeBytes   : Expr ty Addr -> Expr ty (Bit FullCapSz) -> Expr ty (Bit LgLgNumBytesFullCapSz) -> Action ty mem_t (Bit 0) ;
-  mem_writeTag     : Expr ty (Bit (AddrSz - LgNumBytesFullCapSz)) -> Expr ty Bool -> Action ty mem_t (Bit 0) ;
+  mem_writeBytes   : Expr ty Addr -> Expr ty (Bit FullCapSz) -> Expr ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree (Bit 0) ;
+  mem_writeTag     : Expr ty (Bit (AddrSz - LgNumBytesFullCapSz)) -> Expr ty Bool -> Action ty memTree (Bit 0) ;
 
   (* FENCE.I synchronization channel *)
-  mem_fenceI_req   : Action ty mem_t (Bit 0) ;
-  mem_fenceI_ack   : Action ty mem_t Bool ;
+  mem_fenceI_req   : Action ty memTree (Bit 0) ;
+  mem_fenceI_ack   : Action ty memTree Bool ;
 
   (* Memory alignment / rotation flag *)
   mem_needsRotation : bool
@@ -268,7 +268,7 @@ Section MemoryModel.
 
     (* 7. Top-level MemIfc Instance *)
     Definition specMemIfc : @MemIfc ty := {|
-      mem_t             := memoryTree ;
+      memTree           := memoryTree ;
       mem_readInstRq    := readInstRq ;
       mem_readInstRp    := readInstRp ;
       mem_readBytesRq   := readBytesRq ;

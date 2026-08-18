@@ -426,24 +426,6 @@ Section AluRF.
     | false => RetE #ecapVal
     end.
 
-  Definition loadStoredCapWithTag (tag isCap : ty Bool) (ldAddr : ty Addr) (ldCap : ty Cap)
-    : LetExpr ty (StoredCapWithTag compressed) :=
-    match compressed as b return LetExpr ty (StoredCapWithTag b) with
-    | true  =>
-        @RetE _ FullCapWithTag (STRUCT {
-          "tag"  ::= And [ #tag ; #isCap ] ;
-          "cap"  ::= ITE0 #isCap #ldCap ;
-          "addr" ::= #ldAddr
-        })
-    | false =>
-        LETE ldECap : ECap <- DecodeCap ldCap ldAddr ;
-        @RetE _ FullECapWithTag (STRUCT {
-          "tag"  ::= And [ #tag ; #isCap ] ;
-          "ecap" ::= ITE0 #isCap #ldECap ;
-          "addr" ::= #ldAddr
-        })
-    end.
-
   Definition writeGpr {sz} (idx : Expr ty (Bit sz)) (val : Expr ty FullECapWithTag)
     : Action ty (rfTree compressed) (Bit 0) :=
     Let v : FullECapWithTag <- val ;
@@ -619,28 +601,6 @@ Section AluRF.
           Return (ITE0 #isDeferred (mkSome #deferredVal))
         ) ;
     Return #res.
-
-  Definition loadWriteback (loadRes : ty LoadResult) : Action ty (rfTree compressed) (Bit 0) :=
-    Let  dstIdx     : Bit RegIdxSz              <- ##loadRes`"dstIdx" ;
-    Let  memSize    : Bit LgLgNumBytesFullCapSz <- ##loadRes`"memSize" ;
-    Let  isUnsigned : Bool                      <- ##loadRes`"isUnsigned" ;
-    Let  rawData    : Bit FullCapSz             <- ##loadRes`"data" ;
-    Let  tag        : Bool                      <- ##loadRes`"tag" ;
-
-    Let  isCap      : Bool                                       <- Eq #memSize $LgNumBytesFullCapSz ;
-    Let  memSzBytes : Bit (LgNumBytesFullCapSz + 1)              <- Sll $1 #memSize ;
-    Let  bytes      : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <- FromBit _ #rawData ;
-    Let  readBits   : Bit FullCapSz    <- ToBit (ITE #isUnsigned
-                                                    (ArrayZeroExtend #memSzBytes #bytes)
-                                                    (ArraySignExtend #memSzBytes #bytes)) ;
-
-    Let  ldAddr     : Addr             <- TruncLsb Xlen Xlen #readBits ;
-    Let  ldCap      : Cap              <- FromBit Cap (TruncMsb Xlen Xlen #readBits) ;
-    LetL dstVal     : StoredCapWithTag compressed <- loadStoredCapWithTag tag isCap ldAddr ldCap ;
-
-    If (isNotZero #dstIdx) Then
-      (writeRegsList (gprPathsWithKind compressed) #dstIdx #dstVal) ;
-    Retv.
 
   Definition regRead (regReadIn : ty RegReadIn) : Action ty (rfTree compressed) AluInInstGroup :=
     Let  decodeOut  : DecodeOut             <- ##regReadIn`"decodeOut" ;
