@@ -386,7 +386,7 @@ Section LoadWritebackCompressed.
     Let  rawData    : Bit FullCapSz             <- ##loadRes`"data" ;
     Let  tag        : Bool                      <- ##loadRes`"tag" ;
 
-    Let  isCap      : Bool                                       <- isAllOnes #memSize ;
+    Let  isCap      : Bool                                       <- Eq #memSize $LgNumBytesFullCapSz ;
     Let  memSzBytes : Bit (LgNumBytesFullCapSz + 1)              <- Sll $1 #memSize ;
     Let  bytes      : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <- FromBit _ #rawData ;
 

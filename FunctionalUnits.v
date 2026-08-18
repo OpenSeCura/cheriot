@@ -1331,7 +1331,7 @@ Section FunctionalUnits.
     LetE cs1Otype  : Bit CapOTypeSz <- ##ecap`"oType" ;
     LetE cs1Sealed : Bool           <- isNotZero #cs1Otype ;
 
-    LetE isCap : Bool <- Eq #memSize $3 ;
+    LetE isCap : Bool <- Eq #memSize $LgNumBytesFullCapSz ;
 
     (* 1. Exception Conditions (in Priority Order) *)
     LetE tagExc      : Bool <- Not #cs1Tag ;
@@ -1340,7 +1340,7 @@ Section FunctionalUnits.
     LetE permExc     : Bool <- Not #hasPerm ;
     LetE storeCapExc : Bool <- And [ #isStore; #isCap; Not (##cs1Perms`"MC") ] ;
     LetE boundsExc   : Bool <- Not #inBounds ;
-    LetE alignExc    : Bool <- And [ #isCap; isNotZero (#addr`[2:0]) ] ; (* Misaligned ONLY for caps *)
+    LetE alignExc    : Bool <- And [ #isCap; isNotZero (TruncLsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz #addr) ] ; (* Misaligned ONLY for caps *)
 
     (* 2. Payload & ExceptionInfo Constructors *)
     LetE permCause   : Bit 5 <- ITE #isStore $CapEx_PermitStoreViolation $CapEx_PermitLoadViolation ;
@@ -1397,8 +1397,9 @@ Section FunctionalUnits.
     LetE mtvalZero      : CheriMtval <- mkCheriMtval (ConstBool false) $0 $0 ;
     LetE mtvalAsr       : CheriMtval <- mkCheriMtval (ConstBool true) #scrIdx $CapEx_AccessSystemRegsViolation ;
 
-    LetE sysCallExc : Option ExceptionInfo <-
-      Or [ ITE0 #isECall (mkSome (mkExceptionInfo $EXC_ECallM #mtvalZero)) ;
+    LetE otherExc : Option ExceptionInfo <-
+      Or [ ITE0 #isMemOp #memExcOut ;
+           ITE0 #isECall (mkSome (mkExceptionInfo $EXC_ECallM #mtvalZero)) ;
            ITE0 #isEBreak (mkSome (mkExceptionInfo $EXC_Breakpoint #mtvalZero)) ] ;
 
     (* 3. Strict Priority Cascade *)
@@ -1415,9 +1416,7 @@ Section FunctionalUnits.
                 (mkSome (mkExceptionInfo $EXC_IllegalInst #mtvalZero))
                 (ITE #asrViolation
                   (mkSome (mkExceptionInfo $EXC_CHERI #mtvalAsr))
-                  (ITE #isMemOp
-                    #memExcOut
-                    #sysCallExc))))))
+                  #otherExc)))))
     ).
 
   Definition ControlFlow (isMret isCjal isCjalr isBranch : ty Bool)
