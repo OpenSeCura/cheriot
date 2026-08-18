@@ -68,14 +68,39 @@ Record MemIfc {mem_t: Tree Elem} {ty: Kind -> Type} := {
 Definition fixedBinary : list (bits 8) := map (fun v => bits.of_Z 8 v) binary.
 
 Record MainMemConfig := {
-  mainMemStartAddr : Z ;
-  mainMemSize : nat ;
-  mainMemBoundProof : Is_true (mainMemStartAddr + Z.of_nat mainMemSize <? Z.shiftl 1 Xlen)%Z ;
-  lgMainMemSize_ge_binary : Is_true (length binary <=? mainMemSize)%nat
+  mainMemStartAddr        : Z ;
+  mainMemSize             : nat ;
+  mainMemBoundProof       : Is_true (mainMemStartAddr + Z.of_nat mainMemSize <? Z.shiftl 1 Xlen)%Z ;
+  lgMainMemSize_ge_binary : Is_true (length binary <=? mainMemSize)%nat ;
+
+  (* Heap & Revocation Configuration *)
+  heapStartAddr           : Z ;
+  heapSize                : nat ; (* Size of the heap in bytes *)
+  lgRevGranularity        : Z ;   (* e.g. 3 for 8-byte capability granularity *)
+  revTableStartAddr       : Z ;   (* Base address of the revocation bitmap in mainMem *)
+
+  (* 1. Heap is strictly inside mainMem *)
+  heap_in_mainMem_proof :
+    Is_true ((mainMemStartAddr <=? heapStartAddr) &&
+             (heapStartAddr + Z.of_nat heapSize <=? mainMemStartAddr + Z.of_nat mainMemSize))%Z ;
+
+  (* 2. Revocation table is strictly inside mainMem *)
+  revTable_in_mainMem_proof :
+    Is_true ((mainMemStartAddr <=? revTableStartAddr) &&
+             (revTableStartAddr + Z.shiftr (Z.of_nat heapSize) (lgRevGranularity + 3)
+              <=? mainMemStartAddr + Z.of_nat mainMemSize))%Z ;
+
+  (* 3. Revocation table and heap are non-overlapping *)
+  revTable_heap_disjoint_proof :
+    Is_true ((revTableStartAddr + Z.shiftr (Z.of_nat heapSize) (lgRevGranularity + 3) <=? heapStartAddr) ||
+             (heapStartAddr + Z.of_nat heapSize <=? revTableStartAddr))%Z
 }.
 
 Section MemoryModel.
   Variable config : MainMemConfig.
+
+  Definition heapEndAddr :=
+    config.(heapStartAddr) + Z.of_nat config.(heapSize).
 
   Definition paddedBinary :=
     (fixedBinary ++ List.repeat (bits.of_Z 8 0) (config.(mainMemSize) - length binary))%list.
@@ -119,6 +144,10 @@ Section MemoryModel.
 
     Definition isTagsAddr (a : Expr ty (Bit TagAddrWidth)) : Expr ty Bool :=
       Sge a (Const ty (Bit TagAddrWidth) (bits.of_Z TagAddrWidth tagsStartAddr)).
+
+    Definition isHeapAddr (a : Expr ty (Bit (AddrSz + 1))) : Expr ty Bool :=
+      And [ Sge a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;
+            Slt a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) heapEndAddr)) ].
 
     (* 1. Instruction Memory Channel *)
     Definition readInstRq (addr : Expr ty Addr) : Action ty memoryTree (Bit 0) :=
@@ -177,9 +206,35 @@ Section MemoryModel.
       Return #tagVal.
 
     (* 4. Revocation Bit Channel *)
-    Definition readRevBitRq (addr : Expr ty (Bit (AddrSz + 1))) : Action ty memoryTree (Bit 0) :=
-      RegWrite "mem.revBitRpReg" in memoryTree <- ConstBool false ;
-      Retv.
+    Definition readRevBitRq (base : Expr ty (Bit (AddrSz + 1))) : Action ty memoryTree (Bit 0).
+    refine (
+      Let is_heap : Bool <- isHeapAddr base ;
+      If #is_heap Then (
+        Let heapOffset : Bit (AddrSz + 1) <-
+          Sub base (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;
+        Let castHeapOffset <- castBits _ #heapOffset ;
+        Let totalBitIdx : Bit ((AddrSz + 1) - config.(lgRevGranularity)) <-
+          TruncMsb ((AddrSz + 1) - config.(lgRevGranularity)) config.(lgRevGranularity) #castHeapOffset ;
+        Let castTotalBitIdx <- castBits _ #totalBitIdx ;
+        Let byteIdxInTable : Bit (((AddrSz + 1) - config.(lgRevGranularity)) - 3) <-
+          TruncMsb (((AddrSz + 1) - config.(lgRevGranularity)) - 3) 3 #castTotalBitIdx ;
+        Let byteIdxExt : Bit AddrSz <- castBits _ (ZeroExtendTo AddrSz #byteIdxInTable) ;
+        Let revByteAddr : Addr <-
+          Add [ Const ty Addr (bits.of_Z Xlen config.(revTableStartAddr)) ; #byteIdxExt ] ;
+        Let bitInByte : Bit 3 <-
+          TruncLsb (((AddrSz + 1) - config.(lgRevGranularity)) - 3) 3 #castTotalBitIdx ;
+        Let offset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) #revByteAddr ;
+        RegRead memVal <- "mem.mainMem" in memoryTree ;
+        Let byteVal : Bit 8 <- ReadArray #memVal #offset ;
+        Let revBit  : Bool  <- ReadArray (FromBit (Array 8 Bool) #byteVal) #bitInByte ;
+        RegWrite "mem.revBitRpReg" in memoryTree <- #revBit ;
+        Retv
+      ) Else (
+        RegWrite "mem.revBitRpReg" in memoryTree <- ConstBool false ;
+        Retv
+      ) ;
+      Retv); abstract lia.
+    Defined.
 
     Definition readRevBitRp : Action ty memoryTree Bool :=
       RegRead revVal <- "mem.revBitRpReg" in memoryTree ;
