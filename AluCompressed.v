@@ -279,7 +279,7 @@ Section ExecuteNonDeferredCompressed.
                 (
                   Let notDeferredVal : NotDeferredUnionCompressed <- #noExc `! "NotDeferred" ;
 
-                  If (Not (Eq #dstIdx $0)) Then
+                  If (isNotZero #dstIdx) Then
                     (writeRegsList gprPathsWithKindCompressed #dstIdx #dstVal) ;
 
                   If (##notDeferredVal `? "NormalFenceI") Then

@@ -452,7 +452,7 @@ Section ExecuteNonDeferred.
                 (
                   Let notDeferredVal : NotDeferredUnion <- #noExc `! "NotDeferred" ;
 
-                  If (Not (Eq #dstIdx $0)) Then
+                  If (isNotZero #dstIdx) Then
                     (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
 
                   If (##notDeferredVal `? "NormalFenceI") Then
