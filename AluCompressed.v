@@ -375,3 +375,35 @@ Section ExecuteNonDeferredCompressed.
         ) ;
     Return #res.
 End ExecuteNonDeferredCompressed.
+
+Section LoadWritebackCompressed.
+  Variable ty : Kind -> Type.
+
+  Definition loadWritebackCompressed (loadRes : ty LoadResult) : Action ty rfTreeCompressed (Bit 0) :=
+    Let  dstIdx     : Bit RegIdxSz             <- ##loadRes`"dstIdx" ;
+    Let  memSize    : Bit LgLgNumBytesFullCapSz <- ##loadRes`"memSize" ;
+    Let  isUnsigned : Bool                      <- ##loadRes`"isUnsigned" ;
+    Let  byteOffset : Bit LgNumBytesFullCapSz   <- ##loadRes`"byteOffset" ;
+    Let  rawData    : Bit FullCapSz             <- ##loadRes`"data" ;
+    Let  tag        : Bool                      <- ##loadRes`"tag" ;
+
+    Let  isCap      : Bool                      <- isAllOnes #memSize ;
+    Let  memSzBytes : Bit (LgNumBytesFullCapSz + 1) <- Sll $1 #memSize ;
+    Let  bytes      : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <- FromBit _ #rawData ;
+    Let  rotBytes   : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <- ArrayRotr 8 #bytes #byteOffset ;
+    Let  readBitsFixed : Bit FullCapSz          <- ToBit (ITE #isUnsigned
+                                                            (ArrayZeroExtend #memSzBytes #rotBytes)
+                                                            (ArraySignExtend #memSzBytes #rotBytes)) ;
+    Let  ldAddr     : Addr                      <- TruncLsb Xlen Xlen #readBitsFixed ;
+    Let  ldCap      : Cap                       <- FromBit Cap (TruncMsb Xlen Xlen #readBitsFixed) ;
+
+    Let  dstValC    : FullCapWithTag            <- STRUCT {
+                                                     "tag"  ::= And [#tag; #isCap] ;
+                                                     "cap"  ::= ITE0 #isCap #ldCap ;
+                                                     "addr" ::= #ldAddr
+                                                   } ;
+
+    If (isNotZero #dstIdx) Then
+      (writeRegsList gprPathsWithKindCompressed #dstIdx #dstValC) ;
+    Retv.
+End LoadWritebackCompressed.

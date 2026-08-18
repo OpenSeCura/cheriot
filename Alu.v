@@ -548,3 +548,36 @@ Section ExecuteNonDeferred.
         ) ;
     Return #res.
 End ExecuteNonDeferred.
+
+Section LoadWriteback.
+  Variable ty : Kind -> Type.
+
+  Definition loadWriteback (loadRes : ty LoadResult) : Action ty rfTree (Bit 0) :=
+    Let  dstIdx     : Bit RegIdxSz             <- ##loadRes`"dstIdx" ;
+    Let  memSize    : Bit LgLgNumBytesFullCapSz <- ##loadRes`"memSize" ;
+    Let  isUnsigned : Bool                      <- ##loadRes`"isUnsigned" ;
+    Let  byteOffset : Bit LgNumBytesFullCapSz   <- ##loadRes`"byteOffset" ;
+    Let  rawData    : Bit FullCapSz             <- ##loadRes`"data" ;
+    Let  tag        : Bool                      <- ##loadRes`"tag" ;
+
+    Let  isCap      : Bool                      <- isAllOnes #memSize ;
+    Let  memSzBytes : Bit (LgNumBytesFullCapSz + 1) <- Sll $1 #memSize ;
+    Let  bytes      : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <- FromBit _ #rawData ;
+    Let  rotBytes   : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <- ArrayRotr 8 #bytes #byteOffset ;
+    Let  readBitsFixed : Bit FullCapSz          <- ToBit (ITE #isUnsigned
+                                                            (ArrayZeroExtend #memSzBytes #rotBytes)
+                                                            (ArraySignExtend #memSzBytes #rotBytes)) ;
+    Let  ldAddr     : Addr                      <- TruncLsb Xlen Xlen #readBitsFixed ;
+    Let  ldCap      : Cap                       <- FromBit Cap (TruncMsb Xlen Xlen #readBitsFixed) ;
+    LetL ldECap     : ECap                      <- DecodeCap ldCap ldAddr ;
+
+    Let  dstVal     : FullECapWithTag           <- STRUCT {
+                                                     "tag"  ::= And [#tag; #isCap] ;
+                                                     "ecap" ::= ITE0 #isCap #ldECap ;
+                                                     "addr" ::= #ldAddr
+                                                   } ;
+
+    If (isNotZero #dstIdx) Then
+      (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
+    Retv.
+End LoadWriteback.

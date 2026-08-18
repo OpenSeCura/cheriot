@@ -938,6 +938,15 @@ Definition AluOutUnion := STRUCT_TYPE {
   "Op"          :: AluOpUnion ;
   "isFenceIAck" :: Bool
 }.
+
+Definition LoadResult := STRUCT_TYPE {
+  "dstIdx"     :: Bit RegIdxSz ;
+  "memSize"    :: Bit LgLgNumBytesFullCapSz ;
+  "isUnsigned" :: Bool ;
+  "byteOffset" :: Bit LgNumBytesFullCapSz ;
+  "data"       :: Bit FullCapSz ;
+  "tag"        :: Bool
+}.
 (* ===========================================================================
    REGISTER FILE SUBTREE AND REGPATH DEFINITIONS (UNCOMPRESSED)
    =========================================================================== *)
