@@ -27,13 +27,16 @@ Local Open Scope Z_scope.
 Local Open Scope guru_scope.
 
 Definition getMemOffset {ty: Kind -> Type} (startAddr: Z) (size: Z) n (addr: Expr ty (Bit n)) :
-  Expr ty (Bit (Z.log2_up size)) :=
-  (let castAddr := castBits (ltac:(lia): (n = Z.log2_up size + (n - Z.log2_up size))%Z) addr in
+  Expr ty (Bit (Z.log2_up size)).
+  refine
+  (let castAddr := castBits _ addr in
    if Z.eqb (startAddr mod (2 ^ Z.log2_up size)) 0
    then
      TruncLsb (n - Z.log2_up size) (Z.log2_up size) castAddr
    else
-     TruncLsb (n - Z.log2_up size) (Z.log2_up size) (Sub castAddr $startAddr))%guru.
+     TruncLsb (n - Z.log2_up size) (Z.log2_up size) (Sub castAddr $startAddr))%guru;
+    abstract lia.
+  Defined.
 
 Definition Xlen         := 32.
 Definition InstSz       := 32.
