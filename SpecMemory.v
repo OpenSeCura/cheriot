@@ -27,30 +27,25 @@ Local Open Scope Z_scope.
 Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
-(* ===========================================================================
-   GENERIC MEMORY INTERFACE RECORD (MemIfc)
-   All read channels are split into Request (Rq) and Response (Rp) stages.
-   =========================================================================== *)
-
-Definition TagAddrWidth : Z   := AddrSz - LgNumBytesFullCapSz.
+Definition TagAddrWidth : Z := AddrSz - LgNumBytesFullCapSz.
 
 #[projections(primitive)]
 Record MemIfc {mem_t: Tree Elem} {ty: Kind -> Type} := {
   (* Instruction memory channel *)
   mem_readInstRq   : Expr ty Addr -> Action ty mem_t (Bit 0) ;
-  mem_readInstRp   : Action ty mem_t Inst ;
+  mem_readInstRp   : Action ty mem_t (Option Inst) ;
 
   (* Data memory bytes channel (FullCapSz = 64 bits = 8 bytes) *)
   mem_readBytesRq  : Expr ty Addr -> Action ty mem_t (Bit 0) ;
-  mem_readBytesRp  : Action ty mem_t (Bit FullCapSz) ;
+  mem_readBytesRp  : Action ty mem_t (Option (Bit FullCapSz)) ;
 
   (* Capability tag memory channel *)
   mem_readTagRq    : Expr ty (Bit TagAddrWidth) -> Action ty mem_t (Bit 0) ;
-  mem_readTagRp    : Action ty mem_t Bool ;
+  mem_readTagRp    : Action ty mem_t (Option Bool) ;
 
   (* Revocation bit memory channel *)
   mem_readRevBitRq : Expr ty (Bit (AddrSz + 1)) -> Action ty mem_t (Bit 0) ;
-  mem_readRevBitRp : Action ty mem_t Bool ;
+  mem_readRevBitRp : Action ty mem_t (Option Bool) ;
 
   (* Memory write channels *)
   mem_writeBytes   : Expr ty Addr -> Expr ty (Bit FullCapSz) -> Expr ty (Bit LgLgNumBytesFullCapSz) -> Action ty mem_t (Bit 0) ;
@@ -58,7 +53,10 @@ Record MemIfc {mem_t: Tree Elem} {ty: Kind -> Type} := {
 
   (* FENCE.I synchronization channel *)
   mem_fenceI_req   : Action ty mem_t (Bit 0) ;
-  mem_fenceI_ack   : Action ty mem_t Bool
+  mem_fenceI_ack   : Action ty mem_t Bool ;
+
+  (* Memory alignment / rotation flag *)
+  mem_needsRotation : bool
 }.
 
 (* ===========================================================================
@@ -67,7 +65,7 @@ Record MemIfc {mem_t: Tree Elem} {ty: Kind -> Type} := {
 
 Definition fixedBinary : list (bits 8) := map (fun v => bits.of_Z 8 v) binary.
 
-Record MainMemConfig := {
+Record MemConfig := {
   mainMemStartAddr        : Z ;
   mainMemSize             : nat ;
   mainMemBoundProof       : Is_true (mainMemStartAddr + Z.of_nat mainMemSize <? Z.shiftl 1 Xlen)%Z ;
@@ -75,29 +73,25 @@ Record MainMemConfig := {
 
   (* Heap & Revocation Configuration *)
   heapStartAddr           : Z ;
-  heapSize                : nat ; (* Size of the heap in bytes *)
-  lgRevGranularity        : Z ;   (* e.g. 3 for 8-byte capability granularity *)
-  revTableStartAddr       : Z ;   (* Base address of the revocation bitmap in mainMem *)
+  heapSize                : nat ;
+  lgRevGranularity        : Z ;
+  revTableStartAddr       : Z ;
 
-  (* 1. Heap is strictly inside mainMem *)
+  (* Proofs *)
   heap_in_mainMem_proof :
     Is_true ((mainMemStartAddr <=? heapStartAddr) &&
              (heapStartAddr + Z.of_nat heapSize <=? mainMemStartAddr + Z.of_nat mainMemSize))%Z ;
-
-  (* 2. Revocation table is strictly inside mainMem *)
   revTable_in_mainMem_proof :
     Is_true ((mainMemStartAddr <=? revTableStartAddr) &&
              (revTableStartAddr + Z.shiftr (Z.of_nat heapSize) (lgRevGranularity + 3)
               <=? mainMemStartAddr + Z.of_nat mainMemSize))%Z ;
-
-  (* 3. Revocation table and heap are non-overlapping *)
   revTable_heap_disjoint_proof :
     Is_true ((revTableStartAddr + Z.shiftr (Z.of_nat heapSize) (lgRevGranularity + 3) <=? heapStartAddr) ||
              (heapStartAddr + Z.of_nat heapSize <=? revTableStartAddr))%Z
 }.
 
 Section MemoryModel.
-  Variable config : MainMemConfig.
+  Variable config : MemConfig.
 
   Definition heapEndAddr :=
     config.(heapStartAddr) + Z.of_nat config.(heapSize).
@@ -164,9 +158,9 @@ Section MemoryModel.
       ) ;
       Retv.
 
-    Definition readInstRp : Action ty memoryTree Inst :=
+    Definition readInstRp : Action ty memoryTree (Option Inst) :=
       RegRead instVal <- "mem.instRpReg" in memoryTree ;
-      Return #instVal.
+      Return (mkSome #instVal).
 
     (* 2. Data Bytes Memory Channel *)
     Definition readBytesRq (addr : Expr ty Addr) : Action ty memoryTree (Bit 0) :=
@@ -183,9 +177,9 @@ Section MemoryModel.
       ) ;
       Retv.
 
-    Definition readBytesRp : Action ty memoryTree (Bit FullCapSz) :=
+    Definition readBytesRp : Action ty memoryTree (Option (Bit FullCapSz)) :=
       RegRead bytesVal <- "mem.bytesRpReg" in memoryTree ;
-      Return #bytesVal.
+      Return (mkSome #bytesVal).
 
     (* 3. Tag Memory Channel *)
     Definition readTagRq (addr : Expr ty (Bit TagAddrWidth)) : Action ty memoryTree (Bit 0) :=
@@ -201,9 +195,9 @@ Section MemoryModel.
       ) ;
       Retv.
 
-    Definition readTagRp : Action ty memoryTree Bool :=
+    Definition readTagRp : Action ty memoryTree (Option Bool) :=
       RegRead tagVal <- "mem.tagRpReg" in memoryTree ;
-      Return #tagVal.
+      Return (mkSome #tagVal).
 
     (* 4. Revocation Bit Channel *)
     Definition readRevBitRq (base : Expr ty (Bit (AddrSz + 1))) : Action ty memoryTree (Bit 0).
@@ -236,9 +230,9 @@ Section MemoryModel.
       Retv); abstract lia.
     Defined.
 
-    Definition readRevBitRp : Action ty memoryTree Bool :=
+    Definition readRevBitRp : Action ty memoryTree (Option Bool) :=
       RegRead revVal <- "mem.revBitRpReg" in memoryTree ;
-      Return #revVal.
+      Return (mkSome #revVal).
 
     (* 5. Memory Write Operations *)
     Definition writeBytes (addr : Expr ty Addr) (data : Expr ty (Bit FullCapSz)) (memSize : Expr ty (Bit LgLgNumBytesFullCapSz)) : Action ty memoryTree (Bit 0) :=
@@ -273,18 +267,19 @@ Section MemoryModel.
 
     (* 7. Top-level MemIfc Instance *)
     Definition specMemIfc : @MemIfc memoryTree ty := {|
-      mem_readInstRq   := readInstRq ;
-      mem_readInstRp   := readInstRp ;
-      mem_readBytesRq  := readBytesRq ;
-      mem_readBytesRp  := readBytesRp ;
-      mem_readTagRq    := readTagRq ;
-      mem_readTagRp    := readTagRp ;
-      mem_readRevBitRq := readRevBitRq ;
-      mem_readRevBitRp := readRevBitRp ;
-      mem_writeBytes   := writeBytes ;
-      mem_writeTag     := writeTag ;
-      mem_fenceI_req   := fenceI_req ;
-      mem_fenceI_ack   := fenceI_ack
+      mem_readInstRq    := readInstRq ;
+      mem_readInstRp    := readInstRp ;
+      mem_readBytesRq   := readBytesRq ;
+      mem_readBytesRp   := readBytesRp ;
+      mem_readTagRq     := readTagRq ;
+      mem_readTagRp     := readTagRp ;
+      mem_readRevBitRq  := readRevBitRq ;
+      mem_readRevBitRp  := readRevBitRp ;
+      mem_writeBytes    := writeBytes ;
+      mem_writeTag      := writeTag ;
+      mem_fenceI_req    := fenceI_req ;
+      mem_fenceI_ack    := fenceI_ack ;
+      mem_needsRotation := false
     |}.
   End Ty.
 End MemoryModel.
