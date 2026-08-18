@@ -29,8 +29,9 @@ Local Open Scope guru_scope.
 
 Definition TagAddrWidth : Z := AddrSz - LgNumBytesFullCapSz.
 
-#[projections(primitive)]
-Record MemIfc {mem_t: Tree Elem} {ty: Kind -> Type} := {
+Record MemIfc {ty: Kind -> Type} := {
+  mem_t : Tree Elem ;
+
   (* Instruction memory channel *)
   mem_readInstRq   : Expr ty Addr -> Action ty mem_t (Bit 0) ;
   mem_readInstRp   : Action ty mem_t (Option Inst) ;
@@ -266,7 +267,8 @@ Section MemoryModel.
       Return (ConstBool true).
 
     (* 7. Top-level MemIfc Instance *)
-    Definition specMemIfc : @MemIfc memoryTree ty := {|
+    Definition specMemIfc : @MemIfc ty := {|
+      mem_t             := memoryTree ;
       mem_readInstRq    := readInstRq ;
       mem_readInstRp    := readInstRp ;
       mem_readBytesRq   := readBytesRq ;
