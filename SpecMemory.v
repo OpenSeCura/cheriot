@@ -125,10 +125,10 @@ Section MemoryModel.
       Leaf "tags" (EReg {| regKind := Array tagsSize Bool;
                            regInit := Some (Build_SameTuple (tupleElems := List.repeat false tagsSize)
                                                (Is_true_Nat_eq_implies (repeat_length false tagsSize))) |}) ;
-      Leaf "instRpReg" (EReg (Build_Reg Inst None)) ;
-      Leaf "bytesRpReg" (EReg (Build_Reg (Bit FullCapSz) None)) ;
-      Leaf "tagRpReg" (EReg (Build_Reg Bool None)) ;
-      Leaf "revBitRpReg" (EReg (Build_Reg Bool None))
+      Leaf "instRpReg" (EReg (Build_Reg (Option Inst) (Some (getDefault _)))) ;
+      Leaf "bytesRpReg" (EReg (Build_Reg (Option (Bit FullCapSz)) (Some (getDefault _)))) ;
+      Leaf "tagRpReg" (EReg (Build_Reg (Option Bool) (Some (getDefault _)))) ;
+      Leaf "revBitRpReg" (EReg (Build_Reg (Option Bool) (Some (getDefault _))))
     ].
 
   Section Ty.
@@ -151,17 +151,17 @@ Section MemoryModel.
         Let offset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) addr ;
         RegRead memVal <- "mem.mainMem" in memoryTree ;
         Let instBytes : Array (Z.to_nat (InstSz / 8)) (Bit 8) <- slice #memVal #offset (Z.to_nat (InstSz / 8)) ;
-        RegWrite "mem.instRpReg" in memoryTree <- ToBit #instBytes ;
+        RegWrite "mem.instRpReg" in memoryTree <- mkSome (ToBit #instBytes) ;
         Retv
       ) Else (
-        RegWrite "mem.instRpReg" in memoryTree <- ConstDef ;
+        RegWrite "mem.instRpReg" in memoryTree <- mkSome ConstDef ;
         Retv
       ) ;
       Retv.
 
     Definition readInstRp : Action ty memoryTree (Option Inst) :=
       RegRead instVal <- "mem.instRpReg" in memoryTree ;
-      Return (mkSome #instVal).
+      Return #instVal.
 
     (* 2. Data Bytes Memory Channel *)
     Definition readBytesRq (addr : Expr ty Addr) : Action ty memoryTree (Bit 0) :=
@@ -170,17 +170,17 @@ Section MemoryModel.
         Let offset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) addr ;
         RegRead memVal <- "mem.mainMem" in memoryTree ;
         Let dataBytes : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <- slice #memVal #offset (Z.to_nat NumBytesFullCapSz) ;
-        RegWrite "mem.bytesRpReg" in memoryTree <- ToBit #dataBytes ;
+        RegWrite "mem.bytesRpReg" in memoryTree <- mkSome (ToBit #dataBytes) ;
         Retv
       ) Else (
-        RegWrite "mem.bytesRpReg" in memoryTree <- ConstDef ;
+        RegWrite "mem.bytesRpReg" in memoryTree <- mkSome ConstDef ;
         Retv
       ) ;
       Retv.
 
     Definition readBytesRp : Action ty memoryTree (Option (Bit FullCapSz)) :=
       RegRead bytesVal <- "mem.bytesRpReg" in memoryTree ;
-      Return (mkSome #bytesVal).
+      Return #bytesVal.
 
     (* 3. Tag Memory Channel *)
     Definition readTagRq (addr : Expr ty (Bit TagAddrWidth)) : Action ty memoryTree (Bit 0) :=
@@ -188,17 +188,17 @@ Section MemoryModel.
       If #is_valid Then (
         Let offset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) addr ;
         RegRead tagsVal <- "mem.tags" in memoryTree ;
-        RegWrite "mem.tagRpReg" in memoryTree <- (ReadArray #tagsVal #offset) ;
+        RegWrite "mem.tagRpReg" in memoryTree <- mkSome (ReadArray #tagsVal #offset) ;
         Retv
       ) Else (
-        RegWrite "mem.tagRpReg" in memoryTree <- ConstDef ;
+        RegWrite "mem.tagRpReg" in memoryTree <- mkSome ConstDef ;
         Retv
       ) ;
       Retv.
 
     Definition readTagRp : Action ty memoryTree (Option Bool) :=
       RegRead tagVal <- "mem.tagRpReg" in memoryTree ;
-      Return (mkSome #tagVal).
+      Return #tagVal.
 
     (* 4. Revocation Bit Channel *)
     Definition readRevBitRq (base : Expr ty (Bit (AddrSz + 1))) : Action ty memoryTree (Bit 0).
@@ -222,10 +222,10 @@ Section MemoryModel.
         RegRead memVal <- "mem.mainMem" in memoryTree ;
         Let byteVal : Bit 8 <- ReadArray #memVal #offset ;
         Let revBit  : Bool  <- ReadArray (FromBit (Array 8 Bool) #byteVal) #bitInByte ;
-        RegWrite "mem.revBitRpReg" in memoryTree <- #revBit ;
+        RegWrite "mem.revBitRpReg" in memoryTree <- mkSome #revBit ;
         Retv
       ) Else (
-        RegWrite "mem.revBitRpReg" in memoryTree <- ConstBool false ;
+        RegWrite "mem.revBitRpReg" in memoryTree <- mkSome (ConstBool false) ;
         Retv
       ) ;
       Retv); abstract lia.
@@ -233,7 +233,7 @@ Section MemoryModel.
 
     Definition readRevBitRp : Action ty memoryTree (Option Bool) :=
       RegRead revVal <- "mem.revBitRpReg" in memoryTree ;
-      Return (mkSome #revVal).
+      Return #revVal.
 
     (* 5. Memory Write Operations *)
     Definition writeBytes (addr : Expr ty Addr) (data : Expr ty (Bit FullCapSz)) (memSize : Expr ty (Bit LgLgNumBytesFullCapSz)) : Action ty memoryTree (Bit 0) :=
