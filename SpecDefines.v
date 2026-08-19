@@ -951,18 +951,15 @@ Definition AluOutUnion := STRUCT_TYPE {
   "isFenceIAck" :: Bool
 }.
 
-Definition StoredCapWithTag (compressed : bool) : Kind :=
-  if compressed then FullCapWithTag else FullECapWithTag.
-
-Definition gprLeaves (compressed : bool) : list (Tree Elem) :=
+Definition gprLeaves : list (Tree Elem) :=
   map (fun '(_, idx) =>
     Leaf ("gpr_" ++ hex_string_of_Z idx)%string
-         (EReg (Build_Reg (StoredCapWithTag compressed) (Some (getDefault _))))
+         (EReg (Build_Reg FullECapWithTag (Some (getDefault _))))
   ) (enumerate (repeat tt (Z.to_nat NumRegs))).
 
-Definition scrLeaves (compressed : bool) : list (Tree Elem) :=
+Definition scrLeaves : list (Tree Elem) :=
   map (fun '(name, _) =>
-    Leaf name (EReg (Build_Reg (StoredCapWithTag compressed) (Some (getDefault _))))
+    Leaf name (EReg (Build_Reg FullECapWithTag (Some (getDefault _))))
   ) ScrTable.
 
 Definition csrLeaves : list (Tree Elem) :=
@@ -970,34 +967,34 @@ Definition csrLeaves : list (Tree Elem) :=
     Leaf name (EReg (Build_Reg (Bit Xlen) (Some (getDefault _))))
   ) CsrTable.
 
-Definition rfTree (compressed : bool) : Tree Elem :=
+Definition rfTree : Tree Elem :=
   Node "rf" [
-    Node "gprs" (gprLeaves compressed) ;
-    Node "scrs" (scrLeaves compressed) ;
+    Node "gprs" gprLeaves ;
+    Node "scrs" scrLeaves ;
     Node "csrs" csrLeaves ;
     Leaf "waitForFenceIAck" (EReg (Build_Reg Bool (Some false)))
   ].
 
-Definition gprPaths (compressed : bool) : list (RegPath (rfTree compressed)) :=
-  map (embedRegPath (getNodePath (rfTree compressed) "rf.gprs"))
-      (getTreeRegPaths (getNode (getNodePath (rfTree compressed) "rf.gprs"))).
+Definition gprPaths : list (RegPath rfTree) :=
+  map (embedRegPath (getNodePath rfTree "rf.gprs"))
+      (getTreeRegPaths (getNode (getNodePath rfTree "rf.gprs"))).
 
-Definition scrPaths (compressed : bool) : list (RegPath (rfTree compressed)) :=
-  map (embedRegPath (getNodePath (rfTree compressed) "rf.scrs"))
-      (getTreeRegPaths (getNode (getNodePath (rfTree compressed) "rf.scrs"))).
+Definition scrPaths : list (RegPath rfTree) :=
+  map (embedRegPath (getNodePath rfTree "rf.scrs"))
+      (getTreeRegPaths (getNode (getNodePath rfTree "rf.scrs"))).
 
-Definition csrPaths (compressed : bool) : list (RegPath (rfTree compressed)) :=
-  map (embedRegPath (getNodePath (rfTree compressed) "rf.csrs"))
-      (getTreeRegPaths (getNode (getNodePath (rfTree compressed) "rf.csrs"))).
+Definition csrPaths : list (RegPath rfTree) :=
+  map (embedRegPath (getNodePath rfTree "rf.csrs"))
+      (getTreeRegPaths (getNode (getNodePath rfTree "rf.csrs"))).
 
-Definition gprPathsWithKind (compressed : bool) : list (RegOfKind (t:=rfTree compressed) (StoredCapWithTag compressed)) :=
-  map (embedRegOfKind (getNodePath (rfTree compressed) "rf.gprs"))
-      (getTreeRegsOfKind (StoredCapWithTag compressed) (getNode (getNodePath (rfTree compressed) "rf.gprs"))).
+Definition gprPathsWithKind : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
+  map (embedRegOfKind (getNodePath rfTree "rf.gprs"))
+      (getTreeRegsOfKind FullECapWithTag (getNode (getNodePath rfTree "rf.gprs"))).
 
-Definition scrPathsWithKind (compressed : bool) : list (RegOfKind (t:=rfTree compressed) (StoredCapWithTag compressed)) :=
-  map (embedRegOfKind (getNodePath (rfTree compressed) "rf.scrs"))
-      (getTreeRegsOfKind (StoredCapWithTag compressed) (getNode (getNodePath (rfTree compressed) "rf.scrs"))).
+Definition scrPathsWithKind : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
+  map (embedRegOfKind (getNodePath rfTree "rf.scrs"))
+      (getTreeRegsOfKind FullECapWithTag (getNode (getNodePath rfTree "rf.scrs"))).
 
-Definition csrPathsWithKind (compressed : bool) : list (RegOfKind (t:=rfTree compressed) (Bit Xlen)) :=
-  map (embedRegOfKind (getNodePath (rfTree compressed) "rf.csrs"))
-      (getTreeRegsOfKind (Bit Xlen) (getNode (getNodePath (rfTree compressed) "rf.csrs"))).
+Definition csrPathsWithKind : list (RegOfKind (t:=rfTree) (Bit Xlen)) :=
+  map (embedRegOfKind (getNodePath rfTree "rf.csrs"))
+      (getTreeRegsOfKind (Bit Xlen) (getNode (getNodePath rfTree "rf.csrs"))).

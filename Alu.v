@@ -393,74 +393,19 @@ Section Alu.
 End Alu.
 
 Section AluRF.
-  Variable compressed : bool.
   Variable ty : Kind -> Type.
 
-  Definition toFullECap (stored : ty (StoredCapWithTag compressed)) : LetExpr ty FullECapWithTag :=
-    match compressed as b return ty (StoredCapWithTag b) -> LetExpr ty FullECapWithTag with
-    | true  => fun s =>
-        LetE tag  : Bool <- ##s`"tag" ;
-        LetE cap  : Cap  <- ##s`"cap" ;
-        LetE addr : Addr <- ##s`"addr" ;
-        LETE ecap : ECap <- DecodeCap cap addr ;
-        @RetE _ FullECapWithTag (STRUCT {
-          "tag"  ::= #tag ;
-          "ecap" ::= #ecap ;
-          "addr" ::= #addr
-        })
-    | false => fun s => RetE #s
-    end stored.
-
-  Definition fromFullECap (ecapVal : ty FullECapWithTag) : LetExpr ty (StoredCapWithTag compressed) :=
-    match compressed as b return LetExpr ty (StoredCapWithTag b) with
-    | true  =>
-        LetE tag  : Bool <- ##ecapVal`"tag" ;
-        LetE addr : Addr <- ##ecapVal`"addr" ;
-        LetE ecap : ECap <- ##ecapVal`"ecap" ;
-        LETE cap  : Cap  <- EncodeCap ecap ;
-        @RetE _ FullCapWithTag (STRUCT {
-          "tag"  ::= #tag ;
-          "cap"  ::= #cap ;
-          "addr" ::= #addr
-        })
-    | false => RetE #ecapVal
-    end.
-
-  Definition writeGpr {sz} (idx : Expr ty (Bit sz)) (val : Expr ty FullECapWithTag)
-    : Action ty (rfTree compressed) (Bit 0) :=
-    Let v : FullECapWithTag <- val ;
-    LetL stored : StoredCapWithTag compressed <- fromFullECap v ;
-    writeRegsList (gprPathsWithKind compressed) idx #stored.
-
-  Definition writeScr {sz} (idx : Expr ty (Bit sz)) (val : Expr ty FullECapWithTag)
-    : Action ty (rfTree compressed) (Bit 0) :=
-    Let v : FullECapWithTag <- val ;
-    LetL stored : StoredCapWithTag compressed <- fromFullECap v ;
-    writeRegsList (scrPathsWithKind compressed) idx #stored.
-
-  Definition readGpr {sz} (idx : Expr ty (Bit sz))
-    : Action ty (rfTree compressed) FullECapWithTag :=
-    LetA raw : StoredCapWithTag compressed <- readRegsList (gprPathsWithKind compressed) idx ;
-    LetL full : FullECapWithTag <- toFullECap raw ;
-    Return #full.
-
-  Definition readScr {sz} (idx : Expr ty (Bit sz))
-    : Action ty (rfTree compressed) FullECapWithTag :=
-    LetA raw : StoredCapWithTag compressed <- readRegsList (scrPathsWithKind compressed) idx ;
-    LetL full : FullECapWithTag <- toFullECap raw ;
-    Return #full.
-
   Definition executeNonDeferred (aluOut : ty AluOutUnion)
-    : Action ty (rfTree compressed) (Option DeferredUnion) :=
+    : Action ty rfTree (Option DeferredUnion) :=
     Let  isFenceIAck    : Bool                       <- ##aluOut`"isFenceIAck" ;
 
     If #isFenceIAck Then
       (
-        RegWrite "rf.waitForFenceIAck" in (rfTree compressed) <- ConstBool false ;
+        RegWrite "rf.waitForFenceIAck" in rfTree <- ConstBool false ;
         Retv
       ) ;
 
-    RegRead currWait <- "rf.waitForFenceIAck" in (rfTree compressed) ;
+    RegRead currWait <- "rf.waitForFenceIAck" in rfTree ;
 
     LetIf res : Option DeferredUnion <-
       If (Not #currWait) Then
@@ -471,7 +416,7 @@ Section AluRF.
           Let  aluOp          : AluOpUnion                 <- ##aluOut`"Op" ;
           Let  pcStep         : Addr                       <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
 
-          LetA currPcc        : FullECapWithTag            <- readGpr ($0 : Expr ty (Bit RegIdxSzReal)) ;
+          LetA currPcc        : FullECapWithTag            <- readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) ;
           Let  seqPcc         : FullECapWithTag            <- #currPcc `{ "addr" <- Add [ ##currPcc`"addr" ; #pcStep ] } ;
 
           Let  isExc          : Bool                       <- #aluOp `? "Exception" ;
@@ -482,43 +427,43 @@ Section AluRF.
           If #isExc Then
             (
               Let  excVal     : ExceptionInfo   <- #aluOp `! "Exception" ;
-              LetA mtcc       : FullECapWithTag <- readScr ($(getScrIdx "Mtcc") : Expr ty (Bit ScrIdxSz)) ;
-              LetA mstatus    : Bit Xlen        <- readRegsList (csrPathsWithKind compressed)
+              LetA mtcc       : FullECapWithTag <- readRegsList scrPathsWithKind ($(getScrIdx "Mtcc") : Expr ty (Bit ScrIdxSz)) ;
+              LetA mstatus    : Bit Xlen        <- readRegsList csrPathsWithKind
                                                      ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
               Let  currMIE    : Bool            <- getMstatusMIE #mstatus ;
               Let  mstatus1   : Bit Xlen        <- setMstatusMPIE #mstatus #currMIE ;
               Let  newMstatus : Bit Xlen        <- setMstatusMIE #mstatus1 (ConstBool false) ;
 
-              Act (writeScr ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) #currPcc) ;
-              Act (writeRegsList (csrPathsWithKind compressed) ($(getCsrIdx "mcause") : Expr ty (Bit CsrIdxSz))
+              Act (writeRegsList scrPathsWithKind ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) #currPcc) ;
+              Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mcause") : Expr ty (Bit CsrIdxSz))
                      (encodeMcause ##excVal`"mcause")) ;
-              Act (writeRegsList (csrPathsWithKind compressed) ($(getCsrIdx "mtval") : Expr ty (Bit CsrIdxSz))
+              Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mtval") : Expr ty (Bit CsrIdxSz))
                      (encodeCheriMtval ##excVal`"mtval")) ;
-              Act (writeRegsList (csrPathsWithKind compressed) ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
-              writeGpr ($0 : Expr ty (Bit RegIdxSzReal)) #mtcc
+              Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
+              writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #mtcc
             )
           Else
             (
               If (#noExc `? "Deferred") Then
                 (
-                  writeGpr ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
+                  writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
                 )
               Else
                 (
                   Let notDeferredVal : NotDeferredUnion <- #noExc `! "NotDeferred" ;
 
                   If (isNotZero #dstIdx) Then
-                    (writeGpr #dstIdx #dstVal) ;
+                    (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
 
                   If (##notDeferredVal `? "NormalFenceI") Then
                     (
                       Let normFence : NormalFenceIUnion <- #notDeferredVal `! "NormalFenceI" ;
                       If (##normFence `? "FenceI") Then
                         (
-                          RegWrite "rf.waitForFenceIAck" in (rfTree compressed) <- ConstBool true ;
+                          RegWrite "rf.waitForFenceIAck" in rfTree <- ConstBool true ;
                           Retv
                         ) ;
-                      writeGpr ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
+                      writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
                     )
                   Else
                     (
@@ -532,14 +477,14 @@ Section AluRF.
                           If (#sDest `? "Scr") Then
                             (
                               Let scrIdx : Bit ScrIdxSz <- #sDest `! "Scr" ;
-                              writeScr #scrIdx #sVal
+                              writeRegsList scrPathsWithKind #scrIdx #sVal
                             )
                           Else
                             (
                               Let csrIdx : Bit CsrIdxSz <- #sDest `! "Csr" ;
-                              writeRegsList (csrPathsWithKind compressed) #csrIdx ##sVal`"addr"
+                              writeRegsList csrPathsWithKind #csrIdx ##sVal`"addr"
                             ) ;
-                          writeGpr ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
+                          writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
                         )
                       Else
                         (
@@ -555,12 +500,12 @@ Section AluRF.
                                   Let isTaken   : Bool            <- #addrOnlyOp `! "Branch" ;
                                   Let targetPcc : FullECapWithTag <- #currPcc `{ "addr" <- ##newPcc`"addr" } ;
                                   Let nextPcc   : FullECapWithTag <- ITE #isTaken #targetPcc #seqPcc ;
-                                  writeGpr ($0 : Expr ty (Bit RegIdxSzReal)) #nextPcc
+                                  writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #nextPcc
                                 )
                               Else
                                 (
                                   Let targetPcc : FullECapWithTag <- #currPcc `{ "addr" <- ##newPcc`"addr" } ;
-                                  writeGpr ($0 : Expr ty (Bit RegIdxSzReal)) #targetPcc
+                                  writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #targetPcc
                                 ) ;
                               Retv
                             )
@@ -570,23 +515,23 @@ Section AluRF.
                               If (##addrECapOp `? "Cjalr") Then
                                 (
                                   Let  newMIE     : Bool           <- #addrECapOp `! "Cjalr" ;
-                                  LetA mstatus    : Bit Xlen       <- readRegsList (csrPathsWithKind compressed)
+                                  LetA mstatus    : Bit Xlen       <- readRegsList csrPathsWithKind
                                                                         ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
                                   Let  newMstatus : Bit Xlen       <- setMstatusMIE #mstatus #newMIE ;
-                                  Act (writeRegsList (csrPathsWithKind compressed)
+                                  Act (writeRegsList csrPathsWithKind
                                          ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
-                                  writeGpr ($0 : Expr ty (Bit RegIdxSzReal)) #newPcc
+                                  writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #newPcc
                                 )
                               Else
                                 (
-                                  LetA mePcc      : FullECapWithTag <- readScr ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) ;
-                                  LetA mstatus    : Bit Xlen        <- readRegsList (csrPathsWithKind compressed)
+                                  LetA mePcc      : FullECapWithTag <- readRegsList scrPathsWithKind ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) ;
+                                  LetA mstatus    : Bit Xlen        <- readRegsList csrPathsWithKind
                                                                          ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
                                   Let  currMPIE   : Bool            <- getMstatusMPIE #mstatus ;
                                   Let  newMstatus : Bit Xlen        <- setMstatusMIE #mstatus #currMPIE ;
-                                  Act (writeRegsList (csrPathsWithKind compressed)
+                                  Act (writeRegsList csrPathsWithKind
                                          ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
-                                  writeGpr ($0 : Expr ty (Bit RegIdxSzReal)) #mePcc
+                                  writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #mePcc
                                 ) ;
                               Retv
                             ) ;
@@ -602,20 +547,20 @@ Section AluRF.
         ) ;
     Return #res.
 
-  Definition regRead (regReadIn : ty RegReadIn) : Action ty (rfTree compressed) AluInInstGroup :=
+  Definition regRead (regReadIn : ty RegReadIn) : Action ty rfTree AluInInstGroup :=
     Let  decodeOut  : DecodeOut             <- ##regReadIn`"decodeOut" ;
     Let  fetchExc   : FetchException        <- ##regReadIn`"fetchExc" ;
     Let  cs1Idx     : Bit RegIdxSzReal      <- ##decodeOut`"cs1Idx" ;
     Let  cs2Source  : TaggedUnion Cs2Source <- ##decodeOut`"cs2Idx" ;
 
-    LetA pcc        : FullECapWithTag       <- readGpr ($0 : Expr ty (Bit RegIdxSzReal)) ;
-    LetA cs1        : FullECapWithTag       <- readGpr #cs1Idx ;
+    LetA pcc        : FullECapWithTag       <- readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) ;
+    LetA cs1        : FullECapWithTag       <- readRegsList gprPathsWithKind #cs1Idx ;
 
     LetIf cs2 : FullECapWithTag <-
       If (#cs2Source `? "Reg") Then
         (
           Let  cs2Idx : Bit RegIdxSzReal <- #cs2Source `! "Reg" ;
-          readGpr #cs2Idx
+          readRegsList gprPathsWithKind #cs2Idx
         )
       Else
         (
@@ -624,12 +569,12 @@ Section AluRF.
             If (#scrCsr `? "Scr") Then
               (
                 Let scrIdx : Bit ScrIdxSz <- #scrCsr `! "Scr" ;
-                readScr #scrIdx
+                readRegsList scrPathsWithKind #scrIdx
               )
             Else
               (
                 Let  csrIdx : Bit CsrIdxSz    <- #scrCsr `! "Csr" ;
-                LetA csrVal : Bit Xlen        <- readRegsList (csrPathsWithKind compressed) #csrIdx ;
+                LetA csrVal : Bit Xlen        <- readRegsList csrPathsWithKind #csrIdx ;
                 Let  csrCap : FullECapWithTag <- STRUCT {
                   "tag"  ::= Const ty Bool false ;
                   "ecap" ::= Const ty ECap (getDefault _) ;
@@ -640,10 +585,10 @@ Section AluRF.
           Return #scrCsrVal
         ) ;
 
-    LetA mstatus  : Bit Xlen <- readRegsList (csrPathsWithKind compressed) ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+    LetA mstatus  : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
     Let  currMIE  : Bool     <- getMstatusMIE #mstatus ;
 
-    @Return ty (rfTree compressed) AluInInstGroup (STRUCT {
+    @Return ty rfTree AluInInstGroup (STRUCT {
       "cs2Idx"              ::= #cs2Source ;
       "writesCd"            ::= ##decodeOut`"writesCd" ;
       "inst"                ::= ##decodeOut`"instBits" ;
