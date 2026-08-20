@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith.
 From Guru Require Import Syntax Notations Semantics Library Composition.
-From Cheriot Require Import SpecDefines FunctionalUnits SpecMemory Alu.
+From Cheriot Require Import SpecDefines FunctionalUnits SpecMemory Alu Fifo.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -27,11 +27,12 @@ Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
 Section DeferredStages.
+  Variable capacity : nat.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable ty : Kind -> Type.
 
   Local Notation memTree := (memIfc ty).(memTree).
-  Local Notation tree := (coreTree memTree).
+  Local Notation tree := (coreTree memTree capacity).
 
   Definition np_rf : NodePath tree :=
     getNodePath tree "core.rf".
@@ -39,10 +40,19 @@ Section DeferredStages.
   Definition np_mem : NodePath tree :=
     embedNodeIntoPath (getNodePath tree "core.mem") singletonChildPath.
 
+  Definition np_inputFifo : NodePath tree :=
+    getNodePath tree "core.deferred.inputBuf.fifo".
+
+  Definition np_loadFifo : NodePath tree :=
+    getNodePath tree "core.deferred.loadBuf.fifo".
+
+  Definition np_revFifo : NodePath tree :=
+    getNodePath tree "core.deferred.revBuf.fifo".
+
     (* =========================================================================
      * STAGE 1: loadRqOrStoreOrFence
      *
-     * - Requires: inputBuffer is valid (not empty).
+     * - Requires: inputFifo is valid (not empty).
      *
      * - Case 1: Memory Operation ("Mem")
      *     - If Store:
@@ -50,29 +60,27 @@ Section DeferredStages.
      *                   (when mem_needsRotation is true).
      *                   stTag is simply (isCap && tag).
      *                   Issue mem_writeBytes and mem_writeTag.
-     *                   Dequeue inputBuffer (set to None).
+     *                   Dequeue inputFifo.
      *     - If Load:
-     *         * Requires: outputBuffer is NOT full (outputBuffer is None).
+     *         * Requires: loadFifo is NOT full.
      *         * Action:   Issue mem_readBytesRq and mem_readTagRq.
-     *                     Enq outputBuffer <- Some (PendingLoad { dstIdx, byteOffset, memSize, isUnsigned }).
-     *                     Dequeue inputBuffer (set to None).
+     *                     Enq loadFifo <- PendingLoad { dstIdx, byteOffset, memSize, isUnsigned }.
+     *                     Dequeue inputFifo.
      *
      * - Case 2: Fence Operation ("Fence")
-     *     - Requires: !isRW OR (all downstream buffers are empty).
-     *     - Action:   Dequeue inputBuffer (set to None).
+     *     - Requires: !isRW OR (all downstream FIFOs are empty).
+     *     - Action:   Dequeue inputFifo.
      * ========================================================================= *)
     Definition loadRqOrStoreOrFence : Action ty tree (Bit 0) :=
-      RegRead inputBuffer  <- "core.deferred.inputBuf" in tree ;
-      RegRead outputBuffer <- "core.deferred.loadBuf"  in tree ;
-      RegRead revBuffer    <- "core.deferred.revBuf"   in tree ;
+      LetA inputHead            : Option DeferredReq <- liftAction np_inputFifo (@first capacity DeferredReq ty) ;
+      LetA outputBuffer_isFull  : Bool               <- liftAction np_loadFifo (@isFull capacity PendingLoad ty) ;
+      LetA outputBuffer_isEmpty : Bool               <- liftAction np_loadFifo (@isEmpty capacity PendingLoad ty) ;
+      LetA rev_isEmpty          : Bool               <- liftAction np_revFifo (@isEmpty capacity PendingRev ty) ;
 
-      Let inputBuffer_isValid  : Bool <- #inputBuffer `? "Some" ;
-      Let outputBuffer_isFull  : Bool <- #outputBuffer `? "Some" ;
-      Let outputBuffer_isEmpty : Bool <- Not #outputBuffer_isFull ;
-      Let rev_isEmpty          : Bool <- Not (#revBuffer `? "Some") ;
+      Let inputBuffer_isValid   : Bool               <- #inputHead `? "Some" ;
 
       If #inputBuffer_isValid Then (
-        Let req    : DeferredReq   <- #inputBuffer `! "Some" ;
+        Let req    : DeferredReq   <- #inputHead `! "Some" ;
         Let dstIdx : Bit RegIdxSz  <- ##req`"dstIdx" ;
         Let addr   : Addr          <- ##req`"addr" ;
         Let op     : DeferredUnion <- ##req`"op" ;
@@ -103,10 +111,9 @@ Section DeferredStages.
             Let stTag      : Bool           <- And [ #isCap ; #tag ] ;
             Act (liftAction np_mem ((memIfc ty).(mem_writeBytes) #addr #stData #memSize)) ;
             Act (liftAction np_mem ((memIfc ty).(mem_writeTag) #tagAddr #stTag)) ;
-            RegWrite "core.deferred.inputBuf" in tree <- mkNone ty ;
-            Retv
+            liftAction np_inputFifo (@deq capacity DeferredReq ty)
           ) Else (
-            (* --- LOAD ACTION: requires outputBuffer is NOT full --- *)
+            (* --- LOAD ACTION: requires loadFifo is NOT full --- *)
             If (Not #outputBuffer_isFull) Then (
               Let ldOpVal    : LoadOp <- ##memOp `! "Load" ;
               Let isUnsigned : Bool   <- ##ldOpVal`"isUnsigned" ;
@@ -118,21 +125,19 @@ Section DeferredStages.
                 "memSize"    ::= #memSize ;
                 "isUnsigned" ::= #isUnsigned
               } ;
-              RegWrite "core.deferred.loadBuf"  in tree <- mkSome #pending ;
-              RegWrite "core.deferred.inputBuf" in tree <- mkNone ty ;
-              Retv
+              Act (liftAction np_loadFifo (@enq capacity PendingLoad ty pending)) ;
+              liftAction np_inputFifo (@deq capacity DeferredReq ty)
             ) ;
             Retv
           ) ;
           Retv
         ) Else (
-          (* --- FENCE ACTION: !isRW OR (all downstream buffers empty) --- *)
+          (* --- FENCE ACTION: !isRW OR (all downstream FIFOs empty) --- *)
           Let fenceOp : FenceOp <- ##op `! "Fence" ;
           Let isRW    : Bool    <- ##fenceOp`"RW" ;
           Let canPass : Bool    <- Or [ Not #isRW ; And [ #outputBuffer_isEmpty ; #rev_isEmpty ] ] ;
           If #canPass Then (
-            RegWrite "core.deferred.inputBuf" in tree <- mkNone ty ;
-            Retv
+            liftAction np_inputFifo (@deq capacity DeferredReq ty)
           ) ;
           Retv
         ) ;
@@ -143,29 +148,27 @@ Section DeferredStages.
     (* =========================================================================
      * STAGE 2: loadRpAndWritebackOrRevRq
      *
-     * - Requires: inputBuffer is valid (not empty) AND
+     * - Requires: loadFifo is valid (not empty) AND
      *             memory load response is valid (readBytesRp AND readTagRp are Some).
      *
      * - Case 1: Tagged Capability Load (memSize == NumBytesFullCapSz AND rawTag == true)
-     *     - Requires: outputBuffer is NOT full (outputBuffer is None).
+     *     - Requires: revFifo is NOT full.
      *     - Action:   NO rotation. Decode capability (DecodeCap).
      *                 Issue mem_readRevBitRq on ldECap.base.
-     *                 Enq outputBuffer <- Some (PendingRev { dstIdx, capVal: { tag: rawTag, ecap: ldECap, addr: ldAddr } }).
-     *                 Dequeue inputBuffer (set to None).
+     *                 Enq revFifo <- PendingRev { dstIdx, capVal: { tag: rawTag, ecap: ldECap, addr: ldAddr } }.
+     *                 Dequeue loadFifo.
      *
      * - Case 2: Untagged Full-Cap OR Sub-Word Load
      *     - Action:   Rotate LSB 32 bits right by byteOffset (when mem_needsRotation is true).
      *                 Sign/Zero extend sub-word data.
      *                 Writeback result directly to Register File.
-     *                 Dequeue inputBuffer (set to None).
+     *                 Dequeue loadFifo.
      * ========================================================================= *)
     Definition loadRpAndWritebackOrRevRq : Action ty tree (Bit 0) :=
-      RegRead inputBuffer  <- "core.deferred.loadBuf" in tree ;
-      RegRead outputBuffer <- "core.deferred.revBuf"  in tree ;
+      LetA inputHead           : Option PendingLoad <- liftAction np_loadFifo (@first capacity PendingLoad ty) ;
+      LetA outputBuffer_isFull : Bool               <- liftAction np_revFifo (@isFull capacity PendingRev ty) ;
 
-      Let inputBuffer_isValid  : Bool <- #inputBuffer `? "Some" ;
-      Let outputBuffer_isFull  : Bool <- #outputBuffer `? "Some" ;
-      Let outputBuffer_isEmpty : Bool <- Not #outputBuffer_isFull ;
+      Let inputBuffer_isValid  : Bool               <- #inputHead `? "Some" ;
 
       If #inputBuffer_isValid Then (
         LetA rawBytesOpt : Option (Bit FullCapSz) <- liftAction np_mem ((memIfc ty).(mem_readBytesRp)) ;
@@ -173,7 +176,7 @@ Section DeferredStages.
         Let memRp_isValid : Bool                  <- And [ ##rawBytesOpt `? "Some" ; ##tagOpt `? "Some" ] ;
 
         If #memRp_isValid Then (
-          Let pl         : PendingLoad               <- ##inputBuffer `! "Some" ;
+          Let pl         : PendingLoad               <- #inputHead `! "Some" ;
           Let rawData    : Bit FullCapSz             <- ##rawBytesOpt `! "Some" ;
           Let rawTag     : Bool                      <- ##tagOpt `! "Some" ;
           Let dstIdx     : Bit RegIdxSz              <- ##pl`"dstIdx" ;
@@ -185,7 +188,7 @@ Section DeferredStages.
           Let isTaggedCap : Bool <- And [ #isCap ; #rawTag ] ;
 
           If #isTaggedCap Then (
-            (* --- 1. TAGGED CAPABILITY LOAD: requires outputBuffer is NOT full --- *)
+            (* --- 1. TAGGED CAPABILITY LOAD: requires revFifo is NOT full --- *)
             If (Not #outputBuffer_isFull) Then (
               Let ldAddr  : Addr <- TruncLsb Xlen Xlen #rawData ;
               Let ldCap   : Cap  <- FromBit Cap (TruncMsb Xlen Xlen #rawData) ;
@@ -201,9 +204,8 @@ Section DeferredStages.
                 "dstIdx" ::= #dstIdx ;
                 "capVal" ::= #capVal
               } ;
-              RegWrite "core.deferred.revBuf"  in tree <- mkSome #pr ;
-              RegWrite "core.deferred.loadBuf" in tree <- mkNone ty ;
-              Retv
+              Act (liftAction np_revFifo (@enq capacity PendingRev ty pr)) ;
+              liftAction np_loadFifo (@deq capacity PendingLoad ty)
             ) ;
             Retv
           ) Else (
@@ -229,8 +231,7 @@ Section DeferredStages.
             If (isNotZero #dstIdx) Then (
               liftAction np_rf (writeRegsList gprPathsWithKind #dstIdx #dstVal)
             ) ;
-            RegWrite "core.deferred.loadBuf" in tree <- mkNone ty ;
-            Retv
+            liftAction np_loadFifo (@deq capacity PendingLoad ty)
           ) ;
           Retv
         ) ;
@@ -241,23 +242,23 @@ Section DeferredStages.
     (* =========================================================================
      * STAGE 3: revRpAndWriteBack
      *
-     * - Requires: inputBuffer is valid (not empty) AND
+     * - Requires: revFifo is valid (not empty) AND
      *             revocation bit response is valid (readRevBitRp is Some).
      * - Action:   Compute finalTag = capVal.tag and not readRevBitRp.Some.
      *             Writeback capability with finalTag directly to Register File.
-     *             Dequeue inputBuffer (set to None).
+     *             Dequeue revFifo.
      * ========================================================================= *)
     Definition revRpAndWriteBack : Action ty tree (Bit 0) :=
-      RegRead inputBuffer <- "core.deferred.revBuf" in tree ;
+      LetA inputHead : Option PendingRev <- liftAction np_revFifo (@first capacity PendingRev ty) ;
 
-      Let inputBuffer_isValid : Bool <- #inputBuffer `? "Some" ;
+      Let inputBuffer_isValid : Bool <- #inputHead `? "Some" ;
 
       If #inputBuffer_isValid Then (
         LetA revBitOpt : Option Bool <- liftAction np_mem ((memIfc ty).(mem_readRevBitRp)) ;
         Let memRp_isValid : Bool     <- ##revBitOpt `? "Some" ;
 
         If #memRp_isValid Then (
-          Let pr       : PendingRev      <- ##inputBuffer `! "Some" ;
+          Let pr       : PendingRev      <- #inputHead `! "Some" ;
           Let revBit   : Bool            <- ##revBitOpt `! "Some" ;
           Let dstIdx   : Bit RegIdxSz    <- ##pr`"dstIdx" ;
           Let capVal   : FullECapWithTag <- ##pr`"capVal" ;
@@ -267,11 +268,9 @@ Section DeferredStages.
           If (isNotZero #dstIdx) Then (
             liftAction np_rf (writeRegsList gprPathsWithKind #dstIdx #finalVal)
           ) ;
-          RegWrite "core.deferred.revBuf" in tree <- mkNone ty ;
-          Retv
+          liftAction np_revFifo (@deq capacity PendingRev ty)
         ) ;
         Retv
       ) ;
       Retv.
-
 End DeferredStages.

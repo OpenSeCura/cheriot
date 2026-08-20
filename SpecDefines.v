@@ -16,6 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Psatz.
 From Guru Require Import Library Syntax Notations Composition.
+From Cheriot Require Import Fifo.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -1017,16 +1018,16 @@ Definition PendingRev := STRUCT_TYPE {
   "capVal" :: FullECapWithTag
 }.
 
-Definition deferredTree : Tree Elem :=
+Definition deferredTree (capacity : nat) : Tree Elem :=
   Node "deferred" [
-    Leaf "inputBuf" (EReg (Build_Reg (Option DeferredReq) (Some (getDefault _)))) ;
-    Leaf "loadBuf"  (EReg (Build_Reg (Option PendingLoad) (Some (getDefault _)))) ;
-    Leaf "revBuf"   (EReg (Build_Reg (Option PendingRev)  (Some (getDefault _))))
+    Node "inputBuf" [ fifoTree capacity DeferredReq ] ;
+    Node "loadBuf"  [ fifoTree capacity PendingLoad ] ;
+    Node "revBuf"   [ fifoTree capacity PendingRev ]
   ].
 
-Definition coreTree (memTree : Tree Elem) : Tree Elem :=
+Definition coreTree (memTree : Tree Elem) (capacity : nat) : Tree Elem :=
   Node "core" [
     rfTree ;
     Node "mem" [ memTree ] ;
-    deferredTree
+    deferredTree capacity
   ].
