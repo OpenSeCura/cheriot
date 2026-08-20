@@ -48,12 +48,12 @@ Section DecodeUncompressed.
 
     (* CSR & SCR Decoders *)
     LetE csrOpt : Option (Bit CsrIdxSz) <- csrAddrDecoder csrAddr ;
-    LetE isValidCsr : Bool <- isValid #csrOpt ;
-    LetE csrMappedIdx : Bit CsrIdxSz <- getData #csrOpt ;
+    LetE isValidCsr : Bool <- #csrOpt `? "Some" ;
+    LetE csrMappedIdx : Bit CsrIdxSz <- #csrOpt `! "Some" ;
 
     LetE scrOpt : Option (Bit ScrIdxSz) <- scrAddrDecoder rs2 ;
-    LetE isValidScr : Bool <- isValid #scrOpt ;
-    LetE scrMappedIdx : Bit ScrIdxSz <- getData #scrOpt ;
+    LetE isValidScr : Bool <- #scrOpt `? "Some" ;
+    LetE scrMappedIdx : Bit ScrIdxSz <- #scrOpt `! "Some" ;
 
     (* 5-Bit Major Opcode Decodes (inst[6:2]) *)
     LetE isLui    : Bool <- Eq #opcode $(Z.shiftr 0x37 2) ;

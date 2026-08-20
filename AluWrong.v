@@ -1727,8 +1727,8 @@ Section Alu.
                         (ITE0 (And [#load_store; Not #boundsRes])
                            (exception $BoundsViolation) )))) ];
 
-      LetE capExceptionVal <- getData #capException;
-      LetE isCapException <- isValid #capException;
+      LetE capExceptionVal <- #capException `! "Some";
+      LetE isCapException <- #capException `? "Some";
       LetE capExceptionSrc <- ITE0 (Not #capSrException) rs1IdxFixed;
 
       LetE isException <- Or [Not #pcTag; BoundsException;
