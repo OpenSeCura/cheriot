@@ -31,7 +31,7 @@ Section Fifo.
   Local Open Scope guru_scope.
 
   Definition fifoTree : Tree Elem :=
-    Node ""
+    Node "fifo"
       [ Leaf "elems" (EReg (Build_Reg (Array capacity k) None));
         Leaf "size" (EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat (capacity + 1)))) (Some (getDefault _))));
         Leaf "deq_idx" (EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat capacity))) (Some (getDefault _))))].
