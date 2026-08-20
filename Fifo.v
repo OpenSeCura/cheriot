@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Lia.
-From Guru Require Import Library Syntax Notations.
+From Guru Require Import Library Syntax Notations Composition.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -30,11 +30,21 @@ Section Fifo.
   Local Open Scope string.
   Local Open Scope guru_scope.
 
+  Definition elemLeaves : list (Tree Elem) :=
+    map (fun idx =>
+      Leaf ("elem_" ++ hex_string_of_Z (Z.of_nat idx))%string
+           (EReg (Build_Reg k None))
+    ) (seq 0 capacity).
+
   Definition fifoTree : Tree Elem :=
     Node "fifo"
-      [ Leaf "elems" (EReg (Build_Reg (Array capacity k) None));
+      [ Node "elems" elemLeaves;
         Leaf "size" (EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat (capacity + 1)))) (Some (getDefault _))));
         Leaf "deq_idx" (EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat capacity))) (Some (getDefault _))))].
+
+  Definition elemPathsWithKind : list (RegOfKind (t:=fifoTree) k) :=
+    map (embedRegOfKind (getNodePath fifoTree "fifo.elems"))
+        (getTreeRegsOfKind k (getNode (getNodePath fifoTree "fifo.elems"))).
 
   Section Ty.
     Variable ty: Kind -> Type.
@@ -63,19 +73,17 @@ Section Fifo.
 
     Definition isEmpty : Action ty fifoTree Bool :=
       ( RegRead sz <- "fifo.size" in fifoTree;
-        Return (Eq #sz $0) ).
+        Return (isZero #sz) ).
 
     Definition enq (val: ty k) : Action ty fifoTree (Bit 0) :=
       ( LetA isFull <- isFull;
         If (Not #isFull)
         Then (
-          RegRead elems <- "fifo.elems" in fifoTree;
           RegRead size <- "fifo.size" in fifoTree;
           RegRead deq_idx <- "fifo.deq_idx" in fifoTree;
           LetL enq_idx <- ModuloAdd deq_idx size;
-          RegWrite "fifo.elems" in fifoTree <- (#elems @[ #enq_idx <- #val ]);
           RegWrite "fifo.size" in fifoTree <- Add [#size; $1];
-          Retv
+          writeRegsList elemPathsWithKind #enq_idx #val
         );
         Retv ).
 
@@ -94,10 +102,10 @@ Section Fifo.
         Retv ).
 
     Definition first : Action ty fifoTree (Option k) :=
-      ( RegRead elems <- "fifo.elems" in fifoTree;
-        RegRead size <- "fifo.size" in fifoTree;
+      ( RegRead size <- "fifo.size" in fifoTree;
+        Let isEmpty <- isZero #size;
         RegRead deq_idx <- "fifo.deq_idx" in fifoTree;
-        Let isEmpty <- Eq #size $0;
-        Return (ITE #isEmpty (mkNone ty) (mkSome (#elems @[ #deq_idx ]))) ).
+        LetA elem : k <- readRegsList elemPathsWithKind #deq_idx;
+        Return (ITE #isEmpty (mkNone ty) (mkSome #elem)) ).
   End Ty.
 End Fifo.
