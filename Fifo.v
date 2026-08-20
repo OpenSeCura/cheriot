@@ -58,45 +58,45 @@ Section Fifo.
                         (ITE (Slt #extendedSum $(Z.of_nat capacity)) $0 $(Z.of_nat capacity)))))).
 
     Definition isFull : Action ty fifoTree Bool :=
-      ( RegRead sz <- ".size" in fifoTree;
+      ( RegRead sz <- "fifo.size" in fifoTree;
         Return (Eq #sz $(Z.of_nat capacity)) ).
 
     Definition isEmpty : Action ty fifoTree Bool :=
-      ( RegRead sz <- ".size" in fifoTree;
+      ( RegRead sz <- "fifo.size" in fifoTree;
         Return (Eq #sz $0) ).
 
     Definition enq (val: ty k) : Action ty fifoTree (Bit 0) :=
       ( LetA isFull <- isFull;
         If (Not #isFull)
         Then (
-          RegRead elems <- ".elems" in fifoTree;
-          RegRead size <- ".size" in fifoTree;
-          RegRead deq_idx <- ".deq_idx" in fifoTree;
+          RegRead elems <- "fifo.elems" in fifoTree;
+          RegRead size <- "fifo.size" in fifoTree;
+          RegRead deq_idx <- "fifo.deq_idx" in fifoTree;
           LetL enq_idx <- ModuloAdd deq_idx size;
-          RegWrite ".elems" in fifoTree <- (#elems @[ #enq_idx <- #val ]);
-          RegWrite ".size" in fifoTree <- Add [#size; $1];
+          RegWrite "fifo.elems" in fifoTree <- (#elems @[ #enq_idx <- #val ]);
+          RegWrite "fifo.size" in fifoTree <- Add [#size; $1];
           Retv
         );
         Retv ).
 
     Definition deq : Action ty fifoTree (Bit 0) :=
-      ( RegRead size <- ".size" in fifoTree;
+      ( RegRead size <- "fifo.size" in fifoTree;
         Let isEmpty <- isZero #size;
         If (Not #isEmpty)
         Then (
-          RegRead deq_idx <- ".deq_idx" in fifoTree;
+          RegRead deq_idx <- "fifo.deq_idx" in fifoTree;
           Let one <- $1;
           LetL new_deq_idx <- ModuloAdd deq_idx one;
-          RegWrite ".deq_idx" in fifoTree <- #new_deq_idx;
-          RegWrite ".size" in fifoTree <- Sub #size $1;
+          RegWrite "fifo.deq_idx" in fifoTree <- #new_deq_idx;
+          RegWrite "fifo.size" in fifoTree <- Sub #size $1;
           Retv
         );
         Retv ).
 
     Definition first : Action ty fifoTree (Option k) :=
-      ( RegRead elems <- ".elems" in fifoTree;
-        RegRead size <- ".size" in fifoTree;
-        RegRead deq_idx <- ".deq_idx" in fifoTree;
+      ( RegRead elems <- "fifo.elems" in fifoTree;
+        RegRead size <- "fifo.size" in fifoTree;
+        RegRead deq_idx <- "fifo.deq_idx" in fifoTree;
         Let isEmpty <- Eq #size $0;
         Return (ITE #isEmpty (mkNone ty) (mkSome (#elems @[ #deq_idx ]))) ).
   End Ty.
