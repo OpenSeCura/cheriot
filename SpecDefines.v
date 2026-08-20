@@ -998,3 +998,35 @@ Definition scrPathsWithKind : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
 Definition csrPathsWithKind : list (RegOfKind (t:=rfTree) (Bit Xlen)) :=
   map (embedRegOfKind (getNodePath rfTree "rf.csrs"))
       (getTreeRegsOfKind (Bit Xlen) (getNode (getNodePath rfTree "rf.csrs"))).
+
+Definition DeferredReq := STRUCT_TYPE {
+  "dstIdx" :: Bit RegIdxSz ;
+  "addr"   :: Addr ;
+  "op"     :: DeferredUnion
+}.
+
+Definition PendingLoad := STRUCT_TYPE {
+  "dstIdx"     :: Bit RegIdxSz ;
+  "byteOffset" :: Bit LgNumBytesFullCapSz ;
+  "memSize"    :: Bit LgLgNumBytesFullCapSz ;
+  "isUnsigned" :: Bool
+}.
+
+Definition PendingRev := STRUCT_TYPE {
+  "dstIdx" :: Bit RegIdxSz ;
+  "capVal" :: FullECapWithTag
+}.
+
+Definition deferredTree : Tree Elem :=
+  Node "deferred" [
+    Leaf "inputBuf" (EReg (Build_Reg (Option DeferredReq) (Some (getDefault _)))) ;
+    Leaf "loadBuf"  (EReg (Build_Reg (Option PendingLoad) (Some (getDefault _)))) ;
+    Leaf "revBuf"   (EReg (Build_Reg (Option PendingRev)  (Some (getDefault _))))
+  ].
+
+Definition coreTree (memTree : Tree Elem) : Tree Elem :=
+  Node "core" [
+    rfTree ;
+    Node "mem" [ memTree ] ;
+    deferredTree
+  ].

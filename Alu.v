@@ -396,7 +396,7 @@ Section AluRF.
   Variable ty : Kind -> Type.
 
   Definition executeNonDeferred (aluOut : ty AluOutUnion)
-    : Action ty rfTree (Option DeferredUnion) :=
+    : Action ty rfTree (Option DeferredReq) :=
     Let  isFenceIAck    : Bool                       <- ##aluOut`"isFenceIAck" ;
 
     If #isFenceIAck Then
@@ -407,7 +407,7 @@ Section AluRF.
 
     RegRead currWait <- "rf.waitForFenceIAck" in rfTree ;
 
-    LetIf res : Option DeferredUnion <-
+    LetIf res : Option DeferredReq <-
       If (Not #currWait) Then
         (
           Let  isComp         : Bool                       <- ##aluOut`"isComp" ;
@@ -423,6 +423,11 @@ Section AluRF.
           Let  noExc          : NoExceptionUnion           <- #aluOp `! "NoException" ;
           Let  isDeferred     : Bool                       <- And [ Not #isExc ; #noExc `? "Deferred" ] ;
           Let  deferredVal    : DeferredUnion              <- #noExc `! "Deferred" ;
+          Let  deferredReq    : DeferredReq                <- STRUCT {
+            "dstIdx" ::= #dstIdx ;
+            "addr"   ::= ##dstVal`"addr" ;
+            "op"     ::= #deferredVal
+          } ;
 
           If #isExc Then
             (
@@ -543,7 +548,7 @@ Section AluRF.
                 ) ;
               Retv
             ) ;
-          Return (ITE0 #isDeferred (mkSome #deferredVal))
+          Return (ITE0 #isDeferred (mkSome #deferredReq))
         ) ;
     Return #res.
 
