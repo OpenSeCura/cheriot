@@ -14,7 +14,7 @@
  * limitations under the License.
  *)
 
-From Stdlib Require Import String List ZArith.
+From Stdlib Require Import String List ZArith Lia.
 From Guru Require Import Library Syntax Notations.
 
 Set Implicit Arguments.
@@ -33,31 +33,40 @@ Section Fifo.
   Definition fifoTree : Tree Elem :=
     Node ""
       [ Leaf "elems" (EReg (Build_Reg (Array capacity k) None));
-        Leaf "size" (EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat capacity))) (Some (getDefault _))));
+        Leaf "size" (EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat (capacity + 1)))) (Some (getDefault _))));
         Leaf "deq_idx" (EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat capacity))) (Some (getDefault _))))].
 
   Section Ty.
     Variable ty: Kind -> Type.
 
-    Definition ModuloAdd (a b: ty (Bit (Z.log2_up (Z.of_nat capacity)))) :
+    Local Lemma sub_add_comm : forall a b, (a = b + (a - b))%Z.
+    Proof. intros; lia. Qed.
+
+    Local Lemma add_sub_comm : forall a b, (b + (a - b) = a)%Z.
+    Proof. intros; lia. Qed.
+
+    Definition ModuloAdd (ptr: ty (Bit (Z.log2_up (Z.of_nat capacity))))
+                         (sz: ty (Bit (Z.log2_up (Z.of_nat (capacity + 1))))) :
       LetExpr ty (Bit (Z.log2_up (Z.of_nat capacity))) :=
       if Z.eqb (Z.pow 2 (Z.log2_up (Z.of_nat capacity))) (Z.of_nat capacity)
-      then RetE (Add [#a; #b])
+      then RetE (Add [#ptr; TruncLsb _ _ (castBits (sub_add_comm _ _) #sz)])
       else (
-          LetE extendedSum <- Add [ZeroExtend 1 #a; ZeroExtend 1 #b];
-          RetE (TruncLsb 1 _ (Sub #extendedSum
-                                (ITE (Slt #extendedSum $(Z.of_nat capacity)) $0 $(Z.of_nat capacity))))).
+          LetE extendedSum <- Add [castBits (add_sub_comm _ _) (ZeroExtend _ #ptr); #sz];
+          RetE (TruncLsb _ _
+                  (castBits (sub_add_comm _ _)
+                     (Sub #extendedSum
+                        (ITE (Slt #extendedSum $(Z.of_nat capacity)) $0 $(Z.of_nat capacity)))))).
 
-    Definition isFullAction : Action ty fifoTree Bool :=
+    Definition isFull : Action ty fifoTree Bool :=
       ( RegRead sz <- ".size" in fifoTree;
         Return (Eq #sz $(Z.of_nat capacity)) ).
 
-    Definition isEmptyAction : Action ty fifoTree Bool :=
+    Definition isEmpty : Action ty fifoTree Bool :=
       ( RegRead sz <- ".size" in fifoTree;
         Return (Eq #sz $0) ).
 
-    Definition enqAction (val: ty k) : Action ty fifoTree (Bit 0) :=
-      ( LetA isFull <- isFullAction;
+    Definition enq (val: ty k) : Action ty fifoTree (Bit 0) :=
+      ( LetA isFull <- isFull;
         If (Not #isFull)
         Then (
           RegRead elems <- ".elems" in fifoTree;
@@ -70,9 +79,9 @@ Section Fifo.
         );
         Retv ).
 
-    Definition deqAction : Action ty fifoTree (Bit 0) :=
+    Definition deq : Action ty fifoTree (Bit 0) :=
       ( RegRead size <- ".size" in fifoTree;
-        Let isEmpty <- Eq #size $0;
+        Let isEmpty <- isZero #size;
         If (Not #isEmpty)
         Then (
           RegRead deq_idx <- ".deq_idx" in fifoTree;
@@ -84,7 +93,7 @@ Section Fifo.
         );
         Retv ).
 
-    Definition firstAction : Action ty fifoTree (Option k) :=
+    Definition first : Action ty fifoTree (Option k) :=
       ( RegRead elems <- ".elems" in fifoTree;
         RegRead size <- ".size" in fifoTree;
         RegRead deq_idx <- ".deq_idx" in fifoTree;
