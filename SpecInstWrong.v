@@ -1,6 +1,6 @@
 From Stdlib Require Import List String ZArith Zmod.
 From Guru Require Import Library Syntax Notations Compiler.
-From Cheriot Require Import AluWrong Spec Binary.
+From Cheriot Require Import AluWrong SpecWrong Binary.
 
 Local Open Scope Z_scope.
 Local Open Scope string_scope.

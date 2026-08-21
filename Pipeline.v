@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod.
 From Guru Require Import Library Syntax Notations.
-From Cheriot Require Import AluWrong Spec.
+From Cheriot Require Import AluWrong SpecWrong.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
