@@ -396,7 +396,7 @@ Section AluRF.
   Variable ty : Kind -> Type.
 
   Definition executeNonDeferred (aluOut : ty AluOutUnion)
-    : Action ty rfTree (Option DeferredReq) :=
+    : Action ty rfTree ExecuteOut :=
     Let  isFenceIAck    : Bool                       <- ##aluOut`"isFenceIAck" ;
 
     If #isFenceIAck Then
@@ -407,7 +407,7 @@ Section AluRF.
 
     RegRead currWait <- "rf.waitForFenceIAck" in rfTree ;
 
-    LetIf res : Option DeferredReq <-
+    LetIf res : ExecuteOut <-
       If (Not #currWait) Then
         (
           Let  isComp         : Bool                       <- ##aluOut`"isComp" ;
@@ -438,6 +438,13 @@ Section AluRF.
             "op"     ::= #deferredVal
           } ;
 
+          Let  notDeferredVal : NotDeferredUnion           <- #noExc `! "NotDeferred" ;
+          Let  normFence      : NormalFenceIUnion          <- #notDeferredVal `! "NormalFenceI" ;
+          Let  isFenceI       : Bool                       <- And [ Not #isTrap ;
+                                                                    ##noExc `? "NotDeferred" ;
+                                                                    ##notDeferredVal `? "NormalFenceI" ;
+                                                                    ##normFence `? "FenceI" ] ;
+
           If #isTrap Then
             (
               Let  excVal     : ExceptionInfo   <- #aluOp `! "Exception" ;
@@ -463,14 +470,11 @@ Section AluRF.
                 )
               Else
                 (
-                  Let notDeferredVal : NotDeferredUnion <- #noExc `! "NotDeferred" ;
-
                   If (isNotZero #dstIdx) Then
                     (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
 
                   If (##notDeferredVal `? "NormalFenceI") Then
                     (
-                      Let normFence : NormalFenceIUnion <- #notDeferredVal `! "NormalFenceI" ;
                       If (##normFence `? "FenceI") Then
                         (
                           RegWrite "rf.waitForFenceIAck" in rfTree <- ConstBool true ;
@@ -556,7 +560,11 @@ Section AluRF.
                 ) ;
               Retv
             ) ;
-          Return (ITE0 #isDeferred (mkSome #deferredReq))
+          Let execOut : ExecuteOut <- STRUCT {
+            "deferredReq" ::= ITE0 #isDeferred (mkSome #deferredReq) ;
+            "isFenceIRq"  ::= #isFenceI
+          } ;
+          Return #execOut
         ) ;
     Return #res.
 

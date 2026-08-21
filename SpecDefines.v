@@ -1006,6 +1006,11 @@ Definition DeferredReq := STRUCT_TYPE {
   "op"     :: DeferredUnion
 }.
 
+Definition ExecuteOut := STRUCT_TYPE {
+  "deferredReq" :: Option DeferredReq ;
+  "isFenceIRq"  :: Bool
+}.
+
 Definition PendingLoad := STRUCT_TYPE {
   "dstIdx"     :: Bit RegIdxSz ;
   "byteOffset" :: Bit LgNumBytesFullCapSz ;
