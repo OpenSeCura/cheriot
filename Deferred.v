@@ -79,6 +79,7 @@ Section DeferredStages.
 
       Let inputBuffer_isValid   : Bool               <- #inputHead `? "Some" ;
 
+      (* This condition is always true in a spec *)
       If #inputBuffer_isValid Then (
         Let req    : DeferredReq   <- #inputHead `! "Some" ;
         Let dstIdx : Bit RegIdxSz  <- ##req`"dstIdx" ;
@@ -117,6 +118,7 @@ Section DeferredStages.
           ) Else (
             (* --- LOAD ACTION: requires canReadMemRq AND loadFifo is NOT full --- *)
             LetA canReadMem : Bool <- liftAction np_mem ((memIfc ty).(mem_canReadMemRq)) ;
+            (* This condition is always true in a spec *)
             If (And [ #canReadMem ; Not #outputBuffer_isFull ]) Then (
               Let ldOpVal    : LoadOp <- ##memOp `! "Load" ;
               Let isUnsigned : Bool   <- ##ldOpVal`"isUnsigned" ;
@@ -137,8 +139,8 @@ Section DeferredStages.
           (* --- FENCE ACTION: !isRW OR (all downstream FIFOs empty) --- *)
           Let fenceOp : FenceOp <- ##op `! "Fence" ;
           Let isRW    : Bool    <- ##fenceOp`"RW" ;
-          Let canPass : Bool    <- Or [ Not #isRW ; And [ #outputBuffer_isEmpty ; #rev_isEmpty ] ] ;
-          If #canPass Then (
+          (* This condition is always true in a spec *)
+          If (Or [ Not #isRW ; And [ #outputBuffer_isEmpty ; #rev_isEmpty ] ]) Then (
             liftAction np_inputFifo (@deq capacity DeferredReq ty)
           ) ;
           Retv
@@ -172,9 +174,11 @@ Section DeferredStages.
 
       Let inputBuffer_isValid  : Bool               <- #inputHead `? "Some" ;
 
+      (* This condition is always true in a spec *)
       If #inputBuffer_isValid Then (
         LetA isMemRpValid : Bool <- liftAction np_mem ((memIfc ty).(mem_isMemRpValid)) ;
 
+        (* This condition is always true in a spec *)
         If #isMemRpValid Then (
           Let pl         : PendingLoad               <- #inputHead `! "Some" ;
           Let dstIdx     : Bit RegIdxSz              <- ##pl`"dstIdx" ;
@@ -184,8 +188,6 @@ Section DeferredStages.
 
           Let isCap : Bool <- Eq #memSize $LgNumBytesFullCapSz ;
 
-          LetA canReadRev : Bool <- liftAction np_mem ((memIfc ty).(mem_canReadRevBitRq)) ;
-
           LetA memVal     : FullCapWithTag <- liftAction np_mem ((memIfc ty).(mem_getMemRp)) ;
           Let rawTag     : Bool           <- ##memVal`"tag" ;
           Let rawCap     : Cap            <- ##memVal`"cap" ;
@@ -194,6 +196,9 @@ Section DeferredStages.
 
           If #isTaggedCap Then (
             (* --- 1. TAGGED CAPABILITY LOAD --- *)
+            LetA canReadRev : Bool <- liftAction np_mem ((memIfc ty).(mem_canReadRevBitRq)) ;
+
+            (* This condition is always true in a spec *)
             If (And [ #canReadRev ; Not #outputBuffer_isFull ]) Then (
               LetL ldECap : ECap <- DecodeCap rawCap rawDataLsb ;
               Let  base   : Bit (AddrSz + 1) <- ##ldECap`"base" ;
@@ -254,9 +259,11 @@ Section DeferredStages.
       LetA inputHead          : Option PendingRev <- liftAction np_revFifo (@first capacity PendingRev ty) ;
       Let inputBuffer_isValid : Bool              <- #inputHead `? "Some" ;
 
+      (* This condition is always true in a spec *)
       If #inputBuffer_isValid Then (
         LetA isRevRpValid : Bool <- liftAction np_mem ((memIfc ty).(mem_isRevBitRpValid)) ;
 
+        (* This condition is always true in a spec *)
         If #isRevRpValid Then (
           Let  pr       : PendingRev      <- #inputHead `! "Some" ;
           LetA revBit   : Bool            <- liftAction np_mem ((memIfc ty).(mem_getRevBitRp)) ;
