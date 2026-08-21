@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Bool Psatz.
 From Guru Require Import Syntax Notations Semantics Library Composition.
-From Cheriot Require Import SpecDefines Binary.
+From Cheriot Require Import SpecDefines.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -27,7 +27,9 @@ Local Open Scope Z_scope.
 Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
-Definition TagAddrWidth : Z := AddrSz - LgNumBytesFullCapSz.
+(* ===========================================================================
+   SPECIFICATION MEMORY MODEL (Memory State Tree & Actions)
+   =========================================================================== *)
 
 Record MemIfc {ty: Kind -> Type} := {
   memTree : Tree Elem ;
@@ -61,62 +63,18 @@ Record MemIfc {ty: Kind -> Type} := {
   mem_needsRotation : bool
 }.
 
-(* ===========================================================================
-   SPECIFICATION MEMORY MODEL (Memory State Tree & Actions)
-   =========================================================================== *)
-
-Definition fixedBinary : list (bits 8) := map (fun v => bits.of_Z 8 v) binary.
-
-Record MemConfig := {
-  mainMemStartAddr        : Z ;
-  mainMemSize             : nat ;
-  mainMemBoundProof       : Is_true (mainMemStartAddr + Z.of_nat mainMemSize <? Z.shiftl 1 Xlen)%Z ;
-  lgMainMemSize_ge_binary : Is_true (length binary <=? mainMemSize)%nat ;
-
-  (* Heap & Revocation Configuration *)
-  heapStartAddr           : Z ;
-  heapSize                : nat ;
-  lgRevGranularity        : Z ;
-  revTableStartAddr       : Z ;
-
-  (* Proofs *)
-  heap_in_mainMem_proof :
-    Is_true ((mainMemStartAddr <=? heapStartAddr) &&
-             (heapStartAddr + Z.of_nat heapSize <=? mainMemStartAddr + Z.of_nat mainMemSize))%Z ;
-  revTable_in_mainMem_proof :
-    Is_true ((mainMemStartAddr <=? revTableStartAddr) &&
-             (revTableStartAddr + Z.shiftr (Z.of_nat heapSize) (lgRevGranularity + 3)
-              <=? mainMemStartAddr + Z.of_nat mainMemSize))%Z ;
-  revTable_heap_disjoint_proof :
-    Is_true ((revTableStartAddr + Z.shiftr (Z.of_nat heapSize) (lgRevGranularity + 3) <=? heapStartAddr) ||
-             (heapStartAddr + Z.of_nat heapSize <=? revTableStartAddr))%Z
-}.
-
 Section MemoryModel.
   Variable config : MemConfig.
 
-  Definition heapEndAddr :=
-    config.(heapStartAddr) + Z.of_nat config.(heapSize).
-
-  Definition paddedBinary :=
-    (fixedBinary ++ List.repeat (bits.of_Z 8 0) (config.(mainMemSize) - length binary))%list.
-
-  Lemma paddedBinary_length :
-    length paddedBinary = config.(mainMemSize).
-  Proof.
-    unfold paddedBinary, fixedBinary.
-    rewrite length_app.
-    rewrite repeat_length.
-    rewrite length_map.
-    pose proof config.(lgMainMemSize_ge_binary) as H.
-    apply Is_true_eq_true in H.
-    rewrite Nat.leb_le in H.
-    lia.
-  Qed.
-
-  Definition tagsStartAddr := Z.shiftr (config.(mainMemStartAddr) + NumBytesFullCapSz - 1) LgNumBytesFullCapSz.
-  Definition tagsEndAddr   := Z.shiftr (config.(mainMemStartAddr) + Z.of_nat config.(mainMemSize)) LgNumBytesFullCapSz.
-  Definition tagsSize : nat := Z.to_nat (tagsEndAddr - tagsStartAddr).
+  Local Notation isMemAddr := (isMemAddr config).
+  Local Notation isTagsAddr := (isTagsAddr config).
+  Local Notation isHeapAddr := (isHeapAddr config).
+  Local Notation heapEndAddr := (heapEndAddr config).
+  Local Notation tagsStartAddr := (tagsStartAddr config).
+  Local Notation tagsEndAddr := (tagsEndAddr config).
+  Local Notation tagsSize := (tagsSize config).
+  Local Notation paddedBinary := (paddedBinary config).
+  Local Notation paddedBinary_length := (paddedBinary_length config).
 
   Definition memoryTree : Tree Elem :=
     Node "mem" [
@@ -134,16 +92,6 @@ Section MemoryModel.
 
   Section Ty.
     Variable ty : Kind -> Type.
-
-    Definition isMemAddr (a : Expr ty Addr) : Expr ty Bool :=
-      Sge a (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr))).
-
-    Definition isTagsAddr (a : Expr ty (Bit TagAddrWidth)) : Expr ty Bool :=
-      Sge a (Const ty (Bit TagAddrWidth) (bits.of_Z TagAddrWidth tagsStartAddr)).
-
-    Definition isHeapAddr (a : Expr ty (Bit (AddrSz + 1))) : Expr ty Bool :=
-      And [ Sge a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;
-            Slt a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) heapEndAddr)) ].
 
     (* 1. Instruction Memory Channel *)
     Definition canReadInstRq : Action ty memoryTree Bool :=
