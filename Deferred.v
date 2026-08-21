@@ -105,20 +105,21 @@ Section DeferredStages.
               if (memIfc ty).(mem_needsRotation)
               then ArrayRotl 8 #stBytesInt #byteOffset
               else #stBytesInt ;
-            Let stDataCap  : Bit FullCapSz  <- {< ToBit #cap, #data >} ;
-            Let stDataInt  : Bit FullCapSz  <- ZeroExtendTo FullCapSz (ToBit #stBytesRot) ;
-            Let stData     : Bit FullCapSz  <- ITE #isCap #stDataCap #stDataInt ;
+            Let stAddr     : Addr           <- ITE #isCap #data (ToBit #stBytesRot) ;
             Let stTag      : Bool           <- And [ #isCap ; #tag ] ;
-            Act (liftAction np_mem ((memIfc ty).(mem_writeBytes) #addr #stData #memSize)) ;
-            Act (liftAction np_mem ((memIfc ty).(mem_writeTag) #tagAddr #stTag)) ;
+            Let stVal      : FullCapWithTag <- STRUCT {
+              "tag"  ::= #stTag ;
+              "cap"  ::= #cap ;
+              "addr" ::= #stAddr
+            } ;
+            Act (liftAction np_mem ((memIfc ty).(mem_writeMem) #addr #stVal #memSize)) ;
             liftAction np_inputFifo (@deq capacity DeferredReq ty)
           ) Else (
             (* --- LOAD ACTION: requires loadFifo is NOT full --- *)
             If (Not #outputBuffer_isFull) Then (
               Let ldOpVal    : LoadOp <- ##memOp `! "Load" ;
               Let isUnsigned : Bool   <- ##ldOpVal`"isUnsigned" ;
-              Act (liftAction np_mem ((memIfc ty).(mem_readBytesRq) #addr)) ;
-              Act (liftAction np_mem ((memIfc ty).(mem_readTagRq) #tagAddr)) ;
+              Act (liftAction np_mem ((memIfc ty).(mem_readMemRq) #addr)) ;
               Let pending : PendingLoad <- STRUCT {
                 "dstIdx"     ::= #dstIdx ;
                 "byteOffset" ::= #byteOffset ;
@@ -149,7 +150,7 @@ Section DeferredStages.
      * STAGE 2: loadRpAndWritebackOrRevRq
      *
      * - Requires: loadFifo is valid (not empty) AND
-     *             memory load response is valid (readBytesRp AND readTagRp are Some).
+     *             memory load response is valid (readMemRp is Some).
      *
      * - Case 1: Tagged Capability Load (memSize == NumBytesFullCapSz AND rawTag == true)
      *     - Requires: revFifo is NOT full.
@@ -171,14 +172,15 @@ Section DeferredStages.
       Let inputBuffer_isValid  : Bool               <- #inputHead `? "Some" ;
 
       If #inputBuffer_isValid Then (
-        LetA rawBytesOpt : Option (Bit FullCapSz) <- liftAction np_mem ((memIfc ty).(mem_readBytesRp)) ;
-        LetA tagOpt      : Option Bool            <- liftAction np_mem ((memIfc ty).(mem_readTagRp)) ;
-        Let memRp_isValid : Bool                  <- And [ ##rawBytesOpt `? "Some" ; ##tagOpt `? "Some" ] ;
+        LetA memRpOpt : Option FullCapWithTag <- liftAction np_mem ((memIfc ty).(mem_readMemRp)) ;
+        Let memRp_isValid : Bool              <- ##memRpOpt `? "Some" ;
 
         If #memRp_isValid Then (
           Let pl         : PendingLoad               <- #inputHead `! "Some" ;
-          Let rawData    : Bit FullCapSz             <- ##rawBytesOpt `! "Some" ;
-          Let rawTag     : Bool                      <- ##tagOpt `! "Some" ;
+          Let memVal     : FullCapWithTag            <- ##memRpOpt `! "Some" ;
+          Let rawTag     : Bool                      <- ##memVal`"tag" ;
+          Let rawCap     : Cap                       <- ##memVal`"cap" ;
+          Let rawDataLsb : Addr                      <- ##memVal`"addr" ;
           Let dstIdx     : Bit RegIdxSz              <- ##pl`"dstIdx" ;
           Let byteOffset : Bit LgNumBytesFullCapSz   <- ##pl`"byteOffset" ;
           Let memSize    : Bit LgLgNumBytesFullCapSz <- ##pl`"memSize" ;
@@ -190,15 +192,13 @@ Section DeferredStages.
           If #isTaggedCap Then (
             (* --- 1. TAGGED CAPABILITY LOAD: requires revFifo is NOT full --- *)
             If (Not #outputBuffer_isFull) Then (
-              Let ldAddr  : Addr <- TruncLsb Xlen Xlen #rawData ;
-              Let ldCap   : Cap  <- FromBit Cap (TruncMsb Xlen Xlen #rawData) ;
-              LetL ldECap : ECap <- DecodeCap ldCap ldAddr ;
+              LetL ldECap : ECap <- DecodeCap rawCap rawDataLsb ;
               Let  base   : Bit (AddrSz + 1) <- ##ldECap`"base" ;
               Act (liftAction np_mem ((memIfc ty).(mem_readRevBitRq) #base)) ;
               Let capVal  : FullECapWithTag <- STRUCT {
                 "tag"  ::= #rawTag ;
                 "ecap" ::= #ldECap ;
-                "addr" ::= #ldAddr
+                "addr" ::= #rawDataLsb
               } ;
               Let pr : PendingRev <- STRUCT {
                 "dstIdx" ::= #dstIdx ;
@@ -210,7 +210,6 @@ Section DeferredStages.
             Retv
           ) Else (
             (* --- 2. UNTAGGED FULL-CAP OR SUB-WORD LOAD: ROTATE LSB 32 BITS --- *)
-            Let rawDataLsb : Bit Xlen                            <- TruncLsb Xlen Xlen #rawData ;
             Let rawBytes   : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
               FromBit (Array (Z.to_nat NumBytesXlen) (Bit 8)) #rawDataLsb ;
             Let rotBytes   : Array (Z.to_nat NumBytesXlen) (Bit 8) <-

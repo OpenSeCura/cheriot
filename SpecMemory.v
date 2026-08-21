@@ -36,21 +36,16 @@ Record MemIfc {ty: Kind -> Type} := {
   mem_readInstRq   : Expr ty Addr -> Action ty memTree (Bit 0) ;
   mem_readInstRp   : Action ty memTree (Option Inst) ;
 
-  (* Data memory bytes channel (FullCapSz = 64 bits = 8 bytes) *)
-  mem_readBytesRq  : Expr ty Addr -> Action ty memTree (Bit 0) ;
-  mem_readBytesRp  : Action ty memTree (Option (Bit FullCapSz)) ;
-
-  (* Capability tag memory channel *)
-  mem_readTagRq    : Expr ty (Bit TagAddrWidth) -> Action ty memTree (Bit 0) ;
-  mem_readTagRp    : Action ty memTree (Option Bool) ;
+  (* Unified Data + Tag memory channel returning FullCapWithTag *)
+  mem_readMemRq    : Expr ty Addr -> Action ty memTree (Bit 0) ;
+  mem_readMemRp    : Action ty memTree (Option FullCapWithTag) ;
 
   (* Revocation bit memory channel *)
   mem_readRevBitRq : Expr ty (Bit (AddrSz + 1)) -> Action ty memTree (Bit 0) ;
   mem_readRevBitRp : Action ty memTree (Option Bool) ;
 
-  (* Memory write channels *)
-  mem_writeBytes   : Expr ty Addr -> Expr ty (Bit FullCapSz) -> Expr ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree (Bit 0) ;
-  mem_writeTag     : Expr ty (Bit (AddrSz - LgNumBytesFullCapSz)) -> Expr ty Bool -> Action ty memTree (Bit 0) ;
+  (* Unified Memory write channel taking FullCapWithTag *)
+  mem_writeMem     : Expr ty Addr -> Expr ty FullCapWithTag -> Expr ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree (Bit 0) ;
 
   (* FENCE.I synchronization channel *)
   mem_fenceI_req   : Action ty memTree (Bit 0) ;
@@ -126,8 +121,7 @@ Section MemoryModel.
                            regInit := Some (Build_SameTuple (tupleElems := List.repeat false tagsSize)
                                                (Is_true_Nat_eq_implies (repeat_length false tagsSize))) |}) ;
       Leaf "instRpReg" (EReg (Build_Reg (Option Inst) (Some (getDefault _)))) ;
-      Leaf "bytesRpReg" (EReg (Build_Reg (Option (Bit FullCapSz)) (Some (getDefault _)))) ;
-      Leaf "tagRpReg" (EReg (Build_Reg (Option Bool) (Some (getDefault _)))) ;
+      Leaf "memRpReg" (EReg (Build_Reg (Option FullCapWithTag) (Some (getDefault _)))) ;
       Leaf "revBitRpReg" (EReg (Build_Reg (Option Bool) (Some (getDefault _))))
     ].
 
@@ -163,44 +157,40 @@ Section MemoryModel.
       RegRead instVal <- "mem.instRpReg" in memoryTree ;
       Return #instVal.
 
-    (* 2. Data Bytes Memory Channel *)
-    Definition readBytesRq (addr : Expr ty Addr) : Action ty memoryTree (Bit 0) :=
-      Let is_valid : Bool <- isMemAddr addr ;
-      If #is_valid Then (
-        Let offset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) addr ;
-        RegRead memVal <- "mem.mainMem" in memoryTree ;
-        Let dataBytes : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <- slice #memVal #offset (Z.to_nat NumBytesFullCapSz) ;
-        RegWrite "mem.bytesRpReg" in memoryTree <- mkSome (ToBit #dataBytes) ;
+    (* 2. Data + Tag Memory Channel *)
+    Definition readMemRq (addr : Expr ty Addr) : Action ty memoryTree (Bit 0) :=
+      Let is_mem_valid : Bool <- isMemAddr addr ;
+      Let tagAddr : Bit TagAddrWidth <- TruncMsb TagAddrWidth LgNumBytesFullCapSz addr ;
+      Let is_tag_valid : Bool <- isTagsAddr #tagAddr ;
+      If (And [ #is_mem_valid ; #is_tag_valid ]) Then (
+        Let memOffset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) addr ;
+        Let tagOffset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) #tagAddr ;
+        RegRead memVal  <- "mem.mainMem" in memoryTree ;
+        RegRead tagsVal <- "mem.tags"    in memoryTree ;
+        Let dataBytes : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <-
+          slice #memVal #memOffset (Z.to_nat NumBytesFullCapSz) ;
+        Let rawTag   : Bool <- ReadArray #tagsVal #tagOffset ;
+        Let rawBits  : Bit FullCapSz <- ToBit #dataBytes ;
+        Let rawAddr  : Addr <- TruncLsb Xlen Xlen #rawBits ;
+        Let rawCap   : Cap  <- FromBit Cap (TruncMsb Xlen Xlen #rawBits) ;
+        Let rp : FullCapWithTag <- STRUCT {
+          "tag"  ::= #rawTag ;
+          "cap"  ::= #rawCap ;
+          "addr" ::= #rawAddr
+        } ;
+        RegWrite "mem.memRpReg" in memoryTree <- mkSome #rp ;
         Retv
       ) Else (
-        RegWrite "mem.bytesRpReg" in memoryTree <- mkSome ConstDef ;
+        RegWrite "mem.memRpReg" in memoryTree <- mkSome ConstDef ;
         Retv
       ) ;
       Retv.
 
-    Definition readBytesRp : Action ty memoryTree (Option (Bit FullCapSz)) :=
-      RegRead bytesVal <- "mem.bytesRpReg" in memoryTree ;
-      Return #bytesVal.
+    Definition readMemRp : Action ty memoryTree (Option FullCapWithTag) :=
+      RegRead memVal <- "mem.memRpReg" in memoryTree ;
+      Return #memVal.
 
-    (* 3. Tag Memory Channel *)
-    Definition readTagRq (addr : Expr ty (Bit TagAddrWidth)) : Action ty memoryTree (Bit 0) :=
-      Let is_valid : Bool <- isTagsAddr addr ;
-      If #is_valid Then (
-        Let offset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) addr ;
-        RegRead tagsVal <- "mem.tags" in memoryTree ;
-        RegWrite "mem.tagRpReg" in memoryTree <- mkSome (ReadArray #tagsVal #offset) ;
-        Retv
-      ) Else (
-        RegWrite "mem.tagRpReg" in memoryTree <- mkSome ConstDef ;
-        Retv
-      ) ;
-      Retv.
-
-    Definition readTagRp : Action ty memoryTree (Option Bool) :=
-      RegRead tagVal <- "mem.tagRpReg" in memoryTree ;
-      Return #tagVal.
-
-    (* 4. Revocation Bit Channel *)
+    (* 3. Revocation Bit Channel *)
     Definition readRevBitRq (base : Expr ty (Bit (AddrSz + 1))) : Action ty memoryTree (Bit 0).
     refine (
       Let is_heap : Bool <- isHeapAddr base ;
@@ -235,50 +225,47 @@ Section MemoryModel.
       RegRead revVal <- "mem.revBitRpReg" in memoryTree ;
       Return #revVal.
 
-    (* 5. Memory Write Operations *)
-    Definition writeBytes (addr : Expr ty Addr) (data : Expr ty (Bit FullCapSz)) (memSize : Expr ty (Bit LgLgNumBytesFullCapSz)) : Action ty memoryTree (Bit 0) :=
-      Let is_valid : Bool <- isMemAddr addr ;
-      If #is_valid Then (
-        Let offset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) addr ;
+    (* 4. Memory Write Operation *)
+    Definition writeMem (addr : Expr ty Addr) (val : Expr ty FullCapWithTag)
+                        (memSize : Expr ty (Bit LgLgNumBytesFullCapSz)) : Action ty memoryTree (Bit 0) :=
+      Let is_mem_valid : Bool <- isMemAddr addr ;
+      Let tagAddr : Bit TagAddrWidth <- TruncMsb TagAddrWidth LgNumBytesFullCapSz addr ;
+      Let is_tag_valid : Bool <- isTagsAddr #tagAddr ;
+      If (And [ #is_mem_valid ; #is_tag_valid ]) Then (
+        Let memOffset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) addr ;
+        Let tagOffset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) #tagAddr ;
         Let num_bytes : Bit (LgNumBytesFullCapSz + 1) <- Sll $1 memSize ;
-        RegRead memVal <- "mem.mainMem" in memoryTree ;
+        Let cap       : Cap                           <- val`"cap" ;
+        Let data      : Addr                          <- val`"addr" ;
+        Let tag       : Bool                          <- val`"tag" ;
+        Let rawData   : Bit FullCapSz                 <- {< ToBit #cap, #data >} ;
+        RegRead memVal  <- "mem.mainMem" in memoryTree ;
+        RegRead tagsVal <- "mem.tags"    in memoryTree ;
         LetL updatedMem : Array config.(mainMemSize) (Bit 8) <-
-          updSlice #memVal #offset (FromBit (Array (Z.to_nat NumBytesFullCapSz) (Bit 8)) data) #num_bytes ;
+          updSlice #memVal #memOffset (FromBit (Array (Z.to_nat NumBytesFullCapSz) (Bit 8)) #rawData) #num_bytes ;
         RegWrite "mem.mainMem" in memoryTree <- #updatedMem ;
+        RegWrite "mem.tags"    in memoryTree <- UpdateArray #tagsVal #tagOffset #tag ;
         Retv
       ) ;
       Retv.
 
-    Definition writeTag (addr : Expr ty (Bit TagAddrWidth)) (tag : Expr ty Bool) : Action ty memoryTree (Bit 0) :=
-      Let is_valid : Bool <- isTagsAddr addr ;
-      If #is_valid Then (
-        Let offset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) addr ;
-        RegRead tagsVal <- "mem.tags" in memoryTree ;
-        RegWrite "mem.tags" in memoryTree <- UpdateArray #tagsVal #offset tag ;
-        Retv
-      ) ;
-      Retv.
-
-    (* 6. FENCE.I Synchronization Channel *)
+    (* 5. FENCE.I Synchronization Channel *)
     Definition fenceI_req : Action ty memoryTree (Bit 0) :=
       Retv.
 
     Definition fenceI_ack : Action ty memoryTree Bool :=
       Return (ConstBool true).
 
-    (* 7. Top-level MemIfc Instance *)
+    (* 6. Top-level MemIfc Instance *)
     Definition specMemIfc : @MemIfc ty := {|
       memTree           := memoryTree ;
       mem_readInstRq    := readInstRq ;
       mem_readInstRp    := readInstRp ;
-      mem_readBytesRq   := readBytesRq ;
-      mem_readBytesRp   := readBytesRp ;
-      mem_readTagRq     := readTagRq ;
-      mem_readTagRp     := readTagRp ;
+      mem_readMemRq     := readMemRq ;
+      mem_readMemRp     := readMemRp ;
       mem_readRevBitRq  := readRevBitRq ;
       mem_readRevBitRp  := readRevBitRp ;
-      mem_writeBytes    := writeBytes ;
-      mem_writeTag      := writeTag ;
+      mem_writeMem      := writeMem ;
       mem_fenceI_req    := fenceI_req ;
       mem_fenceI_ack    := fenceI_ack ;
       mem_needsRotation := false
