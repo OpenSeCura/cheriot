@@ -569,12 +569,12 @@ Section AluRF.
     Return #res.
 
   Definition regRead (regReadIn : ty RegReadIn) : Action ty rfTree AluInInstGroup :=
+    Let  pcc        : FullECapWithTag       <- ##regReadIn`"pcc" ;
     Let  decodeOut  : DecodeOut             <- ##regReadIn`"decodeOut" ;
     Let  fetchExc   : FetchException        <- ##regReadIn`"fetchExc" ;
     Let  cs1Idx     : Bit RegIdxSzReal      <- ##decodeOut`"cs1Idx" ;
     Let  cs2Source  : TaggedUnion Cs2Source <- ##decodeOut`"cs2Idx" ;
 
-    LetA pcc        : FullECapWithTag       <- readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) ;
     LetA cs1        : FullECapWithTag       <- readRegsList gprPathsWithKind #cs1Idx ;
 
     LetIf cs2 : FullECapWithTag <-

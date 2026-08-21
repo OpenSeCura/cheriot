@@ -708,6 +708,7 @@ Definition DecodeOut := STRUCT_TYPE {
 }.
 
 Definition RegReadIn := STRUCT_TYPE {
+  "pcc"         :: FullECapWithTag ;
   "decodeOut"   :: DecodeOut ;
   "fetchExc"    :: FetchException ;
   "isFenceIAck" :: Bool
