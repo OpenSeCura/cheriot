@@ -1012,6 +1012,18 @@ Definition ExecuteOut := STRUCT_TYPE {
   "isFenceIRq"  :: Bool
 }.
 
+Definition PendingFetch := STRUCT_TYPE {
+  "pcc"         :: FullECapWithTag ;
+  "isFenceIAck" :: Bool
+}.
+
+Definition FetchOut := STRUCT_TYPE {
+  "pcc"         :: FullECapWithTag ;
+  "inst"        :: Inst ;
+  "fetchExc"    :: FetchException ;
+  "isFenceIAck" :: Bool
+}.
+
 Definition PendingLoad := STRUCT_TYPE {
   "dstIdx"     :: Bit RegIdxSz ;
   "byteOffset" :: Bit LgNumBytesFullCapSz ;
@@ -1024,6 +1036,11 @@ Definition PendingRev := STRUCT_TYPE {
   "capVal" :: FullECapWithTag
 }.
 
+Definition fetchTree (capacity : nat) : Tree Elem :=
+  Node "fetch" [
+    Node "fetchBuf" [ fifoTree capacity PendingFetch ]
+  ].
+
 Definition deferredTree (capacity : nat) : Tree Elem :=
   Node "deferred" [
     Node "inputBuf" [ fifoTree capacity DeferredReq ] ;
@@ -1031,9 +1048,10 @@ Definition deferredTree (capacity : nat) : Tree Elem :=
     Node "revBuf"   [ fifoTree capacity PendingRev ]
   ].
 
-Definition coreTree (memTree : Tree Elem) (capacity : nat) : Tree Elem :=
+Definition coreTree (memTree : Tree Elem) (fetchCapacity deferredCapacity : nat) : Tree Elem :=
   Node "core" [
     rfTree ;
     Node "mem" [ memTree ] ;
-    deferredTree capacity
+    fetchTree fetchCapacity ;
+    deferredTree deferredCapacity
   ].

@@ -422,3 +422,20 @@ Section DecodeCompressed.
                                          (Eq #quad $2, #q2)] #unc ;
     RetE #res.
 End DecodeCompressed.
+
+Section WrappedDecode.
+  Variable ty : Kind -> Type.
+
+  Definition wrappedDecode (fetchOut : ty FetchOut) : LetExpr ty RegReadIn :=
+    LetE pcc         : FullECapWithTag <- ##fetchOut`"pcc" ;
+    LetE inst        : Inst            <- ##fetchOut`"inst" ;
+    LetE fetchExc    : FetchException  <- ##fetchOut`"fetchExc" ;
+    LetE isFenceIAck : Bool            <- ##fetchOut`"isFenceIAck" ;
+    LETE decodeOut   : DecodeOut       <- decode inst pcc ;
+    @RetE ty RegReadIn (STRUCT {
+      "pcc"         ::= #pcc ;
+      "decodeOut"   ::= #decodeOut ;
+      "fetchExc"    ::= #fetchExc ;
+      "isFenceIAck" ::= #isFenceIAck
+    }).
+End WrappedDecode.

@@ -27,12 +27,13 @@ Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
 Section DeferredStages.
-  Variable capacity : nat.
+  Variable fetchCapacity deferredCapacity : nat.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable ty : Kind -> Type.
 
   Local Notation memTree := (memIfc ty).(memTree).
-  Local Notation tree := (coreTree memTree capacity).
+  Local Notation tree := (coreTree memTree fetchCapacity deferredCapacity).
+  Local Notation capacity := deferredCapacity.
 
   Definition np_rf : NodePath tree :=
     getNodePath tree "core.rf".
