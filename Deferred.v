@@ -115,8 +115,9 @@ Section DeferredStages.
             Act (liftAction np_mem ((memIfc ty).(mem_writeMem) #addr #stVal #memSize)) ;
             liftAction np_inputFifo (@deq capacity DeferredReq ty)
           ) Else (
-            (* --- LOAD ACTION: requires loadFifo is NOT full --- *)
-            If (Not #outputBuffer_isFull) Then (
+            (* --- LOAD ACTION: requires canReadMemRq AND loadFifo is NOT full --- *)
+            LetA canReadMem : Bool <- liftAction np_mem ((memIfc ty).(mem_canReadMemRq)) ;
+            If (And [ #canReadMem ; Not #outputBuffer_isFull ]) Then (
               Let ldOpVal    : LoadOp <- ##memOp `! "Load" ;
               Let isUnsigned : Bool   <- ##ldOpVal`"isUnsigned" ;
               Act (liftAction np_mem ((memIfc ty).(mem_readMemRq) #addr)) ;
@@ -150,13 +151,13 @@ Section DeferredStages.
      * STAGE 2: loadRpAndWritebackOrRevRq
      *
      * - Requires: loadFifo is valid (not empty) AND
-     *             memory load response is valid (readMemRp is Some).
+     *             memory load response is valid (isMemRpValid).
      *
      * - Case 1: Tagged Capability Load (memSize == NumBytesFullCapSz AND rawTag == true)
-     *     - Requires: revFifo is NOT full.
+     *     - Requires: canReadRevBit AND revFifo is NOT full.
      *     - Action:   NO rotation. Decode capability (DecodeCap).
      *                 Issue mem_readRevBitRq on ldECap.base.
-     *                 Enq revFifo <- PendingRev { dstIdx, capVal: { tag: rawTag, ecap: ldECap, addr: ldAddr } }.
+     *                 Enq revFifo <- PendingRev { dstIdx, capVal: { tag: rawTag, ecap: ldECap, addr: rawDataLsb } }.
      *                 Dequeue loadFifo.
      *
      * - Case 2: Untagged Full-Cap OR Sub-Word Load
@@ -172,26 +173,28 @@ Section DeferredStages.
       Let inputBuffer_isValid  : Bool               <- #inputHead `? "Some" ;
 
       If #inputBuffer_isValid Then (
-        LetA memRpOpt : Option FullCapWithTag <- liftAction np_mem ((memIfc ty).(mem_readMemRp)) ;
-        Let memRp_isValid : Bool              <- ##memRpOpt `? "Some" ;
+        LetA isMemRpValid : Bool <- liftAction np_mem ((memIfc ty).(mem_isMemRpValid)) ;
 
-        If #memRp_isValid Then (
+        If #isMemRpValid Then (
           Let pl         : PendingLoad               <- #inputHead `! "Some" ;
-          Let memVal     : FullCapWithTag            <- ##memRpOpt `! "Some" ;
-          Let rawTag     : Bool                      <- ##memVal`"tag" ;
-          Let rawCap     : Cap                       <- ##memVal`"cap" ;
-          Let rawDataLsb : Addr                      <- ##memVal`"addr" ;
           Let dstIdx     : Bit RegIdxSz              <- ##pl`"dstIdx" ;
           Let byteOffset : Bit LgNumBytesFullCapSz   <- ##pl`"byteOffset" ;
           Let memSize    : Bit LgLgNumBytesFullCapSz <- ##pl`"memSize" ;
           Let isUnsigned : Bool                      <- ##pl`"isUnsigned" ;
 
-          Let isCap       : Bool <- Eq #memSize $LgNumBytesFullCapSz ;
-          Let isTaggedCap : Bool <- And [ #isCap ; #rawTag ] ;
+          Let isCap : Bool <- Eq #memSize $LgNumBytesFullCapSz ;
+
+          LetA canReadRev : Bool <- liftAction np_mem ((memIfc ty).(mem_canReadRevBitRq)) ;
+
+          LetA memVal     : FullCapWithTag <- liftAction np_mem ((memIfc ty).(mem_getMemRp)) ;
+          Let rawTag     : Bool           <- ##memVal`"tag" ;
+          Let rawCap     : Cap            <- ##memVal`"cap" ;
+          Let rawDataLsb : Addr           <- ##memVal`"addr" ;
+          Let isTaggedCap : Bool          <- And [ #isCap ; #rawTag ] ;
 
           If #isTaggedCap Then (
-            (* --- 1. TAGGED CAPABILITY LOAD: requires revFifo is NOT full --- *)
-            If (Not #outputBuffer_isFull) Then (
+            (* --- 1. TAGGED CAPABILITY LOAD --- *)
+            If (And [ #canReadRev ; Not #outputBuffer_isFull ]) Then (
               LetL ldECap : ECap <- DecodeCap rawCap rawDataLsb ;
               Let  base   : Bit (AddrSz + 1) <- ##ldECap`"base" ;
               Act (liftAction np_mem ((memIfc ty).(mem_readRevBitRq) #base)) ;
@@ -242,30 +245,32 @@ Section DeferredStages.
      * STAGE 3: revRpAndWriteBack
      *
      * - Requires: revFifo is valid (not empty) AND
-     *             revocation bit response is valid (readRevBitRp is Some).
-     * - Action:   Compute finalTag = capVal.tag and not readRevBitRp.Some.
+     *             revocation bit response is valid (isRevBitRpValid).
+     * - Action:   Compute finalTag = capVal.tag and not getRevBitRp.
      *             Writeback capability with finalTag directly to Register File.
      *             Dequeue revFifo.
      * ========================================================================= *)
     Definition revRpAndWriteBack : Action ty tree (Bit 0) :=
-      LetA inputHead : Option PendingRev <- liftAction np_revFifo (@first capacity PendingRev ty) ;
-
-      Let inputBuffer_isValid : Bool <- #inputHead `? "Some" ;
+      LetA inputHead          : Option PendingRev <- liftAction np_revFifo (@first capacity PendingRev ty) ;
+      Let inputBuffer_isValid : Bool              <- #inputHead `? "Some" ;
 
       If #inputBuffer_isValid Then (
-        LetA revBitOpt : Option Bool <- liftAction np_mem ((memIfc ty).(mem_readRevBitRp)) ;
-        Let memRp_isValid : Bool     <- ##revBitOpt `? "Some" ;
+        LetA isRevRpValid : Bool <- liftAction np_mem ((memIfc ty).(mem_isRevBitRpValid)) ;
 
-        If #memRp_isValid Then (
-          Let pr       : PendingRev      <- #inputHead `! "Some" ;
-          Let revBit   : Bool            <- ##revBitOpt `! "Some" ;
-          Let dstIdx   : Bit RegIdxSz    <- ##pr`"dstIdx" ;
-          Let capVal   : FullECapWithTag <- ##pr`"capVal" ;
-          Let currTag  : Bool            <- ##capVal`"tag" ;
-          Let finalTag : Bool            <- And [ Not #revBit ; #currTag ] ;
-          Let finalVal : FullECapWithTag <- #capVal `{ "tag" <- #finalTag } ;
+        If #isRevRpValid Then (
+          Let  pr       : PendingRev      <- #inputHead `! "Some" ;
+          LetA revBit   : Bool            <- liftAction np_mem ((memIfc ty).(mem_getRevBitRp)) ;
+          Let  dstIdx   : Bit RegIdxSz    <- ##pr`"dstIdx" ;
+          Let  capVal   : FullECapWithTag <- ##pr`"capVal" ;
+          Let  currTag  : Bool            <- ##capVal`"tag" ;
+          Let  finalTag : Bool            <- And [ Not #revBit ; #currTag ] ;
+          Let  dstVal   : FullECapWithTag <- STRUCT {
+            "tag"  ::= #finalTag ;
+            "ecap" ::= ##capVal`"ecap" ;
+            "addr" ::= ##capVal`"addr"
+          } ;
           If (isNotZero #dstIdx) Then (
-            liftAction np_rf (writeRegsList gprPathsWithKind #dstIdx #finalVal)
+            liftAction np_rf (writeRegsList gprPathsWithKind #dstIdx #dstVal)
           ) ;
           liftAction np_revFifo (@deq capacity PendingRev ty)
         ) ;
