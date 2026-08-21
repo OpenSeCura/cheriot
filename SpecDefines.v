@@ -710,8 +710,7 @@ Definition DecodeOut := STRUCT_TYPE {
 Definition RegReadIn := STRUCT_TYPE {
   "pcc"         :: FullECapWithTag ;
   "decodeOut"   :: DecodeOut ;
-  "fetchExc"    :: FetchException ;
-  "isFenceIAck" :: Bool
+  "fetchExc"    :: FetchException
 }.
 
 Definition AluControl := STRUCT_TYPE {
@@ -857,8 +856,7 @@ Definition AluIn := STRUCT_TYPE {
   "cs1"                 :: FullECapWithTag ;
   "cs2"                 :: FullECapWithTag ;
   "currInterruptStatus" :: Bool ;
-  "aluControl"          :: AluControl ;
-  "isFenceIAck"         :: Bool
+  "aluControl"          :: AluControl
 }.
 
 Definition AluInInstGroup := STRUCT_TYPE {
@@ -871,8 +869,7 @@ Definition AluInInstGroup := STRUCT_TYPE {
   "cs1"                 :: FullECapWithTag ;
   "cs2"                 :: FullECapWithTag ;
   "currInterruptStatus" :: Bool ;
-  "instGroup"           :: InstGroup ;
-  "isFenceIAck"         :: Bool
+  "instGroup"           :: InstGroup
 }.
 
 Definition ControlFlowAddrOnlyOpType := [
@@ -911,8 +908,7 @@ Definition AluOut := STRUCT_TYPE {
   "Deferred"    :: Option DeferredUnion ;
   "ControlFlow" :: Option CfPayload ;
   "ScrCsr"      :: Option ScrCsrPayload ;
-  "isFenceI"    :: Bool ;
-  "isFenceIAck" :: Bool
+  "isFenceI"    :: Bool
 }.
 
 Definition NormalFenceIType := [
@@ -949,8 +945,7 @@ Definition AluOutUnion := STRUCT_TYPE {
   "isComp"      :: Bool ;
   "dstIdx"      :: Bit RegIdxSz ;
   "dstValue"    :: FullECapWithTag ;
-  "Op"          :: AluOpUnion ;
-  "isFenceIAck" :: Bool
+  "Op"          :: AluOpUnion
 }.
 
 Definition gprLeaves : list (Tree Elem) :=
@@ -973,8 +968,7 @@ Definition rfTree : Tree Elem :=
   Node "rf" [
     Node "gprs" gprLeaves ;
     Node "scrs" scrLeaves ;
-    Node "csrs" csrLeaves ;
-    Leaf "waitForFenceIAck" (EReg (Build_Reg Bool (Some false)))
+    Node "csrs" csrLeaves
   ].
 
 Definition gprPaths : list (RegPath rfTree) :=
@@ -1013,16 +1007,10 @@ Definition ExecuteOut := STRUCT_TYPE {
   "isFenceIRq"  :: Bool
 }.
 
-Definition PendingFetch := STRUCT_TYPE {
-  "pcc"         :: FullECapWithTag ;
-  "isFenceIAck" :: Bool
-}.
-
 Definition FetchOut := STRUCT_TYPE {
-  "pcc"         :: FullECapWithTag ;
-  "inst"        :: Inst ;
-  "fetchExc"    :: FetchException ;
-  "isFenceIAck" :: Bool
+  "pcc"      :: FullECapWithTag ;
+  "inst"     :: Inst ;
+  "fetchExc" :: FetchException
 }.
 
 Definition PendingLoad := STRUCT_TYPE {
@@ -1039,7 +1027,7 @@ Definition PendingRev := STRUCT_TYPE {
 
 Definition fetchTree (capacity : nat) : Tree Elem :=
   Node "fetch" [
-    Node "fetchBuf" [ fifoTree capacity PendingFetch ]
+    Node "fetchBuf" [ fifoTree capacity FullECapWithTag ]
   ].
 
 Definition deferredTree (capacity : nat) : Tree Elem :=

@@ -758,8 +758,7 @@ Section ConstructAluIn.
       "cs1"                 ::= ##aluInGroup`"cs1" ;
       "cs2"                 ::= ##aluInGroup`"cs2" ;
       "currInterruptStatus" ::= ##aluInGroup`"currInterruptStatus" ;
-      "aluControl"          ::= #ctrl ;
-      "isFenceIAck"         ::= ##aluInGroup`"isFenceIAck"
+      "aluControl"          ::= #ctrl
     }).
 End ConstructAluIn.
 

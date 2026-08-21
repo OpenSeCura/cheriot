@@ -48,32 +48,22 @@ Section FetchStages.
    * STAGE 1: fetchRq
    *
    * - Preconditions: fetchBuf is not full (!isFull) AND
-   *                  instruction memory can accept a request (mem_canReadInstRq) AND
-   *                  (!waitForFenceIAck OR isFenceIAck).
+   *                  instruction memory can accept a request (mem_canReadInstRq).
    * - Action:        Read architectural PCC from Register File (GPR 0).
    *                  Issue mem_readInstRq pcc.addr to instruction memory.
-   *                  Enqueue PendingFetch { pcc, isFenceIAck } into fetchBuf.
+   *                  Enqueue pcc into fetchBuf.
    * ========================================================================= *)
   Definition fetchRq : Action ty tree (Bit 0) :=
-    LetA fetchBuf_isFull : Bool <- liftAction np_fetchFifo (@isFull capacity PendingFetch ty) ;
+    LetA fetchBuf_isFull : Bool <- liftAction np_fetchFifo (@isFull capacity FullECapWithTag ty) ;
     LetA canReadInstRq   : Bool <- liftAction np_mem ((memIfc ty).(mem_canReadInstRq)) ;
-    LetA isFenceIAck     : Bool <- liftAction np_mem ((memIfc ty).(mem_fenceI_ack)) ;
-    LetA waitForAck      : Bool <- liftAction np_rf (
-      RegRead waitVal <- "rf.waitForFenceIAck" in rfTree ;
-      Return #waitVal
-    ) ;
 
-    Let canFetch : Bool <- And [ Not #fetchBuf_isFull ; #canReadInstRq ; Or [ Not #waitForAck ; #isFenceIAck ] ] ;
+    Let canFetch : Bool <- And [ Not #fetchBuf_isFull ; #canReadInstRq ] ;
 
     (* This condition is always true in a spec *)
     If #canFetch Then (
       LetA pcc : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
       Act (liftAction np_mem ((memIfc ty).(mem_readInstRq) ##pcc`"addr")) ;
-      Let pending : PendingFetch <- STRUCT {
-        "pcc"         ::= #pcc ;
-        "isFenceIAck" ::= #isFenceIAck
-      } ;
-      liftAction np_fetchFifo (@enq capacity PendingFetch ty pending)
+      liftAction np_fetchFifo (@enq capacity FullECapWithTag ty pcc)
     ) ;
     Retv.
 
@@ -82,25 +72,23 @@ Section FetchStages.
    *
    * - Preconditions: fetchBuf has pending request (!isEmpty) AND
    *                  instruction response is valid (isInstRpValid).
-   * - Action:        Dequeue PendingFetch from fetchBuf.
+   * - Action:        Dequeue pcc from fetchBuf.
    *                  Read raw instruction bytes from mem_getInstRp.
    *                  Evaluate CHERIoT Fetch Exceptions on PCC and instruction length.
-   *                  Return Option FetchOut { pcc, inst, fetchExc, isFenceIAck }.
+   *                  Return Option FetchOut { pcc, inst, fetchExc }.
    * ========================================================================= *)
   Definition fetchRp : Action ty tree (Option FetchOut) :=
-    LetA inputHead     : Option PendingFetch <- liftAction np_fetchFifo (@first capacity PendingFetch ty) ;
-    LetA isInstRpValid : Bool                <- liftAction np_mem ((memIfc ty).(mem_isInstRpValid)) ;
+    LetA inputHead     : Option FullECapWithTag <- liftAction np_fetchFifo (@first capacity FullECapWithTag ty) ;
+    LetA isInstRpValid : Bool                   <- liftAction np_mem ((memIfc ty).(mem_isInstRpValid)) ;
 
     Let isReady : Bool <- And [ ##inputHead `? "Some" ; #isInstRpValid ] ;
 
     LetIf res : Option FetchOut <-
       (* This condition is always true in a spec *)
       If #isReady Then (
-        Let  pf          : PendingFetch    <- ##inputHead `! "Some" ;
-        Let  pcc         : FullECapWithTag <- ##pf`"pcc" ;
-        Let  isFenceIAck : Bool            <- ##pf`"isFenceIAck" ;
+        Let  pcc         : FullECapWithTag <- ##inputHead `! "Some" ;
         LetA rawInst     : Inst            <- liftAction np_mem ((memIfc ty).(mem_getInstRp)) ;
-        Act (liftAction np_fetchFifo (@deq capacity PendingFetch ty)) ;
+        Act (liftAction np_fetchFifo (@deq capacity FullECapWithTag ty)) ;
 
         (* Fetch Exception Checks *)
         Let isComp    : Bool <- isCompressed rawInst ;
@@ -121,8 +109,7 @@ Section FetchStages.
             "seal"   ::= #sealExc ;
             "perm"   ::= #permExc ;
             "bounds" ::= #boundsExc
-          } ;
-          "isFenceIAck" ::= #isFenceIAck
+          }
         } ;
         Return (mkSome #fetchOut)
       ) Else (

@@ -334,8 +334,7 @@ Section Alu.
       "Deferred"    ::= #DeferredOpRes ;
       "ControlFlow" ::= #cfPayload ;
       "ScrCsr"      ::= #ScrCsrOut ;
-      "isFenceI"    ::= #isFenceIOut ;
-      "isFenceIAck" ::= ##aluIn`"isFenceIAck"
+      "isFenceI"    ::= #isFenceIOut
     }).
 
   Definition Alu (routingOut : ty AluOut) : LetExpr ty AluOutUnion :=
@@ -344,7 +343,6 @@ Section Alu.
     LetE cfOpt       : Option CfPayload <- ##routingOut`"ControlFlow" ;
     LetE scrCsrOpt   : Option ScrCsrPayload <- ##routingOut`"ScrCsr" ;
     LetE isFenceI    : Bool <- ##routingOut`"isFenceI" ;
-    LetE isFenceIAck : Bool <- ##routingOut`"isFenceIAck" ;
 
     LetE isExc : Bool <- #excOpt `? "Some" ;
     LetE excVal : ExceptionInfo <- #excOpt `! "Some" ;
@@ -387,8 +385,7 @@ Section Alu.
       "isComp"      ::= ##routingOut`"isComp" ;
       "dstIdx"      ::= ##routingOut`"dstIdx" ;
       "dstValue"    ::= ##routingOut`"dstValue" ;
-      "Op"          ::= #opUnion ;
-      "isFenceIAck" ::= #isFenceIAck
+      "Op"          ::= #opUnion
     }).
 End Alu.
 
@@ -397,184 +394,164 @@ Section AluRF.
 
   Definition executeNonDeferred (aluOut : ty AluOutUnion)
     : Action ty rfTree ExecuteOut :=
-    Let  isFenceIAck    : Bool                       <- ##aluOut`"isFenceIAck" ;
+    Let  isComp         : Bool                       <- ##aluOut`"isComp" ;
+    Let  dstIdx         : Bit RegIdxSz               <- ##aluOut`"dstIdx" ;
+    Let  dstVal         : FullECapWithTag            <- ##aluOut`"dstValue" ;
+    Let  aluOp          : AluOpUnion                 <- ##aluOut`"Op" ;
+    Let  pcStep         : Addr                       <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
 
-    If #isFenceIAck Then
+    LetA currPcc        : FullECapWithTag            <- readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) ;
+    Let  seqPcc         : FullECapWithTag            <- #currPcc `{ "addr" <- Add [ ##currPcc`"addr" ; #pcStep ] } ;
+
+    Let  isExc          : Bool                       <- #aluOp `? "Exception" ;
+    Let  noExc          : NoExceptionUnion           <- #aluOp `! "NoException" ;
+
+    LetA mstatus        : Bit Xlen                   <- readRegsList csrPathsWithKind
+                                                          ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+    LetA mip            : Bit Xlen                   <- readRegsList csrPathsWithKind
+                                                          ($(getCsrIdx "mip") : Expr ty (Bit CsrIdxSz)) ;
+    Let  currMIE        : Bool                       <- getMstatusMIE #mstatus ;
+    Let  isInterrupt    : Bool                       <- And [ #currMIE ; isNotZero #mip ] ;
+    Let  isTrap         : Bool                       <- Or [ #isInterrupt ; #isExc ] ;
+
+    Let  isDeferred     : Bool                       <- And [ Not #isTrap ; #noExc `? "Deferred" ] ;
+    Let  deferredVal    : DeferredUnion              <- #noExc `! "Deferred" ;
+    Let  deferredReq    : DeferredReq                <- STRUCT {
+      "dstIdx" ::= #dstIdx ;
+      "addr"   ::= ##dstVal`"addr" ;
+      "op"     ::= #deferredVal
+    } ;
+
+    Let  notDeferredVal : NotDeferredUnion           <- #noExc `! "NotDeferred" ;
+    Let  normFence      : NormalFenceIUnion          <- #notDeferredVal `! "NormalFenceI" ;
+    Let  isFenceI       : Bool                       <- And [ Not #isTrap ;
+                                                              ##noExc `? "NotDeferred" ;
+                                                              ##notDeferredVal `? "NormalFenceI" ;
+                                                              ##normFence `? "FenceI" ] ;
+    Let  cfScrCsr       : CfScrCsrUnion              <- #notDeferredVal `! "CfScrCsr" ;
+    Let  cfVal          : CfPayload                  <- #cfScrCsr `! "ControlFlow" ;
+    Let  isCf           : Bool                       <- And [ Not #isTrap ;
+                                                              ##noExc `? "NotDeferred" ;
+                                                              ##notDeferredVal `? "CfScrCsr" ;
+                                                              ##cfScrCsr `? "ControlFlow" ] ;
+    Let  cfOpt          : Option CfPayload           <- ITE0 #isCf (mkSome #cfVal) ;
+
+    If #isTrap Then
       (
-        RegWrite "rf.waitForFenceIAck" in rfTree <- ConstBool false ;
+        Let  excVal     : ExceptionInfo   <- #aluOp `! "Exception" ;
+        LetA mtcc       : FullECapWithTag <- readRegsList scrPathsWithKind ($(getScrIdx "Mtcc") : Expr ty (Bit ScrIdxSz)) ;
+        Let  mstatus1   : Bit Xlen        <- setMstatusMPIE #mstatus #currMIE ;
+        Let  newMstatus : Bit Xlen        <- setMstatusMIE #mstatus1 (ConstBool false) ;
+        Let  newMcause  : Bit Xlen        <- ITE #isInterrupt
+                                                {< Const ty (Bit 1) (bits.of_Z 1 1), TruncLsb 1 (Xlen - 1) #mip >}
+                                                (encodeMcause ##excVal`"mcause") ;
+        Let  newMtval   : Bit Xlen        <- ITE #isInterrupt $0 (encodeCheriMtval ##excVal`"mtval") ;
+
+        Act (writeRegsList scrPathsWithKind ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) #currPcc) ;
+        Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mcause") : Expr ty (Bit CsrIdxSz)) #newMcause) ;
+        Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mtval") : Expr ty (Bit CsrIdxSz)) #newMtval) ;
+        Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
+        writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #mtcc
+      )
+    Else
+      (
+        If (#noExc `? "Deferred") Then
+          (
+            writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
+          )
+        Else
+          (
+            If (isNotZero #dstIdx) Then
+              (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
+
+            If (##notDeferredVal `? "NormalFenceI") Then
+              (
+                writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
+              )
+            Else
+              (
+                Let cfScrCsr : CfScrCsrUnion <- #notDeferredVal `! "CfScrCsr" ;
+                If (##cfScrCsr `? "ScrCsr") Then
+                  (
+                    Let scrCsr : ScrCsrPayload       <- #cfScrCsr `! "ScrCsr" ;
+                    Let sDest  : TaggedUnion ScrCsrIdx <- ##scrCsr`"SpecialDest" ;
+                    Let sVal   : FullECapWithTag      <- ##scrCsr`"SpecialValue" ;
+
+                    If (#sDest `? "Scr") Then
+                      (
+                        Let scrIdx : Bit ScrIdxSz <- #sDest `! "Scr" ;
+                        writeRegsList scrPathsWithKind #scrIdx #sVal
+                      )
+                    Else
+                      (
+                        Let csrIdx : Bit CsrIdxSz <- #sDest `! "Csr" ;
+                        writeRegsList csrPathsWithKind #csrIdx ##sVal`"addr"
+                      ) ;
+                    writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
+                  )
+                Else
+                  (
+                    Let cf     : CfPayload           <- #cfScrCsr `! "ControlFlow" ;
+                    Let newPcc : FullECapWithTag     <- ##cf`"NewPcc" ;
+                    Let cfOp   : CfOp                <- ##cf`"CfOp" ;
+
+                    If (#cfOp `? "ControlFlowAddrOnly") Then
+                      (
+                        Let addrOnlyOp : ControlFlowAddrOnlyOp <- #cfOp `! "ControlFlowAddrOnly" ;
+                        If (##addrOnlyOp `? "Branch") Then
+                          (
+                            Let isTaken   : Bool            <- #addrOnlyOp `! "Branch" ;
+                            Let targetPcc : FullECapWithTag <- #currPcc `{ "addr" <- ##newPcc`"addr" } ;
+                            Let nextPcc   : FullECapWithTag <- ITE #isTaken #targetPcc #seqPcc ;
+                            writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #nextPcc
+                          )
+                        Else
+                          (
+                            Let targetPcc : FullECapWithTag <- #currPcc `{ "addr" <- ##newPcc`"addr" } ;
+                            writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #targetPcc
+                          ) ;
+                        Retv
+                      )
+                    Else
+                      (
+                        Let addrECapOp : ControlFlowAddrECapOp <- #cfOp `! "ControlFlowAddrECap" ;
+                        If (##addrECapOp `? "Cjalr") Then
+                          (
+                            Let  newMIE     : Bool           <- #addrECapOp `! "Cjalr" ;
+                            LetA mstatus    : Bit Xlen       <- readRegsList csrPathsWithKind
+                                                                  ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+                            Let  newMstatus : Bit Xlen       <- setMstatusMIE #mstatus #newMIE ;
+                            Act (writeRegsList csrPathsWithKind
+                                   ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
+                            writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #newPcc
+                          )
+                        Else
+                          (
+                            LetA mePcc      : FullECapWithTag <- readRegsList scrPathsWithKind ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) ;
+                            LetA mstatus    : Bit Xlen        <- readRegsList csrPathsWithKind
+                                                                  ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+                            Let  currMPIE   : Bool            <- getMstatusMPIE #mstatus ;
+                            Let  newMstatus : Bit Xlen        <- setMstatusMIE #mstatus #currMPIE ;
+                            Act (writeRegsList csrPathsWithKind
+                                   ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
+                            writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #mePcc
+                          ) ;
+                        Retv
+                      ) ;
+                    Retv
+                  ) ;
+                Retv
+              ) ;
+            Retv
+          ) ;
         Retv
       ) ;
-
-    RegRead currWait <- "rf.waitForFenceIAck" in rfTree ;
-
-    LetIf res : ExecuteOut <-
-      If (Not #currWait) Then
-        (
-          Let  isComp         : Bool                       <- ##aluOut`"isComp" ;
-          Let  dstIdx         : Bit RegIdxSz               <- ##aluOut`"dstIdx" ;
-          Let  dstVal         : FullECapWithTag            <- ##aluOut`"dstValue" ;
-          Let  aluOp          : AluOpUnion                 <- ##aluOut`"Op" ;
-          Let  pcStep         : Addr                       <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
-
-          LetA currPcc        : FullECapWithTag            <- readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) ;
-          Let  seqPcc         : FullECapWithTag            <- #currPcc `{ "addr" <- Add [ ##currPcc`"addr" ; #pcStep ] } ;
-
-          Let  isExc          : Bool                       <- #aluOp `? "Exception" ;
-          Let  noExc          : NoExceptionUnion           <- #aluOp `! "NoException" ;
-
-          LetA mstatus        : Bit Xlen                   <- readRegsList csrPathsWithKind
-                                                                ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-          LetA mip            : Bit Xlen                   <- readRegsList csrPathsWithKind
-                                                                ($(getCsrIdx "mip") : Expr ty (Bit CsrIdxSz)) ;
-          Let  currMIE        : Bool                       <- getMstatusMIE #mstatus ;
-          Let  isInterrupt    : Bool                       <- And [ #currMIE ; isNotZero #mip ] ;
-          Let  isTrap         : Bool                       <- Or [ #isInterrupt ; #isExc ] ;
-
-          Let  isDeferred     : Bool                       <- And [ Not #isTrap ; #noExc `? "Deferred" ] ;
-          Let  deferredVal    : DeferredUnion              <- #noExc `! "Deferred" ;
-          Let  deferredReq    : DeferredReq                <- STRUCT {
-            "dstIdx" ::= #dstIdx ;
-            "addr"   ::= ##dstVal`"addr" ;
-            "op"     ::= #deferredVal
-          } ;
-
-          Let  notDeferredVal : NotDeferredUnion           <- #noExc `! "NotDeferred" ;
-          Let  normFence      : NormalFenceIUnion          <- #notDeferredVal `! "NormalFenceI" ;
-          Let  isFenceI       : Bool                       <- And [ Not #isTrap ;
-                                                                    ##noExc `? "NotDeferred" ;
-                                                                    ##notDeferredVal `? "NormalFenceI" ;
-                                                                    ##normFence `? "FenceI" ] ;
-          Let  cfScrCsr       : CfScrCsrUnion              <- #notDeferredVal `! "CfScrCsr" ;
-          Let  cfVal          : CfPayload                  <- #cfScrCsr `! "ControlFlow" ;
-          Let  isCf           : Bool                       <- And [ Not #isTrap ;
-                                                                    ##noExc `? "NotDeferred" ;
-                                                                    ##notDeferredVal `? "CfScrCsr" ;
-                                                                    ##cfScrCsr `? "ControlFlow" ] ;
-          Let  cfOpt          : Option CfPayload           <- ITE0 #isCf (mkSome #cfVal) ;
-
-          If #isTrap Then
-            (
-              Let  excVal     : ExceptionInfo   <- #aluOp `! "Exception" ;
-              LetA mtcc       : FullECapWithTag <- readRegsList scrPathsWithKind ($(getScrIdx "Mtcc") : Expr ty (Bit ScrIdxSz)) ;
-              Let  mstatus1   : Bit Xlen        <- setMstatusMPIE #mstatus #currMIE ;
-              Let  newMstatus : Bit Xlen        <- setMstatusMIE #mstatus1 (ConstBool false) ;
-              Let  newMcause  : Bit Xlen        <- ITE #isInterrupt
-                                                     {< Const ty (Bit 1) (bits.of_Z 1 1), TruncLsb 1 (Xlen - 1) #mip >}
-                                                     (encodeMcause ##excVal`"mcause") ;
-              Let  newMtval   : Bit Xlen        <- ITE #isInterrupt $0 (encodeCheriMtval ##excVal`"mtval") ;
-
-              Act (writeRegsList scrPathsWithKind ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) #currPcc) ;
-              Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mcause") : Expr ty (Bit CsrIdxSz)) #newMcause) ;
-              Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mtval") : Expr ty (Bit CsrIdxSz)) #newMtval) ;
-              Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
-              writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #mtcc
-            )
-          Else
-            (
-              If (#noExc `? "Deferred") Then
-                (
-                  writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
-                )
-              Else
-                (
-                  If (isNotZero #dstIdx) Then
-                    (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
-
-                  If (##notDeferredVal `? "NormalFenceI") Then
-                    (
-                      If (##normFence `? "FenceI") Then
-                        (
-                          RegWrite "rf.waitForFenceIAck" in rfTree <- ConstBool true ;
-                          Retv
-                        ) ;
-                      writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
-                    )
-                  Else
-                    (
-                      Let cfScrCsr : CfScrCsrUnion <- #notDeferredVal `! "CfScrCsr" ;
-                      If (##cfScrCsr `? "ScrCsr") Then
-                        (
-                          Let scrCsr : ScrCsrPayload       <- #cfScrCsr `! "ScrCsr" ;
-                          Let sDest  : TaggedUnion ScrCsrIdx <- ##scrCsr`"SpecialDest" ;
-                          Let sVal   : FullECapWithTag      <- ##scrCsr`"SpecialValue" ;
-
-                          If (#sDest `? "Scr") Then
-                            (
-                              Let scrIdx : Bit ScrIdxSz <- #sDest `! "Scr" ;
-                              writeRegsList scrPathsWithKind #scrIdx #sVal
-                            )
-                          Else
-                            (
-                              Let csrIdx : Bit CsrIdxSz <- #sDest `! "Csr" ;
-                              writeRegsList csrPathsWithKind #csrIdx ##sVal`"addr"
-                            ) ;
-                          writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
-                        )
-                      Else
-                        (
-                          Let cf     : CfPayload           <- #cfScrCsr `! "ControlFlow" ;
-                          Let newPcc : FullECapWithTag     <- ##cf`"NewPcc" ;
-                          Let cfOp   : CfOp                <- ##cf`"CfOp" ;
-
-                          If (#cfOp `? "ControlFlowAddrOnly") Then
-                            (
-                              Let addrOnlyOp : ControlFlowAddrOnlyOp <- #cfOp `! "ControlFlowAddrOnly" ;
-                              If (##addrOnlyOp `? "Branch") Then
-                                (
-                                  Let isTaken   : Bool            <- #addrOnlyOp `! "Branch" ;
-                                  Let targetPcc : FullECapWithTag <- #currPcc `{ "addr" <- ##newPcc`"addr" } ;
-                                  Let nextPcc   : FullECapWithTag <- ITE #isTaken #targetPcc #seqPcc ;
-                                  writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #nextPcc
-                                )
-                              Else
-                                (
-                                  Let targetPcc : FullECapWithTag <- #currPcc `{ "addr" <- ##newPcc`"addr" } ;
-                                  writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #targetPcc
-                                ) ;
-                              Retv
-                            )
-                          Else
-                            (
-                              Let addrECapOp : ControlFlowAddrECapOp <- #cfOp `! "ControlFlowAddrECap" ;
-                              If (##addrECapOp `? "Cjalr") Then
-                                (
-                                  Let  newMIE     : Bool           <- #addrECapOp `! "Cjalr" ;
-                                  LetA mstatus    : Bit Xlen       <- readRegsList csrPathsWithKind
-                                                                        ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-                                  Let  newMstatus : Bit Xlen       <- setMstatusMIE #mstatus #newMIE ;
-                                  Act (writeRegsList csrPathsWithKind
-                                         ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
-                                  writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #newPcc
-                                )
-                              Else
-                                (
-                                  LetA mePcc      : FullECapWithTag <- readRegsList scrPathsWithKind ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) ;
-                                  LetA mstatus    : Bit Xlen        <- readRegsList csrPathsWithKind
-                                                                         ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-                                  Let  currMPIE   : Bool            <- getMstatusMPIE #mstatus ;
-                                  Let  newMstatus : Bit Xlen        <- setMstatusMIE #mstatus #currMPIE ;
-                                  Act (writeRegsList csrPathsWithKind
-                                         ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
-                                  writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #mePcc
-                                ) ;
-                              Retv
-                            ) ;
-                          Retv
-                        ) ;
-                      Retv
-                    ) ;
-                  Retv
-                ) ;
-              Retv
-            ) ;
-          Let execOut : ExecuteOut <- STRUCT {
-            "deferredReq" ::= ITE0 #isDeferred (mkSome #deferredReq) ;
-            "cf"          ::= #cfOpt ;
-            "isFenceIRq"  ::= #isFenceI
-          } ;
-          Return #execOut
-        ) ;
-    Return #res.
+    Let execOut : ExecuteOut <- STRUCT {
+      "deferredReq" ::= ITE0 #isDeferred (mkSome #deferredReq) ;
+      "cf"          ::= #cfOpt ;
+      "isFenceIRq"  ::= #isFenceI
+    } ;
+    Return #execOut.
 
   Definition regRead (regReadIn : ty RegReadIn) : Action ty rfTree AluInInstGroup :=
     Let  pcc        : FullECapWithTag       <- ##regReadIn`"pcc" ;
@@ -627,7 +604,6 @@ Section AluRF.
       "cs1"                 ::= #cs1 ;
       "cs2"                 ::= #cs2 ;
       "currInterruptStatus" ::= #currMIE ;
-      "instGroup"           ::= ##decodeOut`"instGroup" ;
-      "isFenceIAck"         ::= ##regReadIn`"isFenceIAck"
+      "instGroup"           ::= ##decodeOut`"instGroup"
     }).
 End AluRF.
