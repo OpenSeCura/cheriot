@@ -444,6 +444,13 @@ Section AluRF.
                                                                     ##noExc `? "NotDeferred" ;
                                                                     ##notDeferredVal `? "NormalFenceI" ;
                                                                     ##normFence `? "FenceI" ] ;
+          Let  cfScrCsr       : CfScrCsrUnion              <- #notDeferredVal `! "CfScrCsr" ;
+          Let  cfVal          : CfPayload                  <- #cfScrCsr `! "ControlFlow" ;
+          Let  isCf           : Bool                       <- And [ Not #isTrap ;
+                                                                    ##noExc `? "NotDeferred" ;
+                                                                    ##notDeferredVal `? "CfScrCsr" ;
+                                                                    ##cfScrCsr `? "ControlFlow" ] ;
+          Let  cfOpt          : Option CfPayload           <- ITE0 #isCf (mkSome #cfVal) ;
 
           If #isTrap Then
             (
@@ -562,6 +569,7 @@ Section AluRF.
             ) ;
           Let execOut : ExecuteOut <- STRUCT {
             "deferredReq" ::= ITE0 #isDeferred (mkSome #deferredReq) ;
+            "cf"          ::= #cfOpt ;
             "isFenceIRq"  ::= #isFenceI
           } ;
           Return #execOut
