@@ -421,7 +421,16 @@ Section AluRF.
 
           Let  isExc          : Bool                       <- #aluOp `? "Exception" ;
           Let  noExc          : NoExceptionUnion           <- #aluOp `! "NoException" ;
-          Let  isDeferred     : Bool                       <- And [ Not #isExc ; #noExc `? "Deferred" ] ;
+
+          LetA mstatus        : Bit Xlen                   <- readRegsList csrPathsWithKind
+                                                                ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+          LetA mip            : Bit Xlen                   <- readRegsList csrPathsWithKind
+                                                                ($(getCsrIdx "mip") : Expr ty (Bit CsrIdxSz)) ;
+          Let  currMIE        : Bool                       <- getMstatusMIE #mstatus ;
+          Let  isInterrupt    : Bool                       <- And [ #currMIE ; isNotZero #mip ] ;
+          Let  isTrap         : Bool                       <- Or [ #isInterrupt ; #isExc ] ;
+
+          Let  isDeferred     : Bool                       <- And [ Not #isTrap ; #noExc `? "Deferred" ] ;
           Let  deferredVal    : DeferredUnion              <- #noExc `! "Deferred" ;
           Let  deferredReq    : DeferredReq                <- STRUCT {
             "dstIdx" ::= #dstIdx ;
@@ -429,21 +438,20 @@ Section AluRF.
             "op"     ::= #deferredVal
           } ;
 
-          If #isExc Then
+          If #isTrap Then
             (
               Let  excVal     : ExceptionInfo   <- #aluOp `! "Exception" ;
               LetA mtcc       : FullECapWithTag <- readRegsList scrPathsWithKind ($(getScrIdx "Mtcc") : Expr ty (Bit ScrIdxSz)) ;
-              LetA mstatus    : Bit Xlen        <- readRegsList csrPathsWithKind
-                                                     ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-              Let  currMIE    : Bool            <- getMstatusMIE #mstatus ;
               Let  mstatus1   : Bit Xlen        <- setMstatusMPIE #mstatus #currMIE ;
               Let  newMstatus : Bit Xlen        <- setMstatusMIE #mstatus1 (ConstBool false) ;
+              Let  newMcause  : Bit Xlen        <- ITE #isInterrupt
+                                                     {< Const ty (Bit 1) (bits.of_Z 1 1), TruncLsb 1 (Xlen - 1) #mip >}
+                                                     (encodeMcause ##excVal`"mcause") ;
+              Let  newMtval   : Bit Xlen        <- ITE #isInterrupt $0 (encodeCheriMtval ##excVal`"mtval") ;
 
               Act (writeRegsList scrPathsWithKind ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) #currPcc) ;
-              Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mcause") : Expr ty (Bit CsrIdxSz))
-                     (encodeMcause ##excVal`"mcause")) ;
-              Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mtval") : Expr ty (Bit CsrIdxSz))
-                     (encodeCheriMtval ##excVal`"mtval")) ;
+              Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mcause") : Expr ty (Bit CsrIdxSz)) #newMcause) ;
+              Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mtval") : Expr ty (Bit CsrIdxSz)) #newMtval) ;
               Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
               writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #mtcc
             )
