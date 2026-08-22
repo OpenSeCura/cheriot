@@ -32,17 +32,17 @@ Section FetchStages.
   Variable ty : Kind -> Type.
 
   Local Notation memTree := (memIfc ty).(memTree).
-  Local Notation tree := (coreTree memTree fetchCapacity deferredCapacity).
+  Local Notation coreTree := (coreTree memTree fetchCapacity deferredCapacity).
   Local Notation capacity := fetchCapacity.
 
-  Definition np_rf : NodePath tree :=
-    getNodePath tree "core.rf".
+  Definition np_rf : NodePath coreTree :=
+    getNodePath coreTree "core.rf".
 
-  Definition np_mem : NodePath tree :=
-    embedNodeIntoPath (getNodePath tree "core.mem") singletonChildPath.
+  Definition np_mem : NodePath coreTree :=
+    embedNodeIntoPath (getNodePath coreTree "core.mem") singletonChildPath.
 
-  Definition np_fetchFifo : NodePath tree :=
-    getNodePath tree "core.fetch.fetchBuf.fifo".
+  Definition np_fetchFifo : NodePath coreTree :=
+    getNodePath coreTree "core.fetch.fetchBuf.fifo".
 
   (* =========================================================================
    * STAGE 1: fetchRq
@@ -53,7 +53,7 @@ Section FetchStages.
    *                  Issue mem_readInstRq pcc.addr to instruction memory.
    *                  Enqueue pcc into fetchBuf.
    * ========================================================================= *)
-  Definition fetchRq : Action ty tree (Bit 0) :=
+  Definition fetchRq : Action ty coreTree (Bit 0) :=
     LetA fetchBuf_isFull : Bool <- liftAction np_fetchFifo (@isFull capacity FullECapWithTag ty) ;
     LetA canReadInstRq   : Bool <- liftAction np_mem ((memIfc ty).(mem_canReadInstRq)) ;
 
@@ -77,7 +77,7 @@ Section FetchStages.
    *                  Evaluate CHERIoT Fetch Exceptions on PCC and instruction length.
    *                  Return Option FetchOut { pcc, inst, fetchExc }.
    * ========================================================================= *)
-  Definition fetchRp : Action ty tree (Option FetchOut) :=
+  Definition fetchRp : Action ty coreTree (Option FetchOut) :=
     LetA inputHead     : Option FullECapWithTag <- liftAction np_fetchFifo (@first capacity FullECapWithTag ty) ;
     LetA isInstRpValid : Bool                   <- liftAction np_mem ((memIfc ty).(mem_isInstRpValid)) ;
 

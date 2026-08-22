@@ -1023,8 +1023,17 @@ Notation incrementDXlenCsr lowCsr highCsr :=
    Act (writeRegsList csrPathsWithKind ($(getCsrIdx lowCsr) : Expr _ (Bit CsrIdxSz)) (TruncLsb Xlen Xlen #newVal)) ;
    writeRegsList csrPathsWithKind ($(getCsrIdx highCsr) : Expr _ (Bit CsrIdxSz)) (TruncMsb Xlen Xlen #newVal)).
 
-Section MshwmHelpers.
+Section CsrHelpers.
   Variable ty : Kind -> Type.
+
+  Definition incrementMinstret : Action ty rfTree (Bit 0) :=
+    incrementDXlenCsr "minstret" "minstreth".
+
+  Definition incrementMcycle : Action ty rfTree (Bit 0) :=
+    incrementDXlenCsr "mcycle" "mcycleh".
+
+  Definition incrementMtime : Action ty rfTree (Bit 0) :=
+    incrementDXlenCsr "mtime" "mtimeh".
 
   Definition updateMshwmOnStore (stAddr : Expr ty Addr) : Action ty rfTree (Bit 0) :=
     LetA mshwm        : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrIdx "mshwm") : Expr _ (Bit CsrIdxSz)) ;
@@ -1038,8 +1047,11 @@ Section MshwmHelpers.
     ) ;
     Retv.
 
-End MshwmHelpers.
+End CsrHelpers.
 
+Arguments incrementMinstret {ty}.
+Arguments incrementMcycle {ty}.
+Arguments incrementMtime {ty}.
 Arguments updateMshwmOnStore {ty} stAddr.
 
 Definition DeferredReq := STRUCT_TYPE {

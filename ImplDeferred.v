@@ -32,23 +32,23 @@ Section DeferredStages.
   Variable ty : Kind -> Type.
 
   Local Notation memTree := (memIfc ty).(memTree).
-  Local Notation tree := (coreTree memTree fetchCapacity deferredCapacity).
+  Local Notation coreTree := (coreTree memTree fetchCapacity deferredCapacity).
   Local Notation capacity := deferredCapacity.
 
-  Definition np_rf : NodePath tree :=
-    getNodePath tree "core.rf".
+  Definition np_rf : NodePath coreTree :=
+    getNodePath coreTree "core.rf".
 
-  Definition np_mem : NodePath tree :=
-    embedNodeIntoPath (getNodePath tree "core.mem") singletonChildPath.
+  Definition np_mem : NodePath coreTree :=
+    embedNodeIntoPath (getNodePath coreTree "core.mem") singletonChildPath.
 
-  Definition np_inputFifo : NodePath tree :=
-    getNodePath tree "core.deferred.inputBuf.fifo".
+  Definition np_inputFifo : NodePath coreTree :=
+    getNodePath coreTree "core.deferred.inputBuf.fifo".
 
-  Definition np_loadFifo : NodePath tree :=
-    getNodePath tree "core.deferred.loadBuf.fifo".
+  Definition np_loadFifo : NodePath coreTree :=
+    getNodePath coreTree "core.deferred.loadBuf.fifo".
 
-  Definition np_revFifo : NodePath tree :=
-    getNodePath tree "core.deferred.revBuf.fifo".
+  Definition np_revFifo : NodePath coreTree :=
+    getNodePath coreTree "core.deferred.revBuf.fifo".
 
   (* =========================================================================
    * STAGE 1: loadRqOrStoreOrFence
@@ -59,7 +59,7 @@ Section DeferredStages.
    * - Load:  issues mem_readMemRq, enqueues PendingLoad if canLoadMemRq.
    * - Fence: drains pending loads/revocations if needed, issues mem_fence_req.
    * ========================================================================= *)
-  Definition loadRqOrStoreOrFence : Action ty tree (Bit 0) :=
+  Definition loadRqOrStoreOrFence : Action ty coreTree (Bit 0) :=
     LetA inputHead           : Option DeferredReq <- liftAction np_inputFifo (@first capacity DeferredReq ty) ;
     LetA outputBuffer_isFull : Bool               <- liftAction np_loadFifo (@isFull capacity PendingLoad ty) ;
 
@@ -79,7 +79,7 @@ Section DeferredStages.
           If #canStore Then (
             Act (liftAction np_mem ((memIfc ty).(mem_writeMem) (##st`"addr") (##st`"stVal") (##st`"memSize"))) ;
             Act (liftAction np_rf (updateMshwmOnStore (##st`"addr"))) ;
-            Act (liftAction np_rf (incrementDXlenCsr "minstret" "minstreth")) ;
+            Act (liftAction np_rf incrementMinstret) ;
             liftAction np_inputFifo (@deq capacity DeferredReq ty)
           ) ;
           Retv
@@ -105,7 +105,7 @@ Section DeferredStages.
           LetA rev_isEmpty          : Bool <- liftAction np_revFifo (@isEmpty capacity PendingRev ty) ;
           If (Or [ Not (##fn`"needsEmpty") ; And [ #outputBuffer_isEmpty ; #rev_isEmpty ] ]) Then (
             Act (liftAction np_mem ((memIfc ty).(mem_fence_req) (##fn`"fenceOp"))) ;
-            Act (liftAction np_rf (incrementDXlenCsr "minstret" "minstreth")) ;
+            Act (liftAction np_rf incrementMinstret) ;
             liftAction np_inputFifo (@deq capacity DeferredReq ty)
           ) ;
           Retv
@@ -124,7 +124,7 @@ Section DeferredStages.
    *     - RevLookup: issues mem_readRevBitRq on ldECap.base, enqueues PendingRev.
    *     - Writeback: writes back directly to Register File.
    * ========================================================================= *)
-  Definition loadRpAndWritebackOrRevRq : Action ty tree (Bit 0) :=
+  Definition loadRpAndWritebackOrRevRq : Action ty coreTree (Bit 0) :=
     LetA inputHead           : Option PendingLoad <- liftAction np_loadFifo (@first capacity PendingLoad ty) ;
     LetA outputBuffer_isFull : Bool               <- liftAction np_revFifo (@isFull capacity PendingRev ty) ;
 
@@ -156,7 +156,7 @@ Section DeferredStages.
           If (isNotZero (##wbInfo`"dstIdx")) Then (
             liftAction np_rf (writeRegsList gprPathsWithKind (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
           ) ;
-          Act (liftAction np_rf (incrementDXlenCsr "minstret" "minstreth")) ;
+          Act (liftAction np_rf incrementMinstret) ;
           liftAction np_loadFifo (@deq capacity PendingLoad ty)
         ) ;
         Retv
@@ -172,7 +172,7 @@ Section DeferredStages.
    * - Uses dispatchRevResponse for pure combinational final writeback value.
    * - Writes back final capability to Register File.
    * ========================================================================= *)
-  Definition revRpAndWriteBack : Action ty tree (Bit 0) :=
+  Definition revRpAndWriteBack : Action ty coreTree (Bit 0) :=
     LetA inputHead          : Option PendingRev <- liftAction np_revFifo (@first capacity PendingRev ty) ;
     Let inputBuffer_isValid : Bool              <- #inputHead `? "Some" ;
 
@@ -186,14 +186,14 @@ Section DeferredStages.
         If (isNotZero (##wbInfo`"dstIdx")) Then (
           liftAction np_rf (writeRegsList gprPathsWithKind (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
         ) ;
-        Act (liftAction np_rf (incrementDXlenCsr "minstret" "minstreth")) ;
+        Act (liftAction np_rf incrementMinstret) ;
         liftAction np_revFifo (@deq capacity PendingRev ty)
       ) ;
       Retv
     ) ;
     Retv.
 
-  Definition deferredRuleList : list (Action ty tree (Bit 0)) := [
+  Definition deferredRuleList : list (Action ty coreTree (Bit 0)) := [
     revRpAndWriteBack ;
     loadRpAndWritebackOrRevRq ;
     loadRqOrStoreOrFence

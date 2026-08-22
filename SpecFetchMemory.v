@@ -274,18 +274,18 @@ Section SpecFetchMemory.
   Variable ty : Kind -> Type.
 
   Local Notation memTree := (specMemTree config).
-  Local Notation tree := (specCoreTree config).
+  Local Notation coreTree := (specCoreTree config).
   Local Notation isMemAddr := (isMemAddr config).
   Local Notation isTagsAddr := (isTagsAddr config).
   Local Notation isHeapAddr := (isHeapAddr config).
   Local Notation tagsStartAddr := (tagsStartAddr config).
   Local Notation tagsSize := (tagsSize config).
 
-  Definition np_rf : NodePath tree :=
-    getNodePath tree "core.rf".
+  Definition np_rf : NodePath coreTree :=
+    getNodePath coreTree "core.rf".
 
-  Definition np_mem : NodePath tree :=
-    getNodePath tree "core.mem".
+  Definition np_mem : NodePath coreTree :=
+    getNodePath coreTree "core.mem".
 
   Local Notation computeRevBitAddr := (computeRevBitAddr config).
 
@@ -303,7 +303,7 @@ Section SpecFetchMemory.
   (* =========================================================================
    * 1. specFetch (Atomic Combinational Fetch)
    * ========================================================================= *)
-  Definition specFetch : Action ty tree FetchOut :=
+  Definition specFetch : Action ty coreTree FetchOut :=
     LetA pcc : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
     Let offset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) ##pcc`"addr" ;
     LetA rawInst : Inst <- liftAction np_mem (
@@ -338,7 +338,7 @@ Section SpecFetchMemory.
   (* =========================================================================
    * 2. specExecuteDeferredReq (Single Deferred Request execution)
    * ========================================================================= *)
-  Definition specExecuteDeferredReq (req : ty DeferredReq) : Action ty tree (Bit 0) :=
+  Definition specExecuteDeferredReq (req : ty DeferredReq) : Action ty coreTree (Bit 0) :=
     LetL action : DeferredAction <- dispatchDeferredReq req false ;
 
     If (##action `? "Mem") Then (
@@ -371,7 +371,7 @@ Section SpecFetchMemory.
           Retv
         )) ;
         Act (liftAction np_rf (updateMshwmOnStore #addr)) ;
-        Act (liftAction np_rf (incrementDXlenCsr "minstret" "minstreth")) ;
+        Act (liftAction np_rf incrementMinstret) ;
         Retv
       ) Else (
         Let ld        : LoadCmd           <- ##memAct `! "Load" ;
@@ -411,21 +411,21 @@ Section SpecFetchMemory.
           If (isNotZero (##wbInfo`"dstIdx")) Then (
             liftAction np_rf (writeRegsList gprPathsWithKind (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
           ) ;
-          Act (liftAction np_rf (incrementDXlenCsr "minstret" "minstreth")) ;
+          Act (liftAction np_rf incrementMinstret) ;
           Retv
         ) Else (
           Let wbInfo : WbCmd <- #outcome `! "Writeback" ;
           If (isNotZero (##wbInfo`"dstIdx")) Then (
             liftAction np_rf (writeRegsList gprPathsWithKind (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
           ) ;
-          Act (liftAction np_rf (incrementDXlenCsr "minstret" "minstreth")) ;
+          Act (liftAction np_rf incrementMinstret) ;
           Retv
         ) ;
         Retv
       ) ;
       Retv
     ) Else (
-      Act (liftAction np_rf (incrementDXlenCsr "minstret" "minstreth")) ;
+      Act (liftAction np_rf incrementMinstret) ;
       Retv
     ) ;
     Retv.
@@ -433,7 +433,7 @@ Section SpecFetchMemory.
   (* =========================================================================
    * 3. specExecuteDeferred (Executing Option DeferredReq)
    * ========================================================================= *)
-  Definition specExecuteDeferred (reqOpt : ty (Option DeferredReq)) : Action ty tree (Bit 0) :=
+  Definition specExecuteDeferred (reqOpt : ty (Option DeferredReq)) : Action ty coreTree (Bit 0) :=
     If (##reqOpt `? "Some") Then (
       Let req : DeferredReq <- ##reqOpt `! "Some" ;
       specExecuteDeferredReq req

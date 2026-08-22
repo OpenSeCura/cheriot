@@ -31,27 +31,27 @@ Section Spec.
   Variable config : MemConfig.
   Variable ty : Kind -> Type.
 
-  Local Notation tree := (specSysTree config).
+  Local Notation sysTree := (specSysTree config).
 
-  Definition np_core : NodePath tree :=
-    getNodePath tree "sys.core".
+  Definition np_core : NodePath sysTree :=
+    getNodePath sysTree "sys.core".
 
-  Definition np_rf : NodePath tree :=
-    getNodePath tree "sys.core.rf".
+  Definition np_rf : NodePath sysTree :=
+    getNodePath sysTree "sys.core.rf".
 
-  Definition np_mem : NodePath tree :=
-    getNodePath tree "sys.core.mem".
+  Definition np_mem : NodePath sysTree :=
+    getNodePath sysTree "sys.core.mem".
 
-  Definition np_intr : NodePath tree :=
-    getNodePath tree "sys.interrupts".
+  Definition np_intr : NodePath sysTree :=
+    getNodePath sysTree "sys.interrupts".
 
-  Definition specTickCycle : Action ty tree (Bit 0) :=
-    liftAction np_rf (incrementDXlenCsr "mcycle" "mcycleh").
+  Definition specTickCycle : Action ty sysTree (Bit 0) :=
+    liftAction np_rf incrementMcycle.
 
-  Definition specTickTimer : Action ty tree (Bit 0) :=
-    liftAction np_rf (incrementDXlenCsr "mtime" "mtimeh").
+  Definition specTickTimer : Action ty sysTree (Bit 0) :=
+    liftAction np_rf incrementMtime.
 
-  Definition specReceiveInterrupts : Action ty tree (Bit 0) :=
+  Definition specReceiveInterrupts : Action ty sysTree (Bit 0) :=
     LetA meip    : Bool                       <- liftAction np_intr (Get meip <- "interrupts.meip_in" in interruptsTree ; Return #meip) ;
     LetA mtip    : Bool                       <- liftAction np_intr (Get mtip <- "interrupts.mtip_in" in interruptsTree ; Return #mtip) ;
     LetA msip    : Bool                       <- liftAction np_intr (Get msip <- "interrupts.msip_in" in interruptsTree ; Return #msip) ;
@@ -66,7 +66,7 @@ Section Spec.
     Act (liftAction np_rf (writeRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz)) (ToBit #arr3))) ;
     Retv.
 
-  Definition specStep : Action ty tree (Bit 0) :=
+  Definition specStep : Action ty sysTree (Bit 0) :=
     (* 1. Fetch *)
     LetA fetchOut : FetchOut <- liftAction np_core (specFetch config ty) ;
 
