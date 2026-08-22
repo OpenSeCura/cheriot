@@ -95,32 +95,37 @@ Section DeferredStages.
           Let byteOffset : Bit LgNumBytesFullCapSz   <- TruncLsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz #addr ;
 
           If (##memOp `? "Store") Then (
-            (* --- STORE ACTION --- *)
-            Let stCapVal   : FullCapWithTag <- ##memOp `! "Store" ;
-            Let tag        : Bool           <- ##stCapVal`"tag" ;
-            Let cap        : Cap            <- ##stCapVal`"cap" ;
-            Let data       : Addr           <- ##stCapVal`"addr" ;
-            Let isCap      : Bool           <- Eq #memSize $LgNumBytesFullCapSz ;
-            Let stBytesInt : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
-              FromBit (Array (Z.to_nat NumBytesXlen) (Bit 8)) #data ;
-            Let stBytesRot : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
-              if (memIfc ty).(mem_needsRotation)
-              then ArrayRotl 8 #stBytesInt #byteOffset
-              else #stBytesInt ;
-            Let stAddr     : Addr           <- ITE #isCap #data (ToBit #stBytesRot) ;
-            Let stTag      : Bool           <- And [ #isCap ; #tag ] ;
-            Let stVal      : FullCapWithTag <- STRUCT {
-              "tag"  ::= #stTag ;
-              "cap"  ::= #cap ;
-              "addr" ::= #stAddr
-            } ;
-            Act (liftAction np_mem ((memIfc ty).(mem_writeMem) #addr #stVal #memSize)) ;
-            liftAction np_inputFifo (@deq capacity DeferredReq ty)
-          ) Else (
-            (* --- LOAD ACTION: requires canReadMemRq AND loadFifo is NOT full --- *)
-            LetA canReadMem : Bool <- liftAction np_mem ((memIfc ty).(mem_canReadMemRq)) ;
+            (* --- STORE ACTION: requires canStoreMemRq --- *)
+            LetA canStore : Bool <- liftAction np_mem ((memIfc ty).(mem_canStoreMemRq)) ;
             (* This condition is always true in a spec *)
-            If (And [ #canReadMem ; Not #outputBuffer_isFull ]) Then (
+            If #canStore Then (
+              Let stCapVal   : FullCapWithTag <- ##memOp `! "Store" ;
+              Let tag        : Bool           <- ##stCapVal`"tag" ;
+              Let cap        : Cap            <- ##stCapVal`"cap" ;
+              Let data       : Addr           <- ##stCapVal`"addr" ;
+              Let isCap      : Bool           <- Eq #memSize $LgNumBytesFullCapSz ;
+              Let stBytesInt : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
+                FromBit (Array (Z.to_nat NumBytesXlen) (Bit 8)) #data ;
+              Let stBytesRot : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
+                if (memIfc ty).(mem_needsRotation)
+                then ArrayRotl 8 #stBytesInt #byteOffset
+                else #stBytesInt ;
+              Let stAddr     : Addr           <- ITE #isCap #data (ToBit #stBytesRot) ;
+              Let stTag      : Bool           <- And [ #isCap ; #tag ] ;
+              Let stVal      : FullCapWithTag <- STRUCT {
+                "tag"  ::= #stTag ;
+                "cap"  ::= #cap ;
+                "addr" ::= #stAddr
+              } ;
+              Act (liftAction np_mem ((memIfc ty).(mem_writeMem) #addr #stVal #memSize)) ;
+              liftAction np_inputFifo (@deq capacity DeferredReq ty)
+            ) ;
+            Retv
+          ) Else (
+            (* --- LOAD ACTION: requires canLoadMemRq AND loadFifo is NOT full --- *)
+            LetA canLoad : Bool <- liftAction np_mem ((memIfc ty).(mem_canLoadMemRq)) ;
+            (* This condition is always true in a spec *)
+            If (And [ #canLoad ; Not #outputBuffer_isFull ]) Then (
               Let ldOpVal    : LoadOp <- ##memOp `! "Load" ;
               Let isUnsigned : Bool   <- ##ldOpVal`"isUnsigned" ;
               Act (liftAction np_mem ((memIfc ty).(mem_readMemRq) #addr)) ;
@@ -137,11 +142,12 @@ Section DeferredStages.
           ) ;
           Retv
         ) Else (
-          (* --- FENCE ACTION: (!fenceNeedsEmpty OR all downstream FIFOs empty) --- *)
-          Let fenceOp : FenceOp <- ##op `! "Fence" ;
-          Let fenceNeedsEmpty : Bool <- Or [ ##fenceOp`"RW" ; ##fenceOp`"RR" ] ;
+          (* --- FENCE ACTION: canFenceMemRq AND (!fenceNeedsEmpty OR all downstream FIFOs empty) --- *)
+          Let fenceOp         : FenceOp <- ##op `! "Fence" ;
+          Let fenceNeedsEmpty : Bool    <- Or [ ##fenceOp`"RW" ; ##fenceOp`"RR" ] ;
+          LetA canFence       : Bool    <- liftAction np_mem ((memIfc ty).(mem_canFenceMemRq)) ;
           (* This condition is always true in a spec *)
-          If (Or [ Not #fenceNeedsEmpty ; And [ #outputBuffer_isEmpty ; #rev_isEmpty ] ]) Then (
+          If (And [ #canFence ; Or [ Not #fenceNeedsEmpty ; And [ #outputBuffer_isEmpty ; #rev_isEmpty ] ] ]) Then (
             Act (liftAction np_mem ((memIfc ty).(mem_fence_req) #fenceOp)) ;
             liftAction np_inputFifo (@deq capacity DeferredReq ty)
           ) ;

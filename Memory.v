@@ -40,8 +40,8 @@ Record MemIfc {ty: Kind -> Type} := {
   mem_isInstRpValid   : Action ty memTree Bool ;
   mem_getInstRp       : Action ty memTree Inst ;
 
-  (* 2. Data + Tag Memory Channel *)
-  mem_canReadMemRq    : Action ty memTree Bool ;
+  (* 2. Data Load Channel *)
+  mem_canLoadMemRq    : Action ty memTree Bool ;
   mem_readMemRq       : Expr ty Addr -> Action ty memTree (Bit 0) ;
   mem_isMemRpValid    : Action ty memTree Bool ;
   mem_getMemRp        : Action ty memTree FullCapWithTag ;
@@ -53,12 +53,14 @@ Record MemIfc {ty: Kind -> Type} := {
   mem_getRevBitRp     : Action ty memTree Bool ;
 
   (* 4. Memory Write Channel *)
-  mem_writeMem      : Expr ty Addr -> Expr ty FullCapWithTag -> Expr ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree (Bit 0) ;
+  mem_canStoreMemRq   : Action ty memTree Bool ;
+  mem_writeMem        : Expr ty Addr -> Expr ty FullCapWithTag -> Expr ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree (Bit 0) ;
 
   (* 5. FENCE & FENCE.I Synchronization Channels *)
-  mem_fence_req     : Expr ty FenceOp -> Action ty memTree (Bit 0) ;
-  mem_fenceI_req    : Action ty memTree (Bit 0) ;
-  mem_fenceI_ack    : Action ty memTree Bool ;
+  mem_canFenceMemRq   : Action ty memTree Bool ;
+  mem_fence_req       : Expr ty FenceOp -> Action ty memTree (Bit 0) ;
+  mem_fenceI_req      : Action ty memTree (Bit 0) ;
+  mem_fenceI_ack      : Action ty memTree Bool ;
 
   (* 6. Memory Alignment / Rotation Flag *)
   mem_needsRotation : bool
@@ -122,8 +124,8 @@ Section MemoryModel.
       RegWrite "mem.instRpReg" in memoryTree <- ConstDef ;
       Return (##rpVal `! "Some").
 
-    (* 2. Data + Tag Memory Channel *)
-    Definition canReadMemRq : Action ty memoryTree Bool :=
+    (* 2. Data Load Channel *)
+    Definition canLoadMemRq : Action ty memoryTree Bool :=
       RegRead bytesVal <- "mem.bytesRpReg" in memoryTree ;
       RegRead tagVal   <- "mem.tagRpReg"   in memoryTree ;
       Return (And [ Not (##bytesVal `? "Some") ; Not (##tagVal `? "Some") ]).
@@ -234,7 +236,13 @@ Section MemoryModel.
       ) ;
       Retv.
 
+    Definition canStoreMemRq : Action ty memoryTree Bool :=
+      Return (ConstBool true).
+
     (* 5. FENCE & FENCE.I Synchronization Channels *)
+    Definition canFenceMemRq : Action ty memoryTree Bool :=
+      Return (ConstBool true).
+
     Definition fence_req (_ : Expr ty FenceOp) : Action ty memoryTree (Bit 0) :=
       Retv.
 
@@ -251,7 +259,7 @@ Section MemoryModel.
       mem_readInstRq      := readInstRq ;
       mem_isInstRpValid   := isInstRpValid ;
       mem_getInstRp       := getInstRp ;
-      mem_canReadMemRq    := canReadMemRq ;
+      mem_canLoadMemRq    := canLoadMemRq ;
       mem_readMemRq       := readMemRq ;
       mem_isMemRpValid    := isMemRpValid ;
       mem_getMemRp        := getMemRp ;
@@ -259,7 +267,9 @@ Section MemoryModel.
       mem_readRevBitRq    := readRevBitRq ;
       mem_isRevBitRpValid := isRevBitRpValid ;
       mem_getRevBitRp     := getRevBitRp ;
+      mem_canStoreMemRq   := canStoreMemRq ;
       mem_writeMem        := writeMem ;
+      mem_canFenceMemRq   := canFenceMemRq ;
       mem_fence_req       := fence_req ;
       mem_fenceI_req      := fenceI_req ;
       mem_fenceI_ack      := fenceI_ack ;
