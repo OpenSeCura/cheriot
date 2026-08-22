@@ -150,13 +150,17 @@ Section SpecFetchMemory.
         Let rawCap     : Cap           <- FromBit Cap (TruncMsb Xlen Xlen #rawBits) ;
 
         If #isCap Then (
-          LetL ldECap : ECap <- DecodeCap rawCap rawDataLsb ;
+          LetL ldECap        : ECap <- DecodeCap rawCap rawDataLsb ;
+          Let  isSealingCap  : Bool <- Or [ ##ldECap`"perms"`"SE" ;
+                                            ##ldECap`"perms"`"US" ;
+                                            ##ldECap`"perms"`"U0" ] ;
+          Let  needsRevCheck : Bool <- And [ #rawTag ; Not #isSealingCap ] ;
           LetIf finalTag : Bool <-
-            If #rawTag Then (
+            If #needsRevCheck Then (
               LetA revBit : Bool <- liftAction np_mem (readRevBit (##ldECap`"base")) ;
               Return (Not #revBit)
             ) Else (
-              Return (ConstBool false)
+              Return #rawTag
             ) ;
           Let dstVal : FullECapWithTag <- STRUCT {
             "tag"  ::= #finalTag ;

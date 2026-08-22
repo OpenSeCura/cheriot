@@ -200,32 +200,49 @@ Section DeferredStages.
           Let rawTag     : Bool           <- ##memVal`"tag" ;
           Let rawCap     : Cap            <- ##memVal`"cap" ;
           Let rawDataLsb : Addr           <- ##memVal`"addr" ;
-          Let isTaggedCap : Bool          <- And [ #isCap ; #rawTag ] ;
+          If #isCap Then (
+            LetL ldECap        : ECap <- DecodeCap rawCap rawDataLsb ;
+            Let  isSealingCap  : Bool <- Or [ ##ldECap`"perms"`"SE" ;
+                                              ##ldECap`"perms"`"US" ;
+                                              ##ldECap`"perms"`"U0" ] ;
+            Let  needsRevCheck : Bool <- And [ #rawTag ; Not #isSealingCap ] ;
 
-          If #isTaggedCap Then (
-            (* --- 1. TAGGED CAPABILITY LOAD --- *)
-            LetA canReadRev : Bool <- liftAction np_mem ((memIfc ty).(mem_canReadRevBitRq)) ;
+            If #needsRevCheck Then (
+              (* --- 1A. TAGGED MEMORY CAPABILITY: ISSUE REVOCATION LOOKUP --- *)
+              LetA canReadRev : Bool <- liftAction np_mem ((memIfc ty).(mem_canReadRevBitRq)) ;
 
-            (* This condition is always true in a spec *)
-            If (And [ #canReadRev ; Not #outputBuffer_isFull ]) Then (
-              LetL ldECap : ECap <- DecodeCap rawCap rawDataLsb ;
-              Let  base   : Bit (AddrSz + 1) <- ##ldECap`"base" ;
-              Act (liftAction np_mem ((memIfc ty).(mem_readRevBitRq) #base)) ;
-              Let capVal  : FullECapWithTag <- STRUCT {
+              (* This condition is always true in a spec *)
+              If (And [ #canReadRev ; Not #outputBuffer_isFull ]) Then (
+                Let  base   : Bit (AddrSz + 1) <- ##ldECap`"base" ;
+                Act (liftAction np_mem ((memIfc ty).(mem_readRevBitRq) #base)) ;
+                Let capVal  : FullECapWithTag <- STRUCT {
+                  "tag"  ::= #rawTag ;
+                  "ecap" ::= #ldECap ;
+                  "addr" ::= #rawDataLsb
+                } ;
+                Let pr : PendingRev <- STRUCT {
+                  "dstIdx" ::= #dstIdx ;
+                  "capVal" ::= #capVal
+                } ;
+                Act (liftAction np_revFifo (@enq capacity PendingRev ty pr)) ;
+                liftAction np_loadFifo (@deq capacity PendingLoad ty)
+              ) ;
+              Retv
+            ) Else (
+              (* --- 1B. SEALING CAPABILITY (TAGGED) OR UNTAGGED FULL CAP: DIRECT WRITEBACK --- *)
+              Let dstVal : FullECapWithTag <- STRUCT {
                 "tag"  ::= #rawTag ;
                 "ecap" ::= #ldECap ;
                 "addr" ::= #rawDataLsb
               } ;
-              Let pr : PendingRev <- STRUCT {
-                "dstIdx" ::= #dstIdx ;
-                "capVal" ::= #capVal
-              } ;
-              Act (liftAction np_revFifo (@enq capacity PendingRev ty pr)) ;
+              If (isNotZero #dstIdx) Then (
+                liftAction np_rf (writeRegsList gprPathsWithKind #dstIdx #dstVal)
+              ) ;
               liftAction np_loadFifo (@deq capacity PendingLoad ty)
             ) ;
             Retv
           ) Else (
-            (* --- 2. UNTAGGED FULL-CAP OR SUB-WORD LOAD: ROTATE LSB 32 BITS --- *)
+            (* --- 2. SUB-WORD LOAD: ROTATE LSB 32 BITS --- *)
             Let rawBytes   : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
               FromBit (Array (Z.to_nat NumBytesXlen) (Bit 8)) #rawDataLsb ;
             Let rotBytes   : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
