@@ -78,6 +78,8 @@ Section DeferredStages.
           LetA canStore : Bool           <- liftAction np_mem ((memIfc ty).(mem_canStoreMemRq)) ;
           If #canStore Then (
             Act (liftAction np_mem ((memIfc ty).(mem_writeMem) (##st`"addr") (##st`"stVal") (##st`"memSize"))) ;
+            Act (liftAction np_rf (updateMshwmOnStore (##st`"addr"))) ;
+            Act (liftAction np_rf (incrementDXlenCsr "minstret" "minstreth")) ;
             liftAction np_inputFifo (@deq capacity DeferredReq ty)
           ) ;
           Retv
@@ -103,6 +105,7 @@ Section DeferredStages.
           LetA rev_isEmpty          : Bool <- liftAction np_revFifo (@isEmpty capacity PendingRev ty) ;
           If (Or [ Not (##fn`"needsEmpty") ; And [ #outputBuffer_isEmpty ; #rev_isEmpty ] ]) Then (
             Act (liftAction np_mem ((memIfc ty).(mem_fence_req) (##fn`"fenceOp"))) ;
+            Act (liftAction np_rf (incrementDXlenCsr "minstret" "minstreth")) ;
             liftAction np_inputFifo (@deq capacity DeferredReq ty)
           ) ;
           Retv
@@ -153,6 +156,7 @@ Section DeferredStages.
           If (isNotZero (##wbInfo`"dstIdx")) Then (
             liftAction np_rf (writeRegsList gprPathsWithKind (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
           ) ;
+          Act (liftAction np_rf (incrementDXlenCsr "minstret" "minstreth")) ;
           liftAction np_loadFifo (@deq capacity PendingLoad ty)
         ) ;
         Retv
@@ -182,6 +186,7 @@ Section DeferredStages.
         If (isNotZero (##wbInfo`"dstIdx")) Then (
           liftAction np_rf (writeRegsList gprPathsWithKind (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
         ) ;
+        Act (liftAction np_rf (incrementDXlenCsr "minstret" "minstreth")) ;
         liftAction np_revFifo (@deq capacity PendingRev ty)
       ) ;
       Retv

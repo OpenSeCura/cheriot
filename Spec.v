@@ -31,18 +31,44 @@ Section Spec.
   Variable config : MemConfig.
   Variable ty : Kind -> Type.
 
-  Local Notation memTree := (specMemTree config).
-  Local Notation tree := (specCoreTree config).
+  Local Notation tree := (specSysTree config).
+
+  Definition np_core : NodePath tree :=
+    getNodePath tree "sys.core".
 
   Definition np_rf : NodePath tree :=
-    getNodePath tree "core.rf".
+    getNodePath tree "sys.core.rf".
 
   Definition np_mem : NodePath tree :=
-    getNodePath tree "core.mem".
+    getNodePath tree "sys.core.mem".
+
+  Definition np_intr : NodePath tree :=
+    getNodePath tree "sys.interrupts".
+
+  Definition specTickCycle : Action ty tree (Bit 0) :=
+    liftAction np_rf (incrementDXlenCsr "mcycle" "mcycleh").
+
+  Definition specTickTimer : Action ty tree (Bit 0) :=
+    liftAction np_rf (incrementDXlenCsr "mtime" "mtimeh").
+
+  Definition specReceiveInterrupts : Action ty tree (Bit 0) :=
+    LetA meip    : Bool                       <- liftAction np_intr (Get meip <- "interrupts.meip_in" in interruptsTree ; Return #meip) ;
+    LetA mtip    : Bool                       <- liftAction np_intr (Get mtip <- "interrupts.mtip_in" in interruptsTree ; Return #mtip) ;
+    LetA msip    : Bool                       <- liftAction np_intr (Get msip <- "interrupts.msip_in" in interruptsTree ; Return #msip) ;
+    LetA currMip : Bit Xlen                   <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz))) ;
+    Let  currArr : Array (Z.to_nat Xlen) Bool <- FromBit (Array (Z.to_nat Xlen) Bool) #currMip ;
+    Let  idxMeip : Bit LgXlen                 <- $MEIP_Bit ;
+    Let  idxMtip : Bit LgXlen                 <- $MTIP_Bit ;
+    Let  idxMsip : Bit LgXlen                 <- $MSIP_Bit ;
+    Let  arr1    : Array (Z.to_nat Xlen) Bool <- UpdateArray #currArr #idxMeip (Or [ #meip ; ReadArray #currArr #idxMeip ]) ;
+    Let  arr2    : Array (Z.to_nat Xlen) Bool <- UpdateArray #arr1    #idxMtip (Or [ #mtip ; ReadArray #arr1    #idxMtip ]) ;
+    Let  arr3    : Array (Z.to_nat Xlen) Bool <- UpdateArray #arr2    #idxMsip (Or [ #msip ; ReadArray #arr2    #idxMsip ]) ;
+    Act (liftAction np_rf (writeRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz)) (ToBit #arr3))) ;
+    Retv.
 
   Definition specStep : Action ty tree (Bit 0) :=
     (* 1. Fetch *)
-    LetA fetchOut : FetchOut <- specFetch config ty ;
+    LetA fetchOut : FetchOut <- liftAction np_core (specFetch config ty) ;
 
     (* 2. Decode *)
     LetL regReadIn : RegReadIn <- wrappedDecode fetchOut ;
@@ -73,7 +99,7 @@ Section Spec.
 
     (* 6. Commit Deferred (Memory Loads, Stores, Fences) *)
     Let  reqOpt  : Option DeferredReq <- ##execOut`"deferredReq" ;
-    Act (specExecuteDeferred config reqOpt) ;
+    Act (liftAction np_core (specExecuteDeferred config reqOpt)) ;
     Retv.
 
 End Spec.

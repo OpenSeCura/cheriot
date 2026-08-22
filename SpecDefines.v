@@ -39,8 +39,14 @@ Definition getMemOffset {ty: Kind -> Type} (startAddr: Z) (size: Z) n (addr: Exp
   Defined.
 
 Definition Xlen         := 32.
+Definition DXlen        := Eval compute in (2 * Xlen).
 Definition InstSz       := 32.
 Definition CompInstSz   := 16.
+Definition LgMshwmAlign := 4.
+
+Definition MEIP_Bit     := 11.
+Definition MTIP_Bit     := 7.
+Definition MSIP_Bit     := 3.
 
 Definition RegIdxSz     := 5.
 Definition CsrAddrSz    := 12.
@@ -1010,6 +1016,32 @@ Definition csrPathsWithKind : list (RegOfKind (t:=rfTree) (Bit Xlen)) :=
   map (embedRegOfKind (getNodePath rfTree "rf.csrs"))
       (getTreeRegsOfKind (Bit Xlen) (getNode (getNodePath rfTree "rf.csrs"))).
 
+Notation incrementDXlenCsr lowCsr highCsr :=
+  (LetA currLow  : Bit Xlen  <- readRegsList csrPathsWithKind ($(getCsrIdx lowCsr) : Expr _ (Bit CsrIdxSz)) ;
+   LetA currHigh : Bit Xlen  <- readRegsList csrPathsWithKind ($(getCsrIdx highCsr) : Expr _ (Bit CsrIdxSz)) ;
+   Let  newVal   : Bit DXlen <- Add [ {< #currHigh, #currLow >} ; $1 ] ;
+   Act (writeRegsList csrPathsWithKind ($(getCsrIdx lowCsr) : Expr _ (Bit CsrIdxSz)) (TruncLsb Xlen Xlen #newVal)) ;
+   writeRegsList csrPathsWithKind ($(getCsrIdx highCsr) : Expr _ (Bit CsrIdxSz)) (TruncMsb Xlen Xlen #newVal)).
+
+Section MshwmHelpers.
+  Variable ty : Kind -> Type.
+
+  Definition updateMshwmOnStore (stAddr : Expr ty Addr) : Action ty rfTree (Bit 0) :=
+    LetA mshwm        : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrIdx "mshwm") : Expr _ (Bit CsrIdxSz)) ;
+    LetA mshwmb       : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrIdx "mshwmb") : Expr _ (Bit CsrIdxSz)) ;
+    Let  shouldUpdate : Bool     <- And [ Sge stAddr #mshwmb ; Slt stAddr #mshwm ] ;
+    If #shouldUpdate Then (
+      Let alignedAddr : Bit Xlen <- {< TruncMsb (Xlen - LgMshwmAlign) LgMshwmAlign stAddr,
+                                       Const ty (Bit LgMshwmAlign) (bits.of_Z LgMshwmAlign 0) >} ;
+      Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mshwm") : Expr _ (Bit CsrIdxSz)) #alignedAddr) ;
+      Retv
+    ) ;
+    Retv.
+
+End MshwmHelpers.
+
+Arguments updateMshwmOnStore {ty} stAddr.
+
 Definition DeferredReq := STRUCT_TYPE {
   "dstIdx" :: Bit RegIdxSz ;
   "addr"   :: Addr ;
@@ -1121,6 +1153,19 @@ Section SpecMemoryLayout.
     Node "core" [
       rfTree ;
       specMemTree
+    ].
+
+  Definition interruptsTree : Tree Elem :=
+    Node "interrupts" [
+      Leaf "meip_in" (ERecv Bool) ;
+      Leaf "mtip_in" (ERecv Bool) ;
+      Leaf "msip_in" (ERecv Bool)
+    ].
+
+  Definition specSysTree : Tree Elem :=
+    Node "sys" [
+      specCoreTree ;
+      interruptsTree
     ].
 
   Definition RevBitLookup := STRUCT_TYPE {

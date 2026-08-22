@@ -370,6 +370,8 @@ Section SpecFetchMemory.
           RegWrite "mem.tags" in memTree <- UpdateArray #tagsVal #tagOffset (##stVal`"tag") ;
           Retv
         )) ;
+        Act (liftAction np_rf (updateMshwmOnStore #addr)) ;
+        Act (liftAction np_rf (incrementDXlenCsr "minstret" "minstreth")) ;
         Retv
       ) Else (
         Let ld        : LoadCmd           <- ##memAct `! "Load" ;
@@ -409,16 +411,21 @@ Section SpecFetchMemory.
           If (isNotZero (##wbInfo`"dstIdx")) Then (
             liftAction np_rf (writeRegsList gprPathsWithKind (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
           ) ;
+          Act (liftAction np_rf (incrementDXlenCsr "minstret" "minstreth")) ;
           Retv
         ) Else (
           Let wbInfo : WbCmd <- #outcome `! "Writeback" ;
           If (isNotZero (##wbInfo`"dstIdx")) Then (
             liftAction np_rf (writeRegsList gprPathsWithKind (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
           ) ;
+          Act (liftAction np_rf (incrementDXlenCsr "minstret" "minstreth")) ;
           Retv
         ) ;
         Retv
       ) ;
+      Retv
+    ) Else (
+      Act (liftAction np_rf (incrementDXlenCsr "minstret" "minstreth")) ;
       Retv
     ) ;
     Retv.

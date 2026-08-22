@@ -461,6 +461,7 @@ Section AluRF.
           )
         Else
           (
+            Act (incrementDXlenCsr "minstret" "minstreth") ;
             If (isNotZero #dstIdx) Then
               (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
 
