@@ -55,7 +55,8 @@ Record MemIfc {ty: Kind -> Type} := {
   (* 4. Memory Write Channel *)
   mem_writeMem      : Expr ty Addr -> Expr ty FullCapWithTag -> Expr ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree (Bit 0) ;
 
-  (* 5. FENCE.I Synchronization Channel *)
+  (* 5. FENCE & FENCE.I Synchronization Channels *)
+  mem_fence_req     : Expr ty FenceOp -> Action ty memTree (Bit 0) ;
   mem_fenceI_req    : Action ty memTree (Bit 0) ;
   mem_fenceI_ack    : Action ty memTree Bool ;
 
@@ -233,7 +234,10 @@ Section MemoryModel.
       ) ;
       Retv.
 
-    (* 5. FENCE.I Synchronization Channel *)
+    (* 5. FENCE & FENCE.I Synchronization Channels *)
+    Definition fence_req (_ : Expr ty FenceOp) : Action ty memoryTree (Bit 0) :=
+      Retv.
+
     Definition fenceI_req : Action ty memoryTree (Bit 0) :=
       Retv.
 
@@ -256,6 +260,7 @@ Section MemoryModel.
       mem_isRevBitRpValid := isRevBitRpValid ;
       mem_getRevBitRp     := getRevBitRp ;
       mem_writeMem        := writeMem ;
+      mem_fence_req       := fence_req ;
       mem_fenceI_req      := fenceI_req ;
       mem_fenceI_ack      := fenceI_ack ;
       mem_needsRotation   := false

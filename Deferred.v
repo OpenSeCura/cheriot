@@ -137,11 +137,12 @@ Section DeferredStages.
           ) ;
           Retv
         ) Else (
-          (* --- FENCE ACTION: !isRW OR (all downstream FIFOs empty) --- *)
+          (* --- FENCE ACTION: (!fenceNeedsEmpty OR all downstream FIFOs empty) --- *)
           Let fenceOp : FenceOp <- ##op `! "Fence" ;
-          Let isRW    : Bool    <- ##fenceOp`"RW" ;
+          Let fenceNeedsEmpty : Bool <- Or [ ##fenceOp`"RW" ; ##fenceOp`"RR" ] ;
           (* This condition is always true in a spec *)
-          If (Or [ Not #isRW ; And [ #outputBuffer_isEmpty ; #rev_isEmpty ] ]) Then (
+          If (Or [ Not #fenceNeedsEmpty ; And [ #outputBuffer_isEmpty ; #rev_isEmpty ] ]) Then (
+            Act (liftAction np_mem ((memIfc ty).(mem_fence_req) #fenceOp)) ;
             liftAction np_inputFifo (@deq capacity DeferredReq ty)
           ) ;
           Retv
