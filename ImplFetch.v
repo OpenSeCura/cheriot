@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith.
 From Guru Require Import Syntax Notations Semantics Library Composition.
-From Cheriot Require Import SpecDefines Decoder FunctionalUnits Memory Alu Fifo.
+From Cheriot Require Import SpecDefines Decoder FunctionalUnits ImplDefines ImplMemory Alu Fifo.
 
 Set Implicit Arguments.
 Unset Strict Implicit.

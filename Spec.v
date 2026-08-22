@@ -32,7 +32,7 @@ Section Spec.
   Variable ty : Kind -> Type.
 
   Local Notation memTree := (specMemTree config).
-  Local Notation tree := (specTree config).
+  Local Notation tree := (specCoreTree config).
 
   Definition np_rf : NodePath tree :=
     getNodePath tree "core.rf".

@@ -274,7 +274,7 @@ Section SpecFetchMemory.
   Variable ty : Kind -> Type.
 
   Local Notation memTree := (specMemTree config).
-  Local Notation tree := (specTree config).
+  Local Notation tree := (specCoreTree config).
   Local Notation isMemAddr := (isMemAddr config).
   Local Notation isTagsAddr := (isTagsAddr config).
   Local Notation isHeapAddr := (isHeapAddr config).

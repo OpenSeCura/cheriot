@@ -16,7 +16,6 @@
 
 From Stdlib Require Import String List ZArith Zmod Psatz Bool.
 From Guru Require Import Library Syntax Notations Composition.
-From Cheriot Require Import Fifo.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -1043,26 +1042,6 @@ Definition PendingRev := STRUCT_TYPE {
   "capVal" :: FullECapWithTag
 }.
 
-Definition fetchTree (capacity : nat) : Tree Elem :=
-  Node "fetch" [
-    Node "fetchBuf" [ fifoTree capacity FullECapWithTag ]
-  ].
-
-Definition deferredTree (capacity : nat) : Tree Elem :=
-  Node "deferred" [
-    Node "inputBuf" [ fifoTree capacity DeferredReq ] ;
-    Node "loadBuf"  [ fifoTree capacity PendingLoad ] ;
-    Node "revBuf"   [ fifoTree capacity PendingRev ]
-  ].
-
-Definition coreTree (memTree : Tree Elem) (fetchCapacity deferredCapacity : nat) : Tree Elem :=
-  Node "core" [
-    rfTree ;
-    Node "mem" [ memTree ] ;
-    fetchTree fetchCapacity ;
-    deferredTree deferredCapacity
-  ].
-
 Record MemConfig := {
   binary                  : list Z ;
   mainMemStartAddr        : Z ;
@@ -1138,7 +1117,7 @@ Section SpecMemoryLayout.
                                                (Is_true_Nat_eq_implies (repeat_length false tagsSize))) |})
     ].
 
-  Definition specTree : Tree Elem :=
+  Definition specCoreTree : Tree Elem :=
     Node "core" [
       rfTree ;
       specMemTree
