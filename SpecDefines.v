@@ -682,6 +682,21 @@ Section CapEncoding.
 End CapEncoding.
 
 Definition isSealed ty (ecap: ty ECap) : Expr ty Bool := isNotZero (##ecap`"oType").
+Definition attenuatePerms ty (perms : ty CapPerms) (isSealed isLM isLG : ty Bool) : Expr ty CapPerms :=
+  STRUCT {
+    "U0" ::= ##perms`"U0" ;
+    "SE" ::= ##perms`"SE" ;
+    "US" ::= ##perms`"US" ;
+    "EX" ::= ##perms`"EX" ;
+    "SR" ::= ##perms`"SR" ;
+    "MC" ::= ##perms`"MC" ;
+    "LD" ::= ##perms`"LD" ;
+    "SL" ::= ##perms`"SL" ;
+    "LM" ::= And [ ##perms`"LM" ; Or [ #isLM ; #isSealed ] ] ;
+    "SD" ::= And [ ##perms`"SD" ; Or [ #isLM ; #isSealed ] ] ;
+    "LG" ::= And [ ##perms`"LG" ; Or [ #isLG ; #isSealed ] ] ;
+    "GL" ::= And [ ##perms`"GL" ; #isLG ]
+  }.
 Definition isCallSentry ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
   Or [ Eq #oType $CallSentryIh; Eq #oType $CallSentryId; Eq #oType $CallSentryIe ].
 Definition isRetSentry ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
@@ -1018,7 +1033,9 @@ Definition PendingLoad := STRUCT_TYPE {
   "dstIdx"     :: Bit RegIdxSz ;
   "byteOffset" :: Bit LgNumBytesFullCapSz ;
   "memSize"    :: Bit LgLgNumBytesFullCapSz ;
-  "isUnsigned" :: Bool
+  "isUnsigned" :: Bool ;
+  "isLM"       :: Bool ;
+  "isLG"       :: Bool
 }.
 
 Definition PendingRev := STRUCT_TYPE {

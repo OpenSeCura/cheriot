@@ -134,6 +134,8 @@ Section SpecFetchMemory.
         (* Load Operation *)
         Let  ldOpVal    : LoadOp <- #memOp `! "Load" ;
         Let  isUnsigned : Bool   <- ##ldOpVal`"isUnsigned" ;
+        Let  isLM       : Bool   <- ##ldOpVal`"isLM" ;
+        Let  isLG       : Bool   <- ##ldOpVal`"isLG" ;
         LetA rawBits    : Bit FullCapSz <-
           liftAction np_mem (
             RegRead memVal <- "mem.mainMem" in memTree ;
@@ -150,11 +152,22 @@ Section SpecFetchMemory.
         Let rawCap     : Cap           <- FromBit Cap (TruncMsb Xlen Xlen #rawBits) ;
 
         If #isCap Then (
-          LetL ldECap        : ECap <- DecodeCap rawCap rawDataLsb ;
-          Let  isSealingCap  : Bool <- Or [ ##ldECap`"perms"`"SE" ;
-                                            ##ldECap`"perms"`"US" ;
-                                            ##ldECap`"perms"`"U0" ] ;
-          Let  needsRevCheck : Bool <- And [ #rawTag ; Not #isSealingCap ] ;
+          LetL ldECapRaw     : ECap     <- DecodeCap rawCap rawDataLsb ;
+          Let  isCapSealed   : Bool     <- isSealed ldECapRaw ;
+          Let  rawPerms      : CapPerms <- ##ldECapRaw`"perms" ;
+          Let  newPerms      : CapPerms <- ITE #rawTag (attenuatePerms rawPerms isCapSealed isLM isLG) #rawPerms ;
+          Let  ldECap        : ECap     <- STRUCT {
+            "R"     ::= ##ldECapRaw`"R" ;
+            "perms" ::= #newPerms ;
+            "oType" ::= ##ldECapRaw`"oType" ;
+            "cE"    ::= ##ldECapRaw`"cE" ;
+            "top"   ::= ##ldECapRaw`"top" ;
+            "base"  ::= ##ldECapRaw`"base"
+          } ;
+          Let  isSealingCap  : Bool     <- Or [ ##newPerms`"SE" ;
+                                                ##newPerms`"US" ;
+                                                ##newPerms`"U0" ] ;
+          Let  needsRevCheck : Bool     <- And [ #rawTag ; Not #isSealingCap ] ;
           LetIf finalTag : Bool <-
             If #needsRevCheck Then (
               LetA revBit : Bool <- liftAction np_mem (readRevBit (##ldECap`"base")) ;

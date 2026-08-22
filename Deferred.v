@@ -128,12 +128,16 @@ Section DeferredStages.
             If (And [ #canLoad ; Not #outputBuffer_isFull ]) Then (
               Let ldOpVal    : LoadOp <- ##memOp `! "Load" ;
               Let isUnsigned : Bool   <- ##ldOpVal`"isUnsigned" ;
+              Let isLM       : Bool   <- ##ldOpVal`"isLM" ;
+              Let isLG       : Bool   <- ##ldOpVal`"isLG" ;
               Act (liftAction np_mem ((memIfc ty).(mem_readMemRq) #addr)) ;
               Let pending : PendingLoad <- STRUCT {
                 "dstIdx"     ::= #dstIdx ;
                 "byteOffset" ::= #byteOffset ;
                 "memSize"    ::= #memSize ;
-                "isUnsigned" ::= #isUnsigned
+                "isUnsigned" ::= #isUnsigned ;
+                "isLM"       ::= #isLM ;
+                "isLG"       ::= #isLG
               } ;
               Act (liftAction np_loadFifo (@enq capacity PendingLoad ty pending)) ;
               liftAction np_inputFifo (@deq capacity DeferredReq ty)
@@ -193,6 +197,8 @@ Section DeferredStages.
           Let byteOffset : Bit LgNumBytesFullCapSz   <- ##pl`"byteOffset" ;
           Let memSize    : Bit LgLgNumBytesFullCapSz <- ##pl`"memSize" ;
           Let isUnsigned : Bool                      <- ##pl`"isUnsigned" ;
+          Let isLM       : Bool                      <- ##pl`"isLM" ;
+          Let isLG       : Bool                      <- ##pl`"isLG" ;
 
           Let isCap : Bool <- Eq #memSize $LgNumBytesFullCapSz ;
 
@@ -201,11 +207,22 @@ Section DeferredStages.
           Let rawCap     : Cap            <- ##memVal`"cap" ;
           Let rawDataLsb : Addr           <- ##memVal`"addr" ;
           If #isCap Then (
-            LetL ldECap        : ECap <- DecodeCap rawCap rawDataLsb ;
-            Let  isSealingCap  : Bool <- Or [ ##ldECap`"perms"`"SE" ;
-                                              ##ldECap`"perms"`"US" ;
-                                              ##ldECap`"perms"`"U0" ] ;
-            Let  needsRevCheck : Bool <- And [ #rawTag ; Not #isSealingCap ] ;
+            LetL ldECapRaw     : ECap     <- DecodeCap rawCap rawDataLsb ;
+            Let  isCapSealed   : Bool     <- isSealed ldECapRaw ;
+            Let  rawPerms      : CapPerms <- ##ldECapRaw`"perms" ;
+            Let  newPerms      : CapPerms <- ITE #rawTag (attenuatePerms rawPerms isCapSealed isLM isLG) #rawPerms ;
+            Let  ldECap        : ECap     <- STRUCT {
+              "R"     ::= ##ldECapRaw`"R" ;
+              "perms" ::= #newPerms ;
+              "oType" ::= ##ldECapRaw`"oType" ;
+              "cE"    ::= ##ldECapRaw`"cE" ;
+              "top"   ::= ##ldECapRaw`"top" ;
+              "base"  ::= ##ldECapRaw`"base"
+            } ;
+            Let  isSealingCap  : Bool     <- Or [ ##newPerms`"SE" ;
+                                                  ##newPerms`"US" ;
+                                                  ##newPerms`"U0" ] ;
+            Let  needsRevCheck : Bool     <- And [ #rawTag ; Not #isSealingCap ] ;
 
             If #needsRevCheck Then (
               (* --- 1A. TAGGED MEMORY CAPABILITY: ISSUE REVOCATION LOOKUP --- *)
