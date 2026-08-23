@@ -1151,33 +1151,11 @@ Section SpecMemoryLayout.
     And [ Sge a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;
           Slt a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) heapEndAddr)) ].
 
-  Definition specMemTree : Tree Elem :=
-    Node "mem" [
-      Leaf "mainMem" (EReg {| regKind := Array config.(mainMemSize) (Bit 8);
-                              regInit := Some (Build_SameTuple (tupleElems := paddedBinary)
-                                                 (Is_true_Nat_eq_implies paddedBinary_length)) |}) ;
-      Leaf "tags" (EReg {| regKind := Array tagsSize Bool;
-                           regInit := Some (Build_SameTuple (tupleElems := List.repeat false tagsSize)
-                                               (Is_true_Nat_eq_implies (repeat_length false tagsSize))) |})
-    ].
-
-  Definition specCoreTree : Tree Elem :=
-    Node "core" [
-      rfTree ;
-      specMemTree
-    ].
-
   Definition interruptsTree : Tree Elem :=
     Node "interrupts" [
       Leaf "meip_in" (ERecv Bool) ;
       Leaf "mtip_in" (ERecv Bool) ;
       Leaf "msip_in" (ERecv Bool)
-    ].
-
-  Definition specSysTree : Tree Elem :=
-    Node "sys" [
-      specCoreTree ;
-      interruptsTree
     ].
 
   Definition RevBitLookup := STRUCT_TYPE {

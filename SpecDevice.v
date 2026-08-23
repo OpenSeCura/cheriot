@@ -139,11 +139,14 @@ End MemRegionActions.
  * 5. Aggregated Spec Memory Tree & Router
  * =========================================================================== *)
 
-Fixpoint specMemTree (regions : list MemRegion) : Tree Elem :=
+Fixpoint specMemChildren (regions : list MemRegion) : list (Tree Elem) :=
   match regions with
-  | [] => Node "mem" []
-  | r :: rs => Node "mem" [ memRegionTree r ; specMemTree rs ]
+  | [] => []
+  | r :: rs => [ memRegionTree r ; Node "mem" (specMemChildren rs) ]
   end.
+
+Definition specMemTree (regions : list MemRegion) : Tree Elem :=
+  Node "mem" (specMemChildren regions).
 
 Definition pairChild0Path {name : string} {c0 c1 : Tree Elem} : NodePath (Node name [c0; c1]) :=
   inr (inl (inl tt)).

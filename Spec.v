@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Psatz Bool.
 From Guru Require Import Syntax Notations Semantics Library Composition.
-From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchMemory.
+From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchMemory SpecDevice.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -24,23 +24,26 @@ Set Asymmetric Patterns.
 
 Import ListNotations.
 Local Open Scope Z_scope.
-Local Open Scope string_scope.
 Local Open Scope guru_scope.
+
+Definition specSysTree (regions : list MemRegion) : Tree Elem :=
+  Node "sys" [
+    specCoreTree regions ;
+    interruptsTree
+  ].
 
 Section Spec.
   Variable config : MemConfig.
+  Variable regions : list MemRegion.
   Variable ty : Kind -> Type.
 
-  Local Notation sysTree := (specSysTree config).
+  Local Notation sysTree := (specSysTree regions).
 
   Definition np_core : NodePath sysTree :=
     getNodePath sysTree "sys.core".
 
   Definition np_rf : NodePath sysTree :=
     getNodePath sysTree "sys.core.rf".
-
-  Definition np_mem : NodePath sysTree :=
-    getNodePath sysTree "sys.core.mem".
 
   Definition np_intr : NodePath sysTree :=
     getNodePath sysTree "sys.interrupts".
@@ -68,7 +71,7 @@ Section Spec.
 
   Definition specStep : Action ty sysTree (Bit 0) :=
     (* 1. Fetch *)
-    LetA fetchOut : FetchOut <- liftAction np_core (specFetch config ty) ;
+    LetA fetchOut : FetchOut <- liftAction np_core (specFetch regions ty) ;
 
     (* 2. Decode *)
     LetL regReadIn : RegReadIn <- wrappedDecode fetchOut ;
@@ -99,7 +102,7 @@ Section Spec.
 
     (* 6. Commit Deferred (Memory Loads, Stores, Fences) *)
     Let  reqOpt  : Option DeferredReq <- ##execOut`"deferredReq" ;
-    Act (liftAction np_core (specExecuteDeferred config reqOpt)) ;
+    Act (liftAction np_core (specExecuteDeferred config regions reqOpt)) ;
     Retv.
 
 End Spec.

@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Psatz Bool.
 From Guru Require Import Syntax Notations Semantics Library Composition.
-From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu.
+From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecDevice.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -269,17 +269,19 @@ End CombinationalDeferred.
  * Spec Memory Execution Transition Section
  * =========================================================================== *)
 
+Definition specCoreTree (regions : list MemRegion) : Tree Elem :=
+  Node "core" [
+    rfTree ;
+    specMemTree regions
+  ].
+
 Section SpecFetchMemory.
   Variable config : MemConfig.
+  Variable regions : list MemRegion.
   Variable ty : Kind -> Type.
 
-  Local Notation memTree := (specMemTree config).
-  Local Notation coreTree := (specCoreTree config).
-  Local Notation isMemAddr := (isMemAddr config).
-  Local Notation isTagsAddr := (isTagsAddr config).
-  Local Notation isHeapAddr := (isHeapAddr config).
-  Local Notation tagsStartAddr := (tagsStartAddr config).
-  Local Notation tagsSize := (tagsSize config).
+  Local Notation memTree := (specMemTree regions).
+  Local Notation coreTree := (specCoreTree regions).
 
   Definition np_rf : NodePath coreTree :=
     getNodePath coreTree "core.rf".
@@ -294,10 +296,9 @@ Section SpecFetchMemory.
    * ========================================================================= *)
   Definition readRevBit (base : Expr ty (Bit (AddrSz + 1))) : Action ty memTree Bool :=
     LetL lookup  : RevBitLookup <- computeRevBitAddr base ;
-    Let  offset  <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) ##lookup`"revByteAddr" ;
-    RegRead memVal <- "mem.mainMem" in memTree ;
-    Let  byteVal : Bit 8 <- ReadArray #memVal #offset ;
-    Let  revBit  : Bool  <- extractRevBit lookup #byteVal ;
+    LetA revCap  : FullCapWithTag <- specMemRead regions (##lookup`"revByteAddr") ;
+    Let  revByte : Bit 8 <- TruncLsb (Xlen - 8) 8 (##revCap`"addr") ;
+    Let  revBit  : Bool  <- extractRevBit lookup #revByte ;
     Return #revBit.
 
   (* =========================================================================
@@ -305,12 +306,8 @@ Section SpecFetchMemory.
    * ========================================================================= *)
   Definition specFetch : Action ty coreTree FetchOut :=
     LetA pcc : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
-    Let offset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) ##pcc`"addr" ;
-    LetA rawInst : Inst <- liftAction np_mem (
-      RegRead memVal <- "mem.mainMem" in memTree ;
-      Let instBytes : Array (Z.to_nat (InstSz / 8)) (Bit 8) <- slice #memVal #offset (Z.to_nat (InstSz / 8)) ;
-      Return (ToBit #instBytes)
-    ) ;
+    LetA rawFull : FullCapWithTag <- liftAction np_mem (specMemRead regions (##pcc`"addr")) ;
+    Let rawInst : Inst <- ##rawFull`"addr" ;
 
     (* Fetch Exception Checks *)
     Let isComp       : Bool <- isCompressed rawInst ;
@@ -349,27 +346,8 @@ Section SpecFetchMemory.
         Let addr      : Addr                      <- ##st`"addr" ;
         Let stVal     : FullCapWithTag            <- ##st`"stVal" ;
         Let memSize   : Bit LgLgNumBytesFullCapSz <- ##st`"memSize" ;
-        Let isCap     : Bool                      <- Eq #memSize $LgNumBytesFullCapSz ;
 
-        Let offset    <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) #addr ;
-        Let tagAddr   : Bit TagAddrWidth          <- TruncMsb TagAddrWidth LgNumBytesFullCapSz #addr ;
-        Let tagOffset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) #tagAddr ;
-
-        Let rawData   : Bit FullCapSz   <-
-          ITE #isCap
-              {< ToBit ##stVal`"cap", ##stVal`"addr" >}
-              (ZeroExtendTo FullCapSz ##stVal`"addr") ;
-        Let num_bytes : Bit (LgNumBytesFullCapSz + 1) <- Sll $1 #memSize ;
-
-        Act (liftAction np_mem (
-          RegRead memVal  <- "mem.mainMem" in memTree ;
-          RegRead tagsVal <- "mem.tags"    in memTree ;
-          LetL updatedMem : Array config.(mainMemSize) (Bit 8) <-
-            updSlice #memVal #offset (FromBit (Array (Z.to_nat NumBytesFullCapSz) (Bit 8)) #rawData) #num_bytes ;
-          RegWrite "mem.mainMem" in memTree <- #updatedMem ;
-          RegWrite "mem.tags" in memTree <- UpdateArray #tagsVal #tagOffset (##stVal`"tag") ;
-          Retv
-        )) ;
+        Act (liftAction np_mem (specMemWrite regions #addr #stVal #memSize)) ;
         Act (liftAction np_rf (updateMshwmOnStore #addr)) ;
         Act (liftAction np_rf incrementMinstret) ;
         Retv
@@ -378,30 +356,8 @@ Section SpecFetchMemory.
         Let addr      : Addr              <- ##ld`"addr" ;
         Let pending   : PendingLoad       <- ##ld`"pending" ;
 
-        Let offset    <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) #addr ;
-        Let tagAddr   : Bit TagAddrWidth  <- TruncMsb TagAddrWidth LgNumBytesFullCapSz #addr ;
-        Let tagOffset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) #tagAddr ;
-
-        LetA rawBits  : Bit FullCapSz     <-
-          liftAction np_mem (
-            RegRead memVal <- "mem.mainMem" in memTree ;
-            Let dataBytes : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <- slice #memVal #offset (Z.to_nat NumBytesFullCapSz) ;
-            Return (ToBit #dataBytes)
-          ) ;
-        LetA rawTag   : Bool              <-
-          liftAction np_mem (
-            RegRead tagsVal <- "mem.tags" in memTree ;
-            Let rawTag : Bool <- ReadArray #tagsVal #tagOffset ;
-            Return #rawTag
-          ) ;
-
-        Let memVal : FullCapWithTag <- STRUCT {
-          "tag"  ::= #rawTag ;
-          "cap"  ::= FromBit Cap (TruncMsb Xlen Xlen #rawBits) ;
-          "addr" ::= TruncLsb Xlen Xlen #rawBits
-        } ;
-
-        LetL outcome : LoadOutcome <- dispatchLoadResponse pending memVal false ;
+        LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions #addr) ;
+        LetL outcome  : LoadOutcome       <- dispatchLoadResponse pending memVal false ;
 
         If (#outcome `? "RevLookup") Then (
           Let  revInfo : RevCmd        <- #outcome `! "RevLookup" ;
