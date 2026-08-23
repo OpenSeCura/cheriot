@@ -124,7 +124,8 @@ Section MemRegionActions.
             {< ToBit (stVal`"cap"), stVal`"addr" >}
             (ZeroExtendTo FullCapSz (stVal`"addr")) ;
       Let num_bytes : Bit (LgNumBytesFullCapSz + 1) <- Sll $1 memSize ;
-      Act (updSliceMem mainMemPath (Z.to_nat NumBytesFullCapSz) #offset (FromBit (Array (Z.to_nat NumBytesFullCapSz) (Bit 8)) #rawData) #num_bytes) ;
+      Let byteMask : Array (Z.to_nat NumBytesFullCapSz) Bool <- Not (invMask (Z.to_nat NumBytesFullCapSz) #num_bytes) ;
+      Act (updSliceMem mainMemPath (Z.to_nat NumBytesFullCapSz) #offset (FromBit (Array (Z.to_nat NumBytesFullCapSz) (Bit 8)) #rawData) #byteMask) ;
       if r.(hasTags) then (
         WriteMem tagsPath #tagOffset (stVal`"tag") Retv
       ) else (
