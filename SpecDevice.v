@@ -136,51 +136,57 @@ Section MemRegionActions.
 End MemRegionActions.
 
 (* ===========================================================================
- * 5. SpecDevice Interface & Aggregator
+ * 5. Aggregated Spec Memory Tree & Router
  * =========================================================================== *)
 
-Record SpecDevice (sysTree : Tree Elem) := {
-  devRegion : MemRegion ;
-  devRead   : forall {ty : Kind -> Type}, Expr ty Addr -> Action ty sysTree FullCapWithTag ;
-  devWrite  : forall {ty : Kind -> Type}, Expr ty Addr -> Expr ty FullCapWithTag -> Expr ty (Bit LgLgNumBytesFullCapSz) -> Action ty sysTree (Bit 0)
-}.
+Fixpoint specMemTree (regions : list MemRegion) : Tree Elem :=
+  match regions with
+  | [] => Node "mem" []
+  | r :: rs => Node "mem" [ memRegionTree r ; specMemTree rs ]
+  end.
 
-Section SpecRouter.
-  Variable tree : Tree Elem.
+Definition pairChild0Path {name : string} {c0 c1 : Tree Elem} : NodePath (Node name [c0; c1]) :=
+  inr (inl (inl tt)).
+
+Definition pairChild1Path {name : string} {c0 c1 : Tree Elem} : NodePath (Node name [c0; c1]) :=
+  inr (inr (inl (inl tt))).
+
+Section SpecMemRouter.
   Variable ty : Kind -> Type.
 
-  Fixpoint routeSpecRead
-           (devs : list (SpecDevice tree))
+  Fixpoint specMemRead
+           (regions : list MemRegion)
            (addr : Expr ty Addr)
-           : Action ty tree FullCapWithTag :=
-    match devs with
+           : Action ty (specMemTree regions) FullCapWithTag :=
+    match regions return Action ty (specMemTree regions) FullCapWithTag with
     | [] => Return ConstDef
-    | d :: ds =>
-        Let isMatch : Bool <- isRegionAddr d.(devRegion) addr ;
+    | r :: rs =>
+        Let isMatch : Bool <- isRegionAddr r addr ;
         LetIf devVal : FullCapWithTag <-
           If #isMatch Then (
-            d.(devRead) addr
+            liftAction pairChild0Path (memRegionRead r addr)
           ) Else (
             Return ConstDef
           ) ;
-        LetA restVal : FullCapWithTag <- routeSpecRead ds addr ;
+        LetA restVal : FullCapWithTag <-
+          liftAction pairChild1Path (specMemRead rs addr) ;
         Return (Or [ #devVal ; #restVal ])
     end.
 
-  Fixpoint routeSpecWrite
-           (devs : list (SpecDevice tree))
+  Fixpoint specMemWrite
+           (regions : list MemRegion)
            (addr : Expr ty Addr)
            (stVal : Expr ty FullCapWithTag)
            (memSize : Expr ty (Bit LgLgNumBytesFullCapSz))
-           : Action ty tree (Bit 0) :=
-    match devs with
+           : Action ty (specMemTree regions) (Bit 0) :=
+    match regions return Action ty (specMemTree regions) (Bit 0) with
     | [] => Retv
-    | d :: ds =>
-        Let isMatch : Bool <- isRegionAddr d.(devRegion) addr ;
+    | r :: rs =>
+        Let isMatch : Bool <- isRegionAddr r addr ;
         If #isMatch Then (
-          d.(devWrite) addr stVal memSize
+          liftAction pairChild0Path (memRegionWrite r addr stVal memSize)
         ) ;
-        routeSpecWrite ds addr stVal memSize
+        liftAction pairChild1Path (specMemWrite rs addr stVal memSize)
     end.
 
-End SpecRouter.
+End SpecMemRouter.
