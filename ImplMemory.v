@@ -66,13 +66,53 @@ Record MemIfc {ty: Kind -> Type} := {
   mem_needsRotation : bool
 }.
 
+Record ImplMemConfig := {
+  binary                  : list Z ;
+  mainMemStartAddr        : Z ;
+  mainMemSize             : nat ;
+  mainMemBoundProof       : Is_true (mainMemStartAddr + Z.of_nat mainMemSize <? Z.shiftl 1 Xlen)%Z ;
+  lgMainMemSize_ge_binary : Is_true (length binary <=? mainMemSize)%nat ;
+  revConfig               : RevConfig
+}.
+
+Section ImplMemoryLayout.
+  Variable config : ImplMemConfig.
+
+  Definition fixedBinary : list (bits 8) :=
+    map (fun v => bits.of_Z 8 v) config.(binary).
+
+  Definition paddedBinary :=
+    (fixedBinary ++ List.repeat (bits.of_Z 8 0) (config.(mainMemSize) - length config.(binary)))%list.
+
+  Lemma paddedBinary_length :
+    length paddedBinary = config.(mainMemSize).
+  Proof.
+    unfold paddedBinary, fixedBinary.
+    rewrite length_app.
+    rewrite repeat_length.
+    rewrite length_map.
+    pose proof config.(lgMainMemSize_ge_binary) as H.
+    apply Is_true_eq_true in H.
+    rewrite Nat.leb_le in H.
+    lia.
+  Qed.
+
+  Definition tagsStartAddr := Z.shiftr (config.(mainMemStartAddr) + NumBytesFullCapSz - 1) LgNumBytesFullCapSz.
+  Definition tagsEndAddr   := Z.shiftr (config.(mainMemStartAddr) + Z.of_nat config.(mainMemSize)) LgNumBytesFullCapSz.
+  Definition tagsSize : nat := Z.to_nat (tagsEndAddr - tagsStartAddr).
+
+  Definition isMemAddr {ty: Kind -> Type} (a : Expr ty Addr) : Expr ty Bool :=
+    Sge a (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr))).
+
+  Definition isTagsAddr {ty: Kind -> Type} (a : Expr ty (Bit TagAddrWidth)) : Expr ty Bool :=
+    Sge a (Const ty (Bit TagAddrWidth) (bits.of_Z TagAddrWidth tagsStartAddr)).
+End ImplMemoryLayout.
+
 Section MemoryModel.
-  Variable config : MemConfig.
+  Variable config : ImplMemConfig.
 
   Local Notation isMemAddr := (isMemAddr config).
   Local Notation isTagsAddr := (isTagsAddr config).
-  Local Notation isHeapAddr := (isHeapAddr config).
-  Local Notation heapEndAddr := (heapEndAddr config).
   Local Notation tagsStartAddr := (tagsStartAddr config).
   Local Notation tagsEndAddr := (tagsEndAddr config).
   Local Notation tagsSize := (tagsSize config).
@@ -174,35 +214,14 @@ Section MemoryModel.
       RegRead rpVal <- "mem.revBitRpReg" in memoryTree ;
       Return (Not (##rpVal `? "Some")).
 
-    Definition readRevBitRq (base : Expr ty (Bit (AddrSz + 1))) : Action ty memoryTree (Bit 0).
-    refine (
-      Let is_heap : Bool <- isHeapAddr base ;
-      If #is_heap Then (
-        Let heapOffset : Bit (AddrSz + 1) <-
-          Sub base (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;
-        Let castHeapOffset <- castBits _ #heapOffset ;
-        Let totalBitIdx : Bit ((AddrSz + 1) - config.(lgRevGranularity)) <-
-          TruncMsb ((AddrSz + 1) - config.(lgRevGranularity)) config.(lgRevGranularity) #castHeapOffset ;
-        Let castTotalBitIdx <- castBits _ #totalBitIdx ;
-        Let byteIdxInTable : Bit (((AddrSz + 1) - config.(lgRevGranularity)) - 3) <-
-          TruncMsb (((AddrSz + 1) - config.(lgRevGranularity)) - 3) 3 #castTotalBitIdx ;
-        Let byteIdxExt : Bit AddrSz <- castBits _ (ZeroExtendTo AddrSz #byteIdxInTable) ;
-        Let revByteAddr : Addr <-
-          Add [ Const ty Addr (bits.of_Z Xlen config.(revTableStartAddr)) ; #byteIdxExt ] ;
-        Let bitInByte : Bit 3 <-
-          TruncLsb (((AddrSz + 1) - config.(lgRevGranularity)) - 3) 3 #castTotalBitIdx ;
-        Let offset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) #revByteAddr ;
-        RegRead memVal <- "mem.mainMem" in memoryTree ;
-        Let byteVal : Bit 8 <- ReadArray #memVal #offset ;
-        Let revBit  : Bool  <- ReadArray (FromBit (Array 8 Bool) #byteVal) #bitInByte ;
-        RegWrite "mem.revBitRpReg" in memoryTree <- mkSome #revBit ;
-        Retv
-      ) Else (
-        RegWrite "mem.revBitRpReg" in memoryTree <- mkSome (ConstBool false) ;
-        Retv
-      ) ;
-      Retv); abstract lia.
-    Defined.
+    Definition readRevBitRq (base : Expr ty (Bit (AddrSz + 1))) : Action ty memoryTree (Bit 0) :=
+      LetL lookup : RevBitLookup <- computeRevBitAddr config.(revConfig) base ;
+      Let offset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) (##lookup`"revByteAddr") ;
+      RegRead memVal <- "mem.mainMem" in memoryTree ;
+      Let byteVal : Bit 8 <- ReadArray #memVal #offset ;
+      Let revBit  : Bool  <- extractRevBit lookup #byteVal ;
+      RegWrite "mem.revBitRpReg" in memoryTree <- mkSome #revBit ;
+      Retv.
 
     Definition isRevBitRpValid : Action ty memoryTree Bool :=
       RegRead rpVal <- "mem.revBitRpReg" in memoryTree ;

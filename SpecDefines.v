@@ -1086,114 +1086,67 @@ Definition PendingRev := STRUCT_TYPE {
   "capVal" :: FullECapWithTag
 }.
 
-Record MemConfig := {
-  binary                  : list Z ;
-  mainMemStartAddr        : Z ;
-  mainMemSize             : nat ;
-  mainMemBoundProof       : Is_true (mainMemStartAddr + Z.of_nat mainMemSize <? Z.shiftl 1 Xlen)%Z ;
-  lgMainMemSize_ge_binary : Is_true (length binary <=? mainMemSize)%nat ;
-
-  (* Heap & Revocation Configuration *)
-  heapStartAddr           : Z ;
-  heapSize                : nat ;
-  lgRevGranularity        : Z ;
-  revTableStartAddr       : Z ;
-
-  (* Proofs *)
-  heap_in_mainMem_proof :
-    Is_true ((mainMemStartAddr <=? heapStartAddr) &&
-             (heapStartAddr + Z.of_nat heapSize <=? mainMemStartAddr + Z.of_nat mainMemSize))%Z ;
-  revTable_in_mainMem_proof :
-    Is_true ((mainMemStartAddr <=? revTableStartAddr) &&
-             (revTableStartAddr + Z.shiftr (Z.of_nat heapSize) (lgRevGranularity + 3)
-              <=? mainMemStartAddr + Z.of_nat mainMemSize))%Z ;
-  revTable_heap_disjoint_proof :
-    Is_true ((revTableStartAddr + Z.shiftr (Z.of_nat heapSize) (lgRevGranularity + 3) <=? heapStartAddr) ||
-             (heapStartAddr + Z.of_nat heapSize <=? revTableStartAddr))%Z
+Record RevConfig := {
+  heapStartAddr     : Z ;
+  revTableStartAddr : Z ;
+  revTableSize      : nat ;
+  lgRevGranularity  : Z
 }.
 
-Section SpecMemoryLayout.
-  Variable config : MemConfig.
+Definition heapSize (config : RevConfig) : nat :=
+  (config.(revTableSize) * 8 * (2 ^ (Z.to_nat config.(lgRevGranularity))))%nat.
 
-  Definition fixedBinary : list (bits 8) :=
-    map (fun v => bits.of_Z 8 v) config.(binary).
+Definition heapEndAddr (config : RevConfig) : Z :=
+  config.(heapStartAddr) + Z.of_nat (heapSize config).
 
-  Definition heapEndAddr :=
-    config.(heapStartAddr) + Z.of_nat config.(heapSize).
+Definition isRevokableAddr {ty : Kind -> Type} (config : RevConfig) (a : Expr ty (Bit (AddrSz + 1))) : Expr ty Bool :=
+  And [ Sge a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;
+        Slt a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) (heapEndAddr config))) ].
 
-  Definition paddedBinary :=
-    (fixedBinary ++ List.repeat (bits.of_Z 8 0) (config.(mainMemSize) - length config.(binary)))%list.
+Definition interruptsTree : Tree Elem :=
+  Node "interrupts" [
+    Leaf "meip_in" (ERecv Bool) ;
+    Leaf "mtip_in" (ERecv Bool) ;
+    Leaf "msip_in" (ERecv Bool)
+  ].
 
-  Lemma paddedBinary_length :
-    length paddedBinary = config.(mainMemSize).
-  Proof.
-    unfold paddedBinary, fixedBinary.
-    rewrite length_app.
-    rewrite repeat_length.
-    rewrite length_map.
-    pose proof config.(lgMainMemSize_ge_binary) as H.
-    apply Is_true_eq_true in H.
-    rewrite Nat.leb_le in H.
-    lia.
-  Qed.
+Definition RevBitLookup := STRUCT_TYPE {
+  "isRevokable" :: Bool ;
+  "revByteAddr" :: Addr ;
+  "bitInByte"   :: Bit 3
+}.
 
-  Definition tagsStartAddr := Z.shiftr (config.(mainMemStartAddr) + NumBytesFullCapSz - 1) LgNumBytesFullCapSz.
-  Definition tagsEndAddr   := Z.shiftr (config.(mainMemStartAddr) + Z.of_nat config.(mainMemSize)) LgNumBytesFullCapSz.
-  Definition tagsSize : nat := Z.to_nat (tagsEndAddr - tagsStartAddr).
+Section RevBits.
+  Variable config : RevConfig.
+  Variable ty : Kind -> Type.
 
-  Definition isMemAddr {ty: Kind -> Type} (a : Expr ty Addr) : Expr ty Bool :=
-    Sge a (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr))).
+  Definition computeRevBitAddr (base : Expr ty (Bit (AddrSz + 1))) : LetExpr ty RevBitLookup.
+    refine (
+      LetE is_revokable : Bool <- isRevokableAddr config base ;
+      LetE heapOffset : Bit (AddrSz + 1) <-
+        Sub base (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;
+      LetE castHeapOffset <- castBits _ #heapOffset ;
+      LetE totalBitIdx : Bit ((AddrSz + 1) - config.(lgRevGranularity)) <-
+        TruncMsb ((AddrSz + 1) - config.(lgRevGranularity)) config.(lgRevGranularity) #castHeapOffset ;
+      LetE castTotalBitIdx <- castBits _ #totalBitIdx ;
+      LetE byteIdxInTable : Bit (((AddrSz + 1) - config.(lgRevGranularity)) - 3) <-
+        TruncMsb (((AddrSz + 1) - config.(lgRevGranularity)) - 3) 3 #castTotalBitIdx ;
+      LetE byteIdxExt : Bit AddrSz <- castBits _ (ZeroExtendTo AddrSz #byteIdxInTable) ;
+      LetE revByteAddr : Addr <-
+        Add [ Const ty Addr (bits.of_Z Xlen config.(revTableStartAddr)) ; #byteIdxExt ] ;
+      LetE bitInByte : Bit 3 <-
+        TruncLsb (((AddrSz + 1) - config.(lgRevGranularity)) - 3) 3 #castTotalBitIdx ;
+      @RetE ty RevBitLookup (STRUCT {
+        "isRevokable" ::= #is_revokable ;
+        "revByteAddr" ::= #revByteAddr ;
+        "bitInByte"   ::= #bitInByte
+      })
+    )%guru; abstract lia.
+  Defined.
 
-  Definition isTagsAddr {ty: Kind -> Type} (a : Expr ty (Bit TagAddrWidth)) : Expr ty Bool :=
-    Sge a (Const ty (Bit TagAddrWidth) (bits.of_Z TagAddrWidth tagsStartAddr)).
-
-  Definition isHeapAddr {ty: Kind -> Type} (a : Expr ty (Bit (AddrSz + 1))) : Expr ty Bool :=
-    And [ Sge a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;
-          Slt a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) heapEndAddr)) ].
-
-  Definition interruptsTree : Tree Elem :=
-    Node "interrupts" [
-      Leaf "meip_in" (ERecv Bool) ;
-      Leaf "mtip_in" (ERecv Bool) ;
-      Leaf "msip_in" (ERecv Bool)
-    ].
-
-  Definition RevBitLookup := STRUCT_TYPE {
-    "isHeap"      :: Bool ;
-    "revByteAddr" :: Addr ;
-    "bitInByte"   :: Bit 3
-  }.
-
-  Section RevBits.
-    Variable ty : Kind -> Type.
-
-    Definition computeRevBitAddr (base : Expr ty (Bit (AddrSz + 1))) : LetExpr ty RevBitLookup.
-      refine (
-        LetE is_heap : Bool <- isHeapAddr base ;
-        LetE heapOffset : Bit (AddrSz + 1) <-
-          Sub base (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;
-        LetE castHeapOffset <- castBits _ #heapOffset ;
-        LetE totalBitIdx : Bit ((AddrSz + 1) - config.(lgRevGranularity)) <-
-          TruncMsb ((AddrSz + 1) - config.(lgRevGranularity)) config.(lgRevGranularity) #castHeapOffset ;
-        LetE castTotalBitIdx <- castBits _ #totalBitIdx ;
-        LetE byteIdxInTable : Bit (((AddrSz + 1) - config.(lgRevGranularity)) - 3) <-
-          TruncMsb (((AddrSz + 1) - config.(lgRevGranularity)) - 3) 3 #castTotalBitIdx ;
-        LetE byteIdxExt : Bit AddrSz <- castBits _ (ZeroExtendTo AddrSz #byteIdxInTable) ;
-        LetE revByteAddr : Addr <-
-          Add [ Const ty Addr (bits.of_Z Xlen config.(revTableStartAddr)) ; #byteIdxExt ] ;
-        LetE bitInByte : Bit 3 <-
-          TruncLsb (((AddrSz + 1) - config.(lgRevGranularity)) - 3) 3 #castTotalBitIdx ;
-        @RetE ty RevBitLookup (STRUCT {
-          "isHeap"      ::= #is_heap ;
-          "revByteAddr" ::= #revByteAddr ;
-          "bitInByte"   ::= #bitInByte
-        })
-      )%guru; abstract lia.
-    Defined.
-  End RevBits.
-End SpecMemoryLayout.
+End RevBits.
 
 Definition extractRevBit {ty : Kind -> Type} (lookup : ty RevBitLookup) (byteVal : Expr ty (Bit 8)) : Expr ty Bool :=
-  ITE (##lookup`"isHeap")
+  ITE (##lookup`"isRevokable")
       (ReadArray (FromBit (Array 8 Bool) byteVal) (##lookup`"bitInByte"))
       (ConstBool false).

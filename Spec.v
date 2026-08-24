@@ -33,7 +33,7 @@ Definition specSysTree (regions : list MemRegion) : Tree Elem :=
   ].
 
 Section Spec.
-  Variable config : MemConfig.
+  Variable config : RevConfig.
   Variable regions : list MemRegion.
   Variable ty : Kind -> Type.
 

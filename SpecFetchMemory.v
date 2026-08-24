@@ -276,7 +276,7 @@ Definition specCoreTree (regions : list MemRegion) : Tree Elem :=
   ].
 
 Section SpecFetchMemory.
-  Variable config : MemConfig.
+  Variable config : RevConfig.
   Variable regions : list MemRegion.
   Variable ty : Kind -> Type.
 
