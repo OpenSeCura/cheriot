@@ -1087,14 +1087,14 @@ Definition PendingRev := STRUCT_TYPE {
 }.
 
 Record RevConfig := {
-  heapStartAddr     : Z ;
-  revTableStartAddr : Z ;
-  revTableSize      : nat ;
-  lgRevGranularity  : Z
+  heapStartAddr        : Z ;
+  revTableStartAddr    : Z ;
+  revTableSizeInBytes  : nat ;
+  lgRevGranularity     : Z
 }.
 
 Definition heapSize (config : RevConfig) : nat :=
-  (config.(revTableSize) * 8 * (2 ^ (Z.to_nat config.(lgRevGranularity))))%nat.
+  (config.(revTableSizeInBytes) * 8 * (2 ^ (Z.to_nat config.(lgRevGranularity))))%nat.
 
 Definition heapEndAddr (config : RevConfig) : Z :=
   config.(heapStartAddr) + Z.of_nat (heapSize config).
