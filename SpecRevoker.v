@@ -62,6 +62,14 @@ Definition revokerMemRegion
   regionAligned  := I
 |}.
 
+Record RevokerInstance (regions : list MemRegion) := {
+  revokerIdx : nat ;
+  pfRevoker  : match nth_error regions revokerIdx with
+               | Some r => r = revokerMemRegion r.(regionBase) r.(regionInMemory)
+               | None   => False
+               end
+}.
+
 (* ===========================================================================
  * 2. Accessing Region at Index in Spec Memory Tree
  * =========================================================================== *)
@@ -100,7 +108,7 @@ Definition getStrIndexOption (s : string) (ls : list string) : option nat :=
 
 Section RevokerAction.
   Variable regions : list MemRegion.
-  Variable revokerIdx : nat.
+  Variable rev : RevokerInstance regions.
   Variable config : RevConfig.
   Variable ty : Kind -> Type.
 
@@ -110,17 +118,17 @@ Section RevokerAction.
     nthRegionAction
       (fun r =>
          let tR := memRegionTree r in
-         let pths := getTreeRegsOfKind (Bit (regBits 2)) tR in
-         readRegsList pths (Const ty (Bit (AddrSz - 2)%Z) (bits.of_Z _ (Z.of_nat regIdx))))
-      revokerIdx regions.
+         let pths := getTreeRegsOfKind (Bit (regBits LgRevokerRegBytes)) tR in
+         readRegsList pths (Const ty (Bit (AddrSz - Z.of_nat LgRevokerRegBytes)%Z) (bits.of_Z _ (Z.of_nat regIdx))))
+      rev.(revokerIdx) regions.
 
   Local Definition writeRevokerRegByIdx (regIdx : nat) (val : Expr ty (Bit Xlen)) : Action ty memTree (Bit 0) :=
     nthRegionAction
       (fun r =>
          let tR := memRegionTree r in
-         let pths := getTreeRegsOfKind (Bit (regBits 2)) tR in
-         writeRegsList pths (Const ty (Bit (AddrSz - 2)%Z) (bits.of_Z _ (Z.of_nat regIdx))) val)
-      revokerIdx regions.
+         let pths := getTreeRegsOfKind (Bit (regBits LgRevokerRegBytes)) tR in
+         writeRegsList pths (Const ty (Bit (AddrSz - Z.of_nat LgRevokerRegBytes)%Z) (bits.of_Z _ (Z.of_nat regIdx))) val)
+      rev.(revokerIdx) regions.
 
   Local Definition readRevokerReg (regName : string) :=
     forceOption (option_map readRevokerRegByIdx
