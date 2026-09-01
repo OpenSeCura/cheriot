@@ -141,9 +141,13 @@ Section RevokerAction.
 
     If #isOddEpoch Then (
       (* SWEEPING STATE: epoch is odd *)
-      LetA scanAddr : Bit Xlen <- readRevokerReg "scanAddr" ;
-      LetA topAddr  : Bit Xlen <- readRevokerReg "top" ;
-      Let isDone    : Bool     <- Sge #scanAddr #topAddr ;
+      LetA scanAddrRaw : Bit Xlen <- readRevokerReg "scanAddr" ;
+      LetA topAddrRaw  : Bit Xlen <- readRevokerReg "top" ;
+      Let scanAddrMsb  : Bit TagAddrWidth <- TruncMsb TagAddrWidth LgNumBytesFullCapSz #scanAddrRaw ;
+      Let topAddrMsb   : Bit TagAddrWidth <- TruncMsb TagAddrWidth LgNumBytesFullCapSz #topAddrRaw ;
+      Let scanAddr     : Bit Xlen <- {< #scanAddrMsb, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
+      Let topAddr      : Bit Xlen <- {< #topAddrMsb, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
+      Let isDone       : Bool     <- Sge #scanAddrMsb #topAddrMsb ;
 
       If (Not #isDone) Then (
         (* 1. Inspect capability at current scanAddr *)

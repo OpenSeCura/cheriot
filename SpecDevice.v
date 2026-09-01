@@ -96,7 +96,7 @@ Definition embedCapBytes {ty : Kind -> Type} (numBytes : nat)
   : Expr ty (Array numBytes (Bit 8)) :=
   ArrayBuilder (fun (i : FinType numBytes) =>
     if (finNum i <? Z.to_nat NumBytesFullCapSz)%nat then
-      ReadArray capBytes (Const ty (Bit 3) (bits.of_Z 3 (Z.of_nat (finNum i))))
+      ReadArray capBytes (Const ty (Bit LgNumBytesFullCapSz) (bits.of_Z LgNumBytesFullCapSz (Z.of_nat (finNum i))))
     else
       Const ty (Bit 8) Zmod.zero).
 
@@ -309,7 +309,7 @@ Section ExternalMemRegionActions.
         Recv "lineTags1" pTagReadRp (fun lineTags1 =>
         Let isAligned : Bool <- Eq (lineOffset addr) (Const ty (Bit lgLineBytes) Zmod.zero) ;
         Let isCap : Bool <- Eq memSize $LgNumBytesFullCapSz ;
-        Let tagSlot : Bit lgNumDXlen <- TruncMsb lgNumDXlen 3 (lineOffset addr) ;
+        Let tagSlot : Bit lgNumDXlen <- TruncMsb lgNumDXlen LgNumBytesFullCapSz (lineOffset addr) ;
         Return (And [ #isAligned ; #isCap ; ReadArray #lineTags1 #tagSlot ])))
       ) else (
         Return (ConstBool false)
@@ -357,7 +357,7 @@ Section ExternalMemRegionActions.
       }) (
       Act (
         if r.(hasTags) then (
-          Let tagSlot : Bit lgNumDXlen <- TruncMsb lgNumDXlen 3 (lineOffset addr) ;
+          Let tagSlot : Bit lgNumDXlen <- TruncMsb lgNumDXlen LgNumBytesFullCapSz (lineOffset addr) ;
           Let tagMask1 : Array numDXlen Bool <-
             FromBit (Array numDXlen Bool)
               (Sll (ConstT (Bit (NatZ_mul numDXlen 1)) Zmod.one) #tagSlot) ;
@@ -426,8 +426,8 @@ Section RegisterMemRegionActions.
   Local Definition crosses (offset : Expr ty Addr) (memSize : Expr ty (Bit LgLgNumBytesFullCapSz)) : Expr ty Bool :=
     Sgt (endOffset offset memSize) $(Z.of_nat numRegBytes).
 
-  Local Definition tagSlot (offset : Expr ty Addr) : Expr ty (Bit (AddrSz - 3)%Z) :=
-    TruncMsb (AddrSz - 3)%Z 3 offset.
+  Local Definition tagSlot (offset : Expr ty Addr) : Expr ty (Bit TagAddrWidth) :=
+    TruncMsb TagAddrWidth LgNumBytesFullCapSz offset.
 
   Local Definition tagsRegPath : RegPath tReg := getChildRegPathTree tReg "tags".
 
@@ -499,7 +499,7 @@ Section RegisterMemRegionActions.
             And [ Sge kVal #bOffset ;
                   Slt (Sub kVal #bOffset) #numActive ] in
           let srcIdx :=
-            TruncLsb (AddrSz - 3)%Z 3 (Sub kVal #bOffset) in
+            TruncLsb TagAddrWidth LgNumBytesFullCapSz (Sub kVal #bOffset) in
           ITE active (ReadArray #writeBytes srcIdx) (ReadArrayConst #oldBytes1 k)) ;
       Act (writeRegsList regPaths (regIdx #offset) (ToBit #newBytes1)) ;
       If #isCross Then (
@@ -512,7 +512,7 @@ Section RegisterMemRegionActions.
             let dist :=
               Sub $(Z.of_nat numRegBytes + Z.of_nat (finNum k)) #bOffset in
             let active := Slt dist #numActive in
-            let srcIdx := TruncLsb (AddrSz - 3)%Z 3 dist in
+            let srcIdx := TruncLsb TagAddrWidth LgNumBytesFullCapSz dist in
             ITE active (ReadArray #writeBytes srcIdx) (ReadArrayConst #oldBytes2 k)) ;
         writeRegsList regPaths #nextIdx (ToBit #newBytes2)
       ) ;
@@ -520,12 +520,12 @@ Section RegisterMemRegionActions.
         ReadReg "oldTags" tagsRegPath (fun oldTags =>
         Let newTags : Array (regionTagSize r) Bool <-
           ArrayBuilder (fun (s : FinType (regionTagSize r)) =>
-            let sVal := Const ty (Bit (AddrSz - 3)%Z) (bits.of_Z _ (Z.of_nat (finNum s))) in
+            let sVal := Const ty (Bit TagAddrWidth) (bits.of_Z _ (Z.of_nat (finNum s))) in
             let isTargetSlot := Eq sVal (tagSlot #offset) in
             let isNextSlot :=
               And [ #isCross ;
                     Eq sVal (Add [ tagSlot #offset ;
-                                   Const ty (Bit (AddrSz - 3)%Z) (bits.of_Z _ 1) ]) ] in
+                                   Const ty (Bit TagAddrWidth) (bits.of_Z _ 1) ]) ] in
             ITE isTargetSlot
                 (ITE #isCap (stVal`"tag") (Const ty Bool false))
                 (ITE isNextSlot
