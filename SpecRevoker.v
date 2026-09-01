@@ -80,6 +80,13 @@ Section NthRegionAction.
 
 End NthRegionAction.
 
+Definition getStrIndexOption (s : string) (ls : list string) : option nat :=
+  (fix loop (l : list string) (idx : nat) : option nat :=
+     match l with
+     | [] => None
+     | x :: xs => if String.eqb s x then Some idx else loop xs (S idx)
+     end) ls 0%nat.
+
 (* ===========================================================================
  * 3. Autonomous Revoker Step Action
  * =========================================================================== *)
@@ -92,21 +99,29 @@ Section RevokerAction.
 
   Local Notation memTree := (specMemTree regions).
 
-  Local Definition readRevokerReg (regIdx : Z) : Action ty memTree (Bit Xlen) :=
+  Local Definition readRevokerRegByIdx (regIdx : nat) : Action ty memTree (Bit Xlen) :=
     nthRegionAction
       (fun r =>
          let tR := memRegionTree r in
          let pths := getTreeRegsOfKind (Bit (regBits 2)) tR in
-         readRegsList pths (Const ty (Bit (AddrSz - 2)%Z) (bits.of_Z _ regIdx)))
+         readRegsList pths (Const ty (Bit (AddrSz - 2)%Z) (bits.of_Z _ (Z.of_nat regIdx))))
       revokerIdx regions.
 
-  Local Definition writeRevokerReg (regIdx : Z) (val : Expr ty (Bit Xlen)) : Action ty memTree (Bit 0) :=
+  Local Definition writeRevokerRegByIdx (regIdx : nat) (val : Expr ty (Bit Xlen)) : Action ty memTree (Bit 0) :=
     nthRegionAction
       (fun r =>
          let tR := memRegionTree r in
          let pths := getTreeRegsOfKind (Bit (regBits 2)) tR in
-         writeRegsList pths (Const ty (Bit (AddrSz - 2)%Z) (bits.of_Z _ regIdx)) val)
+         writeRegsList pths (Const ty (Bit (AddrSz - 2)%Z) (bits.of_Z _ (Z.of_nat regIdx))) val)
       revokerIdx regions.
+
+  Local Definition readRevokerReg (regName : string) :=
+    forceOption (option_map readRevokerRegByIdx
+                            (getStrIndexOption regName RevokerRegNames)).
+
+  Local Definition writeRevokerReg (regName : string) (val : Expr ty (Bit Xlen)) :=
+    forceOption (option_map (fun idx => writeRevokerRegByIdx idx val)
+                            (getStrIndexOption regName RevokerRegNames)).
 
   Definition readRevBit (base : Expr ty (Bit (AddrSz + 1))) : Action ty memTree Bool :=
     LetA lookup  : RevBitLookup   <- toAction memTree (computeRevBitAddr config base) ;
@@ -116,11 +131,11 @@ Section RevokerAction.
     Return #revBit.
 
   Definition specRevokerStep : Action ty memTree (Bit 0) :=
-    LetA revokerStart  : Bit Xlen <- readRevokerReg 0 ;
-    LetA revokerEnd    : Bit Xlen <- readRevokerReg 1 ;
-    LetA revokerEpoch  : Bit Xlen <- readRevokerReg 2 ;
-    LetA revokerKick   : Bit Xlen <- readRevokerReg 3 ;
-    LetA revokeAddr    : Bit Xlen <- readRevokerReg 4 ;
+    LetA revokerStart  : Bit Xlen <- readRevokerReg "start" ;
+    LetA revokerEnd    : Bit Xlen <- readRevokerReg "endAddr" ;
+    LetA revokerEpoch  : Bit Xlen <- readRevokerReg "epoch" ;
+    LetA revokerKick   : Bit Xlen <- readRevokerReg "kick" ;
+    LetA revokeAddr    : Bit Xlen <- readRevokerReg "revokeAddr" ;
 
     Let isWaiting : Bool <- Sge #revokeAddr #revokerEnd ;
 
@@ -148,19 +163,19 @@ Section RevokerAction.
         ) ;
         Retv
       ) ;
-      Act (writeRevokerReg 4 (Add [ #revokeAddr ; Const ty (Bit Xlen) (bits.of_Z _ (Z.of_nat (Z.to_nat NumBytesFullCapSz))) ])) ;
+      Act (writeRevokerReg "revokeAddr" (Add [ #revokeAddr ; Const ty (Bit Xlen) (bits.of_Z _ NumBytesFullCapSz) ])) ;
       Retv
     ) Else (
       Let isOddEpoch : Bool <- FromBit Bool (TruncLsb (Xlen - 1) 1 #revokerEpoch) ;
       If #isOddEpoch Then (
-        Act (writeRevokerReg 2 (Add [ #revokerEpoch ; Const ty (Bit Xlen) (bits.of_Z _ 1) ])) ;
+        Act (writeRevokerReg "epoch" (Add [ #revokerEpoch ; Const ty (Bit Xlen) (bits.of_Z _ 1) ])) ;
         Retv
       ) Else (
         Let isKicked : Bool <- isNotZero #revokerKick ;
         If #isKicked Then (
-          Act (writeRevokerReg 2 (Add [ #revokerEpoch ; Const ty (Bit Xlen) (bits.of_Z _ 1) ])) ;
-          Act (writeRevokerReg 4 #revokerStart) ;
-          Act (writeRevokerReg 3 (Const ty (Bit Xlen) Zmod.zero)) ;
+          Act (writeRevokerReg "epoch" (Add [ #revokerEpoch ; Const ty (Bit Xlen) (bits.of_Z _ 1) ])) ;
+          Act (writeRevokerReg "revokeAddr" #revokerStart) ;
+          Act (writeRevokerReg "kick" (Const ty (Bit Xlen) Zmod.zero)) ;
           Retv
         ) ;
         Retv
