@@ -183,11 +183,8 @@ Section InternalMemRegionActions.
 
   Local Definition tInt := internalMemRegionTree r init.
 
-  Local Definition mainMemPath : MemPath tInt :=
-    @Build_MemPath tInt (inl tt) I.
-
-  Local Definition tagsPath : MemPath tInt :=
-    @Build_MemPath tInt (inr (inl tt)) I.
+  Local Definition mainMemPath : MemPath tInt := getChildMemPathTree tInt "mainMem".
+  Local Definition tagsPath : MemPath tInt := getChildMemPathTree tInt "tags".
 
   Definition internalMemRegionRead (addr : Expr ty Addr) : Action ty tInt FullCapWithTag :=
     Let offset <- getMemOffset r.(regionBase) (Z.of_nat r.(regionSize)) addr ;
@@ -272,12 +269,12 @@ Section ExternalMemRegionActions.
     FromBit (Array numBytes Bool)
       (Not (Sll (ConstBit (InvDefault _)) (lineOffset addr))).
 
-  Local Definition pMemReadRq : SendPath tExt := @Build_SendPath tExt (inl tt) I.
-  Local Definition pMemReadRp : RecvPath tExt := @Build_RecvPath tExt (inr (inl tt)) I.
-  Local Definition pMemWriteRq : SendPath tExt := @Build_SendPath tExt (inr (inr (inl tt))) I.
-  Local Definition pTagReadRq : SendPath tExt := @Build_SendPath tExt (inr (inr (inr (inl tt)))) I.
-  Local Definition pTagReadRp : RecvPath tExt := @Build_RecvPath tExt (inr (inr (inr (inr (inl tt))))) I.
-  Local Definition pTagWriteRq : SendPath tExt := @Build_SendPath tExt (inr (inr (inr (inr (inr (inl tt)))))) I.
+  Local Definition pMemReadRq : SendPath tExt := getChildSendPathTree tExt "externalMemReadRq".
+  Local Definition pMemReadRp : RecvPath tExt := getChildRecvPathTree tExt "externalMemReadRp".
+  Local Definition pMemWriteRq : SendPath tExt := getChildSendPathTree tExt "externalMemWriteRq".
+  Local Definition pTagReadRq : SendPath tExt := getChildSendPathTree tExt "externalTagReadRq".
+  Local Definition pTagReadRp : RecvPath tExt := getChildRecvPathTree tExt "externalTagReadRp".
+  Local Definition pTagWriteRq : SendPath tExt := getChildSendPathTree tExt "externalTagWriteRq".
 
   Definition externalMemRegionRead
              (addr : Expr ty Addr)
@@ -432,8 +429,7 @@ Section RegisterMemRegionActions.
   Local Definition tagSlot (offset : Expr ty Addr) : Expr ty (Bit (AddrSz - 3)%Z) :=
     TruncMsb (AddrSz - 3)%Z 3 offset.
 
-  Local Definition tagsRegPath : RegPath tReg :=
-    @Build_RegPath tReg (inr (inl tt)) I.
+  Local Definition tagsRegPath : RegPath tReg := getChildRegPathTree tReg "tags".
 
   Definition registerMemRegionRead
              (addr : Expr ty Addr)
