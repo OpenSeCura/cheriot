@@ -63,11 +63,9 @@ Definition revokerMemRegion
 |}.
 
 Record RevokerInstance (regions : list MemRegion) := {
-  revokerIdx : nat ;
-  pfRevoker  : match nth_error regions revokerIdx with
-               | Some r => r = revokerMemRegion r.(regionBase) r.(regionInMemory)
-               | None   => False
-               end
+  revokerIdx    : nat ;
+  revokerRegion : MemRegion ;
+  pfRevoker     : nth_error regions revokerIdx = Some revokerRegion
 }.
 
 (* ===========================================================================
