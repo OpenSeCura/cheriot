@@ -34,17 +34,19 @@ Local Open Scope guru_scope.
 Definition RevokerRegNames : list string :=
   [ "base" ; "top" ; "control" ; "epoch" ; "interruptStatus" ; "interruptRequested" ; "scanAddr" ].
 
-Definition revokerRegInit (name : string) : type (Bit (regBits 2)) :=
+Definition LgRevokerRegBytes : nat := Eval compute in Z.to_nat LgNumBytesXlen.
+
+Definition revokerRegInit (name : string) : type (Bit (regBits LgRevokerRegBytes)) :=
   if String.eqb name "control" then
-    bits.of_Z (regBits 2) (Z.shiftl 0x5500 16)
+    bits.of_Z (regBits LgRevokerRegBytes) (Z.shiftl 0x5500 16)
   else
     Zmod.zero.
 
-Definition revokerRegs : list (string * option (type (Bit (regBits 2)))) :=
+Definition revokerRegs : list (string * option (type (Bit (regBits LgRevokerRegBytes)))) :=
   map (fun name => (name, Some (revokerRegInit name))) RevokerRegNames.
 
 Definition RevokerNumRegs : nat := length revokerRegs.
-Definition RevokerSizeBytes : nat := (RevokerNumRegs * Z.to_nat (Xlen / 8))%nat.
+Definition RevokerSizeBytes : nat := (RevokerNumRegs * Z.to_nat NumBytesXlen)%nat.
 
 Definition revokerMemRegion
            (base : Z)
@@ -55,7 +57,7 @@ Definition revokerMemRegion
   regionSize     := RevokerSizeBytes ;
   hasTags        := false ;
   isReadOnly     := false ;
-  regionKind     := @RegisterMem RevokerSizeBytes false 2%nat revokerRegs I I ;
+  regionKind     := @RegisterMem RevokerSizeBytes false LgRevokerRegBytes revokerRegs I I ;
   regionInMemory := pfBound ;
   regionAligned  := I
 |}.

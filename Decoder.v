@@ -33,14 +33,14 @@ Section DecodeUncompressed.
 
   Definition decodeUncompressed : LetExpr ty DecodeOut :=
     LetE isComp    : Bool   <- isCompressed inst ;
-    LetE opcode    : Bit 5  <- #inst`[6:2] ;
-    LetE rd        : Bit 5  <- #inst`[11:7] ;
-    LetE funct3    : Bit 3  <- #inst`[14:12] ;
-    LetE rs1       : Bit 5  <- #inst`[19:15] ;
-    LetE rs2       : Bit 5  <- #inst`[24:20] ;
-    LetE funct7    : Bit 7  <- #inst`[31:25] ;
-    LetE csrAddr   : Bit 12 <- #inst`[31:20] ;
-    LetE fm        : Bit 4  <- #inst`[31:28] ;
+    LetE opcode    : Bit 5         <- #inst`[6:2] ;
+    LetE rd        : Bit RegIdxSz  <- #inst`[11:7] ;
+    LetE funct3    : Bit 3         <- #inst`[14:12] ;
+    LetE rs1       : Bit RegIdxSz  <- #inst`[19:15] ;
+    LetE rs2       : Bit RegIdxSz  <- #inst`[24:20] ;
+    LetE funct7    : Bit 7         <- #inst`[31:25] ;
+    LetE csrAddr   : Bit CsrAddrSz <- #inst`[31:20] ;
+    LetE fm        : Bit 4         <- #inst`[31:28] ;
 
     LetE cs1Real : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal #rs1 ;
     LetE cs2Real : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal #rs2 ;
@@ -304,7 +304,7 @@ Section DecodeCompressed.
                                  ITE0 (Eq #f3 $3) #pseudoLC;
                                  ITE0 (Eq #f3 $6) #pseudoSW;
                                  ITE0 (Eq #f3 $7) #pseudoSC] ;
-    LetE pseudoInst : Bit 32 <- {< #rawInst, Const _ (Bit 2) Zmod.zero >} ;
+    LetE pseudoInst : Inst <- {< #rawInst, Const _ (Bit 2) Zmod.zero >} ;
     decodeUncompressed pseudoInst pcc.
 
   Definition decodeQuadrant1 : LetExpr ty DecodeOut :=
@@ -369,7 +369,7 @@ Section DecodeCompressed.
                                  ITE0 (Eq #f3 $5) #pseudoCJ;
                                  ITE0 (Eq #f3 $6) #pseudoBEQZ;
                                  ITE0 (Eq #f3 $7) #pseudoBNEZ] ;
-    LetE pseudoInst : Bit 32 <- {< #rawInst, Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
+    LetE pseudoInst : Inst <- {< #rawInst, Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
     decodeUncompressed pseudoInst pcc.
 
   Definition decodeQuadrant2 : LetExpr ty DecodeOut :=
@@ -408,7 +408,7 @@ Section DecodeCompressed.
                                  ITE0 (Eq #f3 $4) #pseudoFunct4Q2;
                                  ITE0 (Eq #f3 $6) #pseudoSWSP;
                                  ITE0 (Eq #f3 $7) #pseudoCSCSP] ;
-    LetE pseudoInst : Bit 32 <- {< #rawInst, Const _ (Bit 2) (Zmod.of_Z _ 2) >} ;
+    LetE pseudoInst : Inst <- {< #rawInst, Const _ (Bit 2) (Zmod.of_Z _ 2) >} ;
     decodeUncompressed pseudoInst pcc.
 
   Definition decode : LetExpr ty DecodeOut :=

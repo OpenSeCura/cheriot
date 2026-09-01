@@ -1163,7 +1163,7 @@ Section FunctionalUnits.
     @RetE _ (Bit Xlen) (ITE #isSaturated (Const ty (Bit Xlen) (InvDefault _)) #rawData).
 
   (* If isArith is set for left shift, results are wrong *)
-  Definition Shifter (data : ty (Bit Xlen)) (shamt : ty (Bit 5)) (isRight isArith : ty Bool)
+  Definition Shifter (data : ty (Bit Xlen)) (shamt : ty (Bit LgXlen)) (isRight isArith : ty Bool)
   : LetExpr ty (Bit Xlen) :=
     ( let rev e := ToBit (ArrayReverse (FromBit (Array (Z.to_nat Xlen) Bool) e)) in
       LetE inpVal : Bit Xlen <- ITE #isRight #data (rev #data) ;

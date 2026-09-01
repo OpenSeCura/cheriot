@@ -245,7 +245,7 @@ Section ExternalMemRegionActions.
   Local Definition tExt := externalMemRegionTree r numDXlen.
   Local Definition numBytes := (numDXlen * DXlenBytes)%nat.
   Local Definition lgNumDXlen := Z.log2_up (Z.of_nat numDXlen).
-  Local Definition lgLineBytes := (3 + lgNumDXlen)%Z.
+  Local Definition lgLineBytes := (LgNumBytesFullCapSz + lgNumDXlen)%Z.
 
   Local Definition castAddr (addr : Expr ty Addr) : Expr ty (Bit ((lgLineBytes + (AddrSz - lgLineBytes))%Z)) :=
     castBits (eq_sym (add_sub_cancel AddrSz lgLineBytes)) addr.

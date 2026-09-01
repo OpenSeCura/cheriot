@@ -66,6 +66,7 @@ Definition Inst         := Eval compute in Bit InstSz.
 Definition LgAddrSz     := Eval compute in Z.log2_up AddrSz.
 Definition ExpSz        := Eval compute in LgAddrSz.
 Definition NumBytesXlen := Eval compute in (Xlen / 8).
+Definition LgNumBytesXlen := Eval compute in Z.log2_up NumBytesXlen.
 Definition NumRegs      := Eval compute in (2 ^ RegIdxSzReal).
 
 Definition CapBSz          := Eval compute in (CapcTSz + 1).
