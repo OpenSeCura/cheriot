@@ -296,7 +296,7 @@ Section SpecFetchMemory.
    * ========================================================================= *)
   Definition readRevBit (base : Expr ty (Bit (AddrSz + 1))) : Action ty memTree Bool :=
     LetL lookup  : RevBitLookup <- computeRevBitAddr base ;
-    LetA revCap  : FullCapWithTag <- specMemRead regions (##lookup`"revByteAddr") ;
+    LetA revCap  : FullCapWithTag <- specMemRead regions (##lookup`"revByteAddr") $0 ;
     Let  revByte : Bit 8 <- TruncLsb (Xlen - 8) 8 (##revCap`"addr") ;
     Let  revBit  : Bool  <- extractRevBit lookup #revByte ;
     Return #revBit.
@@ -306,7 +306,7 @@ Section SpecFetchMemory.
    * ========================================================================= *)
   Definition specFetch : Action ty coreTree FetchOut :=
     LetA pcc : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
-    LetA rawFull : FullCapWithTag <- liftAction np_mem (specMemRead regions (##pcc`"addr")) ;
+    LetA rawFull : FullCapWithTag <- liftAction np_mem (specMemRead regions (##pcc`"addr") $LgNumBytesInstSz) ;
     Let rawInst : Inst <- ##rawFull`"addr" ;
 
     (* Fetch Exception Checks *)
@@ -356,7 +356,7 @@ Section SpecFetchMemory.
         Let addr      : Addr              <- ##ld`"addr" ;
         Let pending   : PendingLoad       <- ##ld`"pending" ;
 
-        LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions #addr) ;
+        LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions #addr (##pending`"memSize")) ;
         LetL outcome  : LoadOutcome       <- dispatchLoadResponse pending memVal false ;
 
         If (#outcome `? "RevLookup") Then (

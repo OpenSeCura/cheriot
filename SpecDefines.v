@@ -40,6 +40,7 @@ Definition getMemOffset {ty: Kind -> Type} (startAddr: Z) (size: Z) n (addr: Exp
 
 Definition Xlen         := 32.
 Definition DXlen        := Eval compute in (2 * Xlen).
+Definition DXlenBytes : nat := Eval compute in Z.to_nat (DXlen / 8).
 Definition InstSz       := 32.
 Definition CompInstSz   := 16.
 Definition LgMshwmAlign := 4.
@@ -83,6 +84,7 @@ Definition NumBytesFullCapSz := Eval compute in (FullCapSz / 8).
 Definition LgNumBytesFullCapSz := Eval compute in Z.log2_up NumBytesFullCapSz.
 Definition LgLgNumBytesFullCapSz := Eval compute in Z.log2_up (LgNumBytesFullCapSz + 1).
 Definition TagAddrWidth : Z := Eval compute in (AddrSz - LgNumBytesFullCapSz).
+Definition LgNumBytesInstSz : Z := Eval compute in Z.log2_up (InstSz / 8).
 
 Definition isCompressed ty (inst: ty Inst) : Expr ty Bool := Not (isAllOnes (TruncLsb (InstSz-2) 2 #inst)).
 Definition getCd ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[11:7].
