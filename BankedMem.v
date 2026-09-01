@@ -16,6 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Bool.
 From Guru Require Import Library Syntax Notations.
+From Cheriot Require Import SpecDefines.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -31,7 +32,7 @@ Section BankedMem.
   Variable LgEachSizeGe0: LgEachSize >= 0.
   Variable port: FinType 2%nat.
 
-  Local Definition LgNumBanks := 3 + LgNum8Banks. (* Lg of Number of 8-bit sized banks *)
+  Local Definition LgNumBanks := LgNumBytesFullCapSz + LgNum8Banks. (* Lg of Number of 8-bit sized banks *)
   Local Definition Num8Banks := Z.to_nat (Z.shiftl 1 LgNum8Banks).
   Local Definition NumBanks := Z.to_nat (Z.shiftl 1 LgNumBanks).
   Local Definition EachSize := Z.to_nat (Z.shiftl 1 LgEachSize).
@@ -195,7 +196,7 @@ Section BankedMem.
                           Return (UpdateArrayConst #rest memIdx (memKindCastInv #val)))))
         (Return ConstDef) (genFinType NumBanks).
 
-    Local Definition shamtTag := TruncMsb LgNum8Banks 3 shamt.
+    Local Definition shamtTag := TruncMsb LgNum8Banks LgNumBytesFullCapSz shamt.
 
     Local Definition castLineIdxTag (tagIdx: FinType Num8Banks):
       Expr ty (Bit (Z.log2_up (Z.of_nat EachSize))) :=
