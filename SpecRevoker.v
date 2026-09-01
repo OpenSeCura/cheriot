@@ -177,20 +177,18 @@ Section RevokerAction.
           ) ;
           Retv
         ) ;
-        (* Advance scan pointer by capability size (8 bytes) *)
-        Act (writeRevokerReg "scanAddr" (Add [ #scanAddr ; Const ty (Bit Xlen) (bits.of_Z _ NumBytesFullCapSz) ])) ;
+        (* Advance scan pointer: increment scanAddrMsb and zero lower bits *)
+        Let nextScanAddr : Bit Xlen <-
+          {< Add [ #scanAddrMsb ; Const ty (Bit TagAddrWidth) (bits.of_Z _ 1) ],
+             Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
+        Act (writeRevokerReg "scanAddr" #nextScanAddr) ;
         Retv
       ) Else (
         (* SWEEP COMPLETE: scanAddr reached top *)
         (* Transition epoch from odd (sweeping) to even (idle) *)
         Act (writeRevokerReg "epoch" (Add [ #epoch ; Const ty (Bit Xlen) (bits.of_Z _ 1) ])) ;
-        (* Assert interrupt if software requested it *)
-        LetA intReq : Bit Xlen <- readRevokerReg "interruptRequested" ;
-        Let isIntReq : Bool <- FromBit Bool (TruncLsb (Xlen - 1) 1 #intReq) ;
-        If #isIntReq Then (
-          Act (writeRevokerReg "interruptStatus" (Const ty (Bit Xlen) (bits.of_Z _ 1))) ;
-          Retv
-        ) ;
+        (* Record sweep completion in interruptStatus *)
+        Act (writeRevokerReg "interruptStatus" (Const ty (Bit Xlen) (bits.of_Z _ 1))) ;
         Retv
       ) ;
       Retv
@@ -201,8 +199,12 @@ Section RevokerAction.
       If #isKicked Then (
         (* Start sweep: initialize scanAddr to base and advance epoch to odd *)
         LetA baseAddr : Bit Xlen <- readRevokerReg "base" ;
-        Act (writeRevokerReg "scanAddr" #baseAddr) ;
-        Act (writeRevokerReg "epoch" (Add [ #epoch ; Const ty (Bit Xlen) (bits.of_Z _ 1) ])) ;
+        Let baseAddrMsb : Bit TagAddrWidth <- TruncMsb TagAddrWidth LgNumBytesFullCapSz #baseAddr ;
+        Let initScanAddr : Bit Xlen <- {< #baseAddrMsb, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
+        Act (writeRevokerReg "scanAddr" #initScanAddr) ;
+        Let oddEpoch : Bit Xlen <-
+          {< TruncMsb (Xlen - 1) 1 #epoch, Const ty (Bit 1) (bits.of_Z 1 1) >} ;
+        Act (writeRevokerReg "epoch" #oddEpoch) ;
         (* Clear kick bit in control, preserving upper signature bits *)
         Let clearedControl : Bit Xlen <-
           {< TruncMsb (Xlen - 1) 1 #control, Const ty (Bit 1) Zmod.zero >} ;
@@ -215,7 +217,9 @@ Section RevokerAction.
 
   Definition revokerInterrupt : Action ty memTree Bool :=
     LetA status : Bit Xlen <- readRevokerReg "interruptStatus" ;
+    LetA req    : Bit Xlen <- readRevokerReg "interruptRequested" ;
     Let isPending : Bool <- FromBit Bool (TruncLsb (Xlen - 1) 1 #status) ;
-    Return #isPending.
+    Let isReq     : Bool <- FromBit Bool (TruncLsb (Xlen - 1) 1 #req) ;
+    Return (And [ #isPending ; #isReq ]).
 
 End RevokerAction.
