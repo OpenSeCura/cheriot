@@ -77,10 +77,9 @@ Section NthRegionAction.
     | [] => Return ConstDef
     | r :: rs =>
         match idx with
-        | 0%nat => liftAction (@pairChild0Path "mem" (memRegionTree r) (specMemTree rs)) (act r)
+        | 0%nat => liftAction child0Path (act r)
         | S idx' =>
-            liftAction (@pairChild1Path "mem" (memRegionTree r) (specMemTree rs))
-                       (nthRegionAction idx' rs)
+            liftAction child1Path (nthRegionAction idx' rs)
         end
     end.
 

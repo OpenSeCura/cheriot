@@ -588,11 +588,16 @@ Fixpoint specMemChildren (regions : list MemRegion) : list (Tree Elem) :=
 Definition specMemTree (regions : list MemRegion) : Tree Elem :=
   Node "mem" (specMemChildren regions).
 
-Definition pairChild0Path {name : string} {c0 c1 : Tree Elem} : NodePath (Node name [c0; c1]) :=
+Definition child0Path {A : Type} {name : string} {c0 : Tree A} {cs : list (Tree A)}
+  : NodePath (Node name (c0 :: cs)) :=
   inr (inl (inl tt)).
 
-Definition pairChild1Path {name : string} {c0 c1 : Tree Elem} : NodePath (Node name [c0; c1]) :=
+Definition child1Path {A : Type} {name : string} {c0 c1 : Tree A} {cs : list (Tree A)}
+  : NodePath (Node name (c0 :: c1 :: cs)) :=
   inr (inr (inl (inl tt))).
+
+Arguments child0Path {A name c0 cs}.
+Arguments child1Path {A name c0 c1 cs}.
 
 Section SpecMemRouter.
   Variable ty : Kind -> Type.
@@ -608,12 +613,12 @@ Section SpecMemRouter.
         Let isMatch : Bool <- isRegionAddr r addr ;
         LetIf devVal : FullCapWithTag <-
           If #isMatch Then (
-            liftAction pairChild0Path (memRegionRead r addr memSize)
+            liftAction child0Path (memRegionRead r addr memSize)
           ) Else (
             Return ConstDef
           ) ;
         LetA restVal : FullCapWithTag <-
-          liftAction pairChild1Path (specMemRead rs addr memSize) ;
+          liftAction child1Path (specMemRead rs addr memSize) ;
         Return (Or [ #devVal ; #restVal ])
     end.
 
@@ -628,9 +633,9 @@ Section SpecMemRouter.
     | r :: rs =>
         Let isMatch : Bool <- isRegionAddr r addr ;
         If #isMatch Then (
-          liftAction pairChild0Path (memRegionWrite r addr stVal memSize)
+          liftAction child0Path (memRegionWrite r addr stVal memSize)
         ) ;
-        liftAction pairChild1Path (specMemWrite rs addr stVal memSize)
+        liftAction child1Path (specMemWrite rs addr stVal memSize)
     end.
 
 End SpecMemRouter.
