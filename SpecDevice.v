@@ -31,9 +31,6 @@ Local Open Scope guru_scope.
  * 1. MemRegion Definition & Disjointness Checking
  * =========================================================================== *)
 
-Definition regBits (lgRegBytes : nat) : Z :=
-  NatZ_mul (Nat.pow 2 lgRegBytes) 8.
-
 Definition LgDXlenBytes : nat := Eval compute in Z.to_nat LgNumBytesFullCapSz.
 
 Inductive LineConfig :=
@@ -88,17 +85,15 @@ Arguments ExternalMem {regionName regionSize cfg}.
 Arguments CustomMem {regionName regionSize cfg} children readAction writeAction.
 
 Record MemRegion := {
-  regionName     : string ;
-  regionBase     : Z ;
-  regionSize     : nat ;
-  regionLineCfg  : LineConfig ;
-  isReadOnly     : bool ;
-  regionKind     : RegionKind regionName regionSize regionLineCfg ;
-  regionInMemory : Is_true ((0 <=? regionBase) && (regionBase + Z.of_nat regionSize <=? Z.shiftl 1 Xlen))%Z ;
-  regionAligned  : Is_true (
-    (regionBase mod (2 ^ Z.of_nat (cfgLgLineBytes regionLineCfg)) =? 0)%Z &&
-    (regionSize mod (cfgLineBytes regionLineCfg) =? 0)%nat
-  )
+  regionName        : string ;
+  regionBase        : Z ;
+  regionSize        : nat ;
+  regionLineCfg     : LineConfig ;
+  isReadOnly        : bool ;
+  regionKind        : RegionKind regionName regionSize regionLineCfg ;
+  regionInMemory    : Is_true ((0 <=? regionBase) && (regionBase + Z.of_nat regionSize <=? Z.shiftl 1 Xlen))%Z ;
+  regionBaseAligned : Is_true (regionBase mod (2 ^ Z.of_nat (cfgLgLineBytes regionLineCfg)) =? 0)%Z ;
+  regionSizeAligned : Is_true (Z.of_nat regionSize mod (2 ^ Z.of_nat (cfgLgLineBytes regionLineCfg)) =? 0)%Z
 }.
 
 Definition hasTags (r : MemRegion) : bool :=

@@ -73,7 +73,7 @@ Definition revokerInterruptStatusPath : RegPath tRev := getChildRegPathTree tRev
 Definition revokerInterruptRequestedPath : RegPath tRev := getChildRegPathTree tRev "interruptRequested".
 Definition revokerScanAddrPath : RegPath tRev := getChildRegPathTree tRev "scanAddr".
 
-Definition revokerLineConfig : LineConfig := RawLine LgRevokerRegBytes.
+Definition RevokerLineConfig : LineConfig := RawLine LgRevokerRegBytes.
 
 Definition revokerRegToWord {ty : Kind -> Type}
   (baseVal : Expr ty (Bit TagAddrWidth))
@@ -137,7 +137,7 @@ Definition revokerLineReadAction
            (base : Z)
            (ty : Kind -> Type)
            (addr : Expr ty Addr)
-           : Action ty tRev (LineReadRp revokerLineConfig) :=
+           : Action ty tRev (LineReadRp RevokerLineConfig) :=
   Let offset <- getMemOffset base (Z.of_nat RevokerSizeBytes) addr ;
   ReadReg "base" revokerBasePath (fun baseVal =>
   ReadReg "top" revokerTopPath (fun topVal =>
@@ -151,9 +151,9 @@ Definition revokerLineReadAction
     FromBit (Array RevokerSizeBytes (Bit ByteSz)) (@ToBit ty (Array RevokerNumRegs (Bit Xlen)) #words) ;
   Let readBytes : Array RevokerRegBytes (Bit ByteSz) <-
     slice #bytes #offset RevokerRegBytes ;
-  @Return ty tRev (LineReadRp revokerLineConfig) (STRUCT {
+  @Return ty tRev (LineReadRp RevokerLineConfig) (STRUCT {
     "data" ::= #readBytes ;
-    "tag"  ::= Const ty (Array (cfgNumLineTags revokerLineConfig) Bool) (getDefault _)
+    "tag"  ::= Const ty (Array (cfgNumLineTags RevokerLineConfig) Bool) (getDefault _)
   }))))))).
 
 Arguments revokerLineReadAction base ty addr : clear implicits.
@@ -161,7 +161,7 @@ Arguments revokerLineReadAction base ty addr : clear implicits.
 Definition revokerLineWriteAction
            (base : Z)
            (ty : Kind -> Type)
-           (rq : Expr ty (LineWriteRq revokerLineConfig))
+           (rq : Expr ty (LineWriteRq RevokerLineConfig))
            : Action ty tRev (Bit 0) :=
   Let offset <- getMemOffset base (Z.of_nat RevokerSizeBytes) (rq`"addr") ;
   ReadReg "base" revokerBasePath (fun baseVal =>
@@ -205,17 +205,11 @@ Definition revokerLineWriteAction
 
 Arguments revokerLineWriteAction base ty rq : clear implicits.
 
-Lemma revokerAlignedLemma (base : Z) (pf : Is_true (base mod NumBytesXlen =? 0)%Z) :
-  Is_true (
-    (base mod (2 ^ Z.of_nat (cfgLgLineBytes revokerLineConfig)) =? 0)%Z &&
-    (RevokerSizeBytes mod (cfgLineBytes revokerLineConfig) =? 0)%nat
-  ).
+Lemma revokerBaseAlignedLemma (base : Z) (pf : Is_true (base mod NumBytesXlen =? 0)%Z) :
+  Is_true (base mod (2 ^ Z.of_nat (cfgLgLineBytes RevokerLineConfig)) =? 0)%Z.
 Proof.
-  change (cfgLgLineBytes revokerLineConfig) with LgRevokerRegBytes.
-  change (cfgLineBytes revokerLineConfig) with RevokerRegBytes.
+  change (cfgLgLineBytes RevokerLineConfig) with LgRevokerRegBytes.
   change (2 ^ Z.of_nat LgRevokerRegBytes)%Z with NumBytesXlen.
-  change (RevokerSizeBytes mod RevokerRegBytes =? 0)%nat with true.
-  rewrite Bool.andb_true_r.
   exact pf.
 Qed.
 
@@ -224,14 +218,15 @@ Definition revokerMemRegion
            (pfBound : Is_true ((0 <=? base) && (base + Z.of_nat RevokerSizeBytes <=? Z.shiftl 1 Xlen))%Z)
            (pfAligned : Is_true (base mod NumBytesXlen =? 0)%Z)
            : MemRegion := {|
-  regionName     := "revoker" ;
-  regionBase     := base ;
-  regionSize     := RevokerSizeBytes ;
-  regionLineCfg  := revokerLineConfig ;
-  isReadOnly     := false ;
-  regionKind     := @CustomMem "revoker" RevokerSizeBytes revokerLineConfig revokerChildren (revokerLineReadAction base) (revokerLineWriteAction base) ;
-  regionInMemory := pfBound ;
-  regionAligned  := revokerAlignedLemma pfAligned
+  regionName        := "revoker" ;
+  regionBase        := base ;
+  regionSize        := RevokerSizeBytes ;
+  regionLineCfg     := RevokerLineConfig ;
+  isReadOnly        := false ;
+  regionKind        := @CustomMem "revoker" RevokerSizeBytes RevokerLineConfig revokerChildren (revokerLineReadAction base) (revokerLineWriteAction base) ;
+  regionInMemory    := pfBound ;
+  regionBaseAligned := revokerBaseAlignedLemma pfAligned ;
+  regionSizeAligned := I
 |}.
 
 Arguments revokerMemRegion base pfBound pfAligned : clear implicits.
