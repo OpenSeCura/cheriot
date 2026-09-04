@@ -48,18 +48,81 @@ Definition revokerRegs : list (string * option (type (Bit (regBits LgRevokerRegB
 Definition RevokerNumRegs : nat := length revokerRegs.
 Definition RevokerSizeBytes : nat := (RevokerNumRegs * Z.to_nat NumBytesXlen)%nat.
 
+Definition revokerChildren : list (Tree Elem) :=
+  map (fun '(name, initVal) =>
+    Leaf name (EReg (Build_Reg (Bit Xlen) initVal))
+  ) revokerRegs.
+
+Definition revokerRegPaths : list (RegOfKind (t:=Node "revoker" revokerChildren) (Bit Xlen)) :=
+  getTreeRegsOfKind (Bit Xlen) (Node "revoker" revokerChildren).
+
+Definition revokerLineConfig : LineConfig := RawLine 2.
+
+Definition revokerLineReadAction
+           (base : Z)
+           (ty : Kind -> Type)
+           (addr : Expr ty Addr)
+           : Action ty (Node "revoker" revokerChildren) (LineReadRp revokerLineConfig) :=
+  Let offset <- Sub addr $base ;
+  Let regIdx : Bit (AddrSz - 2)%Z <- TruncMsb (AddrSz - 2)%Z 2%Z (castBits (eq_sym (add_sub_cancel AddrSz 2)) #offset) ;
+  LetA regVal : Bit Xlen <- readRegsList revokerRegPaths #regIdx ;
+  @Return ty (Node "revoker" revokerChildren) (LineReadRp revokerLineConfig) (STRUCT {
+    "data" ::= FromBit (Array 4 (Bit 8)) #regVal ;
+    "tag"  ::= Const ty (Array 0 Bool) (getDefault (Array 0 Bool))
+  }).
+
+Arguments revokerLineReadAction base ty addr : clear implicits.
+
+Definition revokerLineWriteAction
+           (base : Z)
+           (ty : Kind -> Type)
+           (rq : Expr ty (LineWriteRq revokerLineConfig))
+           : Action ty (Node "revoker" revokerChildren) (Bit 0) :=
+  Let offset <- Sub (rq`"addr") $base ;
+  Let regIdx : Bit (AddrSz - 2)%Z <- TruncMsb (AddrSz - 2)%Z 2%Z (castBits (eq_sym (add_sub_cancel AddrSz 2)) #offset) ;
+  LetA oldVal : Bit Xlen <- readRegsList revokerRegPaths #regIdx ;
+  Let oldBytes : Array 4 (Bit 8) <- FromBit (Array 4 (Bit 8)) #oldVal ;
+  Let isW1C : Bool <- Eq #regIdx $4 ;
+  Let newBytes : Array 4 (Bit 8) <-
+    ArrayBuilder (fun (i : FinType 4) =>
+      let dMask := ReadArrayConst (rq`"dataMask") i in
+      let dByte := ReadArrayConst (rq`"data") i in
+      let oByte := ReadArrayConst #oldBytes i in
+      ITE #isW1C
+          (And [ oByte ; Not (And [ ITE dMask (Const ty (Bit 8) (bits.of_Z 8 (-1))) (Const ty (Bit 8) Zmod.zero) ; dByte ]) ])
+          (ITE dMask dByte oByte)) ;
+  Act (writeRegsList revokerRegPaths #regIdx (ToBit #newBytes)) ;
+  Retv.
+
+Arguments revokerLineWriteAction base ty rq : clear implicits.
+
+Lemma revokerAlignedLemma (base : Z) (pf : Is_true (base mod 4 =? 0)%Z) :
+  Is_true (
+    (base mod (2 ^ Z.of_nat (cfgLgLineBytes revokerLineConfig)) =? 0)%Z &&
+    (RevokerSizeBytes mod (cfgLineBytes revokerLineConfig) =? 0)%nat
+  ).
+Proof.
+  change (cfgLgLineBytes revokerLineConfig) with 2%nat.
+  change (cfgLineBytes revokerLineConfig) with 4%nat.
+  change (2 ^ Z.of_nat 2)%Z with 4%Z.
+  change (RevokerSizeBytes mod 4 =? 0)%nat with true.
+  rewrite Bool.andb_true_r.
+  exact pf.
+Qed.
+
 Definition revokerMemRegion
            (base : Z)
            (pfBound : Is_true ((0 <=? base) && (base + Z.of_nat RevokerSizeBytes <=? Z.shiftl 1 Xlen))%Z)
+           (pfAligned : Is_true (base mod 4 =? 0)%Z)
            : MemRegion := {|
   regionName     := "revoker" ;
   regionBase     := base ;
   regionSize     := RevokerSizeBytes ;
-  hasTags        := false ;
+  regionLineCfg  := revokerLineConfig ;
   isReadOnly     := false ;
-  regionKind     := @RegisterMem RevokerSizeBytes false LgRevokerRegBytes revokerRegs I I ;
+  regionKind     := @CustomMem "revoker" RevokerSizeBytes revokerLineConfig revokerChildren (revokerLineReadAction base) (revokerLineWriteAction base) ;
   regionInMemory := pfBound ;
-  regionAligned  := I
+  regionAligned  := revokerAlignedLemma pfAligned
 |}.
 
 Record RevokerInstance (regions : list MemRegion) := {
