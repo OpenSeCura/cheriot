@@ -315,6 +315,9 @@ Section RevokerAction.
   Local Definition readRevokerInterruptRequested : Action ty memTree Bool :=
     revokerAction (ReadReg "interruptRequested" revokerInterruptRequestedPath (fun v => Return #v)).
 
+  Local Definition writeRevokerInterruptRequested (v : Expr ty Bool) : Action ty memTree (Bit 0) :=
+    revokerAction (WriteReg revokerInterruptRequestedPath v Retv).
+
   Local Definition readRevokerScanAddr : Action ty memTree (Bit TagAddrWidth) :=
     revokerAction (ReadReg "scanAddr" revokerScanAddrPath (fun v => Return #v)).
 
@@ -374,8 +377,13 @@ Section RevokerAction.
         (* SWEEP COMPLETE: scanAddr reached top *)
         (* Transition epoch from odd (sweeping) to even (idle) *)
         Act (writeRevokerEpoch (Add [ #epoch ; Const ty (Bit Xlen) (bits.of_Z _ 1) ])) ;
-        (* Record sweep completion in interruptStatus *)
-        Act (writeRevokerInterruptStatus (ConstBool true)) ;
+        (* Record sweep completion in interruptStatus if software requested an interrupt *)
+        LetA intReq : Bool <- readRevokerInterruptRequested ;
+        If #intReq Then (
+          Act (writeRevokerInterruptStatus (ConstBool true)) ;
+          Act (writeRevokerInterruptRequested (ConstBool false)) ;
+          Retv
+        ) ;
         Retv
       ) ;
       Retv
@@ -398,8 +406,6 @@ Section RevokerAction.
     Retv.
 
   Definition revokerInterrupt : Action ty memTree Bool :=
-    LetA status : Bool <- readRevokerInterruptStatus ;
-    LetA req    : Bool <- readRevokerInterruptRequested ;
-    Return (And [ #status ; #req ]).
+    readRevokerInterruptStatus.
 
 End RevokerAction.
