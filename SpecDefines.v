@@ -38,38 +38,38 @@ Definition getMemOffset {ty: Kind -> Type} (startAddr: Z) (size: Z) n (addr: Exp
     abstract lia.
   Defined.
 
-Definition Xlen         := 32.
-Definition DXlen        := Eval compute in (2 * Xlen).
-Definition InstSz       := 32.
-Definition CompInstSz   := 16.
-Definition LgMshwmAlign := 4.
+Definition Xlen           := 32.
+Definition DXlen          := Eval compute in (2 * Xlen).
+Definition InstSz         := 32.
+Definition CompInstSz     := 16.
+Definition LgMshwmAlign   := 4.
 
-Definition MEIP_Bit     := 11.
-Definition MTIP_Bit     := 7.
-Definition MSIP_Bit     := 3.
+Definition MEIP_Bit       := 11.
+Definition MTIP_Bit       := 7.
+Definition MSIP_Bit       := 3.
 
-Definition RegIdxSz     := 5.
-Definition CsrAddrSz    := 12.
-Definition Cra          := 1.
-Definition Cgp          := 3.
-Definition RegIdxSzReal := 4.
-Definition CapOTypeSz   := 3.
-Definition CapPermSz    := (6 : nat).
-Definition CapcTSz      := 8.
+Definition RegIdxSz       := 5.
+Definition CsrAddrSz      := 12.
+Definition Cra            := 1.
+Definition Cgp            := 3.
+Definition RegIdxSzReal   := 4.
+Definition CapOTypeSz     := 3.
+Definition CapPermSz      := (6 : nat).
+Definition CapcTSz        := 8.
 
-Definition ScrAddrSz    := Eval compute in RegIdxSz.
-Definition LgXlen       := Eval compute in Z.log2_up Xlen.
-Definition Data         := Eval compute in Bit Xlen.
-Definition AddrSz       := Eval compute in Xlen.
-Definition Addr         := Eval compute in Bit AddrSz.
-Definition Inst         := Eval compute in Bit InstSz.
-Definition LgAddrSz     := Eval compute in Z.log2_up AddrSz.
-Definition ExpSz        := Eval compute in LgAddrSz.
-Definition NumBytesXlen := Eval compute in (Xlen / 8).
+Definition ScrAddrSz      := Eval compute in RegIdxSz.
+Definition LgXlen         := Eval compute in Z.log2_up Xlen.
+Definition Data           := Eval compute in Bit Xlen.
+Definition AddrSz         := Eval compute in Xlen.
+Definition Addr           := Eval compute in Bit AddrSz.
+Definition Inst           := Eval compute in Bit InstSz.
+Definition LgAddrSz       := Eval compute in Z.log2_up AddrSz.
+Definition ExpSz          := Eval compute in LgAddrSz.
+Definition NumBytesXlen   := Eval compute in (Xlen / 8).
 Definition LgNumBytesXlen := Eval compute in Z.log2_up NumBytesXlen.
-Definition NumRegs      := Eval compute in (2 ^ RegIdxSzReal).
+Definition NumRegs        := Eval compute in (2 ^ RegIdxSzReal).
 
-Definition CapBSz          := Eval compute in (CapcTSz + 1).
+Definition CapBSz         := Eval compute in (CapcTSz + 1).
 
 Definition Cap : Kind := STRUCT_TYPE {
                              "R" :: Bool;
