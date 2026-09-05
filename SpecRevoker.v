@@ -73,63 +73,10 @@ Definition revokerScanAddrPath : RegPath tRev := getChildRegPathTree tRev "scanA
 
 Definition RevokerLineConfig : LineConfig := RawLine (Z.to_nat LgNumBytesXlen).
 
-Definition revokerRegToWord {ty : Kind -> Type}
-  (baseVal : Expr ty (Bit TagAddrWidth))
-  (topVal : Expr ty (Bit TagAddrWidth))
-  (kickVal : Expr ty Bool)
-  (epochVal : Expr ty (Bit Xlen))
-  (statusVal : Expr ty Bool)
-  (reqVal : Expr ty Bool)
-  (name : string) : Expr ty (Bit Xlen) :=
-  if String.eqb name "base" then
-    {< baseVal, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >}
-  else if String.eqb name "top" then
-    {< topVal, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >}
-  else if String.eqb name "control" then
-    {< Const ty (Bit RevokerControlSignatureWidth) (bits.of_Z RevokerControlSignatureWidth RevokerControlSignature),
-       Const ty (Bit (RevokerControlSignatureWidth - 1)) Zmod.zero,
-       ToBit kickVal >}
-  else if String.eqb name "epoch" then
-    epochVal
-  else if String.eqb name "interruptStatus" then
-    ZeroExtendTo Xlen (ToBit statusVal)
-  else if String.eqb name "interruptRequested" then
-    ZeroExtendTo Xlen (ToBit reqVal)
-  else
-    ConstDef.
+Definition RevokerRegIdxWidth : Z := Eval compute in (Z.log2_up (Z.of_nat RevokerNumRegs)).
 
-Definition revokerWordsArray {ty : Kind -> Type}
-  (baseVal : Expr ty (Bit TagAddrWidth))
-  (topVal : Expr ty (Bit TagAddrWidth))
-  (kickVal : Expr ty Bool)
-  (epochVal : Expr ty (Bit Xlen))
-  (statusVal : Expr ty Bool)
-  (reqVal : Expr ty Bool) : Expr ty (Array RevokerNumRegs (Bit Xlen)) :=
-  BuildArray (Build_SameTuple (n := RevokerNumRegs)
-                (tupleElems := map (revokerRegToWord baseVal topVal kickVal epochVal statusVal reqVal) RevokerRegNames)
-                I).
-
-Definition readRevokerWord
-           {ty : Kind -> Type}
-           (arr : Expr ty (Array RevokerNumRegs (Bit Xlen)))
-           (idx : nat)
-           : Expr ty (Bit Xlen) :=
-  readNatToFinType ConstDef (ReadArrayConst arr) idx.
-
-Definition updateArraySliceMask
-  {ty : Kind -> Type}
-  {n : nat} {k : Kind} {m : Z} {sliceSz : nat}
-  (arr : Expr ty (Array n k))
-  (addr : Expr ty (Bit m))
-  (upd : Expr ty (Array sliceSz k))
-  (mask : Expr ty (Array sliceSz Bool)) : Expr ty (Array n k) :=
-  fold_left (fun curArr (i : FinType sliceSz) =>
-    let idx := Add [ addr ; $(Z.of_nat i.(finNum)) ] in
-    let dMask := ReadArrayConst mask i in
-    let dVal := ReadArrayConst upd i in
-    let oVal := ReadArray curArr idx in
-    UpdateArray curArr idx (ITE dMask dVal oVal)
-  ) (genFinType sliceSz) arr.
+Notation revokerRegIdxBit name :=
+  ($(Z.of_nat (revokerRegIdx name))).
 
 Definition revokerLineReadAction
            (base : Z)
@@ -137,18 +84,24 @@ Definition revokerLineReadAction
            (addr : Expr ty Addr)
            : Action ty tRev (LineReadRp RevokerLineConfig) :=
   Let offset <- getMemOffset base (Z.of_nat RevokerSizeBytes) addr ;
+  Let regIdx : Bit RevokerRegIdxWidth <- TruncMsb RevokerRegIdxWidth LgNumBytesXlen #offset ;
   ReadReg "base" revokerBasePath (fun baseVal =>
   ReadReg "top" revokerTopPath (fun topVal =>
   ReadReg "control" revokerControlPath (fun kickVal =>
   ReadReg "epoch" revokerEpochPath (fun epochVal =>
   ReadReg "interruptStatus" revokerInterruptStatusPath (fun statusVal =>
   ReadReg "interruptRequested" revokerInterruptRequestedPath (fun reqVal =>
-  Let words : Array RevokerNumRegs (Bit Xlen) <-
-    revokerWordsArray #baseVal #topVal #kickVal #epochVal #statusVal #reqVal ;
-  Let bytes : Array RevokerSizeBytes (Bit ByteSz) <-
-    FromBit (Array RevokerSizeBytes (Bit ByteSz)) (@ToBit ty (Array RevokerNumRegs (Bit Xlen)) #words) ;
+  Let readWord : Bit Xlen <-
+    Or [ ITE0 (Eq #regIdx (revokerRegIdxBit "base")) {< #baseVal, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
+         ITE0 (Eq #regIdx (revokerRegIdxBit "top")) {< #topVal, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
+         ITE0 (Eq #regIdx (revokerRegIdxBit "control")) {< Const ty (Bit RevokerControlSignatureWidth) (bits.of_Z RevokerControlSignatureWidth RevokerControlSignature),
+                                                           Const ty (Bit (RevokerControlSignatureWidth - 1)) Zmod.zero,
+                                                           ToBit #kickVal >} ;
+         ITE0 (Eq #regIdx (revokerRegIdxBit "epoch")) #epochVal ;
+         ITE0 (Eq #regIdx (revokerRegIdxBit "interruptStatus")) (ZeroExtendTo Xlen (ToBit #statusVal)) ;
+         ITE0 (Eq #regIdx (revokerRegIdxBit "interruptRequested")) (ZeroExtendTo Xlen (ToBit #reqVal)) ] ;
   Let readBytes : Array (Z.to_nat NumBytesXlen) (Bit ByteSz) <-
-    slice #bytes #offset (Z.to_nat NumBytesXlen) ;
+    FromBit (Array (Z.to_nat NumBytesXlen) (Bit ByteSz)) #readWord ;
   @Return ty tRev (LineReadRp RevokerLineConfig) (STRUCT {
     "data" ::= #readBytes ;
     "tag"  ::= Const ty (Array (cfgNumLineTags RevokerLineConfig) Bool) (getDefault _)
@@ -162,44 +115,35 @@ Definition revokerLineWriteAction
            (rq : Expr ty (LineWriteRq RevokerLineConfig))
            : Action ty tRev (Bit 0) :=
   Let offset <- getMemOffset base (Z.of_nat RevokerSizeBytes) (rq`"addr") ;
-  ReadReg "base" revokerBasePath (fun baseVal =>
-  ReadReg "top" revokerTopPath (fun topVal =>
-  ReadReg "control" revokerControlPath (fun kickVal =>
-  ReadReg "epoch" revokerEpochPath (fun epochVal =>
-  ReadReg "interruptStatus" revokerInterruptStatusPath (fun statusVal =>
-  ReadReg "interruptRequested" revokerInterruptRequestedPath (fun reqVal =>
-  Let oldWords : Array RevokerNumRegs (Bit Xlen) <-
-    revokerWordsArray #baseVal #topVal #kickVal #epochVal (ConstBool false) #reqVal ;
-  Let oldBytes : Array RevokerSizeBytes (Bit ByteSz) <-
-    FromBit (Array RevokerSizeBytes (Bit ByteSz)) (@ToBit ty (Array RevokerNumRegs (Bit Xlen)) #oldWords) ;
-  Let updatedBytes : Array RevokerSizeBytes (Bit ByteSz) <-
-    updateArraySliceMask #oldBytes #offset (rq`"data") (rq`"dataMask") ;
-  Let updatedWords : Array RevokerNumRegs (Bit Xlen) <-
-    FromBit (Array RevokerNumRegs (Bit Xlen)) (@ToBit ty (Array RevokerSizeBytes (Bit ByteSz)) #updatedBytes) ;
-
-  Let newBase : Bit TagAddrWidth <-
-    TruncMsb TagAddrWidth LgNumBytesFullCapSz (readRevokerWord #updatedWords (revokerRegIdx "base")) ;
-  WriteReg revokerBasePath #newBase (
-
-  Let newTop : Bit TagAddrWidth <-
-    TruncMsb TagAddrWidth LgNumBytesFullCapSz (readRevokerWord #updatedWords (revokerRegIdx "top")) ;
-  WriteReg revokerTopPath #newTop (
-
-  Let newKick : Bool <-
-    FromBit Bool (TruncLsb (Xlen - 1) 1 (readRevokerWord #updatedWords (revokerRegIdx "control"))) ;
-  WriteReg revokerControlPath #newKick (
-
-  Let newEpoch : Bit Xlen <-
-    readRevokerWord #updatedWords (revokerRegIdx "epoch") ;
-  WriteReg revokerEpochPath #newEpoch (
-
-  Let didClearStatus : Bool <-
-    FromBit Bool (TruncLsb (Xlen - 1) 1 (readRevokerWord #updatedWords (revokerRegIdx "interruptStatus"))) ;
-  WriteReg revokerInterruptStatusPath (ITE #didClearStatus (ConstBool false) #statusVal) (
-
-  Let newReq : Bool <-
-    FromBit Bool (TruncLsb (Xlen - 1) 1 (readRevokerWord #updatedWords (revokerRegIdx "interruptRequested"))) ;
-  WriteReg revokerInterruptRequestedPath #newReq Retv))))))))))).
+  Let regIdx : Bit RevokerRegIdxWidth <- TruncMsb RevokerRegIdxWidth LgNumBytesXlen #offset ;
+  Let writeWord : Bit Xlen <- ToBit (rq`"data") ;
+  If (Eq #regIdx (revokerRegIdxBit "base")) Then (
+    Let newBase : Bit TagAddrWidth <- TruncMsb TagAddrWidth LgNumBytesFullCapSz #writeWord ;
+    WriteReg revokerBasePath #newBase Retv
+  ) ;
+  If (Eq #regIdx (revokerRegIdxBit "top")) Then (
+    Let newTop : Bit TagAddrWidth <- TruncMsb TagAddrWidth LgNumBytesFullCapSz #writeWord ;
+    WriteReg revokerTopPath #newTop Retv
+  ) ;
+  If (Eq #regIdx (revokerRegIdxBit "control")) Then (
+    Let newKick : Bool <- FromBit Bool (TruncLsb (Xlen - 1) 1 #writeWord) ;
+    WriteReg revokerControlPath #newKick Retv
+  ) ;
+  If (Eq #regIdx (revokerRegIdxBit "epoch")) Then (
+    WriteReg revokerEpochPath #writeWord Retv
+  ) ;
+  If (Eq #regIdx (revokerRegIdxBit "interruptStatus")) Then (
+    Let clearBit : Bool <- FromBit Bool (TruncLsb (Xlen - 1) 1 #writeWord) ;
+    If #clearBit Then (
+      WriteReg revokerInterruptStatusPath (ConstBool false) Retv
+    ) ;
+    Retv
+  ) ;
+  If (Eq #regIdx (revokerRegIdxBit "interruptRequested")) Then (
+    Let newReq : Bool <- FromBit Bool (TruncLsb (Xlen - 1) 1 #writeWord) ;
+    WriteReg revokerInterruptRequestedPath #newReq Retv
+  ) ;
+  Retv.
 
 Arguments revokerLineWriteAction base ty rq : clear implicits.
 

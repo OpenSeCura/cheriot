@@ -107,5 +107,10 @@ Section Fifo.
         RegRead deq_idx <- "fifo.deq_idx" in fifoTree;
         LetA elem : k <- readRegsList elemPathsWithKind #deq_idx;
         Return (ITE #isEmpty (mkNone ty) (mkSome #elem)) ).
+
+    Definition clear : Action ty fifoTree (Bit 0) :=
+      ( RegWrite "fifo.size" in fifoTree <- $0;
+        RegWrite "fifo.deq_idx" in fifoTree <- $0;
+        Retv ).
   End Ty.
 End Fifo.

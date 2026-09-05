@@ -28,11 +28,6 @@ While `cheriot-sail` is the defacto standard specification, our ISA specificatio
      - **Illegal Instruction** (`EXC_IllegalInst`): `MTVAL.RegIdx` points to `PCC` (the PC capability where the illegal instruction was fetched).
      - **Misaligned Accesses** (`EXC_LoadAddrMisaligned`, `EXC_StoreAddrMisaligned`): `MTVAL.RegIdx` points to the capability register (`cs1`) performing the dereference.
 
-5. **Hardware Revoker Interrupt Clearance (`interruptStatus`)**:
-   - In reference CHERIoT RTOS hardware documentation, `interruptStatus` is specified as Write-1-to-Clear (W1C).
-   - In our specification (`SpecDevice.v` / `SpecRevoker.v`), memory-mapped registers are modeled using the generic `RegisterMem` abstraction, which stores CPU writes directly as-is without custom register-level write decoding.
-   - Therefore, in our model of the revoker device, software clears the pending interrupt by writing **`0`** (rather than `1`) to `interruptStatus`.
-
 ---
 
 ## Multi-Core Memory Consistency & Pipeline Refinement Specification
@@ -78,4 +73,5 @@ A ValidProgram is one where all traces generated when executed on the atomic spe
 ```coq
 Theorem pipeline_refines_spec : forall (p : Program) (result : FinalState),
   ValidProgram p -> Pipeline_Exec p result -> Spec_Exec p result.
+n our
 ```
