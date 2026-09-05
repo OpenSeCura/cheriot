@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Psatz Bool.
 From Guru Require Import Syntax Notations Semantics Library Composition.
-From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchMemory SpecDevice Clint.
+From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchMemory SpecDevice Clint SpecRevoker.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -36,6 +36,7 @@ Section Spec.
   Variable config : RevConfig.
   Variable regions : list MemRegion.
   Variable clint : ClintInstance regions.
+  Variable rev : RevokerInstance regions.
   Variable ty : Kind -> Type.
 
   Local Notation sysTree := (specSysTree regions).
@@ -57,6 +58,10 @@ Section Spec.
 
   Definition specTickTimer : Action ty sysTree (Bit 0) :=
     liftAction np_mem (clintTickAction clint ty).
+
+  (* Autonomous background revoker step *)
+  Definition specRevokerStep : Action ty sysTree (Bit 0) :=
+    liftAction np_mem (SpecRevoker.specRevokerStep rev config ty).
 
   (* Rule: Reads mtimecmp CSR and mtime MMIO register to update mip.mtip *)
   Definition specTimerInterruptRule : Action ty sysTree (Bit 0) :=
