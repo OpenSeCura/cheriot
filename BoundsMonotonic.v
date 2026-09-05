@@ -2169,8 +2169,8 @@ Proof.
   subst ef.
   unfold Zmod.to_Z in *.
   change (@Zmod.Private_to_Z ?m) with (@Zmod.unsigned m) in *.
-  assert (Hbase_ge0: 0 <= Zmod.unsigned base) by (apply (@to_Z_nonneg Xlen base); change Xlen with 32; lia).
-  assert (Hlen_ge0: 0 <= Zmod.unsigned length) by (apply (@to_Z_nonneg Xlen length); change Xlen with 32; lia).
+  assert (Hbase_ge0: 0 <= Zmod.unsigned base) by (apply (@to_Z_nonneg AddrSz base); change AddrSz with 32; lia).
+  assert (Hlen_ge0: 0 <= Zmod.unsigned length) by (apply (@to_Z_nonneg AddrSz length); change AddrSz with 32; lia).
   eapply (@bounds_top_from_base_len (Zmod.unsigned (bounds@%"top")) (Zmod.unsigned (bounds@%"base")) (Zmod.unsigned (bounds@%"length")) (Zmod.unsigned base) (Zmod.unsigned length) (Zmod.unsigned (evalExpr (get_E_from_cE (bounds@%"cE"))))).
   + apply bounds_E_nonneg with (base:=base) (length:=length) (isRoundDown:=isRoundDown); exact HB.
   + exact Hbase_ge0.
@@ -3062,15 +3062,15 @@ Proof.
   intros ecap bounds H_in_bounds.
   destruct H_in_bounds as [H_base_ge H_top_le].
 
-  assert (H_no_wrap : Zmod.to_Z base + Zmod.to_Z length < Z.pow 2 (Xlen + 1)).
-  { assert (Hb_lt : Zmod.to_Z base < Z.pow 2 Xlen).
+  assert (H_no_wrap : Zmod.to_Z base + Zmod.to_Z length < Z.pow 2 (AddrSz + 1)).
+  { assert (Hb_lt : Zmod.to_Z base < Z.pow 2 AddrSz).
     { apply pow2_width.
-      unfold Xlen.
+      unfold AddrSz, Xlen.
       lia.
     }
-    assert (Hl_lt : Zmod.to_Z length < Z.pow 2 Xlen).
+    assert (Hl_lt : Zmod.to_Z length < Z.pow 2 AddrSz).
     { apply pow2_width.
-      unfold Xlen.
+      unfold AddrSz, Xlen.
       lia.
     }
     simpl.

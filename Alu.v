@@ -275,8 +275,8 @@ Section Alu.
                                  (##aluControl`"CSetBounds", #Bounds_outECap) ]
         (Const ty ECap (getDefault _)) ;
 
-    LetE Reg_addr : Data <-
-      caseDefault (k := Data) [
+    LetE Reg_addr : Addr <-
+      caseDefault (k := Addr) [
           (##aluControl`"Reg_addr_AdderBeforeBoundsCheck", #AdderBeforeBoundsCheckOut) ;
           (##aluControl`"Slt",
            ZeroExtendTo Xlen (ToBit (##ComparatorGeneralOut`"cond"))) ;

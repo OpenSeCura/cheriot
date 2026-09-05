@@ -88,7 +88,7 @@ Section CombinationalDeferred.
                                 (needsRotation : bool) : LetExpr ty FullCapWithTag :=
     LetE tag        : Bool           <- ##stVal`"tag" ;
     LetE cap        : Cap            <- ##stVal`"cap" ;
-    LetE data       : Addr           <- ##stVal`"addr" ;
+    LetE data       : Data           <- ##stVal`"addr" ;
     LetE stBytesInt : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
       FromBit (Array (Z.to_nat NumBytesXlen) (Bit 8)) #data ;
     LetE stBytesRot : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
