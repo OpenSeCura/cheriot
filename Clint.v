@@ -33,8 +33,7 @@ Local Notation ByteSz := 8%Z.
  * 1. CLINT Register Offsets & Tree Structure
  * =========================================================================== *)
 
-Definition ClintSizeInBits : Z := 256.
-Definition ClintSizeBytes : nat := Z.to_nat (ClintSizeInBits / 8). (* 32 bytes *)
+Definition ClintSizeBytes : Z := 256.
 
 Definition CLINT_MTIMECMP_OFFSET  : Z := 0x00.
 Definition CLINT_MTIMECMPH_OFFSET : Z := 0x04.
@@ -100,7 +99,7 @@ Definition ClintRegNames : list string :=
 Definition clintRegIdx (name : string) :=
   forceOption (getStrIndexOption name ClintRegNames).
 
-Definition ClintRegIdxWidth : Z := Eval compute in (Z.log2_up (Z.of_nat ClintSizeBytes) - LgNumBytesXlen).
+Definition ClintRegIdxWidth : Z := Eval compute in (Z.log2_up ClintSizeBytes - LgNumBytesXlen).
 
 Notation clintRegIdxBit name :=
   ($(Z.of_nat (clintRegIdx name))).
@@ -110,7 +109,7 @@ Definition clintLineReadAction
            (ty : Kind -> Type)
            (addr : Expr ty Addr)
            : Action ty tClint (LineReadRp ClintLineConfig) :=
-  Let offset <- getMemOffset base (Z.of_nat ClintSizeBytes) addr ;
+  Let offset <- getMemOffset base ClintSizeBytes addr ;
   Let regIdx : Bit ClintRegIdxWidth <- TruncMsb ClintRegIdxWidth LgNumBytesXlen #offset ;
   ReadReg "mtimecmp" clintMtimecmpPath (fun mtimecmpVal =>
   ReadReg "mtimecmph" clintMtimecmphPath (fun mtimecmphVal =>
@@ -133,7 +132,7 @@ Definition clintLineWriteAction
            (ty : Kind -> Type)
            (rq : Expr ty (LineWriteRq ClintLineConfig))
            : Action ty tClint (Bit 0) :=
-  Let offset <- getMemOffset base (Z.of_nat ClintSizeBytes) (rq`"addr") ;
+  Let offset <- getMemOffset base ClintSizeBytes (rq`"addr") ;
   Let regIdx : Bit ClintRegIdxWidth <- TruncMsb ClintRegIdxWidth LgNumBytesXlen #offset ;
   Let writeWord : Bit Xlen <- ToBit (rq`"data") ;
   ReadReg "mtimecmp" clintMtimecmpPath (fun mtimecmpVal =>
@@ -177,15 +176,15 @@ Arguments clintLineWriteAction base ty rq : clear implicits.
 
 Definition clintMemRegion
            (base : Z)
-           (pfBound : Is_true ((0 <=? base) && (base + Z.of_nat ClintSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
+           (pfBound : Is_true ((0 <=? base) && (base + ClintSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
            (pfAligned : Is_true (base mod (2 ^ Z.of_nat (cfgLgLineBytes ClintLineConfig)) =? 0)%Z)
            : MemRegion := {|
   regionName        := "clint" ;
   regionBase        := base ;
-  regionSize        := ClintSizeBytes ;
+  regionSize        := Z.to_nat ClintSizeBytes ;
   regionLineCfg     := ClintLineConfig ;
   isReadOnly        := false ;
-  regionKind        := @CustomMem "clint" ClintSizeBytes ClintLineConfig clintChildren (clintLineReadAction base) (clintLineWriteAction base) ;
+  regionKind        := @CustomMem "clint" (Z.to_nat ClintSizeBytes) ClintLineConfig clintChildren (clintLineReadAction base) (clintLineWriteAction base) ;
   regionInMemory    := pfBound ;
   regionBaseAligned := pfAligned ;
   regionSizeAligned := I
@@ -199,7 +198,7 @@ Arguments clintMemRegion base pfBound pfAligned : clear implicits.
 
 Record ClintDevice := {
   clintBase    : Z ;
-  clintPfBound : Is_true ((0 <=? clintBase) && (clintBase + Z.of_nat ClintSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
+  clintPfBound : Is_true ((0 <=? clintBase) && (clintBase + ClintSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
   clintPfAlign : Is_true (clintBase mod (2 ^ Z.of_nat (cfgLgLineBytes ClintLineConfig)) =? 0)%Z
 }.
 
