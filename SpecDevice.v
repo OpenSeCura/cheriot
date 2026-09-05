@@ -91,7 +91,7 @@ Record MemRegion := {
   regionLineCfg     : LineConfig ;
   isReadOnly        : bool ;
   regionKind        : RegionKind regionName regionSize regionLineCfg ;
-  regionInMemory    : Is_true ((0 <=? regionBase) && (regionBase + Z.of_nat regionSize <=? Z.shiftl 1 Xlen))%Z ;
+  regionInMemory    : Is_true ((0 <=? regionBase) && (regionBase + Z.of_nat regionSize <=? Z.shiftl 1 AddrSz))%Z ;
   regionBaseAligned : Is_true (regionBase mod (2 ^ Z.of_nat (cfgLgLineBytes regionLineCfg)) =? 0)%Z ;
   regionSizeAligned : Is_true (Z.of_nat regionSize mod (2 ^ Z.of_nat (cfgLgLineBytes regionLineCfg)) =? 0)%Z
 }.
