@@ -139,7 +139,7 @@ Section CombinationalDeferred.
   Definition dispatchDeferredReq (req : ty DeferredReq) (needsRotation : bool) : LetExpr ty DeferredAction :=
     LetE dstIdx     : Bit RegIdxSz             <- ##req`"dstIdx" ;
     LetE addr       : Addr                     <- ##req`"addr" ;
-    LetE byteOffset : Bit LgNumBytesFullCapSz  <- TruncLsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz #addr ;
+    LetE byteOffset : Bit LgNumBytesFullCapSz  <- TruncLsb TagAddrWidth LgNumBytesFullCapSz #addr ;
     LetE op         : DeferredUnion            <- ##req`"op" ;
     LetIfE action : DeferredAction <-
       IfE (##op `? "Mem") ThenE (

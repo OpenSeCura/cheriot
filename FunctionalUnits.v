@@ -1338,7 +1338,7 @@ Section FunctionalUnits.
     LetE permExc     : Bool <- Not #hasPerm ;
     LetE storeCapExc : Bool <- And [ #isStore; #isCap; Not (##cs1Perms`"MC") ] ;
     LetE boundsExc   : Bool <- Not #inBounds ;
-    LetE alignExc    : Bool <- And [ #isCap; isNotZero (TruncLsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz #addr) ] ; (* Misaligned ONLY for caps *)
+    LetE alignExc    : Bool <- And [ #isCap; isNotZero (TruncLsb TagAddrWidth LgNumBytesFullCapSz #addr) ] ; (* Misaligned ONLY for caps *)
 
     (* 2. Payload & ExceptionInfo Constructors *)
     LetE permCause   : Bit 5 <- ITE #isStore $CapEx_PermitStoreViolation $CapEx_PermitLoadViolation ;
