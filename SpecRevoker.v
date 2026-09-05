@@ -215,7 +215,7 @@ Qed.
 
 Definition revokerMemRegion
            (base : Z)
-           (pfBound : Is_true ((0 <=? base) && (base + Z.of_nat RevokerSizeBytes <=? Z.shiftl 1 Xlen))%Z)
+           (pfBound : Is_true ((0 <=? base) && (base + Z.of_nat RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
            (pfAligned : Is_true (base mod NumBytesXlen =? 0)%Z)
            : MemRegion := {|
   regionName        := "revoker" ;

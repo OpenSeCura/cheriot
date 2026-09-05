@@ -202,7 +202,7 @@ Section MemoryModel.
       Let rawBits : Bit FullCapSz <- ##bytesVal `! "Some" ;
       Let rawTag  : Bool          <- ##tagVal   `! "Some" ;
       Let rawAddr : Addr          <- TruncLsb CapSz AddrSz #rawBits ;
-      Let rawCap  : Cap           <- FromBit Cap (TruncMsb Xlen Xlen #rawBits) ;
+      Let rawCap  : Cap           <- FromBit Cap (TruncMsb CapSz AddrSz #rawBits) ;
       @Return ty memoryTree FullCapWithTag (STRUCT {
         "tag"  ::= #rawTag ;
         "cap"  ::= #rawCap ;

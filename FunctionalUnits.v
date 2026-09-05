@@ -820,8 +820,8 @@ End GetFunctionalUnits.
 Section FunctionalUnits.
   Variable ty : Kind -> Type.
 
-  Definition AdderBeforeBoundsCheck (base offset : ty (Bit Xlen)) : LetExpr ty (Bit Xlen) :=
-    LetE sum : Bit Xlen <- Add [ #base; #offset ];
+  Definition AdderBeforeBoundsCheck (base offset : ty Addr) : LetExpr ty Addr :=
+    LetE sum : Addr <- Add [ #base; #offset ];
     RetE #sum.
 
   Definition AdderToOutput (base offset : ty (Bit Xlen)) (isSub : ty Bool) : LetExpr ty (Bit Xlen) :=
@@ -923,7 +923,7 @@ Section FunctionalUnits.
     LetE perms2 : CapPerms <- ##ecap2`"perms" ;
     LetE sealed1 : Bool <- isSealed ecap ;
     LetE sealed2 : Bool <- isSealed ecap2 ;
-    LetE cs2Addr : Data <- ##cs2`"addr" ;
+    LetE cs2Addr : Addr <- ##cs2`"addr" ;
     LetE cs2Tag : Bool <- ##cs2`"tag" ;
     LetE sealRange : Bool <- ITE (##perms1`"EX")
                                (And [ Sgt #cs2Addr $0; Sle #cs2Addr $7 ])
@@ -1139,26 +1139,26 @@ Section FunctionalUnits.
     @RetE _ Bool (And [ #inBounds; Or [ Not #instIsExact; #boundsAreExact ] ]).
 
   Definition Saturater (base : ty (Bit (AddrSz + 1))) (top : ty (Bit (AddrSz + 2)))
-                       (sub : ty (Bit Xlen)) (isBase isTop isLen : ty Bool)
+                       (sub : ty (Bit AddrSz)) (isBase isTop isLen : ty Bool)
   : LetExpr ty (Bit Xlen) :=
-    LetE T31 : Bool <- FromBit Bool (TruncMsb 1 (Xlen - 1) (TruncLsb 2 Xlen #top)) ;
-    LetE B31 : Bool <- FromBit Bool (TruncMsb 1 (Xlen - 1) (TruncLsb 1 Xlen #base)) ;
-    LetE S31 : Bool <- FromBit Bool (TruncMsb 1 (Xlen - 1) #sub) ;
+    LetE T31 : Bool <- FromBit Bool (TruncMsb 1 (AddrSz - 1) (TruncLsb 2 AddrSz #top)) ;
+    LetE B31 : Bool <- FromBit Bool (TruncMsb 1 (AddrSz - 1) (TruncLsb 1 AddrSz #base)) ;
+    LetE S31 : Bool <- FromBit Bool (TruncMsb 1 (AddrSz - 1) #sub) ;
     LetE borrow : Bool <- ITE (Xor [ #T31; #B31 ]) #B31 #S31 ;
-    LetE top_hi : Bit 2 <- TruncMsb 2 Xlen #top ;
-    LetE base_hi : Bit 2 <- ZeroExtend 1 (TruncMsb 1 Xlen #base) ;
+    LetE top_hi : Bit 2 <- TruncMsb 2 AddrSz #top ;
+    LetE base_hi : Bit 2 <- ZeroExtend 1 (TruncMsb 1 AddrSz #base) ;
     LetE borrow_bit : Bit 2 <- ZeroExtend 1 (ToBit #borrow) ;
     LetE isSaturatedLen : Bool <- Sgt #top_hi (Add [ #base_hi; #borrow_bit ]) ;
-    LetE isSaturatedTop : Bool <- isNotZero (TruncMsb 2 Xlen #top) ;
-    LetE isSaturatedBase : Bool <- isNotZero (TruncMsb 1 Xlen #base) ;
+    LetE isSaturatedTop : Bool <- isNotZero (TruncMsb 2 AddrSz #top) ;
+    LetE isSaturatedBase : Bool <- isNotZero (TruncMsb 1 AddrSz #base) ;
     LetE isSaturated : Bool <-
       caseDefault [ (#isBase, #isSaturatedBase) ;
                     (#isTop, #isSaturatedTop) ]
         #isSaturatedLen ;
-    LetE rawData : Bit Xlen <-
-      caseDefault (k := Bit Xlen) [
-          (#isBase, TruncLsb 1 Xlen #base) ;
-          (#isTop, TruncLsb 2 Xlen #top) ]
+    LetE rawData : Bit AddrSz <-
+      caseDefault (k := Bit AddrSz) [
+          (#isBase, TruncLsb 1 AddrSz #base) ;
+          (#isTop, TruncLsb 2 AddrSz #top) ]
         #sub ;
     @RetE _ (Bit Xlen) (ITE #isSaturated (Const ty (Bit Xlen) (InvDefault _)) #rawData).
 
@@ -1175,8 +1175,8 @@ Section FunctionalUnits.
       @RetE _ (Bit Xlen) (ITE #isRight #shiftedXlen (rev #shiftedXlen))
     ).
 
-  Definition AdderBeforeRepCheck (base shifter : ty (Bit (Xlen + 1))) : LetExpr ty (Bit (Xlen + 1)) :=
-    LetE repLimit : Bit (Xlen + 1) <- Add [ #base; #shifter ];
+  Definition AdderBeforeRepCheck (base shifter : ty (Bit (AddrSz + 1))) : LetExpr ty (Bit (AddrSz + 1)) :=
+    LetE repLimit : Bit (AddrSz + 1) <- Add [ #base; #shifter ];
     RetE #repLimit.
 
   Definition ComparatorOut := STRUCT_TYPE {
@@ -1465,7 +1465,7 @@ Section FunctionalUnits.
   Definition ScrCsr (cs2Idx : ty (TaggedUnion Cs2Source))
                     (newTag : ty Bool)
                     (cs1Ecap : ty ECap)
-                    (cs1Addr : ty (Bit Xlen)) : LetExpr ty (Option ScrCsrPayload) :=
+                    (cs1Addr : ty Addr) : LetExpr ty (Option ScrCsrPayload) :=
     LetE isScrCsr : Bool <- #cs2Idx `? "ScrCsr" ;
     LetE scrCsrIdx : (TaggedUnion ScrCsrIdx) <- #cs2Idx `! "ScrCsr" ;
     LetE NewSpecialVal : FullECapWithTag <-

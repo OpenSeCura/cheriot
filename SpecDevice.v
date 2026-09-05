@@ -122,7 +122,7 @@ Definition isRegionAddr {ty : Kind -> Type} (r : MemRegion) (addr : Expr ty Addr
   And [ Sge addr $(r.(regionBase)) ; Slt addr $(r.(regionBase) + Z.of_nat r.(regionSize)) ].
 
 Definition regionTagSize (r : MemRegion) : nat :=
-  if hasTags r then (r.(regionSize) / DXlenBytes)%nat else 0%nat.
+  if hasTags r then (r.(regionSize) / Z.to_nat NumBytesFullCapSz)%nat else 0%nat.
 
 (* ===========================================================================
  * 2. Payload Utilities
@@ -410,7 +410,7 @@ Section MemRegionActions.
       ) ;
     Let res : FullCapWithTag <- STRUCT {
       "tag"  ::= And [ #isCap ; #rawTag ] ;
-      "cap"  ::= FromBit Cap (TruncMsb Xlen Xlen #rawData) ;
+      "cap"  ::= FromBit Cap (TruncMsb CapSz AddrSz #rawData) ;
       "addr" ::= TruncLsb CapSz AddrSz #rawData
     } ;
     Return #res.

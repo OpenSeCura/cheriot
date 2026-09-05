@@ -89,30 +89,30 @@ Section Alu.
     LetE BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr : Bool <-
       ##aluControl`"BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr" ;
 
-    LetE AdderBeforeBoundsCheck_base : Bit Xlen <-
+    LetE AdderBeforeBoundsCheck_base : Addr <-
       ITE (#BranchOrCjalOrAuiPcc) #pccAddr #cs1Addr ;
-    LetE AdderBeforeBoundsCheck_offset : Bit Xlen <-
-      caseDefault (k := Bit Xlen) [
+    LetE AdderBeforeBoundsCheck_offset : Addr <-
+      caseDefault (k := Addr) [
           (##aluControl`"Branch", #bimm12) ;
           (##aluControl`"Cjal", #jimm20) ;
           (##aluControl`"AdderBeforeBoundsCheck_offset_uimm20_11", #uimm20_11) ;
           (##aluControl`"AdderBeforeBoundsCheck_offset_cs2Addr", #cs2Addr) ;
           (##aluControl`"Bounds_isImm", #zimm12) ]
         #simm12 ;
-    LETE AdderBeforeBoundsCheckOut : Bit Xlen <-
+    LETE AdderBeforeBoundsCheckOut : Addr <-
       AdderBeforeBoundsCheck AdderBeforeBoundsCheck_base AdderBeforeBoundsCheck_offset ;
 
     LetE AdderToOutput_base : Bit Xlen <-
       caseDefault (k := Bit Xlen) [
           (##aluControl`"AdderToOutput_base_pccAddr", #pccAddr) ;
-          (##aluControl`"CGetLen", TruncLsb 2 Xlen #cs1Top) ]
+          (##aluControl`"CGetLen", TruncLsb 2 AddrSz #cs1Top) ]
         #cs1Addr ;
     LetE AdderToOutput_offset : Bit Xlen <-
       caseDefault (k := Bit Xlen) [
           (##aluControl`"AdderToOutput_offset_const2", Const ty (Bit Xlen) (Zmod.of_Z _ (CompInstSz/8))) ;
           (##aluControl`"AdderToOutput_offset_cs2Addr", #cs2Addr) ;
           (##aluControl`"AdderToOutput_offset_simm12", #simm12) ;
-          (##aluControl`"CGetLen", TruncLsb 1 Xlen #cs1Base) ]
+          (##aluControl`"CGetLen", TruncLsb 1 AddrSz #cs1Base) ]
         (Const ty (Bit Xlen) (Zmod.of_Z _ (InstSz/8))) ;
     LetE AdderToOutput_isSub : Bool <- ##aluControl`"AdderToOutput_isSub" ;
     LETE AdderToOutputOut : Bit Xlen <-
@@ -127,7 +127,7 @@ Section Alu.
           #cs1Addr (Const ty (Bit Xlen) (Zmod.of_Z _ 1)) ;
     LetE Shifter_shamt : Bit RegIdxSz <-
       caseDefault (k := Bit RegIdxSz) [
-          (##aluControl`"Shifter_shamt_cs2Addr", TruncLsb (Xlen - RegIdxSz) RegIdxSz #cs2Addr) ;
+          (##aluControl`"Shifter_shamt_cs2Addr", TruncLsb (AddrSz - RegIdxSz) RegIdxSz #cs2Addr) ;
           (#BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr, #AddCapBSzOut) ]
         #shamt ;
     LetE Shifter_isRight : Bool <- ##aluControl`"Shifter_isRight" ;
@@ -167,7 +167,7 @@ Section Alu.
           (##aluControl`"CTestSubset", #cs1Base) ]
         (ZeroExtendTo (AddrSz + 1) #cs1Addr) ;
     LetE ComparatorBase_base : Bit (AddrSz + 1) <-
-      caseDefault (k := Bit (Xlen + 1)) [
+      caseDefault (k := Bit (AddrSz + 1)) [
           (#BranchOrCjalOrAuiPcc, #pccBase) ;
           (##aluControl`"SealOrUnsealOrSubset", #cs2Base) ]
         #cs1Base ;
@@ -207,8 +207,8 @@ Section Alu.
 
     LETE CAndPermOut : TagECap <- CAndPerm cs1Tag cs1ECap cs2Addr ;
 
-    LetE Bounds_reqLimit : Bit Xlen <-
-      caseDefault (k := Bit Xlen) [ (##aluControl`"Bounds_reqLimit_cs2Addr", #cs2Addr) ;
+    LetE Bounds_reqLimit : Addr <-
+      caseDefault (k := Addr) [ (##aluControl`"Bounds_reqLimit_cs2Addr", #cs2Addr) ;
                                      (##aluControl`"Bounds_reqLimit_cs1Addr", #cs1Addr) ]
         #zimm12 ;
     LetE Bounds_isRoundDown : Bool <- ##aluControl`"Bounds_isRoundDown" ;
@@ -294,9 +294,9 @@ Section Alu.
           (##aluControl`"Reg_addr_cs1Addr", #cs1Addr) ;
           (##aluControl`"CAndPerm", #cs1Addr) ;
           (##aluControl`"SealOrUnseal", #cs1Addr) ;
-          (##aluControl`"CSetBounds", TruncLsb 1 Xlen (##BoundsOut`"base")) ;
-          (##aluControl`"Cram", TruncLsb 1 Xlen (##BoundsOut`"cram")) ;
-          (##aluControl`"Crrl", TruncLsb 1 Xlen (##BoundsOut`"length")) ;
+          (##aluControl`"CSetBounds", TruncLsb 1 AddrSz (##BoundsOut`"base")) ;
+          (##aluControl`"Cram", TruncLsb 1 AddrSz (##BoundsOut`"cram")) ;
+          (##aluControl`"Crrl", TruncLsb 1 AddrSz (##BoundsOut`"length")) ;
           (##aluControl`"CTestSubset", ZeroExtendTo Xlen (ToBit #CapSubsetOut)) ;
           (##aluControl`"CSetEqual", ZeroExtendTo Xlen (ToBit #CapEqOut)) ]
         #uimm20 ;
