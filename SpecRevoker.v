@@ -234,7 +234,7 @@ Arguments revokerMemRegion base pfBound pfAligned : clear implicits.
 Record RevokerInstance (regions : list MemRegion) := {
   revokerIdx      : nat ;
   revokerBaseAddr : Z ;
-  pfBound         : Is_true ((0 <=? revokerBaseAddr) && (revokerBaseAddr + Z.of_nat RevokerSizeBytes <=? Z.shiftl 1 Xlen))%Z ;
+  pfBound         : Is_true ((0 <=? revokerBaseAddr) && (revokerBaseAddr + Z.of_nat RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
   pfAligned       : Is_true (revokerBaseAddr mod NumBytesXlen =? 0)%Z ;
   pfRevoker       : nth_error regions revokerIdx = Some (revokerMemRegion revokerBaseAddr pfBound pfAligned)
 }.
@@ -344,7 +344,7 @@ Section RevokerAction.
   Definition readRevBit (base : Expr ty (Bit (AddrSz + 1))) : Action ty memTree Bool :=
     LetA lookup  : RevBitLookup   <- toAction memTree (computeRevBitAddr config base) ;
     LetA revCap  : FullCapWithTag <- specMemRead regions (#lookup`"revByteAddr") $0 ;
-    Let  revByte : Bit ByteSz     <- TruncLsb (Xlen - ByteSz) ByteSz (#revCap`"addr") ;
+    Let  revByte : Bit ByteSz     <- TruncLsb (AddrSz - ByteSz) ByteSz (#revCap`"addr") ;
     Let  revBit  : Bool           <- extractRevBit lookup #revByte ;
     Return #revBit.
 
@@ -356,8 +356,8 @@ Section RevokerAction.
       (* SWEEPING STATE: epoch is odd *)
       LetA scanAddrMsb : Bit TagAddrWidth <- readRevokerScanAddr ;
       LetA topAddrMsb  : Bit TagAddrWidth <- readRevokerTop ;
-      Let scanAddr     : Bit Xlen <- {< #scanAddrMsb, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
-      Let isDone       : Bool     <- Sge #scanAddrMsb #topAddrMsb ;
+      Let scanAddr     : Addr <- {< #scanAddrMsb, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
+      Let isDone       : Bool <- Sge #scanAddrMsb #topAddrMsb ;
 
       If (Not #isDone) Then (
         (* 1. Inspect capability at current scanAddr *)

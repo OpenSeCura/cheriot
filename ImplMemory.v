@@ -70,7 +70,7 @@ Record ImplMemConfig := {
   binary                  : list Z ;
   mainMemStartAddr        : Z ;
   mainMemSize             : nat ;
-  mainMemBoundProof       : Is_true (mainMemStartAddr + Z.of_nat mainMemSize <? Z.shiftl 1 Xlen)%Z ;
+  mainMemBoundProof       : Is_true (mainMemStartAddr + Z.of_nat mainMemSize <? Z.shiftl 1 AddrSz)%Z ;
   lgMainMemSize_ge_binary : Is_true (length binary <=? mainMemSize)%nat ;
   revConfig               : RevConfig
 }.
@@ -102,7 +102,7 @@ Section ImplMemoryLayout.
   Definition tagsSize : nat := Z.to_nat (tagsEndAddr - tagsStartAddr).
 
   Definition isMemAddr {ty: Kind -> Type} (a : Expr ty Addr) : Expr ty Bool :=
-    Sge a (Const ty Addr (bits.of_Z Xlen config.(mainMemStartAddr))).
+    Sge a (Const ty Addr (bits.of_Z AddrSz config.(mainMemStartAddr))).
 
   Definition isTagsAddr {ty: Kind -> Type} (a : Expr ty (Bit TagAddrWidth)) : Expr ty Bool :=
     Sge a (Const ty (Bit TagAddrWidth) (bits.of_Z TagAddrWidth tagsStartAddr)).
@@ -201,7 +201,7 @@ Section MemoryModel.
       RegWrite "mem.tagRpReg"   in memoryTree <- ConstDef ;
       Let rawBits : Bit FullCapSz <- ##bytesVal `! "Some" ;
       Let rawTag  : Bool          <- ##tagVal   `! "Some" ;
-      Let rawAddr : Addr          <- TruncLsb Xlen Xlen #rawBits ;
+      Let rawAddr : Addr          <- TruncLsb CapSz AddrSz #rawBits ;
       Let rawCap  : Cap           <- FromBit Cap (TruncMsb Xlen Xlen #rawBits) ;
       @Return ty memoryTree FullCapWithTag (STRUCT {
         "tag"  ::= #rawTag ;

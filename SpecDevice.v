@@ -411,7 +411,7 @@ Section MemRegionActions.
     Let res : FullCapWithTag <- STRUCT {
       "tag"  ::= And [ #isCap ; #rawTag ] ;
       "cap"  ::= FromBit Cap (TruncMsb Xlen Xlen #rawData) ;
-      "addr" ::= TruncLsb Xlen Xlen #rawData
+      "addr" ::= TruncLsb CapSz AddrSz #rawData
     } ;
     Return #res.
 

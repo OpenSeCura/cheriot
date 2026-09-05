@@ -80,7 +80,8 @@ Definition Cap : Kind := STRUCT_TYPE {
                              "cT" :: Bit CapcTSz;
                              "B" :: Bit CapBSz }.
 
-Definition FullCapSz := Eval compute in (kindSize Cap + Xlen).
+Definition CapSz := Eval compute in (kindSize Cap).
+Definition FullCapSz := Eval compute in (CapSz + AddrSz).
 Definition NumBytesFullCapSz := Eval compute in (FullCapSz / 8).
 Definition LgNumBytesFullCapSz := Eval compute in Z.log2_up NumBytesFullCapSz.
 Definition LgLgNumBytesFullCapSz := Eval compute in Z.log2_up (LgNumBytesFullCapSz + 1).
@@ -1043,7 +1044,7 @@ Section CsrHelpers.
     LetA mshwmb       : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrIdx "mshwmb") : Expr _ (Bit CsrIdxSz)) ;
     Let  shouldUpdate : Bool     <- And [ Sge stAddr #mshwmb ; Slt stAddr #mshwm ] ;
     If #shouldUpdate Then (
-      Let alignedAddr : Bit Xlen <- {< TruncMsb (Xlen - LgMshwmAlign) LgMshwmAlign stAddr,
+      Let alignedAddr : Bit Xlen <- {< TruncMsb (AddrSz - LgMshwmAlign) LgMshwmAlign stAddr,
                                        Const ty (Bit LgMshwmAlign) (bits.of_Z LgMshwmAlign 0) >} ;
       Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mshwm") : Expr _ (Bit CsrIdxSz)) #alignedAddr) ;
       Retv
@@ -1136,7 +1137,7 @@ Section RevBits.
         TruncMsb (((AddrSz + 1) - config.(lgRevGranularity)) - 3) 3 #castTotalBitIdx ;
       LetE byteIdxExt : Bit AddrSz <- castBits _ (ZeroExtendTo AddrSz #byteIdxInTable) ;
       LetE revByteAddr : Addr <-
-        Add [ Const ty Addr (bits.of_Z Xlen config.(revTableStartAddr)) ; #byteIdxExt ] ;
+        Add [ Const ty Addr (bits.of_Z AddrSz config.(revTableStartAddr)) ; #byteIdxExt ] ;
       LetE bitInByte : Bit 3 <-
         TruncLsb (((AddrSz + 1) - config.(lgRevGranularity)) - 3) 3 #castTotalBitIdx ;
       @RetE ty RevBitLookup (STRUCT {

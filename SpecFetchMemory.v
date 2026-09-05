@@ -297,7 +297,7 @@ Section SpecFetchMemory.
   Definition readRevBit (base : Expr ty (Bit (AddrSz + 1))) : Action ty memTree Bool :=
     LetL lookup  : RevBitLookup <- computeRevBitAddr base ;
     LetA revCap  : FullCapWithTag <- specMemRead regions (##lookup`"revByteAddr") $0 ;
-    Let  revByte : Bit 8 <- TruncLsb (Xlen - 8) 8 (##revCap`"addr") ;
+    Let  revByte : Bit 8 <- TruncLsb (AddrSz - 8) 8 (##revCap`"addr") ;
     Let  revBit  : Bool  <- extractRevBit lookup #revByte ;
     Return #revBit.
 

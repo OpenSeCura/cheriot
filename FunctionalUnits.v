@@ -941,10 +941,10 @@ Section FunctionalUnits.
 
   Definition BoundsRes := STRUCT_TYPE {
     "cE" :: Bit ExpSz ;
-    "base" :: Bit (Xlen + 1) ;
-    "top" :: Bit (Xlen + 2) ;
-    "cram" :: Bit (Xlen + 1) ;
-    "length" :: Bit (Xlen + 1) ;
+    "base" :: Bit (AddrSz + 1) ;
+    "top" :: Bit (AddrSz + 2) ;
+    "cram" :: Bit (AddrSz + 1) ;
+    "length" :: Bit (AddrSz + 1) ;
     "exact" :: Bool }.
 
   (*  ===================================================================
@@ -1083,7 +1083,7 @@ Section FunctionalUnits.
           By Step 1 of the previous proof, d >= 2^(CapBSz - 1), so MSB is strictly 1. (QED)
    *)
 
-  Definition Bounds (base length : ty (Bit Xlen)) (isRoundDown : ty Bool) : LetExpr ty BoundsRes :=
+  Definition Bounds (base length : ty Addr) (isRoundDown : ty Bool) : LetExpr ty BoundsRes :=
     ( LetE lenTrunc : Bit (AddrSz - CapBSz) <- TruncMsb (AddrSz - CapBSz) CapBSz #length;
       LETE clz: Bit ExpSz <- countLeadingZerosArray (mkBoolArray (AddrSz - CapBSz) #lenTrunc) _;
       LetE e_init: Bit ExpSz <- Add [$(AddrSz + 1 - CapBSz); Not #clz];
@@ -1183,14 +1183,14 @@ Section FunctionalUnits.
     "lt" :: Bool ;
     "eq" :: Bool }.
 
-  Definition ComparatorTopOrRep (addr topRep : ty (Bit (Xlen + 2))) (checkLte : ty Bool) : LetExpr ty ComparatorOut :=
+  Definition ComparatorTopOrRep (addr topRep : ty (Bit (AddrSz + 2))) (checkLte : ty Bool) : LetExpr ty ComparatorOut :=
     LetE ltRes : Bool <- Slt #addr #topRep;
     LetE eqRes : Bool <- Eq #addr #topRep;
     LetE lteRes : Bool <- Or [ #ltRes; #eqRes ];
     LetE outLt : Bool <- ITE #checkLte #lteRes #ltRes;
     @RetE _ ComparatorOut (STRUCT { "lt" ::= #outLt; "eq" ::= #eqRes }).
 
-  Definition ComparatorBase (addr base : ty (Bit (Xlen + 1))) : LetExpr ty Bool :=
+  Definition ComparatorBase (addr base : ty (Bit (AddrSz + 1))) : LetExpr ty Bool :=
     LetE geRes : Bool <- Sge #addr #base;
     RetE #geRes.
 
@@ -1208,7 +1208,7 @@ Section FunctionalUnits.
     LetE tagsEq : Bool <- Eq #tag1 #tag2;
     @RetE _ Bool (And [ #addrEq; #metaEq; #tagsEq ]).
 
-  Definition ScrSanitizer (tag : ty Bool) (addr : ty (Bit Xlen)) (inst : ty Inst)
+  Definition ScrSanitizer (tag : ty Bool) (addr : ty (Bit AddrSz)) (inst : ty Inst)
   : LetExpr ty Bool :=
     LetE scrIdx : Bit RegIdxSz <- getScr inst ;
     LetE isMePcc : Bool <- Eq #scrIdx $(getScrAddr "MePcc"%string) ;
@@ -1216,7 +1216,7 @@ Section FunctionalUnits.
     LetE isMePrevPcc : Bool <- Eq #scrIdx $(getScrAddr "MePrevPcc"%string) ;
     LetE isSpecialPcc : Bool <- Or [ #isMePcc; #isMtcc; #isMePrevPcc ] ;
     LetE lsbZero : Bool <-
-      Eq (TruncLsb (Xlen - 1) 1 #addr) (Const ty (Bit 1) Zmod.zero) ;
+      Eq (TruncLsb (AddrSz - 1) 1 #addr) (Const ty (Bit 1) Zmod.zero) ;
     LetE keepTag : Bool <- Or [ Not #isSpecialPcc; #lsbZero ] ;
     @RetE _ Bool (And [ #tag; #keepTag ]).
 

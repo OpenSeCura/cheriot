@@ -736,8 +736,8 @@ Proof.
   rewrite H_top.
   apply Zmod_le.
   - apply Z.pow_pos_nonneg; [ lia | change AddrSz with 32; lia ].
-  - pose proof (@to_Z_nonneg (Xlen + 1) (bounds@%"base") ltac:(change Xlen with 32; lia)).
-    pose proof (@to_Z_nonneg (Xlen + 1) (bounds@%"length") ltac:(change Xlen with 32; lia)).
+  - pose proof (@to_Z_nonneg (AddrSz + 1) (bounds@%"base") ltac:(change AddrSz with 32; lia)).
+    pose proof (@to_Z_nonneg (AddrSz + 1) (bounds@%"length") ltac:(change AddrSz with 32; lia)).
     lia.
 Qed.
 

@@ -41,13 +41,13 @@ Section Alu.
     LetE aluControl : AluControl <- ##aluIn`"aluControl" ;
 
     LetE isComp  : Bool     <- isCompressed inst ;
-    LetE pccAddr : Bit Xlen <- ##aluIn`"pcc"`"addr" ;
+    LetE pccAddr : Addr <- ##aluIn`"pcc"`"addr" ;
     LetE pccTag : Bool <- ##aluIn`"pcc"`"tag" ;
     LetE pccBase : Bit (AddrSz + 1) <- ##aluIn`"pcc"`"ecap"`"base" ;
     LetE pcc_cE : Bit ExpSz <- ##aluIn`"pcc"`"ecap"`"cE" ;
     LetE pccExp : Bit ExpSz <- get_E_from_cE pcc_cE ;
 
-    LetE cs1Addr : Bit Xlen <- ##cs1`"addr" ;
+    LetE cs1Addr : Addr <- ##cs1`"addr" ;
     LetE cs1Tag : Bool <- ##cs1`"tag" ;
     LetE cs1ECap : ECap <- ##cs1`"ecap" ;
     LetE cs1Base : Bit (AddrSz + 1) <- ##cs1ECap`"base" ;
@@ -57,7 +57,7 @@ Section Alu.
     LetE cs1Perms : CapPerms <- ##cs1ECap`"perms" ;
     LetE cs1OType : Bit CapOTypeSz <- ##cs1ECap`"oType" ;
 
-    LetE cs2Addr : Bit Xlen <- ##cs2`"addr" ;
+    LetE cs2Addr : Addr <- ##cs2`"addr" ;
     LetE cs2Tag : Bool <- ##cs2`"tag" ;
     LetE cs2ECap : ECap <- ##cs2`"ecap" ;
     LetE cs2Base : Bit (AddrSz + 1) <- ##cs2ECap`"base" ;
@@ -135,38 +135,38 @@ Section Alu.
     LETE ShifterOut : Bit Xlen <-
       Shifter Shifter_data Shifter_shamt Shifter_isRight Shifter_isArith ;
 
-    LetE AdderBeforeRepCheck_base : Bit (Xlen + 1) <-
+    LetE AdderBeforeRepCheck_base : Bit (AddrSz + 1) <-
       ITE (#BranchOrCjalOrAuiPcc) #pccBase #cs1Base ;
-    LetE AdderBeforeRepCheck_shifter : Bit (Xlen + 1) <- ZeroExtendTo (Xlen + 1) #ShifterOut ;
-    LETE AdderBeforeRepCheckOut : Bit (Xlen + 1) <-
+    LetE AdderBeforeRepCheck_shifter : Bit (AddrSz + 1) <- ZeroExtendTo (AddrSz + 1) #ShifterOut ;
+    LETE AdderBeforeRepCheckOut : Bit (AddrSz + 1) <-
       AdderBeforeRepCheck AdderBeforeRepCheck_base AdderBeforeRepCheck_shifter ;
 
-    LetE ComparatorTopOrRep_addr : Bit (Xlen + 2) <-
-      caseDefault (k := Bit (Xlen + 2)) [
+    LetE ComparatorTopOrRep_addr : Bit (AddrSz + 2) <-
+      caseDefault (k := Bit (AddrSz + 2)) [
           (##aluControl`"ComparatorTopOrRep_addr_AdderBeforeBoundsCheck",
-           ZeroExtendTo (Xlen + 2) #AdderBeforeBoundsCheckOut) ;
-          (##aluControl`"SealOrSetAddr", ZeroExtendTo (Xlen + 2) #cs2Addr) ;
-          (##aluControl`"Unseal", ZeroExtendTo (Xlen + 2) #cs1OType) ;
+           ZeroExtendTo (AddrSz + 2) #AdderBeforeBoundsCheckOut) ;
+          (##aluControl`"SealOrSetAddr", ZeroExtendTo (AddrSz + 2) #cs2Addr) ;
+          (##aluControl`"Unseal", ZeroExtendTo (AddrSz + 2) #cs1OType) ;
           (##aluControl`"CTestSubset", #cs1Top) ]
-        (ZeroExtendTo (Xlen + 2) #cs1Addr) ;
-    LetE ComparatorTopOrRep_topRep : Bit (Xlen + 2) <-
-      caseDefault (k := Bit (Xlen + 2)) [
-          (#BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr, ZeroExtendTo (Xlen + 2) #AdderBeforeRepCheckOut) ;
+        (ZeroExtendTo (AddrSz + 2) #cs1Addr) ;
+    LetE ComparatorTopOrRep_topRep : Bit (AddrSz + 2) <-
+      caseDefault (k := Bit (AddrSz + 2)) [
+          (#BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr, ZeroExtendTo (AddrSz + 2) #AdderBeforeRepCheckOut) ;
           (##aluControl`"SealOrUnsealOrSubset", #cs2Top) ]
         #cs1Top ;
     LetE ComparatorTopOrRep_checkLte : Bool <- ##aluControl`"ComparatorTopOrRep_checkLte" ;
     LETE ComparatorTopOrRepOut : ComparatorOut <-
       ComparatorTopOrRep ComparatorTopOrRep_addr ComparatorTopOrRep_topRep ComparatorTopOrRep_checkLte ;
 
-    LetE ComparatorBase_addr : Bit (Xlen + 1) <-
-      caseDefault (k := Bit (Xlen + 1)) [
+    LetE ComparatorBase_addr : Bit (AddrSz + 1) <-
+      caseDefault (k := Bit (AddrSz + 1)) [
           (##aluControl`"ComparatorBase_addr_AdderBeforeBoundsCheck",
-           ZeroExtendTo (Xlen + 1) #AdderBeforeBoundsCheckOut) ;
-          (##aluControl`"SealOrSetAddr", ZeroExtendTo (Xlen + 1) #cs2Addr) ;
-          (##aluControl`"Unseal", ZeroExtendTo (Xlen + 1) #cs1OType) ;
+           ZeroExtendTo (AddrSz + 1) #AdderBeforeBoundsCheckOut) ;
+          (##aluControl`"SealOrSetAddr", ZeroExtendTo (AddrSz + 1) #cs2Addr) ;
+          (##aluControl`"Unseal", ZeroExtendTo (AddrSz + 1) #cs1OType) ;
           (##aluControl`"CTestSubset", #cs1Base) ]
-        (ZeroExtendTo (Xlen + 1) #cs1Addr) ;
-    LetE ComparatorBase_base : Bit (Xlen + 1) <-
+        (ZeroExtendTo (AddrSz + 1) #cs1Addr) ;
+    LetE ComparatorBase_base : Bit (AddrSz + 1) <-
       caseDefault (k := Bit (Xlen + 1)) [
           (#BranchOrCjalOrAuiPcc, #pccBase) ;
           (##aluControl`"SealOrUnsealOrSubset", #cs2Base) ]
