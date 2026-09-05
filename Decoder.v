@@ -34,10 +34,10 @@ Section DecodeUncompressed.
   Definition decodeUncompressed : LetExpr ty DecodeOut :=
     LetE isComp    : Bool   <- isCompressed inst ;
     LetE opcode    : Bit 5         <- #inst`[6:2] ;
-    LetE rd        : Bit RegIdxSz  <- #inst`[11:7] ;
+    LetE rd        : Bit RegIdxSz  <- getCd inst ;
     LetE funct3    : Bit 3         <- #inst`[14:12] ;
-    LetE rs1       : Bit RegIdxSz  <- #inst`[19:15] ;
-    LetE rs2       : Bit RegIdxSz  <- #inst`[24:20] ;
+    LetE rs1       : Bit RegIdxSz  <- getCs1 inst ;
+    LetE rs2       : Bit RegIdxSz  <- getCs2 inst ;
     LetE funct7    : Bit 7         <- #inst`[31:25] ;
     LetE csrAddr   : Bit CsrAddrSz <- #inst`[31:20] ;
     LetE fm        : Bit 4         <- #inst`[31:28] ;
@@ -243,7 +243,7 @@ Section DecodeUncompressed.
     LetE readsRs1 : Bool <- Not (Or [ #isLui; #isAuiPcc; #isAuiCgp; #isCjal; #isFence;
                                       #isECall; #isEBreak; #isMret; #isCsrImm ]);
     LetE actualCs1Idx : Bit RegIdxSzReal <- ITE #isAuiCgp
-                                              (Const _ (Bit RegIdxSzReal) (Zmod.of_Z _ 3))
+                                              (Const _ (Bit RegIdxSzReal) (Zmod.of_Z _ Cgp))
                                               (ITE0 #readsRs1 #cs1Real);
 
     LetE readsRs2 : Bool <- Not (Or [ #isImm; #isLoad; #isCjalr;
@@ -309,7 +309,7 @@ Section DecodeCompressed.
 
   Definition decodeQuadrant1 : LetExpr ty DecodeOut :=
     LetE f3 : Bit 3 <- #inst`[15:13] ;
-    LetE rd5 : Bit 5 <- #inst`[11:7] ;
+    LetE rd5 : Bit 5 <- getCd inst ;
     LetE cs13 : Bit 3 <- #inst`[9:7] ;
     LetE cs23 : Bit 3 <- #inst`[4:2] ;
     LetE cs15 : Bit 5 <- {< Const _ (Bit 2) (Zmod.of_Z _ 1), #cs13 >} ;
@@ -374,7 +374,7 @@ Section DecodeCompressed.
 
   Definition decodeQuadrant2 : LetExpr ty DecodeOut :=
     LetE f3 : Bit 3 <- #inst`[15:13] ;
-    LetE rd5 : Bit 5 <- #inst`[11:7] ;
+    LetE rd5 : Bit 5 <- getCd inst ;
     LetE rs25 : Bit 5 <- #inst`[6:2] ;
     LetE b12 : Bool <- FromBit Bool (#inst`[12:12]) ;
 

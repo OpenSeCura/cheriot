@@ -2595,7 +2595,7 @@ Qed.
 (** * Decoded span bound *)
 
 Lemma base_top_shape : forall (addr : type Addr) (EC : type (Bit ExpSz))
-                              (T : type (Bit CapTSz)) (B : type (Bit CapBSz)),
+                              (T : type (Bit CapBSz)) (B : type (Bit CapBSz)),
   Zmod.unsigned EC <= 24 ->
   let bt := evalLetExpr (get_base_top_from_ECorrected_T_B addr EC T B) in
   Zmod.to_Z (bt@%"top") - Zmod.to_Z (bt@%"base") <= 511 * 2^(Zmod.to_Z EC).
@@ -2610,8 +2610,7 @@ Proof.
   set (e := Zmod.unsigned EC) in *.
   set (am := Zmod.sru addr e) in *.
   rewrite !Zmod.unsigned_slu.
-  rewrite !unsigned_app_arith by (unfold AddrSz, Xlen, LgXlen, CapBSz, LgAddrSz, CapTSz in *; lia).
-  unfold CapTSz in *.
+  rewrite !unsigned_app_arith by (unfold AddrSz, Xlen, LgXlen, CapBSz, LgAddrSz in *; lia).
   rewrite !Zmod.unsigned_0.
   change (2 ^ 0) with 1.
   change (0 + 9) with 9 in *.

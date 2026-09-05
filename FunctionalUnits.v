@@ -877,7 +877,7 @@ Section FunctionalUnits.
 
     LetE nextPccLegal : Bool <- caseDefault [ (#isReturn, isRetSentry cs1OType);
                                               (#isCall, Or [#notCs1Sealed; isCallSentry cs1OType]) ]
-                                  (Or [#notCs1Sealed; Eq #cs1OType $CallSentryIh]);
+                                  (Or [#notCs1Sealed; isSentryIh cs1OType]);
 
     LetE nextPccTag : Bool <-
       And [ #cs1Tag; #cs1PermEx; #nextPccLegal; Or [ #notCs1Sealed; #immZero ] ] ;
@@ -1210,7 +1210,7 @@ Section FunctionalUnits.
 
   Definition ScrSanitizer (tag : ty Bool) (addr : ty (Bit AddrSz)) (inst : ty Inst)
   : LetExpr ty Bool :=
-    LetE scrIdx : Bit RegIdxSz <- getScr inst ;
+    LetE scrIdx : Bit ScrAddrSz <- getScr inst ;
     LetE isMePcc : Bool <- Eq #scrIdx $(getScrAddr "MePcc"%string) ;
     LetE isMtcc : Bool <- Eq #scrIdx $(getScrAddr "Mtcc"%string) ;
     LetE isMePrevPcc : Bool <- Eq #scrIdx $(getScrAddr "MePrevPcc"%string) ;
@@ -1296,7 +1296,7 @@ Section FunctionalUnits.
                       (storeCap : ty Cap)
                       (storeData : ty Addr)
   : LetExpr ty (Option DeferredUnion) :=
-    LetE memSize : Bit LgLgNumBytesFullCapSz <- #inst`[13:12] ;
+    LetE memSize : Bit LgLgNumBytesFullCapSz <- getMemSize inst ;
     LetE isUnsigned : Bool <- isNotZero (#inst`[14:14]) ;
     LetE isFenceI : Bool <- isNotZero (#inst`[12:12]) ;
     LetE isTso : Bool <- isNotZero (#inst`[31:31]) ;
@@ -1327,8 +1327,7 @@ Section FunctionalUnits.
                           (memSize : ty (Bit LgLgNumBytesFullCapSz))
   : LetExpr ty (Option ExceptionInfo) :=
     LetE cs1Perms  : CapPerms       <- ##ecap`"perms" ;
-    LetE cs1Otype  : Bit CapOTypeSz <- ##ecap`"oType" ;
-    LetE cs1Sealed : Bool           <- isNotZero #cs1Otype ;
+    LetE cs1Sealed : Bool           <- isSealed ecap ;
 
     LetE isCap : Bool <- Eq #memSize $LgNumBytesFullCapSz ;
 
@@ -1378,9 +1377,9 @@ Section FunctionalUnits.
 
     LetE illegalInst   : Bool <- ##decodeExc`"illegal" ;
     LetE asrViolation  : Bool <- ##decodeExc`"asr" ;
-    LetE scrIdx        : Bit RegIdxSz <- #inst`[24:20] ;
-    LetE cs1Idx        : Bit RegIdxSz <- #inst`[19:15] ;
-    LetE memSize       : Bit LgLgNumBytesFullCapSz <- #inst`[13:12] ;
+    LetE scrIdx        : Bit RegIdxSz <- getScr inst ;
+    LetE cs1Idx        : Bit RegIdxSz <- getCs1 inst ;
+    LetE memSize       : Bit LgLgNumBytesFullCapSz <- getMemSize inst ;
     LETE memExcOut     : Option ExceptionInfo <-
       MemException isStore cs1Tag cs1ECap cs1Idx inBounds addr memSize ;
 

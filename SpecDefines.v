@@ -40,7 +40,6 @@ Definition getMemOffset {ty: Kind -> Type} (startAddr: Z) (size: Z) n (addr: Exp
 
 Definition Xlen         := 32.
 Definition DXlen        := Eval compute in (2 * Xlen).
-Definition DXlenBytes : nat := Eval compute in Z.to_nat (DXlen / 8).
 Definition InstSz       := 32.
 Definition CompInstSz   := 16.
 Definition LgMshwmAlign := 4.
@@ -52,6 +51,7 @@ Definition MSIP_Bit     := 3.
 Definition RegIdxSz     := 5.
 Definition CsrAddrSz    := 12.
 Definition Cra          := 1.
+Definition Cgp          := 3.
 Definition RegIdxSzReal := 4.
 Definition CapOTypeSz   := 3.
 Definition CapPermSz    := (6 : nat).
@@ -70,7 +70,6 @@ Definition LgNumBytesXlen := Eval compute in Z.log2_up NumBytesXlen.
 Definition NumRegs      := Eval compute in (2 ^ RegIdxSzReal).
 
 Definition CapBSz          := Eval compute in (CapcTSz + 1).
-Definition CapTSz          := Eval compute in CapBSz.
 
 Definition Cap : Kind := STRUCT_TYPE {
                              "R" :: Bool;
@@ -90,7 +89,9 @@ Definition LgNumBytesInstSz : Z := Eval compute in Z.log2_up (InstSz / 8).
 
 Definition isCompressed ty (inst: ty Inst) : Expr ty Bool := Not (isAllOnes (TruncLsb (InstSz-2) 2 #inst)).
 Definition getCd ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[11:7].
+Definition getMemSize ty (inst: ty Inst) : Expr ty (Bit LgLgNumBytesFullCapSz) := #inst`[13:12].
 Definition getCs1 ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[19:15].
+Definition getCs2 ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[24:20].
 Definition getScr ty (inst: ty Inst) : Expr ty (Bit ScrAddrSz) := #inst`[24:20].
 
 Definition CallSentryIh := 1.
@@ -629,10 +630,10 @@ Section CapEncoding.
     Definition get_Mmsb_from_cE (cE: ty (Bit ExpSz)) : Expr ty (Bit 1) := ToBit (isNotZero #cE).
 
     (* Encode helpers *)
-    Definition get_cT_from_T (T: ty (Bit CapTSz)) := TruncLsb 1 CapcTSz #T.
+    Definition get_cT_from_T (T: ty (Bit CapBSz)) := TruncLsb 1 CapcTSz #T.
 
     (* We need to reconstruct Mmsb to get cE from E. Since M = T - B, Mmsb is T[8] ^ B[8] ^ (cT < cB) *)
-    Definition get_Mmsb_from_T_B (T B: ty (Bit CapTSz)) : LetExpr ty (Bit 1) :=
+    Definition get_Mmsb_from_T_B (T B: ty (Bit CapBSz)) : LetExpr ty (Bit 1) :=
       LetE cT <- get_cT_from_T T;
       LetE cB <- TruncLsb 1 CapcTSz #B;
       LetE Tmsb <- TruncMsb 1 CapcTSz #T;
@@ -640,24 +641,23 @@ Section CapEncoding.
       LetE carry_out <- ToBit (Slt #cT #cB);
       @RetE _ (Bit 1) (Xor [#Tmsb; #Bmsb; #carry_out]).
 
-    Definition get_cE_from_E_T_B (E: ty (Bit ExpSz)) (T B: ty (Bit CapTSz)) : LetExpr ty (Bit ExpSz) :=
+    Definition get_cE_from_E_T_B (E: ty (Bit ExpSz)) (T B: ty (Bit CapBSz)) : LetExpr ty (Bit ExpSz) :=
       LETE Mmsb <- get_Mmsb_from_T_B T B;
       @RetE _ (Bit ExpSz) (ITE (And [isZero #E; FromBit Bool #Mmsb]) (Const _ (Bit ExpSz) (Zmod.of_Z _ (-1))) #E).
 
     (* Decode helpers *)
     (* Reconstruct full 9-bit T from 8-bit cT, 9-bit B, and cE *)
-    Definition get_T_from_cE_cT_B (cE: ty (Bit ExpSz)) (cT: ty (Bit CapcTSz)) (B: ty (Bit CapBSz)) : LetExpr ty (Bit CapTSz) :=
+    Definition get_T_from_cE_cT_B (cE: ty (Bit ExpSz)) (cT: ty (Bit CapcTSz)) (B: ty (Bit CapBSz)) : LetExpr ty (Bit CapBSz) :=
       LetE Mmsb <- get_Mmsb_from_cE cE;
       LetE cB <- TruncLsb 1 CapcTSz #B;
       LetE Bmsb <- TruncMsb 1 CapcTSz #B;
       LetE carry_out <- ToBit (Slt #cT #cB);
       LetE Tmsb <- Xor [#Bmsb; #Mmsb; #carry_out];
-      @RetE _ (Bit CapTSz) ({< #Tmsb, #cT >}).
+      @RetE _ (Bit CapBSz) ({< #Tmsb, #cT >}).
 
     Definition Emax := Eval compute in (Z.shiftl 1 ExpSz - CapcTSz).
     Definition get_ECorrected_from_E (E: ty (Bit ExpSz)) : Expr ty (Bit ExpSz) :=
       (ITE (Sge #E $Emax) $Emax #E).
-    Definition get_E_from_ECorrected (ECorrected: ty (Bit ExpSz)): Expr ty (Bit ExpSz) := #ECorrected.
   End CapRelated.
 
   Section BaseTop.
@@ -668,7 +668,7 @@ Section CapEncoding.
 
     Variable addr: ty Addr.
     Variable ECorrected: ty (Bit ExpSz).
-    Variable T: ty (Bit CapTSz).
+    Variable T: ty (Bit CapBSz).
     Variable B: ty (Bit CapBSz).
 
     Definition get_base_top_from_ECorrected_T_B : LetExpr ty BaseTop :=
@@ -691,6 +691,10 @@ Section CapEncoding.
 End CapEncoding.
 
 Definition isSealed ty (ecap: ty ECap) : Expr ty Bool := isNotZero (##ecap`"oType").
+Definition isSealingCap ty (ecap : ty ECap) : Expr ty Bool :=
+  Or [ ##ecap`"perms"`"SE" ;
+       ##ecap`"perms"`"US" ;
+       ##ecap`"perms"`"U0" ].
 Definition attenuatePerms ty (perms : ty CapPerms) (isSealed isLM isLG : ty Bool) : Expr ty CapPerms :=
   STRUCT {
     "U0" ::= ##perms`"U0" ;

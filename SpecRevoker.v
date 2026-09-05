@@ -44,15 +44,13 @@ Definition getStrIndexOption (s : string) (ls : list string) : option nat :=
 Definition revokerRegIdx (name : string) :=
   forceOption (getStrIndexOption name RevokerRegNames).
 
-Notation ByteSz := 8%Z.
-Definition RevokerRegBytes : nat := Eval compute in Z.to_nat NumBytesXlen.
-Definition LgRevokerRegBytes : nat := Eval compute in Z.to_nat LgNumBytesXlen.
+Local Notation ByteSz := 8%Z.
 
 Definition RevokerControlSignature : Z := 0x5500.
 Definition RevokerControlSignatureWidth : Z := Eval compute in (Xlen / 2).
 
 Definition RevokerNumRegs : nat := Eval compute in (length RevokerRegNames).
-Definition RevokerSizeBytes : nat := Eval compute in (RevokerNumRegs * RevokerRegBytes)%nat.
+Definition RevokerSizeBytes : nat := Eval compute in (RevokerNumRegs * Z.to_nat NumBytesXlen)%nat.
 
 Definition revokerChildren : list (Tree Elem) :=
   [ Leaf "base" (EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero))) ;
@@ -73,7 +71,7 @@ Definition revokerInterruptStatusPath : RegPath tRev := getChildRegPathTree tRev
 Definition revokerInterruptRequestedPath : RegPath tRev := getChildRegPathTree tRev "interruptRequested".
 Definition revokerScanAddrPath : RegPath tRev := getChildRegPathTree tRev "scanAddr".
 
-Definition RevokerLineConfig : LineConfig := RawLine LgRevokerRegBytes.
+Definition RevokerLineConfig : LineConfig := RawLine (Z.to_nat LgNumBytesXlen).
 
 Definition revokerRegToWord {ty : Kind -> Type}
   (baseVal : Expr ty (Bit TagAddrWidth))
@@ -149,8 +147,8 @@ Definition revokerLineReadAction
     revokerWordsArray #baseVal #topVal #kickVal #epochVal #statusVal #reqVal ;
   Let bytes : Array RevokerSizeBytes (Bit ByteSz) <-
     FromBit (Array RevokerSizeBytes (Bit ByteSz)) (@ToBit ty (Array RevokerNumRegs (Bit Xlen)) #words) ;
-  Let readBytes : Array RevokerRegBytes (Bit ByteSz) <-
-    slice #bytes #offset RevokerRegBytes ;
+  Let readBytes : Array (Z.to_nat NumBytesXlen) (Bit ByteSz) <-
+    slice #bytes #offset (Z.to_nat NumBytesXlen) ;
   @Return ty tRev (LineReadRp RevokerLineConfig) (STRUCT {
     "data" ::= #readBytes ;
     "tag"  ::= Const ty (Array (cfgNumLineTags RevokerLineConfig) Bool) (getDefault _)
@@ -208,8 +206,6 @@ Arguments revokerLineWriteAction base ty rq : clear implicits.
 Lemma revokerBaseAlignedLemma (base : Z) (pf : Is_true (base mod NumBytesXlen =? 0)%Z) :
   Is_true (base mod (2 ^ Z.of_nat (cfgLgLineBytes RevokerLineConfig)) =? 0)%Z.
 Proof.
-  change (cfgLgLineBytes RevokerLineConfig) with LgRevokerRegBytes.
-  change (2 ^ Z.of_nat LgRevokerRegBytes)%Z with NumBytesXlen.
   exact pf.
 Qed.
 
@@ -341,12 +337,7 @@ Section RevokerAction.
   Local Definition writeRevokerScanAddr (v : Expr ty (Bit TagAddrWidth)) : Action ty memTree (Bit 0) :=
     revokerAction (WriteReg revokerScanAddrPath v Retv).
 
-  Definition readRevBit (base : Expr ty (Bit (AddrSz + 1))) : Action ty memTree Bool :=
-    LetA lookup  : RevBitLookup   <- toAction memTree (computeRevBitAddr config base) ;
-    LetA revCap  : FullCapWithTag <- specMemRead regions (#lookup`"revByteAddr") $0 ;
-    Let  revByte : Bit ByteSz     <- TruncLsb (AddrSz - ByteSz) ByteSz (#revCap`"addr") ;
-    Let  revBit  : Bool           <- extractRevBit lookup #revByte ;
-    Return #revBit.
+  Local Notation readRevBit := (readRevBit config regions).
 
   Definition specRevokerStep : Action ty memTree (Bit 0) :=
     LetA epoch : Bit Xlen <- readRevokerEpoch ;
@@ -366,10 +357,8 @@ Section RevokerAction.
           Let ldCap : Cap <- #ldFullCap`"cap" ;
           Let ldAddr : Addr <- #ldFullCap`"addr" ;
           LetA ldECap : ECap <- toAction memTree (DecodeCap ldCap ldAddr) ;
-          Let isSealingCap : Bool <- Or [ (#ldECap`"perms")`"SE" ;
-                                         (#ldECap`"perms")`"US" ;
-                                         (#ldECap`"perms")`"U0" ] ;
-          If (Not #isSealingCap) Then (
+          Let isSealing : Bool <- isSealingCap ldECap ;
+          If (Not #isSealing) Then (
             LetA revBit : Bool <- readRevBit (#ldECap`"base") ;
             If #revBit Then (
               (* Capability revoked: invalidate tag in memory *)

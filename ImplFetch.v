@@ -91,14 +91,15 @@ Section FetchStages.
         Act (liftAction np_fetchFifo (@deq capacity FullECapWithTag ty)) ;
 
         (* Fetch Exception Checks *)
+        Let pccECap   : ECap <- ##pcc`"ecap" ;
         Let isComp    : Bool <- isCompressed rawInst ;
         Let instBytes : Addr <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
         Let tagExc    : Bool <- Not ##pcc`"tag" ;
-        Let sealExc   : Bool <- isNotZero (##pcc`"ecap"`"oType") ;
-        Let permExc   : Bool <- Not (##pcc`"ecap"`"perms"`"EX") ;
+        Let sealExc   : Bool <- isSealed pccECap ;
+        Let permExc   : Bool <- Not (##pccECap`"perms"`"EX") ;
         Let boundsExc : Bool <- Or [
-          Slt (ZeroExtendTo (AddrSz + 2) ##pcc`"addr") (ZeroExtendTo (AddrSz + 2) ##pcc`"ecap"`"base") ;
-          Sgt (ZeroExtendTo (AddrSz + 2) (Add [ ##pcc`"addr" ; #instBytes ])) (##pcc`"ecap"`"top")
+          Slt (ZeroExtendTo (AddrSz + 2) ##pcc`"addr") (ZeroExtendTo (AddrSz + 2) ##pccECap`"base") ;
+          Sgt (ZeroExtendTo (AddrSz + 2) (Add [ ##pcc`"addr" ; #instBytes ])) (##pccECap`"top")
         ] ;
 
         Let fetchOut : FetchOut <- STRUCT {

@@ -174,7 +174,7 @@ Section MemoryModel.
       Let is_valid : Bool <- isMemAddr addr ;
       If #is_valid Then (
         Let offset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) addr ;
-        Let tagAddr : Bit (AddrSz - LgNumBytesFullCapSz) <- TruncMsb TagAddrWidth LgNumBytesFullCapSz addr ;
+        Let tagAddr : Bit TagAddrWidth <- TruncMsb TagAddrWidth LgNumBytesFullCapSz addr ;
         Let tagOffset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) #tagAddr ;
         RegRead memVal  <- "mem.mainMem" in memoryTree ;
         RegRead tagsVal <- "mem.tags"    in memoryTree ;
@@ -238,7 +238,7 @@ Section MemoryModel.
       Let is_valid : Bool <- isMemAddr addr ;
       If #is_valid Then (
         Let offset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) addr ;
-        Let tagAddr : Bit (AddrSz - LgNumBytesFullCapSz) <- TruncMsb TagAddrWidth LgNumBytesFullCapSz addr ;
+        Let tagAddr : Bit TagAddrWidth <- TruncMsb TagAddrWidth LgNumBytesFullCapSz addr ;
         Let tagOffset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) #tagAddr ;
         Let num_bytes : Bit (LgNumBytesFullCapSz + 1) <- Sll $1 memSize ;
         Let cap       : Cap                           <- val`"cap" ;

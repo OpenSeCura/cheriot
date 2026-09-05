@@ -31,10 +31,8 @@ Local Open Scope guru_scope.
  * 1. MemRegion Definition & Disjointness Checking
  * =========================================================================== *)
 
-Definition LgDXlenBytes : nat := Eval compute in Z.to_nat LgNumBytesFullCapSz.
-
 Inductive LineConfig :=
-| TaggedLine (lgLineBytes : nat) (pf : Is_true (LgDXlenBytes <=? lgLineBytes)%nat)
+| TaggedLine (lgLineBytes : nat) (pf : Is_true (Z.to_nat LgNumBytesFullCapSz <=? lgLineBytes)%nat)
 | RawLine    (lgLineBytes : nat).
 
 Definition cfgHasTags (cfg : LineConfig) : bool :=
@@ -54,7 +52,7 @@ Definition cfgLineBytes (cfg : LineConfig) : nat :=
 
 Definition cfgNumLineTags (cfg : LineConfig) : nat :=
   match cfg with
-  | TaggedLine lgBytes _ => Nat.pow 2 (lgBytes - LgDXlenBytes)
+  | TaggedLine lgBytes _ => Nat.pow 2 (lgBytes - Z.to_nat LgNumBytesFullCapSz)
   | RawLine _ => 0%nat
   end.
 
@@ -440,12 +438,12 @@ Section MemRegionActions.
       Let endOffset : Bit (lgLineBytesZ + 1)%Z <-
         Add [ ZeroExtend 1 (lineOffset addr) ; #numBytesActive ] ;
       Let crossesLine : Bool <- FromBit Bool (TruncMsb 1 lgLineBytesZ #endOffset) ;
-      Let numBytesActiveDXlen : Bit (LgNumBytesFullCapSz + 1)%Z <-
+      Let numBytesActiveCap : Bit (LgNumBytesFullCapSz + 1)%Z <-
                              Sll (Const ty (Bit (LgNumBytesFullCapSz + 1)%Z) (bits.of_Z _ 1))
                                (ZeroExtend (LgNumBytesFullCapSz + 1 - LgLgNumBytesFullCapSz)%Z memSize) ;
-      Let endOffsetDXlen : Bit (LgNumBytesFullCapSz + 1)%Z <-
-        Add [ ZeroExtend 1 #capOffset ; #numBytesActiveDXlen ] ;
-      Let crossesDXlen : Bool <- FromBit Bool (TruncMsb 1 LgNumBytesFullCapSz #endOffsetDXlen) ;
+      Let endOffsetCap : Bit (LgNumBytesFullCapSz + 1)%Z <-
+        Add [ ZeroExtend 1 #capOffset ; #numBytesActiveCap ] ;
+      Let crossesCap : Bool <- FromBit Bool (TruncMsb 1 LgNumBytesFullCapSz #endOffsetCap) ;
       Let isWrites : Array lBytes Bool <-
         FromBit (Array lBytes Bool)
           (rotateLeft (Not (Sll (ConstBit (InvDefault _)) #numBytesActive)) (lineOffset addr)) ;
@@ -458,7 +456,7 @@ Section MemRegionActions.
         ) else (
           ConstDef
         ) ;
-      Let crossWithinLine : Bool <- And [ #crossesDXlen ; Not #crossesLine ] ;
+      Let crossWithinLine : Bool <- And [ #crossesCap ; Not #crossesLine ] ;
       Let nextTagSlot : Bit lgNumDXlenZ <- Add [ tagSlot addr ; Const ty (Bit lgNumDXlenZ) (bits.of_Z _ 1) ] ;
       Let tagMask1 : Array nTags Bool <-
         if hasTags r then (
@@ -568,3 +566,16 @@ Section SpecMemRouter.
     end.
 
 End SpecMemRouter.
+
+Section RevBitHelper.
+  Variable ty : Kind -> Type.
+  Variable config : RevConfig.
+  Variable regions : list MemRegion.
+
+  Definition readRevBit (base : Expr ty (Bit (AddrSz + 1))) : Action ty (specMemTree regions) Bool :=
+    LetL lookup  : RevBitLookup   <- computeRevBitAddr config base ;
+    LetA revCap  : FullCapWithTag <- specMemRead regions (##lookup`"revByteAddr") $0 ;
+    Let  revByte : Bit 8          <- TruncLsb (AddrSz - 8) 8 (##revCap`"addr") ;
+    Let  revBit  : Bool           <- extractRevBit lookup #revByte ;
+    Return #revBit.
+End RevBitHelper.

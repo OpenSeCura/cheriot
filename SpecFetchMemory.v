@@ -117,10 +117,8 @@ Section CombinationalDeferred.
     }).
 
   Definition needsRevocationCheck (ecap : ty ECap) (rawTag : ty Bool) : LetExpr ty Bool :=
-    LetE isSealingCap : Bool <- Or [ ##ecap`"perms"`"SE" ;
-                                   ##ecap`"perms"`"US" ;
-                                   ##ecap`"perms"`"U0" ] ;
-    @RetE _ Bool (And [ #rawTag ; Not #isSealingCap ]).
+    LetE isSealing : Bool <- isSealingCap ecap ;
+    @RetE _ Bool (And [ #rawTag ; Not #isSealing ]).
 
   Definition decodeSubwordData (rawDataLsb : ty Addr)
                                (byteOffset : ty (Bit LgNumBytesFullCapSz))
@@ -291,15 +289,7 @@ Section SpecFetchMemory.
 
   Local Notation computeRevBitAddr := (computeRevBitAddr config).
 
-  (* =========================================================================
-   * Revocation Bit Helper (Combinational Action on specMemTree)
-   * ========================================================================= *)
-  Definition readRevBit (base : Expr ty (Bit (AddrSz + 1))) : Action ty memTree Bool :=
-    LetL lookup  : RevBitLookup <- computeRevBitAddr base ;
-    LetA revCap  : FullCapWithTag <- specMemRead regions (##lookup`"revByteAddr") $0 ;
-    Let  revByte : Bit 8 <- TruncLsb (AddrSz - 8) 8 (##revCap`"addr") ;
-    Let  revBit  : Bool  <- extractRevBit lookup #revByte ;
-    Return #revBit.
+  Local Notation readRevBit := (readRevBit config regions).
 
   (* =========================================================================
    * 1. specFetch (Atomic Combinational Fetch)
@@ -310,14 +300,15 @@ Section SpecFetchMemory.
     Let rawInst : Inst <- ##rawFull`"addr" ;
 
     (* Fetch Exception Checks *)
+    Let pccECap      : ECap <- ##pcc`"ecap" ;
     Let isComp       : Bool <- isCompressed rawInst ;
     Let instBytesLen : Addr <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
     Let tagExc       : Bool <- Not ##pcc`"tag" ;
-    Let sealExc      : Bool <- isNotZero (##pcc`"ecap"`"oType") ;
-    Let permExc      : Bool <- Not (##pcc`"ecap"`"perms"`"EX") ;
+    Let sealExc      : Bool <- isSealed pccECap ;
+    Let permExc      : Bool <- Not (##pccECap`"perms"`"EX") ;
     Let boundsExc    : Bool <- Or [
-      Slt (ZeroExtendTo (AddrSz + 2) ##pcc`"addr") (ZeroExtendTo (AddrSz + 2) ##pcc`"ecap"`"base") ;
-      Sgt (ZeroExtendTo (AddrSz + 2) (Add [ ##pcc`"addr" ; #instBytesLen ])) (##pcc`"ecap"`"top")
+      Slt (ZeroExtendTo (AddrSz + 2) ##pcc`"addr") (ZeroExtendTo (AddrSz + 2) ##pccECap`"base") ;
+      Sgt (ZeroExtendTo (AddrSz + 2) (Add [ ##pcc`"addr" ; #instBytesLen ])) (##pccECap`"top")
     ] ;
 
     Let fetchOut : FetchOut <- STRUCT {

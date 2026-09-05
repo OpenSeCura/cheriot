@@ -79,11 +79,10 @@ Section Alu.
       ({< ##inst`[31:31], ##inst`[19:12], ##inst`[20:20], ##inst`[30:21],
           Const _ (Bit 1) Zmod.zero >}) ;
     LetE jimm20 : Bit Xlen <- SignExtendTo Xlen #jimm21 ;
-    LetE scrIdx : Bit RegIdxSz <- ##inst`[24:20] ;
-    LetE cs1Idx : Bit RegIdxSz <- ##inst`[19:15] ;
-    LetE dstIdx : Bit RegIdxSz <- ##inst`[11:7] ;
-    LetE memSize : Bit LgLgNumBytesFullCapSz <- ##inst`[13:12] ;
-    LetE isFenceI : Bool <- isNotZero (##inst`[12:12]) ;
+    LetE scrIdx : Bit ScrAddrSz <- getScr inst ;
+    LetE cs1Idx : Bit RegIdxSz <- getCs1 inst ;
+    LetE dstIdx : Bit RegIdxSz <- getCd inst ;
+    LetE memSize : Bit LgLgNumBytesFullCapSz <- getMemSize inst ;
 
     LetE BranchOrCjalOrAuiPcc : Bool <- ##aluControl`"BranchOrCjalOrAuiPcc" ;
     LetE BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr : Bool <-
