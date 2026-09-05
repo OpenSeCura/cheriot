@@ -102,10 +102,10 @@ Section ImplMemoryLayout.
   Definition tagsSize : nat := Z.to_nat (tagsEndAddr - tagsStartAddr).
 
   Definition isMemAddr {ty: Kind -> Type} (a : Expr ty Addr) : Expr ty Bool :=
-    Sge a (Const ty Addr (bits.of_Z AddrSz config.(mainMemStartAddr))).
+    Sge a $(config.(mainMemStartAddr)).
 
   Definition isTagsAddr {ty: Kind -> Type} (a : Expr ty (Bit TagAddrWidth)) : Expr ty Bool :=
-    Sge a (Const ty (Bit TagAddrWidth) (bits.of_Z TagAddrWidth tagsStartAddr)).
+    Sge a $tagsStartAddr.
 End ImplMemoryLayout.
 
 Section MemoryModel.

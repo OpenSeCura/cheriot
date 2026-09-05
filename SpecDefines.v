@@ -647,7 +647,7 @@ Section CapEncoding.
 
     Definition get_cE_from_E_T_B (E: ty (Bit ExpSz)) (T B: ty (Bit CapBSz)) : LetExpr ty (Bit ExpSz) :=
       LETE Mmsb <- get_Mmsb_from_T_B T B;
-      @RetE _ (Bit ExpSz) (ITE (And [isZero #E; FromBit Bool #Mmsb]) (Const _ (Bit ExpSz) (Zmod.of_Z _ (-1))) #E).
+      @RetE _ (Bit ExpSz) (ITE (And [isZero #E; FromBit Bool #Mmsb]) $(-1) #E).
 
     (* Decode helpers *)
     (* Reconstruct full 9-bit T from 8-bit cT, 9-bit B, and cE *)

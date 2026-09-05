@@ -124,7 +124,7 @@ Definition updateArraySliceMask
   (upd : Expr ty (Array sliceSz k))
   (mask : Expr ty (Array sliceSz Bool)) : Expr ty (Array n k) :=
   fold_left (fun curArr (i : FinType sliceSz) =>
-    let idx := Add [ addr ; Const ty (Bit m) (bits.of_Z m (Z.of_nat i.(finNum))) ] in
+    let idx := Add [ addr ; $(Z.of_nat i.(finNum)) ] in
     let dMask := ReadArrayConst mask i in
     let dVal := ReadArrayConst upd i in
     let oVal := ReadArray curArr idx in
@@ -376,13 +376,13 @@ Section RevokerAction.
         ) ;
         (* Advance scan pointer: increment scanAddrMsb *)
         Let nextScanAddrMsb : Bit TagAddrWidth <-
-          Add [ #scanAddrMsb ; Const ty (Bit TagAddrWidth) (bits.of_Z _ 1) ] ;
+          Add [ #scanAddrMsb ; $1 ] ;
         Act (writeRevokerScanAddr #nextScanAddrMsb) ;
         Retv
       ) Else (
         (* SWEEP COMPLETE: scanAddr reached top *)
         (* Transition epoch from odd (sweeping) to even (idle) *)
-        Act (writeRevokerEpoch (Add [ #epoch ; Const ty (Bit Xlen) (bits.of_Z _ 1) ])) ;
+        Act (writeRevokerEpoch (Add [ #epoch ; $1 ])) ;
         (* Record sweep completion in interruptStatus if software requested an interrupt *)
         LetA intReq : Bool <- readRevokerInterruptRequested ;
         If #intReq Then (

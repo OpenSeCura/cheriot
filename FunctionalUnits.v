@@ -1088,7 +1088,7 @@ Section FunctionalUnits.
       LETE clz: Bit ExpSz <- countLeadingZerosArray (mkBoolArray (AddrSz - CapBSz) #lenTrunc) _;
       LetE e_init: Bit ExpSz <- Add [$(AddrSz + 1 - CapBSz); Not #clz];
       LetE d : Bit (CapBSz + 1) <- TruncLsb (AddrSz - CapBSz - 1) (CapBSz + 1) (Srl #length #e_init);
-      LetE mask_e : Bit (AddrSz + 2 - CapBSz) <- Not (Sll (ConstBit (Zmod.of_Z _ (-1))) #e_init);
+      LetE mask_e : Bit (AddrSz + 2 - CapBSz) <- Not (Sll $(-1) #e_init);
       LetE base_mod_e : Bit (AddrSz + 2 - CapBSz) <-
                           And [TruncLsb (CapBSz - 2) (AddrSz + 2 - CapBSz) #base; #mask_e];
       LetE length_mod_e : Bit (AddrSz + 2 - CapBSz) <-
@@ -1120,7 +1120,7 @@ Section FunctionalUnits.
       LetE ef: Bit ExpSz <- ITE #isRoundDown #e_roundDown #e_normal;
       LetE mf: Bit CapBSz <- ITE #isRoundDown #m_roundDown #m_normal;
 
-      LetE cram: Bit (AddrSz + 1) <- Sll (ConstBit (Zmod.of_Z _ (-1))) #ef;
+      LetE cram: Bit (AddrSz + 1) <- Sll $(-1) #ef;
       LetE outBase : Bit (AddrSz + 1) <- And [ZeroExtend 1 #base; #cram];
       LetE outLen: Bit (AddrSz + 1) <- Sll (ZeroExtendTo (AddrSz + 1) #mf) #ef;
       LetE outTop : Bit (AddrSz + 2) <- Add [ZeroExtendTo (AddrSz + 2) #outBase; ZeroExtendTo (AddrSz + 2) #outLen] ;

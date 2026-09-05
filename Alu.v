@@ -108,11 +108,11 @@ Section Alu.
         #cs1Addr ;
     LetE AdderToOutput_offset : Bit Xlen <-
       caseDefault (k := Bit Xlen) [
-          (##aluControl`"AdderToOutput_offset_const2", Const ty (Bit Xlen) (Zmod.of_Z _ (CompInstSz/8))) ;
+          (##aluControl`"AdderToOutput_offset_const2", $(CompInstSz/8)) ;
           (##aluControl`"AdderToOutput_offset_cs2Addr", #cs2Addr) ;
           (##aluControl`"AdderToOutput_offset_simm12", #simm12) ;
           (##aluControl`"CGetLen", TruncLsb 1 AddrSz #cs1Base) ]
-        (Const ty (Bit Xlen) (Zmod.of_Z _ (InstSz/8))) ;
+        $(InstSz/8) ;
     LetE AdderToOutput_isSub : Bool <- ##aluControl`"AdderToOutput_isSub" ;
     LETE AdderToOutputOut : Bit Xlen <-
       AdderToOutput AdderToOutput_base AdderToOutput_offset AdderToOutput_isSub ;
@@ -123,7 +123,7 @@ Section Alu.
 
     LetE Shifter_data : Bit Xlen <-
       ITE (##aluControl`"Shift")
-          #cs1Addr (Const ty (Bit Xlen) (Zmod.of_Z _ 1)) ;
+          #cs1Addr $1 ;
     LetE Shifter_shamt : Bit RegIdxSz <-
       caseDefault (k := Bit RegIdxSz) [
           (##aluControl`"Shifter_shamt_cs2Addr", TruncLsb (AddrSz - RegIdxSz) RegIdxSz #cs2Addr) ;

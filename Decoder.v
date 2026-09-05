@@ -243,7 +243,7 @@ Section DecodeUncompressed.
     LetE readsRs1 : Bool <- Not (Or [ #isLui; #isAuiPcc; #isAuiCgp; #isCjal; #isFence;
                                       #isECall; #isEBreak; #isMret; #isCsrImm ]);
     LetE actualCs1Idx : Bit RegIdxSzReal <- ITE #isAuiCgp
-                                              (Const _ (Bit RegIdxSzReal) (Zmod.of_Z _ Cgp))
+                                              $Cgp
                                               (ITE0 #readsRs1 #cs1Real);
 
     LetE readsRs2 : Bool <- Not (Or [ #isImm; #isLoad; #isCjalr;

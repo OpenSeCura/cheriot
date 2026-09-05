@@ -357,7 +357,7 @@ Section MemRegionActions.
     castBits (add_sub_cancel AddrSz lgLineBytesZ) {< lineIndex addr, Const ty (Bit lgLineBytesZ) Zmod.zero >}.
 
   Local Definition nextLineAddr (addr : Expr ty Addr) : Expr ty Addr :=
-    castBits (add_sub_cancel AddrSz lgLineBytesZ) {< Add [ lineIndex addr ; Const ty (Bit (AddrSz - lgLineBytesZ)%Z) (Zmod.of_Z _ 1) ], Const ty (Bit lgLineBytesZ) Zmod.zero >}.
+    castBits (add_sub_cancel AddrSz lgLineBytesZ) {< Add [ lineIndex addr ; $1 ], Const ty (Bit lgLineBytesZ) Zmod.zero >}.
 
   Local Definition add1 (addr : Expr ty Addr) : Expr ty (Array lBytes Bool) :=
     FromBit (Array lBytes Bool)
@@ -380,7 +380,7 @@ Section MemRegionActions.
     Let isCapAligned : Bool <- isZero #capOffset ;
     Let isCap : Bool <- And [Eq memSize $LgNumBytesFullCapSz ; #isCapAligned] ;
     Let numBytesActive : Bit (lgLineBytesZ + 1)%Z <-
-                           Sll (Const ty (Bit (lgLineBytesZ + 1)%Z) (bits.of_Z _ 1))
+                           Sll $1
                              (ZeroExtend (lgLineBytesZ + 1 - LgLgNumBytesFullCapSz)%Z memSize) ;
     Let endOffset : Bit (lgLineBytesZ + 1)%Z <-
       Add [ ZeroExtend 1 (lineOffset addr) ; #numBytesActive ] ;
@@ -433,13 +433,13 @@ Section MemRegionActions.
       Let baseData : Array lBytes (Bit 8) <- embedCapBytes lBytes #capBytes ;
       Let rotData : Array lBytes (Bit 8) <- ArrayRotl 8 #baseData (lineOffset addr) ;
       Let numBytesActive : Bit (lgLineBytesZ + 1)%Z <-
-                             Sll (Const ty (Bit (lgLineBytesZ + 1)%Z) (bits.of_Z _ 1))
+                             Sll $1
                                (ZeroExtend (lgLineBytesZ + 1 - LgLgNumBytesFullCapSz)%Z memSize) ;
       Let endOffset : Bit (lgLineBytesZ + 1)%Z <-
         Add [ ZeroExtend 1 (lineOffset addr) ; #numBytesActive ] ;
       Let crossesLine : Bool <- FromBit Bool (TruncMsb 1 lgLineBytesZ #endOffset) ;
       Let numBytesActiveDXlen : Bit (LgNumBytesFullCapSz + 1)%Z <-
-                             Sll (Const ty (Bit (LgNumBytesFullCapSz + 1)%Z) (bits.of_Z _ 1))
+                             Sll $1
                                (ZeroExtend (LgNumBytesFullCapSz + 1 - LgLgNumBytesFullCapSz)%Z memSize) ;
       Let endOffsetDXlen : Bit (LgNumBytesFullCapSz + 1)%Z <-
         Add [ ZeroExtend 1 #capOffset ; #numBytesActiveDXlen ] ;
@@ -457,7 +457,7 @@ Section MemRegionActions.
           ConstDef
         ) ;
       Let crossWithinLine : Bool <- And [ #crossesDXlen ; Not #crossesLine ] ;
-      Let nextTagSlot : Bit lgNumDXlenZ <- Add [ tagSlot addr ; Const ty (Bit lgNumDXlenZ) (bits.of_Z _ 1) ] ;
+      Let nextTagSlot : Bit lgNumDXlenZ <- Add [ tagSlot addr ; $1 ] ;
       Let tagMask1 : Array nTags Bool <-
         if hasTags r then (
           UpdateArray
