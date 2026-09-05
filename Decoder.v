@@ -289,7 +289,7 @@ Section DecodeCompressed.
     LetE cd5  : Bit 5 <- {< Const _ (Bit 2) (Zmod.of_Z _ 1), #cd3 >} ;
 
     LetE addi4spnImm : Bit 12 <- {< Const _ (Bit 2) Zmod.zero, #inst`[10:7], #inst`[12:11], #inst`[5:5], #inst`[6:6], Const _ (Bit 2) Zmod.zero >} ;
-    LetE pseudoADDI4SPN : Bit 30 <- {< #addi4spnImm, Const _ (Bit 5) (Zmod.of_Z _ 2), Const _ (Bit 3) (Zmod.of_Z _ 1), #cd5, Const _ (Bit 5) (Zmod.of_Z _ (Z.shiftr 0x5b 2)) >} ;
+    LetE pseudoADDI4SPN : Bit 30 <- {< #addi4spnImm, Const _ (Bit 5) (Zmod.of_Z _ Csp), Const _ (Bit 3) (Zmod.of_Z _ 1), #cd5, Const _ (Bit 5) (Zmod.of_Z _ (Z.shiftr 0x5b 2)) >} ;
 
     LetE lwOff : Bit 12 <- {< Const _ (Bit 5) Zmod.zero, #inst`[5:5], #inst`[12:10], #inst`[6:6], Const _ (Bit 2) Zmod.zero >} ;
     LetE lcOff : Bit 12 <- {< Const _ (Bit 4) Zmod.zero, #inst`[6:5], #inst`[12:10], Const _ (Bit 3) Zmod.zero >} ;
@@ -319,7 +319,7 @@ Section DecodeCompressed.
     LetE pseudoADDI : Bit 30 <- {< #imm12, #rd5, Const _ (Bit 3) Zmod.zero, #rd5, Const _ (Bit 5) (Zmod.of_Z _ 0x04) >} ;
 
     LetE cjalImm : Bit 20 <- SignExtendTo 20 {< #inst`[12:12], #inst`[8:8], #inst`[10:9], #inst`[6:6], #inst`[7:7], #inst`[2:2], #inst`[11:11], #inst`[5:3] >} ;
-    LetE pseudoCJAL : Bit 30 <- {< #cjalImm`[19:19], #cjalImm`[9:0], #cjalImm`[10:10], #cjalImm`[18:11], Const _ (Bit 5) (Zmod.of_Z _ 1), Const _ (Bit 5) (Zmod.of_Z _ 0x1b) >} ;
+    LetE pseudoCJAL : Bit 30 <- {< #cjalImm`[19:19], #cjalImm`[9:0], #cjalImm`[10:10], #cjalImm`[18:11], Const _ (Bit 5) (Zmod.of_Z _ Cra), Const _ (Bit 5) (Zmod.of_Z _ 0x1b) >} ;
 
     LetE pseudoLI : Bit 30 <- {< #imm12, Const _ (Bit 5) Zmod.zero, Const _ (Bit 3) Zmod.zero, #rd5, Const _ (Bit 5) (Zmod.of_Z _ 0x04) >} ;
 
@@ -327,9 +327,9 @@ Section DecodeCompressed.
     LetE pseudoLUI : Bit 30 <- {< #luiImm, #rd5, Const _ (Bit 5) (Zmod.of_Z _ 0x0d) >} ;
 
     LetE addi16spImm : Bit 12 <- SignExtendTo 12 {< #inst`[12:12], #inst`[4:3], #inst`[5:5], #inst`[2:2], #inst`[6:6], Const _ (Bit 4) Zmod.zero >} ;
-    LetE pseudoADDI16SP : Bit 30 <- {< #addi16spImm, Const _ (Bit 5) (Zmod.of_Z _ 2), Const _ (Bit 3) (Zmod.of_Z _ 1), Const _ (Bit 5) (Zmod.of_Z _ 2), Const _ (Bit 5) (Zmod.of_Z _ (Z.shiftr 0x5b 2)) >} ;
+    LetE pseudoADDI16SP : Bit 30 <- {< #addi16spImm, Const _ (Bit 5) (Zmod.of_Z _ Csp), Const _ (Bit 3) (Zmod.of_Z _ 1), Const _ (Bit 5) (Zmod.of_Z _ Csp), Const _ (Bit 5) (Zmod.of_Z _ (Z.shiftr 0x5b 2)) >} ;
 
-    LetE isAddi16spOp : Bool <- Eq #rd5 $2 ;
+    LetE isAddi16spOp : Bool <- Eq #rd5 $Csp ;
     LetE pseudoFunct3_3 : Bit 30 <- ITE #isAddi16spOp #pseudoADDI16SP #pseudoLUI ;
 
     LetE b12 : Bool <- FromBit Bool (#inst`[12:12]) ;
@@ -382,14 +382,14 @@ Section DecodeCompressed.
     LetE pseudoSLLI : Bit 30 <- ITE #b12 $0 #rawSLLI ;
 
     LetE lwspOff : Bit 12 <- {< Const _ (Bit 4) Zmod.zero, #inst`[3:2], #inst`[12:12], #inst`[6:4], Const _ (Bit 2) Zmod.zero >} ;
-    LetE pseudoLWSP : Bit 30 <- {< #lwspOff, Const _ (Bit 5) (Zmod.of_Z _ 2), Const _ (Bit 3) (Zmod.of_Z _ 2), #rd5, Const _ (Bit 5) Zmod.zero >} ;
+    LetE pseudoLWSP : Bit 30 <- {< #lwspOff, Const _ (Bit 5) (Zmod.of_Z _ Csp), Const _ (Bit 3) (Zmod.of_Z _ 2), #rd5, Const _ (Bit 5) Zmod.zero >} ;
 
     LetE clcspOff : Bit 12 <- {< Const _ (Bit 3) Zmod.zero, #inst`[4:2], #inst`[12:12], #inst`[6:5], Const _ (Bit 3) Zmod.zero >} ;
-    LetE pseudoCLCSP : Bit 30 <- {< #clcspOff, Const _ (Bit 5) (Zmod.of_Z _ 2), Const _ (Bit 3) (Zmod.of_Z _ 3), #rd5, Const _ (Bit 5) Zmod.zero >} ;
+    LetE pseudoCLCSP : Bit 30 <- {< #clcspOff, Const _ (Bit 5) (Zmod.of_Z _ Csp), Const _ (Bit 3) (Zmod.of_Z _ 3), #rd5, Const _ (Bit 5) Zmod.zero >} ;
 
     LetE pseudoJR : Bit 30 <- {< Const _ (Bit 12) Zmod.zero, #rd5, Const _ (Bit 3) Zmod.zero, Const _ (Bit 5) Zmod.zero, Const _ (Bit 5) (Zmod.of_Z _ 0x19) >} ;
     LetE pseudoMV : Bit 30 <- {< Const _ (Bit 7) Zmod.zero, #rs25, Const _ (Bit 5) Zmod.zero, Const _ (Bit 3) Zmod.zero, #rd5, Const _ (Bit 5) (Zmod.of_Z _ 0x0c) >} ;
-    LetE pseudoJALR : Bit 30 <- {< Const _ (Bit 12) Zmod.zero, #rd5, Const _ (Bit 3) Zmod.zero, Const _ (Bit 5) (Zmod.of_Z _ 1), Const _ (Bit 5) (Zmod.of_Z _ 0x19) >} ;
+    LetE pseudoJALR : Bit 30 <- {< Const _ (Bit 12) Zmod.zero, #rd5, Const _ (Bit 3) Zmod.zero, Const _ (Bit 5) (Zmod.of_Z _ Cra), Const _ (Bit 5) (Zmod.of_Z _ 0x19) >} ;
     LetE pseudoEBREAK : Bit 30 <- {< Const _ (Bit 12) (Zmod.of_Z _ 1), Const _ (Bit 5) Zmod.zero, Const _ (Bit 3) Zmod.zero, Const _ (Bit 5) Zmod.zero, Const _ (Bit 5) (Zmod.of_Z _ 0x1c) >} ;
     LetE pseudoADD : Bit 30 <- {< Const _ (Bit 7) Zmod.zero, #rs25, #rd5, Const _ (Bit 3) Zmod.zero, #rd5, Const _ (Bit 5) (Zmod.of_Z _ 0x0c) >} ;
     LetE pseudoB12Zero : Bit 30 <- ITE (isZero #rs25) #pseudoJR #pseudoMV ;
@@ -397,10 +397,10 @@ Section DecodeCompressed.
     LetE pseudoFunct4Q2 : Bit 30 <- ITE #b12 #pseudoB12One #pseudoB12Zero ;
 
     LetE swspOff : Bit 12 <- {< Const _ (Bit 4) Zmod.zero, #inst`[8:7], #inst`[12:9], Const _ (Bit 2) Zmod.zero >} ;
-    LetE pseudoSWSP : Bit 30 <- {< #swspOff`[11:5], #rs25, Const _ (Bit 5) (Zmod.of_Z _ 2), Const _ (Bit 3) (Zmod.of_Z _ 2), #swspOff`[4:0], Const _ (Bit 5) (Zmod.of_Z _ 8) >} ;
+    LetE pseudoSWSP : Bit 30 <- {< #swspOff`[11:5], #rs25, Const _ (Bit 5) (Zmod.of_Z _ Csp), Const _ (Bit 3) (Zmod.of_Z _ 2), #swspOff`[4:0], Const _ (Bit 5) (Zmod.of_Z _ 8) >} ;
 
     LetE cscspOff : Bit 12 <- {< Const _ (Bit 3) Zmod.zero, #inst`[9:7], #inst`[12:10], Const _ (Bit 3) Zmod.zero >} ;
-    LetE pseudoCSCSP : Bit 30 <- {< #cscspOff`[11:5], #rs25, Const _ (Bit 5) (Zmod.of_Z _ 2), Const _ (Bit 3) (Zmod.of_Z _ 3), #cscspOff`[4:0], Const _ (Bit 5) (Zmod.of_Z _ 8) >} ;
+    LetE pseudoCSCSP : Bit 30 <- {< #cscspOff`[11:5], #rs25, Const _ (Bit 5) (Zmod.of_Z _ Csp), Const _ (Bit 3) (Zmod.of_Z _ 3), #cscspOff`[4:0], Const _ (Bit 5) (Zmod.of_Z _ 8) >} ;
 
     LetE rawInst : Bit 30 <- Or [ITE0 (Eq #f3 $0) #pseudoSLLI;
                                  ITE0 (Eq #f3 $2) #pseudoLWSP;

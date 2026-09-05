@@ -48,9 +48,13 @@ Definition MEIP_Bit       := 11.
 Definition MTIP_Bit       := 7.
 Definition MSIP_Bit       := 3.
 
+Definition MstatusMIE_Bit  : nat := 3%nat.
+Definition MstatusMPIE_Bit : nat := 7%nat.
+
 Definition RegIdxSz       := 5.
 Definition CsrAddrSz      := 12.
 Definition Cra            := 1.
+Definition Csp            := 2.
 Definition Cgp            := 3.
 Definition RegIdxSzReal   := 4.
 Definition CapOTypeSz     := 3.
@@ -384,16 +388,16 @@ Section CsrHelpers.
   Variable ty : Kind -> Type.
 
   Definition getMstatusMIE (mstatus : Expr ty (Bit Xlen)) : Expr ty Bool :=
-    (FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[3].
+    (FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[MstatusMIE_Bit].
 
   Definition getMstatusMPIE (mstatus : Expr ty (Bit Xlen)) : Expr ty Bool :=
-    (FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[7].
+    (FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[MstatusMPIE_Bit].
 
   Definition setMstatusMIE (mstatus : Expr ty (Bit Xlen)) (mie : Expr ty Bool) : Expr ty (Bit Xlen) :=
-    ToBit ((FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[3 <- mie]).
+    ToBit ((FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[MstatusMIE_Bit <- mie]).
 
   Definition setMstatusMPIE (mstatus : Expr ty (Bit Xlen)) (mpie : Expr ty Bool) : Expr ty (Bit Xlen) :=
-    ToBit ((FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[7 <- mpie]).
+    ToBit ((FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[MstatusMPIE_Bit <- mpie]).
 
   Definition encodeCheriMtval (mtval : Expr ty CheriMtval) : Expr ty (Bit Xlen) :=
     ZeroExtendTo Xlen (ToBit mtval).
@@ -722,6 +726,12 @@ Definition isSentryId ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
   Or [ Eq #oType $CallSentryId; Eq #oType $RetSentryId ].
 Definition isSentryIh ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
   Eq #oType $CallSentryIh.
+
+Definition exOTypes ty (addr: ty Addr) : Expr ty Bool :=
+  And [ Sgt #addr $0; Sle #addr $7 ].
+
+Definition nonExOTypes ty (addr: ty Addr) : Expr ty Bool :=
+  And [ Sgt #addr $8; Sle #addr $15 ].
 
 (* ========================================================================= *)
 (* DataTypes                                                                 *)

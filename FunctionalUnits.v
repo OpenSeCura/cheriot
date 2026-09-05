@@ -926,8 +926,8 @@ Section FunctionalUnits.
     LetE cs2Addr : Addr <- ##cs2`"addr" ;
     LetE cs2Tag : Bool <- ##cs2`"tag" ;
     LetE sealRange : Bool <- ITE (##perms1`"EX")
-                               (And [ Sgt #cs2Addr $0; Sle #cs2Addr $7 ])
-                               (And [ Sgt #cs2Addr $8; Sle #cs2Addr $15 ]) ;
+                               (exOTypes cs2Addr)
+                               (nonExOTypes cs2Addr) ;
     LetE permit : Bool <- ITE #isUnseal
                             (And [ #sealed1; ##perms2`"US" ])
                             (And [ Not #sealed1; ##perms2`"SE"; #sealRange ]) ;
