@@ -29,6 +29,18 @@ Local Open Scope guru_scope.
 
 Local Notation ByteSz := 8%Z.
 
+(* TODO: Architectural Refactor (RISC-V Sstc Extension):
+ * mtimecmp should NOT be a memory-mapped peripheral register in CLINT!
+ * Programming timer deadlines over the memory bus introduces unnecessary bus latency
+ * and race conditions on 32-bit cores.
+ * Instead:
+ * 1. Move mtimecmp and mtimecmph directly into core CSRs (Sstc extension: CSRs 0x744 / 0x784).
+ * 2. mtime remains a global real-time clock counter.
+ * 3. The core compares its local mtimecmp CSR against mtime directly to generate mtip.
+ * 4. CLINT should only be a simple module that maintains/ticks mtime, not an MMIO slave device.
+ * 5. Remove mtime and mtimeh from CsrTable in SpecDefines.v (mtime is an external platform timer, not a machine-mode CSR).
+ *)
+
 (* ===========================================================================
  * 1. CLINT Register Offsets & Tree Structure
  * =========================================================================== *)
@@ -184,7 +196,7 @@ Definition clintMemRegion
   regionSize        := Z.to_nat ClintSizeBytes ;
   regionLineCfg     := ClintLineConfig ;
   isReadOnly        := false ;
-  regionKind        := @CustomMem "clint" (Z.to_nat ClintSizeBytes) ClintLineConfig clintChildren (clintLineReadAction base) (clintLineWriteAction base) ;
+  regionKind        := @CustomMem "clint" (Z.to_nat ClintSizeBytes) ClintLineConfig clintChildren (clintLineReadAction base) (clintLineWriteAction base) None ;
   regionInMemory    := pfBound ;
   regionBaseAligned := pfAligned ;
   regionSizeAligned := I

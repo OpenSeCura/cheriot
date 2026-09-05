@@ -147,6 +147,11 @@ Definition revokerLineWriteAction
 
 Arguments revokerLineWriteAction base ty rq : clear implicits.
 
+Definition revokerLocalInterrupt
+           {ty : Kind -> Type}
+           : Action ty tRev Bool :=
+  ReadReg "interruptStatus" revokerInterruptStatusPath (fun v => Return #v).
+
 Lemma revokerBaseAlignedLemma (base : Z) (pf : Is_true (base mod NumBytesXlen =? 0)%Z) :
   Is_true (base mod (2 ^ Z.of_nat (cfgLgLineBytes RevokerLineConfig)) =? 0)%Z.
 Proof.
@@ -163,7 +168,10 @@ Definition revokerMemRegion
   regionSize        := RevokerSizeBytes ;
   regionLineCfg     := RevokerLineConfig ;
   isReadOnly        := false ;
-  regionKind        := @CustomMem "revoker" RevokerSizeBytes RevokerLineConfig revokerChildren (revokerLineReadAction base) (revokerLineWriteAction base) ;
+  regionKind        := @CustomMem "revoker" RevokerSizeBytes RevokerLineConfig revokerChildren
+                                  (revokerLineReadAction base)
+                                  (revokerLineWriteAction base)
+                                  (Some (fun ty => revokerLocalInterrupt)) ;
   regionInMemory    := pfBound ;
   regionBaseAligned := revokerBaseAlignedLemma pfAligned ;
   regionSizeAligned := I

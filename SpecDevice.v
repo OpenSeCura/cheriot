@@ -76,11 +76,12 @@ Inductive RegionKind (regionName : string) (regionSize : nat) (cfg : LineConfig)
             (readAction : forall ty, Expr ty Addr ->
                           Action ty (Node regionName children) (LineReadRp cfg))
             (writeAction : forall ty, Expr ty (LineWriteRq cfg) ->
-                           Action ty (Node regionName children) (Bit 0)).
+                           Action ty (Node regionName children) (Bit 0))
+            (irqAction : option (forall ty, Action ty (Node regionName children) Bool)).
 
 Arguments InternalMem {regionName regionSize cfg} init.
 Arguments ExternalMem {regionName regionSize cfg}.
-Arguments CustomMem {regionName regionSize cfg} children readAction writeAction.
+Arguments CustomMem {regionName regionSize cfg} children readAction writeAction irqAction.
 
 Record MemRegion := {
   regionName        : string ;
@@ -182,7 +183,7 @@ Definition memRegionTree (r : MemRegion) : Tree Elem :=
   match r.(regionKind) with
   | InternalMem init => internalMemRegionTree r init
   | ExternalMem => externalMemRegionTree r
-  | CustomMem children _ _ => customMemRegionTree r children
+  | CustomMem children _ _ _ => customMemRegionTree r children
   end.
 
 (* ===========================================================================
@@ -306,11 +307,11 @@ Definition memRegionLineRead
   match r.(regionKind) as k return Action ty (match k with
                                               | InternalMem init => internalMemRegionTree r init
                                               | ExternalMem => externalMemRegionTree r
-                                              | CustomMem children _ _ => customMemRegionTree r children
+                                              | CustomMem children _ _ _ => customMemRegionTree r children
                                               end) (LineReadRp r.(regionLineCfg)) with
   | InternalMem init => internalMemRegionLineRead r init addr
   | ExternalMem => externalMemRegionLineRead r addr
-  | CustomMem children readAct writeAct => customMemRegionLineRead r children readAct addr
+  | CustomMem children readAct writeAct _ => customMemRegionLineRead r children readAct addr
   end.
 
 Definition memRegionLineWrite
@@ -321,11 +322,11 @@ Definition memRegionLineWrite
   match r.(regionKind) as k return Action ty (match k with
                                               | InternalMem init => internalMemRegionTree r init
                                               | ExternalMem => externalMemRegionTree r
-                                              | CustomMem children _ _ => customMemRegionTree r children
+                                              | CustomMem children _ _ _ => customMemRegionTree r children
                                               end) (Bit 0) with
   | InternalMem init => internalMemRegionLineWrite r init rq
   | ExternalMem => externalMemRegionLineWrite r rq
-  | CustomMem children readAct writeAct => customMemRegionLineWrite r children writeAct rq
+  | CustomMem children readAct writeAct _ => customMemRegionLineWrite r children writeAct rq
   end.
 
 Arguments memRegionLineRead [ty] r addr.
@@ -579,3 +580,32 @@ Section RevBitHelper.
     Let  revBit  : Bool           <- extractRevBit lookup #revByte ;
     Return #revBit.
 End RevBitHelper.
+
+Definition memRegionIrqAction
+           (r : MemRegion)
+           : option (forall ty, Action ty (memRegionTree r) Bool) :=
+  match r.(regionKind) as k return option (forall ty, Action ty (match k with
+                                                                | InternalMem init => internalMemRegionTree r init
+                                                                | ExternalMem => externalMemRegionTree r
+                                                                | CustomMem children _ _ _ => customMemRegionTree r children
+                                                                end) Bool) with
+  | CustomMem children _ _ (Some act) => Some act
+  | _ => None
+  end.
+
+Section IrqCollector.
+  Fixpoint collectIrqActions
+           (regions : list MemRegion)
+           : list (forall ty, Action ty (specMemTree regions) Bool) :=
+    match regions return list (forall ty, Action ty (specMemTree regions) Bool) with
+    | [] => []
+    | r :: rs =>
+        let rest := map (fun act ty => liftAction child1Path (act ty))
+                        (collectIrqActions rs) in
+        match memRegionIrqAction r with
+        | Some act =>
+            (fun ty => liftAction child0Path (act ty)) :: rest
+        | None => rest
+        end
+    end.
+End IrqCollector.
