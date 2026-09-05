@@ -62,9 +62,9 @@ Section Spec.
   Definition specTimerInterruptRule : Action ty sysTree (Bit 0) :=
     LetA lo : Bit Xlen <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrIdx "mtimecmp") : Expr _ (Bit CsrIdxSz))) ;
     LetA hi : Bit Xlen <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrIdx "mtimecmph") : Expr _ (Bit CsrIdxSz))) ;
-    Let mtimecmp64 : Bit DXlen <- {< #hi, #lo >} ;
-    LetA mtime64 : Bit DXlen <- liftAction np_mem (readClintMtimeAction clint ty) ;
-    Let mtipVal : Bool <- Sge #mtime64 #mtimecmp64 ;
+    Let mtimecmpDXlen : Bit DXlen <- {< #hi, #lo >} ;
+    LetA mtimeDXlen   : Bit DXlen <- liftAction np_mem (readClintMtimeAction clint ty) ;
+    Let mtipVal       : Bool      <- Sge #mtimeDXlen #mtimecmpDXlen ;
     LetA currMip : Bit Xlen <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz))) ;
     Let currArr : Array (Z.to_nat Xlen) Bool <- FromBit (Array (Z.to_nat Xlen) Bool) #currMip ;
     Let idxMtip : Bit LgXlen <- $MTIP_Bit ;

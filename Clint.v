@@ -62,8 +62,8 @@ Section ClintActions.
     Return {< #hi, #lo >}.
 
   Definition clintTick : Action ty tClint (Bit 0) :=
-    LetA mtime64   : Bit DXlen <- readClintMtime ;
-    Let  nextMtime : Bit DXlen <- Add [ #mtime64 ; $1 ] ;
+    LetA mtimeDXlen : Bit DXlen <- readClintMtime ;
+    Let  nextMtime  : Bit DXlen <- Add [ #mtimeDXlen ; $1 ] ;
     Act (WriteReg clintMtimePath (TruncLsb Xlen Xlen #nextMtime) Retv) ;
     Act (WriteReg clintMtimehPath (TruncMsb Xlen Xlen #nextMtime) Retv) ;
     Retv.
