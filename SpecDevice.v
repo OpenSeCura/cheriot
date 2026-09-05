@@ -527,6 +527,50 @@ Definition child1Path {A : Type} {name : string} {c0 c1 : Tree A} {cs : list (Tr
 Arguments child0Path {A name c0 cs}.
 Arguments child1Path {A name c0 c1 cs}.
 
+Definition none_neq_some {A} {x : A} (pf : None = Some x) : False :=
+  match pf in (_ = y) return match y with Some _ => False | None => True end with
+  | eq_refl => I
+  end.
+
+Section NthRegionAction.
+  Variable ty : Kind -> Type.
+
+  Fixpoint nthRegionAction
+             (idx : nat)
+             {struct idx}
+             : forall (regions : list MemRegion) (r0 : MemRegion),
+               nth_error regions idx = Some r0 ->
+               forall k, Action ty (memRegionTree r0) k -> Action ty (specMemTree regions) k :=
+    match idx with
+    | 0%nat =>
+        fun regions =>
+          match regions return forall r0, nth_error regions 0 = Some r0 ->
+                                forall k, Action ty (memRegionTree r0) k -> Action ty (specMemTree regions) k with
+          | nil => fun r0 pf => False_rect _ (none_neq_some pf)
+          | cons r rs => fun r0 pf k act =>
+              let eq_r0_r : r0 = r :=
+                match pf in (_ = o) return match o with Some r0' => r0' = r | None => False end with
+                | eq_refl => eq_refl
+                end in
+              liftAction child0Path
+                (match eq_r0_r in (_ = y) return Action ty (memRegionTree y) k with
+                 | eq_refl => act
+                 end)
+          end
+    | S idx' =>
+        fun regions =>
+          match regions return forall r0, nth_error regions (S idx') = Some r0 ->
+                                forall k, Action ty (memRegionTree r0) k -> Action ty (specMemTree regions) k with
+          | nil => fun r0 pf => False_rect _ (none_neq_some pf)
+          | cons r rs => fun r0 pf k act =>
+              liftAction child1Path (@nthRegionAction idx' rs r0 pf k act)
+          end
+    end.
+
+End NthRegionAction.
+
+Arguments nthRegionAction {ty} idx regions r0 pf {k} act.
+
 Section SpecMemRouter.
   Variable ty : Kind -> Type.
 

@@ -199,14 +199,21 @@ Fixpoint enumerate_aux {A : Type} (i : Z) (l : list A) : list (A * Z) :=
 Definition enumerate {A : Type} (l : list A) : list (A * Z) :=
   enumerate_aux 0 l.
 
+Definition getStrIndexOption (s : string) (ls : list string) : option nat :=
+  (fix loop (l : list string) (idx : nat) : option nat :=
+     match l with
+     | [] => None
+     | x :: xs => if String.eqb s x then Some idx else loop xs (S idx)
+     end) ls 0%nat.
+
 (* CSR Table: List of 4-tuples ("name", 12-bit address, allowReadNoAsr, allowWriteNoAsr) *)
 Definition CsrTable := [
   ("mcycle"%string,    0xc00, true,  false) ;
   ("mcycleh"%string,   0xc80, true,  false) ;
-  ("mtime"%string,     0xc01, true,  false) ;
-  ("mtimeh"%string,    0xc81, true,  false) ;
   ("minstret"%string,  0xc02, true,  false) ;
   ("minstreth"%string, 0xc82, true,  false) ;
+  ("mtimecmp"%string,  0x744, false, false) ;
+  ("mtimecmph"%string, 0x784, false, false) ;
   ("mstatus"%string,   0x300, false, false) ;
   ("mie"%string,       0x304, false, false) ;
   ("mip"%string,       0x344, false, false) ;
@@ -1050,9 +1057,6 @@ Section CsrHelpers.
   Definition incrementMcycle : Action ty rfTree (Bit 0) :=
     incrementDXlenCsr "mcycle" "mcycleh".
 
-  Definition incrementMtime : Action ty rfTree (Bit 0) :=
-    incrementDXlenCsr "mtime" "mtimeh".
-
   Definition updateMshwmOnStore (stAddr : Expr ty Addr) : Action ty rfTree (Bit 0) :=
     LetA mshwm        : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrIdx "mshwm") : Expr _ (Bit CsrIdxSz)) ;
     LetA mshwmb       : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrIdx "mshwmb") : Expr _ (Bit CsrIdxSz)) ;
@@ -1069,7 +1073,6 @@ End CsrHelpers.
 
 Arguments incrementMinstret {ty}.
 Arguments incrementMcycle {ty}.
-Arguments incrementMtime {ty}.
 Arguments updateMshwmOnStore {ty} stAddr.
 
 Definition DeferredReq := STRUCT_TYPE {

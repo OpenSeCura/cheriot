@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Psatz Bool.
 From Guru Require Import Syntax Notations Semantics Library Composition.
-From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchMemory SpecDevice.
+From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchMemory SpecDevice Clint.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -35,6 +35,7 @@ Definition specSysTree (regions : list MemRegion) : Tree Elem :=
 Section Spec.
   Variable config : RevConfig.
   Variable regions : list MemRegion.
+  Variable clint : ClintInstance regions.
   Variable ty : Kind -> Type.
 
   Local Notation sysTree := (specSysTree regions).
@@ -45,6 +46,9 @@ Section Spec.
   Definition np_rf : NodePath sysTree :=
     getNodePath sysTree "sys.core.rf".
 
+  Definition np_mem : NodePath sysTree :=
+    getNodePath sysTree "sys.core.mem".
+
   Definition np_intr : NodePath sysTree :=
     getNodePath sysTree "sys.interrupts".
 
@@ -52,21 +56,32 @@ Section Spec.
     liftAction np_rf incrementMcycle.
 
   Definition specTickTimer : Action ty sysTree (Bit 0) :=
-    liftAction np_rf incrementMtime.
+    liftAction np_mem (clintTickAction clint ty).
+
+  (* Rule: Reads mtimecmp CSR and mtime MMIO register to update mip.mtip *)
+  Definition specTimerInterruptRule : Action ty sysTree (Bit 0) :=
+    LetA lo : Bit Xlen <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrIdx "mtimecmp") : Expr _ (Bit CsrIdxSz))) ;
+    LetA hi : Bit Xlen <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrIdx "mtimecmph") : Expr _ (Bit CsrIdxSz))) ;
+    Let mtimecmp64 : Bit DXlen <- {< #hi, #lo >} ;
+    LetA mtime64 : Bit DXlen <- liftAction np_mem (readClintMtimeAction clint ty) ;
+    Let mtipVal : Bool <- Sge #mtime64 #mtimecmp64 ;
+    LetA currMip : Bit Xlen <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz))) ;
+    Let currArr : Array (Z.to_nat Xlen) Bool <- FromBit (Array (Z.to_nat Xlen) Bool) #currMip ;
+    Let idxMtip : Bit LgXlen <- $MTIP_Bit ;
+    Let updArr  : Array (Z.to_nat Xlen) Bool <- UpdateArray #currArr #idxMtip #mtipVal ;
+    Act (liftAction np_rf (writeRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz)) (ToBit #updArr))) ;
+    Retv.
 
   Definition specReceiveInterrupts : Action ty sysTree (Bit 0) :=
     LetA meip    : Bool                       <- liftAction np_intr (Get meip <- "interrupts.meip_in" in interruptsTree ; Return #meip) ;
-    LetA mtip    : Bool                       <- liftAction np_intr (Get mtip <- "interrupts.mtip_in" in interruptsTree ; Return #mtip) ;
     LetA msip    : Bool                       <- liftAction np_intr (Get msip <- "interrupts.msip_in" in interruptsTree ; Return #msip) ;
     LetA currMip : Bit Xlen                   <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz))) ;
     Let  currArr : Array (Z.to_nat Xlen) Bool <- FromBit (Array (Z.to_nat Xlen) Bool) #currMip ;
     Let  idxMeip : Bit LgXlen                 <- $MEIP_Bit ;
-    Let  idxMtip : Bit LgXlen                 <- $MTIP_Bit ;
     Let  idxMsip : Bit LgXlen                 <- $MSIP_Bit ;
     Let  arr1    : Array (Z.to_nat Xlen) Bool <- UpdateArray #currArr #idxMeip (Or [ #meip ; ReadArray #currArr #idxMeip ]) ;
-    Let  arr2    : Array (Z.to_nat Xlen) Bool <- UpdateArray #arr1    #idxMtip (Or [ #mtip ; ReadArray #arr1    #idxMtip ]) ;
-    Let  arr3    : Array (Z.to_nat Xlen) Bool <- UpdateArray #arr2    #idxMsip (Or [ #msip ; ReadArray #arr2    #idxMsip ]) ;
-    Act (liftAction np_rf (writeRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz)) (ToBit #arr3))) ;
+    Let  arr2    : Array (Z.to_nat Xlen) Bool <- UpdateArray #arr1    #idxMsip (Or [ #msip ; ReadArray #arr1    #idxMsip ]) ;
+    Act (liftAction np_rf (writeRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz)) (ToBit #arr2))) ;
     Retv.
 
   Definition specStep : Action ty sysTree (Bit 0) :=
