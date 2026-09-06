@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Psatz Bool.
 From Guru Require Import Syntax Notations Semantics Library Composition.
-From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchMemory SpecDevice Clint SpecRevoker.
+From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchMemory SpecDevice Clint SpecRevoker Plic.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -37,6 +37,9 @@ Section Spec.
   Variable regions : list MemRegion.
   Variable clint : ClintInstance regions.
   Variable rev : RevokerInstance regions.
+  Variable numSources : nat.
+  Variable plic : PlicInstance numSources regions.
+  Variable pfPlicCount : length (collectIrqActions regions) = numSources.
   Variable ty : Kind -> Type.
 
   Local Notation sysTree := (specSysTree regions).
@@ -62,6 +65,20 @@ Section Spec.
   (* Autonomous background revoker step *)
   Definition specRevokerStep : Action ty sysTree (Bit 0) :=
     liftAction np_mem (SpecRevoker.specRevokerStep rev config ty).
+
+  (* Autonomous background PLIC step *)
+  Definition specPlicStep : Action ty sysTree (Bit 0) :=
+    liftAction np_mem (plicSampleAndStep plic ty pfPlicCount).
+
+  (* Rule: Reads PLIC MEIP and updates mip.meip *)
+  Definition specExternalInterruptRule : Action ty sysTree (Bit 0) :=
+    LetA meipVal : Bool <- liftAction np_mem (plicMeipSystem plic ty) ;
+    LetA currMip : Bit Xlen <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz))) ;
+    Let currArr : Array (Z.to_nat Xlen) Bool <- FromBit (Array (Z.to_nat Xlen) Bool) #currMip ;
+    Let idxMeip : Bit LgXlen <- $MEIP_Bit ;
+    Let updArr  : Array (Z.to_nat Xlen) Bool <- UpdateArray #currArr #idxMeip #meipVal ;
+    Act (liftAction np_rf (writeRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz)) (ToBit #updArr))) ;
+    Retv.
 
   (* Rule: Reads mtimecmp CSR and mtime MMIO register to update mip.mtip *)
   Definition specTimerInterruptRule : Action ty sysTree (Bit 0) :=
