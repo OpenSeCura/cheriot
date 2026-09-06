@@ -14,9 +14,9 @@
  * limitations under the License.
  *)
 
-From Stdlib Require Import String List ZArith Zmod Bool.
+From Stdlib Require Import String List ZArith Zmod Bool Psatz Nat Arith.
 From Guru Require Import Library Syntax Notations.
-From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic Uart Spec.
+From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic Uart Spec Binary.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -31,7 +31,7 @@ Local Open Scope guru_scope.
  * 1. Physical Memory Map & Device Addresses
  * =========================================================================== *)
 
-Definition RamBase        : Z := 0x80000000.
+Definition RamBase        : Z := MemStartAddr.
 Definition RamSize        : nat := Z.to_nat (256 * 1024). (* 256 KB *)
 Definition RamLineConfig  : LineConfig := @TaggedLine (Z.to_nat LgNumBytesFullCapSz) I.
 
@@ -59,13 +59,37 @@ Definition concreteRevConfig : RevConfig := {|
  * 3. Concrete Memory Regions
  * =========================================================================== *)
 
+Definition fixedBinary : list (bits 8) := map (fun v => bits.of_Z 8 v) binary.
+
+Definition binary_le_RamSize : Is_true (List.length binary <=? RamSize)%nat := I.
+
+Definition paddedBinary : list (bits 8) :=
+  (fixedBinary ++ List.repeat (bits.of_Z 8 0) (RamSize - List.length binary))%list.
+
+Lemma paddedBinary_length :
+  List.length paddedBinary = RamSize.
+Proof.
+  unfold paddedBinary, fixedBinary.
+  rewrite length_app.
+  rewrite repeat_length.
+  rewrite length_map.
+  pose proof binary_le_RamSize as H.
+  apply Is_true_eq_true in H.
+  rewrite Nat.leb_le in H.
+  lia.
+Qed.
+
+Definition ramInitData : option (option (type (Array RamSize (Bit 8)))) :=
+  Some (Some (Build_SameTuple (tupleElems := paddedBinary)
+                              (Is_true_Nat_eq_implies paddedBinary_length))).
+
 Definition ramRegion : MemRegion := {|
   regionName        := "ram" ;
   regionBase        := RamBase ;
   regionSize        := RamSize ;
   regionLineCfg     := RamLineConfig ;
   isReadOnly        := false ;
-  regionKind        := InternalMem None (defaultTagsInit RamSize RamLineConfig) ;
+  regionKind        := InternalMem ramInitData (defaultTagsInit RamSize RamLineConfig) ;
   regionInMemory    := I ;
   regionBaseAligned := I ;
   regionSizeAligned := I
