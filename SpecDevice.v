@@ -56,6 +56,14 @@ Definition cfgNumLineTags (cfg : LineConfig) : nat :=
   | RawLine _ => 0%nat
   end.
 
+Definition cfgRegionTagSize (regionSize : nat) (cfg : LineConfig) : nat :=
+  if cfgHasTags cfg then (regionSize / Z.to_nat NumBytesFullCapSz)%nat else 0%nat.
+
+Definition defaultTagsInit (regionSize : nat) (cfg : LineConfig)
+  : option (option (type (Array (cfgRegionTagSize regionSize cfg) Bool))) :=
+  Some (Some (Build_SameTuple (tupleElems := List.repeat false (cfgRegionTagSize regionSize cfg))
+                              (Is_true_Nat_eq_implies (repeat_length _ _)))).
+
 Notation LineReadRp cfg := (STRUCT_TYPE {
   "data" :: Array (cfgLineBytes cfg) (Bit 8) ;
   "tag"  :: Array (cfgNumLineTags cfg) Bool
@@ -70,7 +78,8 @@ Notation LineWriteRq cfg := (STRUCT_TYPE {
 }).
 
 Inductive RegionKind (regionName : string) (regionSize : nat) (cfg : LineConfig) :=
-| InternalMem (init : option (option (type (Array regionSize (Bit 8)))))
+| InternalMem (initData : option (option (type (Array regionSize (Bit 8)))))
+              (initTags : option (option (type (Array (cfgRegionTagSize regionSize cfg) Bool))))
 | ExternalMem
 | CustomMem (children : list (Tree Elem))
             (readAction : forall ty, Expr ty Addr ->
@@ -79,7 +88,7 @@ Inductive RegionKind (regionName : string) (regionSize : nat) (cfg : LineConfig)
                            Action ty (Node regionName children) (Bit 0))
             (irqAction : option (forall ty, Action ty (Node regionName children) Bool)).
 
-Arguments InternalMem {regionName regionSize cfg} init.
+Arguments InternalMem {regionName regionSize cfg} initData initTags.
 Arguments ExternalMem {regionName regionSize cfg}.
 Arguments CustomMem {regionName regionSize cfg} children readAction writeAction irqAction.
 
@@ -121,7 +130,7 @@ Definition isRegionAddr {ty : Kind -> Type} (r : MemRegion) (addr : Expr ty Addr
   And [ Sge addr $(r.(regionBase)) ; Slt addr $(r.(regionBase) + Z.of_nat r.(regionSize)) ].
 
 Definition regionTagSize (r : MemRegion) : nat :=
-  if hasTags r then (r.(regionSize) / Z.to_nat NumBytesFullCapSz)%nat else 0%nat.
+  cfgRegionTagSize r.(regionSize) r.(regionLineCfg).
 
 (* ===========================================================================
  * 2. Payload Utilities
@@ -144,17 +153,17 @@ Proof. lia. Qed.
 
 Definition internalMemRegionChildren
            (r : MemRegion)
-           (init : option (option (type (Array r.(regionSize) (Bit 8)))))
+           (initData : option (option (type (Array r.(regionSize) (Bit 8)))))
+           (initTags : option (option (type (Array (regionTagSize r) Bool))))
            : list (Tree Elem) :=
   [ Leaf "mainMem" (EMem {| memSize := r.(regionSize);
                             memKind := Bit 8;
                             memPort := 1;
-                            memInit := init |}) ;
+                            memInit := initData |}) ;
     Leaf "tags" (EMem {| memSize := regionTagSize r;
                          memKind := Bool;
                          memPort := 1;
-                         memInit := Some (Some (Build_SameTuple (tupleElems := List.repeat false (regionTagSize r))
-                                            (Is_true_Nat_eq_implies (repeat_length _ _)))) |})
+                         memInit := initTags |})
   ].
 
 Definition externalMemRegionChildren (r : MemRegion) : list (Tree Elem) :=
@@ -163,11 +172,15 @@ Definition externalMemRegionChildren (r : MemRegion) : list (Tree Elem) :=
     Leaf "lineWriteRq" (ESend (LineWriteRq r.(regionLineCfg)))
   ].
 
-Arguments internalMemRegionChildren r init : clear implicits.
+Arguments internalMemRegionChildren r initData initTags : clear implicits.
 Arguments externalMemRegionChildren r : clear implicits.
 
-Definition internalMemRegionTree (r : MemRegion) (init : option (option (type (Array r.(regionSize) (Bit 8))))) : Tree Elem :=
-  Node r.(regionName) (internalMemRegionChildren r init).
+Definition internalMemRegionTree
+           (r : MemRegion)
+           (initData : option (option (type (Array r.(regionSize) (Bit 8)))))
+           (initTags : option (option (type (Array (regionTagSize r) Bool))))
+           : Tree Elem :=
+  Node r.(regionName) (internalMemRegionChildren r initData initTags).
 
 Definition externalMemRegionTree (r : MemRegion) : Tree Elem :=
   Node r.(regionName) (externalMemRegionChildren r).
@@ -175,13 +188,13 @@ Definition externalMemRegionTree (r : MemRegion) : Tree Elem :=
 Definition customMemRegionTree (r : MemRegion) (children : list (Tree Elem)) : Tree Elem :=
   Node r.(regionName) children.
 
-Arguments internalMemRegionTree r init : clear implicits.
+Arguments internalMemRegionTree r initData initTags : clear implicits.
 Arguments externalMemRegionTree r : clear implicits.
 Arguments customMemRegionTree r children : clear implicits.
 
 Definition memRegionTree (r : MemRegion) : Tree Elem :=
   match r.(regionKind) with
-  | InternalMem init => internalMemRegionTree r init
+  | InternalMem initData initTags => internalMemRegionTree r initData initTags
   | ExternalMem => externalMemRegionTree r
   | CustomMem children _ _ _ => customMemRegionTree r children
   end.
@@ -192,10 +205,11 @@ Definition memRegionTree (r : MemRegion) : Tree Elem :=
 
 Section InternalMemRegionActions.
   Variable r : MemRegion.
-  Variable init : option (option (type (Array r.(regionSize) (Bit 8)))).
+  Variable initData : option (option (type (Array r.(regionSize) (Bit 8)))).
+  Variable initTags : option (option (type (Array (regionTagSize r) Bool))).
   Variable ty : Kind -> Type.
 
-  Local Definition tInt := internalMemRegionTree r init.
+  Local Definition tInt := internalMemRegionTree r initData initTags.
   Local Definition mainMemPath : MemPath tInt := getChildMemPathTree tInt "mainMem".
   Local Definition tagsPath : MemPath tInt := getChildMemPathTree tInt "tags".
 
@@ -237,8 +251,8 @@ Section InternalMemRegionActions.
 
 End InternalMemRegionActions.
 
-Arguments internalMemRegionLineRead r init [ty] addr.
-Arguments internalMemRegionLineWrite r init [ty] rq.
+Arguments internalMemRegionLineRead r initData initTags [ty] addr.
+Arguments internalMemRegionLineWrite r initData initTags [ty] rq.
 
 Section ExternalMemRegionActions.
   Variable r : MemRegion.
@@ -305,11 +319,11 @@ Definition memRegionLineRead
            (addr : Expr ty Addr)
            : Action ty (memRegionTree r) (LineReadRp r.(regionLineCfg)) :=
   match r.(regionKind) as k return Action ty (match k with
-                                              | InternalMem init => internalMemRegionTree r init
+                                              | InternalMem initData initTags => internalMemRegionTree r initData initTags
                                               | ExternalMem => externalMemRegionTree r
                                               | CustomMem children _ _ _ => customMemRegionTree r children
                                               end) (LineReadRp r.(regionLineCfg)) with
-  | InternalMem init => internalMemRegionLineRead r init addr
+  | InternalMem initData initTags => internalMemRegionLineRead r initData initTags addr
   | ExternalMem => externalMemRegionLineRead r addr
   | CustomMem children readAct writeAct _ => customMemRegionLineRead r children readAct addr
   end.
@@ -320,11 +334,11 @@ Definition memRegionLineWrite
            (rq : Expr ty (LineWriteRq r.(regionLineCfg)))
            : Action ty (memRegionTree r) (Bit 0) :=
   match r.(regionKind) as k return Action ty (match k with
-                                              | InternalMem init => internalMemRegionTree r init
+                                              | InternalMem initData initTags => internalMemRegionTree r initData initTags
                                               | ExternalMem => externalMemRegionTree r
                                               | CustomMem children _ _ _ => customMemRegionTree r children
                                               end) (Bit 0) with
-  | InternalMem init => internalMemRegionLineWrite r init rq
+  | InternalMem initData initTags => internalMemRegionLineWrite r initData initTags rq
   | ExternalMem => externalMemRegionLineWrite r rq
   | CustomMem children readAct writeAct _ => customMemRegionLineWrite r children writeAct rq
   end.
@@ -629,7 +643,7 @@ Definition memRegionIrqAction
            (r : MemRegion)
            : option (forall ty, Action ty (memRegionTree r) Bool) :=
   match r.(regionKind) as k return option (forall ty, Action ty (match k with
-                                                                | InternalMem init => internalMemRegionTree r init
+                                                                | InternalMem initData initTags => internalMemRegionTree r initData initTags
                                                                 | ExternalMem => externalMemRegionTree r
                                                                 | CustomMem children _ _ _ => customMemRegionTree r children
                                                                 end) Bool) with
