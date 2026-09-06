@@ -30,6 +30,10 @@ Section Fifo.
   Local Open Scope string.
   Local Open Scope guru_scope.
 
+(* ===========================================================================
+ * FIFO State Tree Definition
+ * =========================================================================== *)
+
   Definition elemLeaves : list (Tree Elem) :=
     map (fun idx =>
       Leaf ("elem_" ++ hex_string_of_Z (Z.of_nat idx))%string
@@ -54,6 +58,10 @@ Section Fifo.
 
     Local Lemma add_sub_comm : forall a b, (b + (a - b) = a)%Z.
     Proof. intros; lia. Qed.
+
+(* ===========================================================================
+ * FIFO Queue Operations
+ * =========================================================================== *)
 
     Definition ModuloAdd (ptr: ty (Bit (Z.log2_up (Z.of_nat capacity))))
                          (sz: ty (Bit (Z.log2_up (Z.of_nat (capacity + 1))))) :

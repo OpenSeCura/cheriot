@@ -31,6 +31,10 @@ Section DecodeUncompressed.
   Variable inst : ty Inst.
   Variable pcc : ty FullECapWithTag.
 
+(* ===========================================================================
+ * Uncompressed Instruction Decoding (32-Bit)
+ * =========================================================================== *)
+
   Definition decodeUncompressed : LetExpr ty DecodeOut :=
     LetE isComp    : Bool   <- isCompressed inst ;
     LetE opcode    : Bit 5         <- #inst`[6:2] ;
@@ -281,6 +285,10 @@ Section DecodeCompressed.
   Variable inst : ty Inst.
   Variable pcc : ty FullECapWithTag.
 
+(* ===========================================================================
+ * Compressed Instruction Decoding (16-Bit)
+ * =========================================================================== *)
+
   Definition decodeQuadrant0 : LetExpr ty DecodeOut :=
     LetE f3 : Bit 3 <- #inst`[15:13] ;
     LetE cs13 : Bit 3 <- #inst`[9:7] ;
@@ -411,6 +419,10 @@ Section DecodeCompressed.
     LetE pseudoInst : Inst <- {< #rawInst, Const _ (Bit 2) (Zmod.of_Z _ 2) >} ;
     decodeUncompressed pseudoInst pcc.
 
+(* ===========================================================================
+ * Top-Level Instruction Decoder (decode)
+ * =========================================================================== *)
+
   Definition decode : LetExpr ty DecodeOut :=
     LetE quad : Bit 2 <- #inst`[1:0] ;
     LETE q0 : DecodeOut <- decodeQuadrant0 ;
@@ -425,6 +437,10 @@ End DecodeCompressed.
 
 Section WrappedDecode.
   Variable ty : Kind -> Type.
+
+(* ===========================================================================
+ * Wrapped Decoder Interface (wrappedDecode)
+ * =========================================================================== *)
 
   Definition wrappedDecode (fetchOut : ty FetchOut) : LetExpr ty RegReadIn :=
     LetE pcc       : FullECapWithTag <- ##fetchOut`"pcc" ;

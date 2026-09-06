@@ -30,6 +30,10 @@ Local Open Scope string_scope.
 Section Alu.
   Variable ty : Kind -> Type.
 
+(* ===========================================================================
+ * ALU Input Routing (AluRouting)
+ * =========================================================================== *)
+
   Definition AluRouting (aluIn : ty AluIn) : LetExpr ty AluOut :=
     LetE cs2Idx : TaggedUnion Cs2Source <- ##aluIn`"cs2Idx" ;
     LetE inst : Inst <- ##aluIn`"inst" ;
@@ -335,6 +339,10 @@ Section Alu.
       "ScrCsr"      ::= #ScrCsrOut ;
       "isFenceI"    ::= #isFenceIOut
     }).
+
+(* ===========================================================================
+ * ALU Functional Unit Execution (Alu)
+ * =========================================================================== *)
 
   Definition Alu (routingOut : ty AluOut) : LetExpr ty AluOutUnion :=
     LetE excOpt      : Option ExceptionInfo <- ##routingOut`"Exception" ;

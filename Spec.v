@@ -26,6 +26,10 @@ Import ListNotations.
 Local Open Scope Z_scope.
 Local Open Scope guru_scope.
 
+(* ===========================================================================
+ * System Tree Definition
+ * =========================================================================== *)
+
 Definition specSysTree (regions : list MemRegion) : Tree Elem :=
   Node "sys" [
     specCoreTree regions
@@ -51,6 +55,10 @@ Section Spec.
 
   Definition np_mem : NodePath sysTree :=
     getNodePath sysTree "sys.core.mem".
+
+(* ===========================================================================
+ * Peripheral Background Rules & Interrupt Polling
+ * =========================================================================== *)
 
   Definition specTickCycle : Action ty sysTree (Bit 0) :=
     liftAction np_rf incrementMcycle.
@@ -96,6 +104,10 @@ Section Spec.
     Let mtipVal       : Bool      <- Sge #mtimeDXlen #mtimecmpDXlen ;
     updateMipBit $MTIP_Bit #mtipVal.
 
+(* ===========================================================================
+ * Atomic Core Pipeline Step (specStep)
+ * =========================================================================== *)
+
   Definition specStep : Action ty sysTree (Bit 0) :=
     (* 1. Fetch *)
     LetA fetchOut : FetchOut <- liftAction np_core (specFetch regions ty) ;
@@ -133,6 +145,10 @@ Section Spec.
     Retv.
 
   End Ty.
+
+(* ===========================================================================
+ * Top-Level Specification Module (spec)
+ * =========================================================================== *)
 
   Definition spec : Mod sysTree :=
     fun ty => [
