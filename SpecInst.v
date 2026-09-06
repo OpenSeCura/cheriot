@@ -121,10 +121,7 @@ Definition concreteRegions : list MemRegion := [
  * fix comments all over
  *)
 
-Lemma concreteRegionsDisjoint : Is_true (pairwiseDisjoint concreteRegions).
-Proof.
-  exact I.
-Qed.
+Definition concreteRegionsDisjoint : Is_true (pairwiseDisjoint concreteRegions) := I.
 
 (* ===========================================================================
  * 4. Peripheral Instances (Proofs of Membership by Index)
