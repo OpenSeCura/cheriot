@@ -41,9 +41,10 @@ Section Spec.
   Variable numSources : nat.
   Variable plic : PlicInstance numSources regions.
   Variable pfPlicCount : length (collectIrqActions regions) = numSources.
-  Variable ty : Kind -> Type.
-
   Local Notation sysTree := (specSysTree regions).
+
+  Section Ty.
+    Variable ty : Kind -> Type.
 
   Definition np_core : NodePath sysTree :=
     getNodePath sysTree "sys.core".
@@ -149,5 +150,21 @@ Section Spec.
     Let  reqOpt  : Option DeferredReq <- ##execOut`"deferredReq" ;
     Act (liftAction np_core (specExecuteDeferred config regions reqOpt)) ;
     Retv.
+
+  End Ty.
+
+  Definition spec : Mod sysTree :=
+    fun ty => [
+      specStep ty ;
+      specTickCycle ty ;
+      specTickTimer ty ;
+      specRevokerStep ty ;
+      specUartTxStep ty ;
+      specUartRxStep ty ;
+      specPlicStep ty ;
+      specExternalInterruptRule ty ;
+      specTimerInterruptRule ty ;
+      specReceiveInterrupts ty
+    ].
 
 End Spec.
