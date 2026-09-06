@@ -405,3 +405,36 @@ Definition uartMemRegion
 |}.
 
 Arguments uartMemRegion base pfBound pfAligned : clear implicits.
+
+(* ===========================================================================
+ * 7. System Integration Helpers
+ * =========================================================================== *)
+
+Record UartInstance (regions : list MemRegion) := {
+  uartIdx      : nat ;
+  uartBaseAddr : Z ;
+  pfBound      : Is_true ((0 <=? uartBaseAddr) && (uartBaseAddr + Z.of_nat UartSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
+  pfAligned    : Is_true (uartBaseAddr mod (2 ^ Z.of_nat (cfgLgLineBytes UartLineConfig)) =? 0)%Z ;
+  pfUart       : nth_error regions uartIdx = Some (uartMemRegion uartBaseAddr pfBound pfAligned)
+}.
+
+Definition uartRegion {regions} (uart : UartInstance regions) : MemRegion :=
+  uartMemRegion uart.(uartBaseAddr) uart.(pfBound) uart.(pfAligned).
+
+Section UartSystem.
+  Variable regions : list MemRegion.
+  Variable uart : UartInstance regions.
+  Variable ty : Kind -> Type.
+
+  Local Notation memTree := (specMemTree regions).
+
+  Definition uartAction {k : Kind} (act : Action ty uartTree k) : Action ty memTree k :=
+    nthRegionAction uart.(uartIdx) regions (uartRegion uart) uart.(pfUart) act.
+
+  Definition uartTxStepAction : Action ty memTree (Bit 0) :=
+    uartAction (@uartTxStep ty).
+
+  Definition uartRxStepAction : Action ty memTree (Bit 0) :=
+    uartAction (@uartRxStep ty).
+
+End UartSystem.

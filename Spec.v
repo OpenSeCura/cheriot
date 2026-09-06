@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Psatz Bool.
 From Guru Require Import Syntax Notations Semantics Library Composition.
-From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchMemory SpecDevice Clint SpecRevoker Plic.
+From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchMemory SpecDevice Clint SpecRevoker Plic Uart.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -37,6 +37,7 @@ Section Spec.
   Variable regions : list MemRegion.
   Variable clint : ClintInstance regions.
   Variable rev : RevokerInstance regions.
+  Variable uart : UartInstance regions.
   Variable numSources : nat.
   Variable plic : PlicInstance numSources regions.
   Variable pfPlicCount : length (collectIrqActions regions) = numSources.
@@ -65,6 +66,13 @@ Section Spec.
   (* Autonomous background revoker step *)
   Definition specRevokerStep : Action ty sysTree (Bit 0) :=
     liftAction np_mem (SpecRevoker.specRevokerStep rev config ty).
+
+  (* Autonomous background UART steps *)
+  Definition specUartTxStep : Action ty sysTree (Bit 0) :=
+    liftAction np_mem (uartTxStepAction uart ty).
+
+  Definition specUartRxStep : Action ty sysTree (Bit 0) :=
+    liftAction np_mem (uartRxStepAction uart ty).
 
   (* Autonomous background PLIC step *)
   Definition specPlicStep : Action ty sysTree (Bit 0) :=
