@@ -187,8 +187,8 @@ Definition FunctionalUnits := STRUCT_TYPE {
 }.
 
 (* ===========================================================================
-   CSR & SCR DEFINITIONS, TABLES, MAPPINGS, AND DECODERS
-   =========================================================================== *)
+ * CSR & SCR Definitions, Tables, Mappings, and Decoders
+ * =========================================================================== *)
 
 Fixpoint enumerate_aux {A : Type} (i : Z) (l : list A) : list (A * Z) :=
   match l with
@@ -325,8 +325,8 @@ End Cs2Constructors.
 
 
 (* ===========================================================================
-   RISC-V & CHERIoT EXCEPTION CONSTANTS & INFO
-   =========================================================================== *)
+ * RISC-V & CHERIoT Exception Constants & Info
+ * =========================================================================== *)
 
 (* Standard RISC-V mcause values (DECIMAL) *)
 Definition EXC_IllegalInst    := 2.
@@ -470,8 +470,8 @@ Definition FullECapWithTag := STRUCT_TYPE { "tag"  :: Bool;
                                             "addr" :: Addr }.
 
 (* ===========================================================================
-   DEFERRED OPERATIONS (MemPayload, FenceOp)
-   =========================================================================== *)
+ * Deferred Operations (MemPayload, FenceOp)
+ * =========================================================================== *)
 
 Definition LoadOp := STRUCT_TYPE {
   "isUnsigned" :: Bool ;
@@ -740,9 +740,9 @@ Definition exOTypes ty (addr: ty Addr) : Expr ty Bool :=
 Definition nonExOTypes ty (addr: ty Addr) : Expr ty Bool :=
   And [ Sgt #addr $8; Sle #addr $15 ].
 
-(* ========================================================================= *)
-(* DataTypes                                                                 *)
-(* ========================================================================= *)
+(* ===========================================================================
+ * DataTypes
+ * =========================================================================== *)
 
 Definition DecodeOut := STRUCT_TYPE {
   "instGroup" :: InstGroup ;

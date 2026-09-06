@@ -2559,7 +2559,7 @@ Proof.
 Qed.
 
 
-(* ====================================================================
+(* ===========================================================================
    Proof of bounds_E_le_ecap_ECorrected.
 
    The lemma below used to be admitted above the arithmetic helper
@@ -2569,7 +2569,7 @@ Qed.
    wider than 511 slots once aligned (aligned_request_width_le), and
    Bounds never selects an exponent above one at which the request
    fits (bounds_E_le_aligned_width).
-   ==================================================================== *)
+   =========================================================================== *)
 
 (** * Bit-vector value helpers *)
 
