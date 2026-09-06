@@ -14,20 +14,14 @@ Local Open Scope Z_scope.
 
 (** * Architectural Constant Relations and Basic Properties
     These theorems capture the relations between architectural parameters
-    (Xlen, AddrSz, ExpSz, CapBSz, CapcTSz, Emax).
+    (AddrSz, ExpSz, CapBSz, CapcTSz, Emax).
     Throughout the rest of this file, these constants are NEVER unfolded directly;
     instead, their properties and relationships are invoked via these theorems. *)
-
-Theorem Xlen_eq_AddrSz : Xlen = AddrSz.
-Proof. unfold Xlen, AddrSz. reflexivity. Qed.
 
 Theorem AddrSz_pos : 0 < AddrSz.
 Proof. unfold AddrSz, Xlen. lia. Qed.
 
 Theorem AddrSz_nonneg : 0 <= AddrSz.
-Proof. pose proof AddrSz_pos. lia. Qed.
-
-Theorem AddrSz_ge_1 : 1 <= AddrSz.
 Proof. pose proof AddrSz_pos. lia. Qed.
 
 Theorem AddrSz_gt_1 : 1 < AddrSz.
@@ -39,29 +33,11 @@ Proof.
   rewrite (Z.mod_unique (-1) m (-1) (m - 1)); [ reflexivity | lia | ring ].
 Qed.
 
-Theorem ExpSz_eq_log2_up : ExpSz = Z.log2_up AddrSz.
-Proof. unfold ExpSz, LgAddrSz, AddrSz, Xlen. reflexivity. Qed.
-
 Theorem ExpSz_pos : 0 < ExpSz.
 Proof. unfold ExpSz, LgAddrSz, AddrSz, Xlen. lia. Qed.
 
 Theorem ExpSz_nonneg : 0 <= ExpSz.
 Proof. pose proof ExpSz_pos. lia. Qed.
-
-Theorem ExpSz_lt_AddrSz : ExpSz < AddrSz.
-Proof. unfold ExpSz, LgAddrSz, AddrSz, Xlen. lia. Qed.
-
-Theorem CapcTSz_pos : 0 < CapcTSz.
-Proof. unfold CapcTSz. lia. Qed.
-
-Theorem CapcTSz_nonneg : 0 <= CapcTSz.
-Proof. pose proof CapcTSz_pos. lia. Qed.
-
-Theorem AddrSz_val : AddrSz = 32.
-Proof. unfold AddrSz, Xlen. reflexivity. Qed.
-
-Theorem CapBSz_val : CapBSz = 9.
-Proof. unfold CapBSz, CapcTSz. reflexivity. Qed.
 
 Theorem CapBSz_eq : CapBSz = CapcTSz + 1.
 Proof. unfold CapBSz, CapcTSz. reflexivity. Qed.
@@ -133,24 +109,6 @@ Proof. pose proof Emax_pos. lia. Qed.
 Theorem Emax_lt_AddrSz : Emax < AddrSz.
 Proof. unfold Emax, ExpSz, LgAddrSz, AddrSz, Xlen, CapcTSz. lia. Qed.
 
-Theorem Emax_le_AddrSz : Emax <= AddrSz.
-Proof. pose proof Emax_lt_AddrSz. lia. Qed.
-
-Theorem two_pow_ExpSz_minus_1 : 2 ^ ExpSz - 1 = AddrSz - 1.
-Proof. rewrite two_pow_ExpSz_eq_AddrSz. reflexivity. Qed.
-
-Theorem CapBSz_minus_1_eq_CapcTSz : CapBSz - 1 = CapcTSz.
-Proof. rewrite CapBSz_eq. lia. Qed.
-
-Theorem two_pow_CapBSz_eq_2_mul_CapcTSz : 2 ^ CapBSz = 2 * 2 ^ (CapBSz - 1).
-Proof.
-  replace CapBSz with (Z.succ (CapBSz - 1)) at 1 by lia.
-  rewrite Z.pow_succ_r; [lia | pose proof CapBSz_pos; lia].
-Qed.
-
-Theorem AddrSz_sub_CapBSz_eq : AddrSz - CapBSz = 23.
-Proof. unfold AddrSz, CapBSz, Xlen. reflexivity. Qed.
-
 Lemma multiple : forall x n k,
   0 <= n <= k ->
   ((x * 2^n) mod 2^k) mod 2^n = 0.
@@ -190,10 +148,6 @@ Proof.
   - apply bits.unsigned_range; lia.
 Qed.
 
-Lemma add_0_r_bitsExpSz : forall (accum: bits ExpSz),
-  (accum + 0)%Zmod = accum.
-Proof. intros. apply add_0_r_bits; apply ExpSz_pos. Qed.
-
 Lemma unsigned_add_1_bits : forall {n} (accum: bits n),
   0 < n ->
   Zmod.unsigned accum + 1 < 2^n ->
@@ -208,14 +162,6 @@ Proof.
   rewrite Z.mod_small; [ reflexivity | ].
   pose proof (bits.unsigned_range accum ltac:(lia)) as [H0 H1].
   lia.
-Qed.
-
-Lemma unsigned_add_1_bitsExpSz : forall (accum: bits ExpSz),
-  Zmod.unsigned accum + 1 < AddrSz ->
-  Zmod.unsigned (accum + 1)%Zmod = Zmod.unsigned accum + 1.
-Proof.
-  intros. apply unsigned_add_1_bits; [ apply ExpSz_pos | ].
-  rewrite two_pow_ExpSz_eq_AddrSz. exact H.
 Qed.
 
 Lemma countLeadingZerosLoop_bound : forall {ni no} arr count over (accum: bits no),
@@ -275,115 +221,6 @@ Proof.
   - apply ExpSz_pos.
   - exact Hacc.
   - rewrite two_pow_ExpSz_eq_AddrSz. exact Hbound.
-Qed.
-
-Lemma countLeadingZerosLoop_bound_5 : forall ni arr count over (accum: bits ExpSz),
-  0 <= Zmod.unsigned accum ->
-  Zmod.unsigned accum + Z.of_nat count < AddrSz ->
-  Zmod.unsigned (evalLetExpr (@countLeadingZerosLoop type ni ExpSz arr count over accum)) <= Zmod.unsigned accum + Z.of_nat count.
-Proof. apply countLeadingZerosLoop_bound_ExpSz. Qed.
-
-Lemma countTrailingZerosLoop_bound : forall {ni no} arr count idx over (accum: bits no),
-  0 < no ->
-  0 <= Zmod.unsigned accum ->
-  Zmod.unsigned accum + Z.of_nat count < 2^no ->
-  Zmod.unsigned (evalLetExpr (@countTrailingZerosLoop type ni no arr idx count over accum)) <= Zmod.unsigned accum + Z.of_nat count.
-Proof.
-  intros ni no arr count.
-  induction count as [| m IHm]; intros idx over accum Hno Hacc Hbound.
-  - simpl. unfold evalLetExpr. simpl. lia.
-  - simpl. unfold evalLetExpr. simpl.
-    cbn [evalLetExpr readDiffTupleStr getFinStructOption String.eqb Ascii.eqb fst eqb readDiffTuple
-         finNum Fst Snd evalExpr
-         mapDiffTuple Fst Snd snd evalAndBinary fold_left map InvDefault evalFromBit] in *.
-    fold evalLetExpr.
-    rewrite Nat2Z.inj_succ in Hbound.
-    unfold Z.succ in Hbound.
-    destruct (over || _)%bool.
-    + rewrite !Zmod.add_0_l.
-      rewrite add_0_r_bits by lia.
-      assert (Hstep: Zmod.unsigned accum + Z.of_nat m < 2^no) by lia.
-      generalize (IHm (S idx) true accum Hno Hacc Hstep); intros Hih.
-      change (PosDef.Pos.of_succ_nat m) with (Pos.of_succ_nat m).
-      replace (Z.pos (Pos.of_succ_nat m)) with (Z.succ (Z.of_nat m)) by (symmetry; apply Nat2Z.inj_succ).
-      unfold Z.succ.
-      match type of Hih with | ?L <= ?R => match goal with | |- ?L <= ?R2 =>
-        assert (H_le: R <= R2) by (apply Z.add_le_mono_l; lia);
-        exact (Z.le_trans _ _ _ Hih H_le)
-      end end.
-    + rewrite !Zmod.add_0_l.
-      assert (Hbound1: Zmod.unsigned accum + 1 < 2^no) by lia.
-      assert (Hmod: Zmod.unsigned (accum + 1)%Zmod = Zmod.unsigned accum + 1) by (apply unsigned_add_1_bits; lia).
-      assert (Hacc': 0 <= Zmod.unsigned (accum + 1)%Zmod) by (rewrite Hmod; lia).
-      assert (Hstep: Zmod.unsigned (accum + 1)%Zmod + Z.of_nat m < 2^no) by (rewrite Hmod; lia).
-      generalize (IHm (S idx) false (accum + 1)%Zmod Hno Hacc' Hstep); intros Hih.
-      rewrite Hmod in Hih.
-      change (PosDef.Pos.of_succ_nat m) with (Pos.of_succ_nat m).
-      replace (Z.pos (Pos.of_succ_nat m)) with (Z.succ (Z.of_nat m)) by (symmetry; apply Nat2Z.inj_succ).
-      unfold Z.succ.
-      match type of Hih with | ?L <= ?R => match goal with | |- ?L <= ?R2 =>
-        assert (H_le: R <= R2); [
-          apply Z.eq_le_incl;
-          rewrite <- Z.add_assoc, (Z.add_comm 1 (Z.of_nat m));
-          reflexivity
-        | exact (Z.le_trans _ _ _ Hih H_le) ]
-      end end.
-Qed.
-
-Lemma countTrailingZerosLoop_bound_ExpSz : forall ni arr count idx over (accum: bits ExpSz),
-  0 <= Zmod.unsigned accum ->
-  Zmod.unsigned accum + Z.of_nat count < AddrSz ->
-  Zmod.unsigned (evalLetExpr (@countTrailingZerosLoop type ni ExpSz arr idx count over accum)) <= Zmod.unsigned accum + Z.of_nat count.
-Proof.
-  intros ni arr count idx over accum Hacc Hbound.
-  apply countTrailingZerosLoop_bound.
-  - apply ExpSz_pos.
-  - exact Hacc.
-  - rewrite two_pow_ExpSz_eq_AddrSz. exact Hbound.
-Qed.
-
-Lemma countTrailingZerosLoop_bound_5 : forall ni arr count idx over (accum: bits ExpSz),
-  0 <= Zmod.unsigned accum ->
-  Zmod.unsigned accum + Z.of_nat count < AddrSz ->
-  Zmod.unsigned (evalLetExpr (@countTrailingZerosLoop type ni ExpSz arr idx count over accum)) <= Zmod.unsigned accum + Z.of_nat count.
-Proof. apply countTrailingZerosLoop_bound_ExpSz. Qed.
-
-Lemma countLeadingZerosArray_bound : forall {ni no} (arr: @Expr type (Array ni Bool)),
-  0 < no ->
-  Z.of_nat ni < 2^no ->
-  Zmod.unsigned (evalLetExpr (@countLeadingZerosArray type ni arr no)) <= Z.of_nat ni.
-Proof.
-  intros ni no arr Hno Hni.
-  unfold countLeadingZerosArray.
-  cbn [evalLetExpr evalExpr].
-  assert (H_zero: Zmod.unsigned (0%Zmod : bits no) = 0).
-  { change (0%Zmod : bits no) with (Zmod.zero : bits no). apply Zmod.unsigned_0. }
-  assert (H_acc: 0 <= Zmod.unsigned (0%Zmod : bits no)) by (rewrite H_zero; lia).
-  assert (H_bound: Zmod.unsigned (0%Zmod : bits no) + Z.of_nat ni < 2^no) by (rewrite H_zero; lia).
-  pose proof (@countLeadingZerosLoop_bound ni no arr ni false 0%Zmod Hno H_acc H_bound) as Hloop.
-  rewrite H_zero in Hloop.
-  lia.
-Qed.
-
-Lemma countLeadingZerosArray_bound_ExpSz : forall ni (arr: @Expr type (Array ni Bool)),
-  Z.of_nat ni < AddrSz ->
-  Zmod.unsigned (evalLetExpr (@countLeadingZerosArray type ni arr ExpSz)) <= Z.of_nat ni.
-Proof.
-  intros ni arr Hbound.
-  apply countLeadingZerosArray_bound.
-  - apply ExpSz_pos.
-  - rewrite two_pow_ExpSz_eq_AddrSz. exact Hbound.
-Qed.
-
-Lemma countLeadingZerosArray_bound_CapBSz : forall (arr: @Expr type (Array (Z.to_nat (AddrSz - CapBSz)) Bool)),
-  Zmod.unsigned (evalLetExpr (@countLeadingZerosArray type (Z.to_nat (AddrSz - CapBSz)) arr ExpSz)) <= AddrSz - CapBSz.
-Proof.
-  intros arr.
-  pose proof (@countLeadingZerosArray_bound_ExpSz (Z.to_nat (AddrSz - CapBSz)) arr) as H.
-  rewrite Z2Nat.id in H by (pose proof AddrSz_sub_CapBSz_nonneg; lia).
-  apply H.
-  pose proof CapBSz_pos.
-  lia.
 Qed.
 
 Lemma countLeadingZerosLoop_bound_CapBSz : forall (arr: @Expr type (Array (Z.to_nat (AddrSz - CapBSz)) Bool)) accum,
@@ -499,59 +336,6 @@ Proof.
     pose proof (bits.unsigned_range clz ltac:(apply ExpSz_nonneg)) as [H1 H2].
     rewrite (Z.mod_small ((AddrSz + 1 - CapBSz) - Zmod.unsigned clz) (2^ExpSz)) by (pose proof two_pow_ExpSz_eq_AddrSz; pose proof CapBSz_ge_2; pose proof CapBSz_lt_AddrSz; lia).
     reflexivity.
-Qed.
-
-Lemma e_init_not_minus1 : forall ni (arr: @Expr type (Array ni Bool)),
-  (ni <= Z.to_nat (AddrSz - CapBSz))%nat ->
-  (0 + Zmod.of_Z (2^ExpSz) (AddrSz + 1 - CapBSz) + Zmod.not (evalLetExpr (@countLeadingZerosLoop type ni ExpSz arr ni false 0%Zmod)))%Zmod <> Zmod.of_Z (2^ExpSz) (-1).
-Proof.
-  intros ni arr Hni H_eq.
-  assert (Hni_Z: Z.of_nat ni <= AddrSz - CapBSz).
-  { apply Nat2Z.inj_le in Hni. rewrite Z2Nat.id in Hni by (pose proof AddrSz_sub_CapBSz_nonneg; lia). exact Hni. }
-  assert (H_zero: Zmod.unsigned (0%Zmod : bits ExpSz) = 0).
-  { change (0%Zmod : bits ExpSz) with (Zmod.zero : bits ExpSz). apply Zmod.unsigned_0. }
-  assert (H_acc: 0 <= Zmod.unsigned (0%Zmod : bits ExpSz)) by (rewrite H_zero; lia).
-  assert (H_bound: Zmod.unsigned (0%Zmod : bits ExpSz) + Z.of_nat ni < 2^ExpSz).
-  { rewrite H_zero. rewrite two_pow_ExpSz_eq_AddrSz. pose proof CapBSz_pos. lia. }
-  pose proof (@countLeadingZerosLoop_bound ni ExpSz arr ni false 0%Zmod ExpSz_pos H_acc H_bound) as Hloop.
-  rewrite H_zero in Hloop.
-  rewrite Zmod.add_0_l in H_eq.
-  apply (f_equal (@Zmod.unsigned (2^ExpSz))) in H_eq.
-  rewrite Zmod.unsigned_add in H_eq.
-  rewrite not_bitsExpSz_val in H_eq.
-  rewrite !Zmod.unsigned_of_Z in H_eq.
-  pose proof two_pow_ExpSz_eq_AddrSz.
-  rewrite (Z.mod_small (AddrSz + 1 - CapBSz) (2^ExpSz)) in H_eq; [ | pose proof CapBSz_ge_2; pose proof CapBSz_lt_AddrSz; lia ].
-  rewrite mod_neg1_m in H_eq; [ | pose proof AddrSz_gt_1; lia ].
-  set (z := Zmod.unsigned (evalLetExpr (countLeadingZerosLoop ExpSz arr ni false 0%Zmod))) in *.
-  assert (Hz_range: 0 <= z <= AddrSz - 1) by (apply bits_ExpSz_range).
-  assert (Hz_le: z <= AddrSz - CapBSz) by lia.
-  assert (Hmod: (AddrSz + 1 - CapBSz + (AddrSz - 1 - z)) mod (2^ExpSz) = (AddrSz - CapBSz) - z).
-  { rewrite (Z.mod_unique (AddrSz + 1 - CapBSz + (AddrSz - 1 - z)) (2^ExpSz) 1 ((AddrSz - CapBSz) - z)).
-    - reflexivity.
-    - pose proof CapBSz_pos. pose proof CapBSz_lt_AddrSz. lia.
-    - lia. }
-  rewrite Hmod in H_eq.
-  pose proof CapBSz_ge_2.
-  lia.
-Qed.
-
-Lemma bounds_E_bound : forall (bounds: type BoundsRes),
-  0 <= Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) <= AddrSz - 1.
-Proof.
-  intros.
-  unfold Zmod.to_Z.
-  change (Zmod.Private_to_Z ?x) with (Zmod.unsigned x).
-  apply bits_ExpSz_range.
-Qed.
-
-Lemma ecap_E_bound : forall (cap: type Cap),
-  0 <= (Zmod.to_Z (evalExpr (get_ECorrected_from_E (evalExpr (get_E_from_cE (cap@%"cE")))))) <= AddrSz - 1.
-Proof.
-  intros cap.
-  unfold Zmod.to_Z.
-  change (Zmod.Private_to_Z ?x) with (Zmod.unsigned x).
-  apply bits_ExpSz_range.
 Qed.
 
 Lemma and_slu_mask_raw : forall b e,
@@ -904,35 +688,6 @@ Proof.
   replace (AddrSz + 1 + 1) with (AddrSz + 2) by lia.
   rewrite <- Z.add_mod by (pose proof two_pow_AddrSz_add_2_pos; lia).
   reflexivity.
-Qed.
-
-
-Lemma div_le_add : forall a b c,
-  0 < c ->
-  a / c + b / c <= (a + b) / c.
-Proof.
-  intros.
-  rewrite (Z.div_mod a c) at 2 by lia.
-  rewrite (Z.div_mod b c) at 2 by lia.
-  replace (c * (a / c) + a mod c + (c * (b / c) + b mod c)) with
-    ((a / c + b / c) * c + (a mod c + b mod c)) by lia.
-  rewrite Z_div_plus_full_l by lia.
-  assert (0 <= (a mod c + b mod c) / c).
-  { apply Z.div_pos; [ | lia ].
-    pose proof (Z.mod_pos_bound a c H).
-    pose proof (Z.mod_pos_bound b c H).
-    lia. }
-  lia.
-Qed.
-
-Lemma ceil_ge : forall x e,
-  0 <= e ->
-  (x / 2^e) * 2^e <= ((x + 2^e - 1) / 2^e) * 2^e.
-Proof.
-  intros.
-  apply Z.mul_le_mono_nonneg_r.
-  - apply Z.pow_nonneg; lia.
-  - apply Z.div_le_mono; [ apply Z.pow_pos_nonneg; lia | lia ].
 Qed.
 
 Lemma div_add_ge : forall y r c,
@@ -1495,21 +1250,6 @@ Proof.
     rewrite Z.div_add by lia.
     rewrite (Z.div_small (s mod d - 1) d) by lia.
     lia.
-Qed.
-
-Lemma iceil_le_math : forall (b_mod l_mod e_val : Z),
-  0 <= b_mod < 2^e_val ->
-  0 <= l_mod < 2^e_val ->
-  0 <= e_val ->
-  let s := b_mod + l_mod in
-  s / 2^e_val + (if s mod 2^e_val =? 0 then 0 else 1) <=
-  (b_mod + l_mod + 2^e_val - 1) / 2^e_val.
-Proof.
-  intros b_mod l_mod e_val Hb Hl He s.
-  subst s.
-  assert (Hpos: 0 < 2^e_val) by (apply Z.pow_pos_nonneg; lia).
-  assert (Hs_nonneg: 0 <= b_mod + l_mod) by lia.
-  rewrite ceil_div_eq; [ apply Z.le_refl | exact Hs_nonneg | exact Hpos ].
 Qed.
 
 Lemma carry_bound_math : forall (b_mod l_mod e_val : Z) (carry : bool),
