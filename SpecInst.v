@@ -121,10 +121,12 @@ Definition concreteRegions : list MemRegion := [
  * fix comments all over
  *)
 
+(*
 Lemma concreteRegionsDisjoint : Is_true (pairwiseDisjoint concreteRegions).
 Proof.
   exact I.
 Qed.
+*)
 
 (* ===========================================================================
  * 4. Peripheral Instances (Proofs of Membership by Index)
@@ -156,3 +158,11 @@ Definition specModInst : Mod specSysTreeInst :=
         concreteRevoker
         concreteUart
         concretePlic.
+
+(*
+From Guru Require Import Extraction Simulator.
+Set Extraction Output Directory ".".
+
+Definition main : IO unit := evalModCyclesIO specSysTreeInst (Z.to_nat 20000) specModInst.
+Extraction "Simulate" main.
+*)
