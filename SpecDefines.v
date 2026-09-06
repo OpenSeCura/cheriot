@@ -1124,13 +1124,6 @@ Definition isRevokableAddr {ty : Kind -> Type} (config : RevConfig) (a : Expr ty
   And [ Sge a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;
         Slt a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) (heapEndAddr config))) ].
 
-Definition interruptsTree : Tree Elem :=
-  Node "interrupts" [
-    Leaf "meip_in" (ERecv Bool) ;
-    Leaf "mtip_in" (ERecv Bool) ;
-    Leaf "msip_in" (ERecv Bool)
-  ].
-
 Definition RevBitLookup := STRUCT_TYPE {
   "isRevokable" :: Bool ;
   "revByteAddr" :: Addr ;

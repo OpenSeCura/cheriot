@@ -28,8 +28,7 @@ Local Open Scope guru_scope.
 
 Definition specSysTree (regions : list MemRegion) : Tree Elem :=
   Node "sys" [
-    specCoreTree regions ;
-    interruptsTree
+    specCoreTree regions
   ].
 
 Section Spec.
@@ -54,9 +53,6 @@ Section Spec.
 
   Definition np_mem : NodePath sysTree :=
     getNodePath sysTree "sys.core.mem".
-
-  Definition np_intr : NodePath sysTree :=
-    getNodePath sysTree "sys.interrupts".
 
   Definition specTickCycle : Action ty sysTree (Bit 0) :=
     liftAction np_rf incrementMcycle.
@@ -101,18 +97,6 @@ Section Spec.
     Let idxMtip : Bit LgXlen <- $MTIP_Bit ;
     Let updArr  : Array (Z.to_nat Xlen) Bool <- UpdateArray #currArr #idxMtip #mtipVal ;
     Act (liftAction np_rf (writeRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz)) (ToBit #updArr))) ;
-    Retv.
-
-  Definition specReceiveInterrupts : Action ty sysTree (Bit 0) :=
-    LetA meip    : Bool                       <- liftAction np_intr (Get meip <- "interrupts.meip_in" in interruptsTree ; Return #meip) ;
-    LetA msip    : Bool                       <- liftAction np_intr (Get msip <- "interrupts.msip_in" in interruptsTree ; Return #msip) ;
-    LetA currMip : Bit Xlen                   <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz))) ;
-    Let  currArr : Array (Z.to_nat Xlen) Bool <- FromBit (Array (Z.to_nat Xlen) Bool) #currMip ;
-    Let  idxMeip : Bit LgXlen                 <- $MEIP_Bit ;
-    Let  idxMsip : Bit LgXlen                 <- $MSIP_Bit ;
-    Let  arr1    : Array (Z.to_nat Xlen) Bool <- UpdateArray #currArr #idxMeip (Or [ #meip ; ReadArray #currArr #idxMeip ]) ;
-    Let  arr2    : Array (Z.to_nat Xlen) Bool <- UpdateArray #arr1    #idxMsip (Or [ #msip ; ReadArray #arr1    #idxMsip ]) ;
-    Act (liftAction np_rf (writeRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz)) (ToBit #arr2))) ;
     Retv.
 
   Definition specStep : Action ty sysTree (Bit 0) :=
@@ -163,8 +147,7 @@ Section Spec.
       specUartRxStep ty ;
       specPlicStep ty ;
       specExternalInterruptRule ty ;
-      specTimerInterruptRule ty ;
-      specReceiveInterrupts ty
+      specTimerInterruptRule ty
     ].
 
 End Spec.
