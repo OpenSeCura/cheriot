@@ -20,8 +20,12 @@ CHERIOT_ROOT = $(HOME)/work/cheriot
 
 CURR_DIR = $(shell pwd)
 BINARY ?= $(CURR_DIR)/../basic-riscv-tests-cheriot/binaries/simple.elf
+COMPILE_BINARY ?= $(MAKE) -C $(CURR_DIR)/../basic-riscv-tests-cheriot
 
-Binary.v: force
+$(BINARY):
+	$(COMPILE_BINARY)
+
+Binary.v: $(BINARY) force
 	@echo $(CURR_DIR)
 	echo "From Stdlib Require Import List ZArith Zmod." > Binary.v
 	echo "" >> Binary.v
@@ -40,7 +44,10 @@ Binary.v: force
 	rm tmp
 	echo "nil)." >> Binary.v
 
-coq: Makefile.coq.all Binary.v
+Makefile.coq.all: Binary.v force
+	$(COQBIN)rocq makefile -f _CoqProject -o Makefile.coq.all
+
+coq: Makefile.coq.all
 	$(MAKE) -j -C ../Guru coq
 	$(MAKE) -f Makefile.coq.all
 
@@ -55,9 +62,6 @@ rtlsim: coq
 
 sim: coq
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/" sim
-
-Makefile.coq.all: force
-	$(COQBIN)rocq makefile -f _CoqProject -o Makefile.coq.all
 
 force:
 

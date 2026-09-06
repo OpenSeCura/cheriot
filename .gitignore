@@ -12,6 +12,7 @@ Makefile.coq
 Makefile.coq.*
 .Makefile.coq.*
 .coqdeps.d
+Binary.v
 
 # Haskell build artifacts
 *.hi
