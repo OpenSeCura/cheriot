@@ -291,9 +291,9 @@ Section SpecFetchMemory.
 
   Local Notation readRevBit := (readRevBit config regions).
 
-  (* =========================================================================
-   * 1. specFetch (Atomic Combinational Fetch)
-   * ========================================================================= *)
+  (* ===========================================================================
+   * specFetch (Atomic Combinational Fetch)
+   * =========================================================================== *)
   Definition specFetch : Action ty coreTree FetchOut :=
     LetA pcc : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
     LetA rawFull : FullCapWithTag <- liftAction np_mem (specMemRead regions (##pcc`"addr") $LgNumBytesInstSz) ;
@@ -323,9 +323,9 @@ Section SpecFetchMemory.
     } ;
     Return #fetchOut.
 
-  (* =========================================================================
-   * 2. specExecuteDeferredReq (Single Deferred Request execution)
-   * ========================================================================= *)
+  (* ===========================================================================
+   * specExecuteDeferredReq (Single Deferred Request Execution)
+   * =========================================================================== *)
   Definition specExecuteDeferredReq (req : ty DeferredReq) : Action ty coreTree (Bit 0) :=
     LetL action : DeferredAction <- dispatchDeferredReq req false ;
 
@@ -377,9 +377,9 @@ Section SpecFetchMemory.
     ) ;
     Retv.
 
-  (* =========================================================================
-   * 3. specExecuteDeferred (Executing Option DeferredReq)
-   * ========================================================================= *)
+  (* ===========================================================================
+   * specExecuteDeferred (Executing Option DeferredReq)
+   * =========================================================================== *)
   Definition specExecuteDeferred (reqOpt : ty (Option DeferredReq)) : Action ty coreTree (Bit 0) :=
     If (##reqOpt `? "Some") Then (
       Let req : DeferredReq <- ##reqOpt `! "Some" ;

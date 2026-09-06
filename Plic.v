@@ -27,7 +27,7 @@ Set Asymmetric Patterns.
 Local Open Scope guru_scope.
 
 (* ===========================================================================
- * 1. PLIC Register Offsets & Memory Sizing
+ * PLIC Register Offsets & Memory Sizing
  * =========================================================================== *)
 
 Definition PLIC_PRIORITY_BASE    : Z := 0x000000.
@@ -39,7 +39,7 @@ Definition PlicSizeBytes         : Z := 0x400000. (* 4 MB *)
 Definition PlicLineConfig        : LineConfig := RawLine (Z.to_nat LgNumBytesXlen).
 
 (* ===========================================================================
- * 2. Tree Structure (Ordered by MMIO Offset)
+ * Tree Structure (Ordered by MMIO Offset)
  * =========================================================================== *)
 
 Definition priorityLeaves (n : nat) : list (Tree Elem) :=
@@ -76,7 +76,7 @@ Section PlicPaths.
 End PlicPaths.
 
 (* ===========================================================================
- * 3. Core Combinational & Sequential Logic
+ * Core Combinational & Sequential Logic
  * =========================================================================== *)
 
 Record PlicState (ty : Kind -> Type) (n : nat) := {
@@ -264,7 +264,7 @@ Section PlicCoreLogic.
 End PlicCoreLogic.
 
 (* ===========================================================================
- * 4. MMIO Interface
+ * MMIO Interface
  * =========================================================================== *)
 
 Section PlicMmio.
@@ -367,7 +367,7 @@ Arguments plicLineReadAction n base ty addr : clear implicits.
 Arguments plicLineWriteAction n base ty rq : clear implicits.
 
 (* ===========================================================================
- * 5. MemRegion Constructor
+ * MemRegion Constructor
  * =========================================================================== *)
 
 Definition plicMemRegion
@@ -394,7 +394,7 @@ Definition plicMemRegion
 Arguments plicMemRegion n base pfBound pfAligned : clear implicits.
 
 (* ===========================================================================
- * 6. System Integration Helpers
+ * System Integration Helpers
  * =========================================================================== *)
 
 Record PlicInstance (n : nat) (regions : list MemRegion) := {

@@ -30,7 +30,7 @@ Local Open Scope guru_scope.
 Local Notation ByteSz := 8%Z.
 
 (* ===========================================================================
- * 1. CLINT Register Offsets & Tree Structure
+ * CLINT Register Offsets & Tree Structure
  * =========================================================================== *)
 
 Definition ClintSizeBytes : Z := 8.
@@ -50,7 +50,7 @@ Definition clintMtimehPath : RegPath tClint := getChildRegPathTree tClint "mtime
 Definition ClintLineConfig : LineConfig := RawLine (Z.to_nat LgNumBytesXlen).
 
 (* ===========================================================================
- * 2. CLINT Atomic Actions
+ * CLINT Atomic Actions
  * =========================================================================== *)
 
 Section ClintActions.
@@ -120,7 +120,7 @@ Arguments clintLineReadAction base ty addr : clear implicits.
 Arguments clintLineWriteAction base ty rq : clear implicits.
 
 (* ===========================================================================
- * 3. MemRegion Constructor
+ * MemRegion Constructor
  * =========================================================================== *)
 
 Definition clintMemRegion
@@ -142,7 +142,7 @@ Definition clintMemRegion
 Arguments clintMemRegion base pfBound pfAligned : clear implicits.
 
 (* ===========================================================================
- * 4. System Integration Helpers
+ * System Integration Helpers
  * =========================================================================== *)
 
 Record ClintInstance (regions : list MemRegion) := {

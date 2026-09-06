@@ -14,6 +14,10 @@
  * limitations under the License.
  *)
 
+(* TODO:
+ * fix Uart
+ *)
+
 From Stdlib Require Import String List ZArith Zmod Bool Psatz Nat Arith.
 From Guru Require Import Syntax Notations Semantics Library Composition SimulatorOnly.
 From Cheriot Require Import SpecDefines SpecDevice Fifo.
@@ -28,7 +32,7 @@ Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
 (* ===========================================================================
- * 1. 16550 UART Register Offsets & Memory Footprint
+ * 16550 UART Register Offsets & Memory Footprint
  * =========================================================================== *)
 
 Definition UartRegNames : list string :=
@@ -52,7 +56,7 @@ Definition UART_SCR_OFFSET         : Z := 28.  (* 0x1C: Scratchpad Register (r/w
 Definition UartFifoCapacity : nat := 16.
 
 (* ===========================================================================
- * 2. UART Tree Definition
+ * UART Tree Definition
  * =========================================================================== *)
 
 Definition uartChildren : list (Tree Elem) :=
@@ -68,7 +72,8 @@ Definition uartChildren : list (Tree Elem) :=
     Leaf "dll" (EReg (Build_Reg (Bit 8) (Some Zmod.zero))) ;
     Leaf "dlm" (EReg (Build_Reg (Bit 8) (Some Zmod.zero))) ;
     Leaf "tx_byte" (ESend (Bit 8)) ;
-    Leaf "rx_byte" (ERecv (Bit 8)) ].
+    Leaf "rx_byte" (ERecv (Bit 8))
+  ].
 
 Definition uartTree : Tree Elem :=
   Node "uart" uartChildren.
@@ -76,7 +81,7 @@ Definition uartTree : Tree Elem :=
 Definition UartLineConfig : LineConfig := RawLine (Z.to_nat LgNumBytesXlen).
 
 (* ===========================================================================
- * 3. Paths & Embeddings
+ * Paths & Embeddings
  * =========================================================================== *)
 
 Definition uartIerPath    : RegPath uartTree := getChildRegPathTree uartTree "ier".
@@ -106,7 +111,7 @@ Definition liftActionEq {ty : Kind -> Type} {t : Tree Elem} {k : Kind}
 Arguments liftActionEq [ty t k] p [t'] H a.
 
 (* ===========================================================================
- * 4. UART Internal Operations
+ * UART Internal Operations
  * =========================================================================== *)
 
 Section UartOperations.
@@ -252,7 +257,7 @@ Arguments writeThr [ty] dataByte.
 Arguments writeFcr [ty] dataByte.
 
 (* ===========================================================================
- * 5. MMIO Line Read & Write Actions
+ * MMIO Line Read & Write Actions
  * =========================================================================== *)
 
 Definition uartLineReadAction
@@ -387,7 +392,7 @@ Arguments uartLineReadAction base ty addr : clear implicits.
 Arguments uartLineWriteAction base ty rq : clear implicits.
 
 (* ===========================================================================
- * 6. MemRegion Constructor
+ * MemRegion Constructor
  * =========================================================================== *)
 
 Definition uartMemRegion
@@ -413,7 +418,7 @@ Definition uartMemRegion
 Arguments uartMemRegion base pfBound pfAligned : clear implicits.
 
 (* ===========================================================================
- * 7. System Integration Helpers
+ * System Integration Helpers
  * =========================================================================== *)
 
 Record UartInstance (regions : list MemRegion) := {

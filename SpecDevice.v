@@ -28,7 +28,7 @@ Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
 (* ===========================================================================
- * 1. MemRegion Definition & Disjointness Checking
+ * MemRegion Definition & Disjointness Checking
  * =========================================================================== *)
 
 Inductive LineConfig :=
@@ -133,7 +133,7 @@ Definition regionTagSize (r : MemRegion) : nat :=
   cfgRegionTagSize r.(regionSize) r.(regionLineCfg).
 
 (* ===========================================================================
- * 2. Payload Utilities
+ * Payload Utilities
  * =========================================================================== *)
 
 Definition embedCapBytes {ty : Kind -> Type} (numBytes : nat)
@@ -148,7 +148,7 @@ Lemma add_sub_cancel (a l : Z) : (l + (a - l))%Z = a.
 Proof. lia. Qed.
 
 (* ===========================================================================
- * 3. Converting a MemRegion into a Tree
+ * Converting a MemRegion into a Tree
  * =========================================================================== *)
 
 Definition internalMemRegionChildren
@@ -200,7 +200,7 @@ Definition memRegionTree (r : MemRegion) : Tree Elem :=
   end.
 
 (* ===========================================================================
- * 4. Line-Level Actions for Each Region Kind
+ * Line-Level Actions for Each Region Kind
  * =========================================================================== *)
 
 Section InternalMemRegionActions.
@@ -347,7 +347,7 @@ Arguments memRegionLineRead [ty] r addr.
 Arguments memRegionLineWrite [ty] r rq.
 
 (* ===========================================================================
- * 5. Universal CHERI Capability Multi-Byte Read & Write for a MemRegion
+ * Universal CHERI Capability Multi-Byte Read & Write for a MemRegion
  * =========================================================================== *)
 
 Section MemRegionActions.
@@ -518,7 +518,7 @@ Arguments memRegionRead r [ty] addr memSize.
 Arguments memRegionWrite r [ty] addr stVal memSize.
 
 (* ===========================================================================
- * 5. Composite Memory Tree & System Routing
+ * Composite Memory Tree & System Routing
  * =========================================================================== *)
 
 Fixpoint specMemChildren (regions : list MemRegion) : list (Tree Elem) :=

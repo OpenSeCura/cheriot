@@ -28,7 +28,7 @@ Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
 (* ===========================================================================
- * 1. Physical Memory Map & Device Addresses
+ * Physical Memory Map & Device Addresses
  * =========================================================================== *)
 
 Definition RamBase        : Z := MemStartAddr.
@@ -45,7 +45,7 @@ Definition PlicBaseAddr    : Z := 0x04000000.
 Definition UartBaseAddr    : Z := 0x05000000.
 
 (* ===========================================================================
- * 2. Revoker Configuration
+ * Revoker Configuration
  * =========================================================================== *)
 
 Definition concreteRevConfig : RevConfig := {|
@@ -56,7 +56,7 @@ Definition concreteRevConfig : RevConfig := {|
 |}.
 
 (* ===========================================================================
- * 3. Concrete Memory Regions
+ * Concrete Memory Regions
  * =========================================================================== *)
 
 Definition fixedBinary : list (bits 8) := map (fun v => bits.of_Z 8 v) binary.
@@ -116,16 +116,7 @@ Definition concreteRegions : list MemRegion := [
   uartMemRegion UartBaseAddr I I
 ].
 
-(* TODO: 
- * fix Uart
- * fix comments all over
- *)
-
 Definition concreteRegionsDisjoint : Is_true (pairwiseDisjoint concreteRegions) := I.
-
-(* ===========================================================================
- * 4. Peripheral Instances (Proofs of Membership by Index)
- * =========================================================================== *)
 
 Definition concreteClint : ClintInstance concreteRegions :=
   @Build_ClintInstance concreteRegions 2%nat ClintBaseAddr I I eq_refl.
@@ -140,7 +131,7 @@ Definition concreteUart : UartInstance concreteRegions :=
   @Build_UartInstance concreteRegions 5%nat UartBaseAddr I I eq_refl.
 
 (* ===========================================================================
- * 5. Fully Instantiated System Tree and Specification Mod
+ * Fully Instantiated System Tree and Specification Mod
  * =========================================================================== *)
 
 Definition specSysTreeInst : Tree Elem :=
