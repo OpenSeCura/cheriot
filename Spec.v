@@ -37,9 +37,7 @@ Section Spec.
   Variable clint : ClintInstance regions.
   Variable rev : RevokerInstance regions.
   Variable uart : UartInstance regions.
-  Variable numSources : nat.
-  Variable plic : PlicInstance numSources regions.
-  Variable pfPlicCount : length (collectIrqActions regions) = numSources.
+  Variable plic : PlicInstance (length (collectIrqActions regions)) regions.
   Local Notation sysTree := (specSysTree regions).
 
   Section Ty.
@@ -73,7 +71,7 @@ Section Spec.
 
   (* Autonomous background PLIC step *)
   Definition specPlicStep : Action ty sysTree (Bit 0) :=
-    liftAction np_mem (plicSampleAndStep plic ty pfPlicCount).
+    liftAction np_mem (plicSampleAndStep plic ty eq_refl).
 
   Definition updateMipBit (bitIdx : Expr ty (Bit LgXlen)) (bitVal : Expr ty Bool) : Action ty sysTree (Bit 0) :=
     liftAction np_rf (

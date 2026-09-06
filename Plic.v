@@ -407,18 +407,18 @@ Definition plicRegion {N regions} (plic : PlicInstance N regions) : MemRegion :=
   plicMemRegion N plic.(plicBaseAddr) plic.(pfBound) plic.(pfAligned).
 
 Section PlicSystem.
-  Variable N : nat.
+  Variable n : nat.
   Variable regions : list MemRegion.
-  Variable plic : PlicInstance N regions.
+  Variable plic : PlicInstance n regions.
   Variable ty : Kind -> Type.
 
   Local Notation memTree := (specMemTree regions).
 
-  Definition plicAction {k : Kind} (act : Action ty (plicTree N) k) : Action ty memTree k :=
+  Definition plicAction {k : Kind} (act : Action ty (plicTree n) k) : Action ty memTree k :=
     nthRegionAction plic.(plicIdx) regions (plicRegion plic) plic.(pfPlic) act.
 
   Definition plicMeipSystem : Action ty memTree Bool :=
-    plicAction (@plicMeip N ty).
+    plicAction (@plicMeip n ty).
 
   Fixpoint sampleIrqsCPS
            (acts : list (forall ty, Action ty memTree Bool))
@@ -434,10 +434,10 @@ Section PlicSystem.
     end k.
 
   Definition plicSampleAndStep
-             (pfCount : length (collectIrqActions regions) = N)
+             (pfCount : length (collectIrqActions regions) = n)
              : Action ty memTree (Bit 0) :=
     @sampleIrqsCPS (collectIrqActions regions) (fun irqs Hlen =>
-      plicAction (@plicStepWithIrqs N ty (listToExprArray irqs (ConstBool false)))
+      plicAction (@plicStepWithIrqs n ty (listToExprArray irqs (ConstBool false)))
     ).
 
 End PlicSystem.
