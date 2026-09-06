@@ -613,7 +613,7 @@ Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, 
 *)
 
 From Stdlib Require Import String List ZArith Zmod.
-From Guru Require Import Library Syntax Notations.
+From Guru Require Import Library Syntax Notations MergeFold.
 From Cheriot Require Import SpecDefines.
 
 Set Implicit Arguments.

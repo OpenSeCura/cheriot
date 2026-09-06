@@ -1,5 +1,5 @@
 From Stdlib Require Import List String Ascii ZArith Znumtheory Zmod Zmod.Bits Lia Bool.
-From Guru Require Import Library Syntax Semantics Notations.
+From Guru Require Import Library Syntax Semantics Notations MergeFold.
 From Cheriot Require Import SpecDefines FunctionalUnits.
 
 Set Implicit Arguments.
@@ -608,7 +608,7 @@ Proof.
       cbn [evalLetExpr evalExpr fold_left map evalNot].
       rewrite Zmod.add_0_l.
       assert (Hclz_bound: Zmod.unsigned clz <= AddrSz - CapBSz).
-      { subst clz. cbn [evalLetExpr countLeadingZerosArray]. apply countLeadingZerosLoop_bound_CapBSz_0. }
+      { subst clz. rewrite evalLetExpr_countLeadingZerosArray. apply countLeadingZerosLoop_bound_CapBSz_0. }
       pose proof (e_init_val Hclz_bound) as He_val.
       pose proof (bits.unsigned_range clz ltac:(apply ExpSz_nonneg)) as [H1 H2].
       change (evalNot clz) with (Zmod.not clz).
@@ -1134,7 +1134,7 @@ Proof.
   set (cond := evalExpr (isNotZero (TruncMsb 1 (CapBSz - 1) #mf))).
   clearbody cond.
   assert (Hclz_bound: Zmod.unsigned clz <= AddrSz - CapBSz).
-  { subst clz. cbn [evalLetExpr countLeadingZerosArray]. apply countLeadingZerosLoop_bound_CapBSz_0. }
+  { subst clz. rewrite evalLetExpr_countLeadingZerosArray. apply countLeadingZerosLoop_bound_CapBSz_0. }
   pose proof (e_init_val Hclz_bound) as He_val.
   pose proof (bits_ExpSz_range clz) as [H1 H2].
   assert (Hef_ne: ef <> bits.of_Z ExpSz (-1)).
@@ -1196,7 +1196,7 @@ Proof.
       assert (Hclz_bound': Zmod.unsigned clz <= AddrSz - CapBSz - 1) by lia.
       assert (Hlen_pow: 2 ^ (AddrSz - 1 - Zmod.unsigned clz) <= Zmod.unsigned length).
       { apply length_ge_pow2_clz.
-        - subst clz lenTrunc. reflexivity.
+        - subst clz lenTrunc. apply evalLetExpr_countLeadingZerosArray.
         - exact Hclz_bound'. }
       apply (@pow2_ef_le_length_clz (Zmod.unsigned length) (Zmod.unsigned e_b) (Zmod.unsigned clz));
         [ lia | exact Hclz_range | lia | exact Hlen_pow ].
@@ -1793,7 +1793,7 @@ Proof.
   set (cond := evalExpr (isNotZero (TruncMsb 1 (CapBSz - 1) #mf))).
   clearbody cond.
   assert (Hclz_bound: Zmod.unsigned clz <= AddrSz - CapBSz).
-  { subst clz. cbn [evalLetExpr countLeadingZerosArray]. apply countLeadingZerosLoop_bound_CapBSz_0. }
+  { subst clz. rewrite evalLetExpr_countLeadingZerosArray. apply countLeadingZerosLoop_bound_CapBSz_0. }
   pose proof (bits_ExpSz_range clz) as [Hclz_min Hclz_max].
   pose proof (e_init_val Hclz_bound) as He_val.
   pose proof (e_init_plus_one_val Hclz_bound) as He_plus1_val.
@@ -3036,7 +3036,7 @@ Proof.
   unfold Zmod.to_Z in *.
   change (@Zmod.Private_to_Z ?m) with (@Zmod.unsigned m) in *.
   assert (Hclz_bound: Zmod.unsigned clz <= AddrSz - CapBSz).
-  { subst clz. cbn [evalLetExpr countLeadingZerosArray]. apply countLeadingZerosLoop_bound_CapBSz_0. }
+  { subst clz. rewrite evalLetExpr_countLeadingZerosArray. apply countLeadingZerosLoop_bound_CapBSz_0. }
   pose proof (bits_ExpSz_range clz) as [Hclz_min Hclz_max].
   pose proof (e_init_val Hclz_bound) as He_val.
   pose proof (e_init_plus_one_val Hclz_bound) as He_plus1_val.
@@ -3065,7 +3065,7 @@ Proof.
     assert (Hclz_bound' : Zmod.unsigned clz <= AddrSz - CapBSz - 1) by lia.
     assert (Hlen_ge : 2^(AddrSz - 1 - Zmod.unsigned clz) <= Zmod.unsigned length).
     { apply length_ge_pow2_clz.
-      - subst clz lenTrunc. reflexivity.
+      - subst clz lenTrunc. apply evalLetExpr_countLeadingZerosArray.
       - exact Hclz_bound'. }
     assert (Hpow_e_CapBSz : 2 ^ (e + CapBSz) <= 2 ^ (AddrSz - 1 - Zmod.unsigned clz)).
     { apply Z.pow_le_mono_r; lia. }
@@ -3301,7 +3301,7 @@ Proof.
   unfold Zmod.to_Z in *.
   change (@Zmod.Private_to_Z ?m) with (@Zmod.unsigned m) in *.
   assert (Hclz_bound: Zmod.unsigned clz <= AddrSz - CapBSz).
-  { subst clz. cbn [evalLetExpr countLeadingZerosArray]. apply countLeadingZerosLoop_bound_CapBSz_0. }
+  { subst clz. rewrite evalLetExpr_countLeadingZerosArray. apply countLeadingZerosLoop_bound_CapBSz_0. }
   pose proof (e_init_val Hclz_bound) as He_val.
   pose proof (e_init_plus_one_val Hclz_bound) as He_plus1_val.
   assert (He_init_eq: e_init = Zmod.add (Zmod.of_Z (2^ExpSz) (AddrSz + 1 - CapBSz)) (Zmod.not clz)).
