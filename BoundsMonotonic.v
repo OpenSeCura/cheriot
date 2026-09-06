@@ -479,30 +479,6 @@ Proof.
     + reflexivity.
 Qed.
 
-Fixpoint evalLetProp {k} (le: LetExpr type k) (P: type k -> Prop) : Prop :=
-  match le with
-  | RetE e => P (evalExpr e)
-  | SystemE ls cont => evalLetProp cont P
-  | LetEx s k' le cont => let t := evalLetExpr le in evalLetProp (cont t) P
-  | IfElseE s p k' t f cont =>
-      if evalExpr p then evalLetProp (cont (evalLetExpr t)) P
-                    else evalLetProp (cont (evalLetExpr f)) P
-  end.
-
-Lemma evalLetProp_sound : forall {k} (le: LetExpr type k) (P: type k -> Prop),
-  evalLetProp le P -> P (evalLetExpr le).
-Proof.
-  fix evalLetProp_sound 2.
-  intros k le P H.
-  destruct le as [ e | ls cont | s k' le1 cont | s p k' t f cont ].
-  - exact H.
-  - apply (evalLetProp_sound _ cont P H).
-  - apply (evalLetProp_sound _ (cont (evalLetExpr le1)) P H).
-  - simpl in H. simpl.
-    destruct (evalExpr p).
-    + apply (evalLetProp_sound _ (cont (evalLetExpr t)) P H).
-    + apply (evalLetProp_sound _ (cont (evalLetExpr f)) P H).
-Qed.
 
 Lemma bounds_base_math_abstract : forall (base : bits AddrSz) (ef : bits ExpSz) (cond : bool),
   ef <> Zmod.of_Z (2^ExpSz) (-1) ->
@@ -663,19 +639,44 @@ Lemma bounds_top_rel : forall base length isRoundDown B,
 Proof.
   intros base length isRoundDown B HB.
   subst B.
-  apply evalLetProp_sound.
-  cbn [evalLetProp Bounds countLeadingZerosArray countLeadingZerosLoop countTrailingZerosArray countTrailingZerosLoop].
-  cbv [readDiffTupleStr getFinStructOption getFinStruct forceOption readDiffTuple nth_pf fst snd
-       String.eqb Ascii.eqb Bool.eqb mapDiffTuple finNum finLt Fst Snd].
-  cbn [evalExpr evalAndBinary evalBinary KindCustomInd mapDiffTuple Fst Snd].
-  cbn [evalExpr].
-  match goal with
-  | |- Zmod.to_Z ?t = (Zmod.to_Z ?b + Zmod.to_Z ?l) mod _ =>
-      set (TOP := t) in *; set (BASE := b) in *; set (LEN := l) in *
-  end.
-  clearbody BASE LEN.
-  unfold TOP.
-  cbn [evalLetExpr evalExpr fold_left map].
+  apply evalLetPropGen_sound.
+  cbn [evalLetPropGen Bounds].
+  cbv [readDiffTupleStr getFinStructOption String.eqb Ascii.eqb fst eqb readDiffTuple finNum].
+  intros lenTrunc HlenTrunc
+         clz Hclz
+         e_init He_init
+         d Hd
+         mask_e Hmask_e
+         base_mod_e Hbase_mod_e
+         length_mod_e Hlength_mod_e
+         sum_mod_e Hsum_mod_e
+         iFloor HiFloor
+         lost_sum Hlost_sum
+         iCeil HiCeil
+         m_raw Hm_raw
+         b_e Hb_e
+         isOverflow HisOverflow
+         e_unsat He_unsat
+         isESaturated HisESaturated
+         e_normal He_normal
+         m_raw_lsb Hm_raw_lsb
+         inc_ovf Hinc_ovf
+         m_ovf Hm_ovf
+         m_normal Hm_normal
+         e_b He_b
+         pick_b Hpick_b
+         e_roundDown He_roundDown
+         m_roundDown Hm_roundDown
+         ef Hef
+         mf Hmf
+         cram Hcram
+         outBase HoutBase
+         outLen HoutLen
+         outTop HoutTop
+         cE HcE.
+  cbn [mapDiffTuple Fst Snd evalExpr].
+  rewrite HoutTop.
+  cbn [evalLetExpr evalExpr fold_left map snd].
   rewrite Zmod.add_0_l.
   rewrite Zmod.unsigned_add.
   cbn [evalExpr ZeroExtend ZeroExtendTo].
