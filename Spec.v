@@ -75,15 +75,19 @@ Section Spec.
   Definition specPlicStep : Action ty sysTree (Bit 0) :=
     liftAction np_mem (plicSampleAndStep plic ty pfPlicCount).
 
+  Definition updateMipBit (bitIdx : Expr ty (Bit LgXlen)) (bitVal : Expr ty Bool) : Action ty sysTree (Bit 0) :=
+    liftAction np_rf (
+      LetA currMip : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz)) ;
+      Let currArr : Array (Z.to_nat Xlen) Bool <- FromBit (Array (Z.to_nat Xlen) Bool) #currMip ;
+      Let updArr  : Array (Z.to_nat Xlen) Bool <- UpdateArray #currArr bitIdx bitVal ;
+      Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz)) (ToBit #updArr)) ;
+      Retv
+    ).
+
   (* Rule: Reads PLIC MEIP and updates mip.meip *)
   Definition specExternalInterruptRule : Action ty sysTree (Bit 0) :=
     LetA meipVal : Bool <- liftAction np_mem (plicMeipSystem plic ty) ;
-    LetA currMip : Bit Xlen <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz))) ;
-    Let currArr : Array (Z.to_nat Xlen) Bool <- FromBit (Array (Z.to_nat Xlen) Bool) #currMip ;
-    Let idxMeip : Bit LgXlen <- $MEIP_Bit ;
-    Let updArr  : Array (Z.to_nat Xlen) Bool <- UpdateArray #currArr #idxMeip #meipVal ;
-    Act (liftAction np_rf (writeRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz)) (ToBit #updArr))) ;
-    Retv.
+    updateMipBit $MEIP_Bit #meipVal.
 
   (* Rule: Reads mtimecmp CSR and mtime MMIO register to update mip.mtip *)
   Definition specTimerInterruptRule : Action ty sysTree (Bit 0) :=
@@ -92,12 +96,7 @@ Section Spec.
     Let mtimecmpDXlen : Bit DXlen <- {< #hi, #lo >} ;
     LetA mtimeDXlen   : Bit DXlen <- liftAction np_mem (readClintMtimeAction clint ty) ;
     Let mtipVal       : Bool      <- Sge #mtimeDXlen #mtimecmpDXlen ;
-    LetA currMip : Bit Xlen <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz))) ;
-    Let currArr : Array (Z.to_nat Xlen) Bool <- FromBit (Array (Z.to_nat Xlen) Bool) #currMip ;
-    Let idxMtip : Bit LgXlen <- $MTIP_Bit ;
-    Let updArr  : Array (Z.to_nat Xlen) Bool <- UpdateArray #currArr #idxMtip #mtipVal ;
-    Act (liftAction np_rf (writeRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz)) (ToBit #updArr))) ;
-    Retv.
+    updateMipBit $MTIP_Bit #mtipVal.
 
   Definition specStep : Action ty sysTree (Bit 0) :=
     (* 1. Fetch *)
