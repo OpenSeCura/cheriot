@@ -378,10 +378,10 @@ Definition plicMemRegion
            : MemRegion := {|
   regionName        := "plic" ;
   regionBase        := base ;
-  regionSize        := Z.to_nat PlicSizeBytes ;
+  regionSize        := PlicSizeBytes ;
   regionLineCfg     := PlicLineConfig ;
   isReadOnly        := false ;
-  regionKind        := @CustomMem "plic" (Z.to_nat PlicSizeBytes) PlicLineConfig
+  regionKind        := @CustomMem "plic" PlicSizeBytes PlicLineConfig
                                   (plicChildren n)
                                   (plicLineReadAction n base)
                                   (plicLineWriteAction n base)

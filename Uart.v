@@ -31,7 +31,14 @@ Local Open Scope guru_scope.
  * 1. 16550 UART Register Offsets & Memory Footprint
  * =========================================================================== *)
 
-Definition UartSizeBytes : nat := Z.to_nat 32.
+Definition UartRegNames : list string :=
+  [ "rbr_thr_dll" ; "ier_dlm" ; "iir_fcr" ; "lcr" ; "mcr" ; "lsr" ; "msr" ; "scr" ].
+
+Definition uartRegIdx (name : string) :=
+  forceOption (getStrIndexOption name UartRegNames).
+
+Definition UartNumRegs : nat := Eval compute in (length UartRegNames).
+Definition UartSizeBytes : Z := Eval compute in (Z.of_nat UartNumRegs * NumBytesXlen)%Z.
 
 Definition UART_RBR_THR_DLL_OFFSET : Z := 0.   (* 0x00: RBR (r), THR (w), DLL (r/w, DLAB=1) *)
 Definition UART_IER_DLM_OFFSET     : Z := 4.   (* 0x04: IER (r/w), DLM (r/w, DLAB=1) *)
@@ -385,7 +392,7 @@ Arguments uartLineWriteAction base ty rq : clear implicits.
 
 Definition uartMemRegion
            (base : Z)
-           (pfBound : Is_true ((0 <=? base) && (base + Z.of_nat UartSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
+           (pfBound : Is_true ((0 <=? base) && (base + UartSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
            (pfAligned : Is_true (base mod (2 ^ Z.of_nat (cfgLgLineBytes UartLineConfig)) =? 0)%Z)
            : MemRegion := {|
   regionName        := "uart" ;
@@ -412,7 +419,7 @@ Arguments uartMemRegion base pfBound pfAligned : clear implicits.
 Record UartInstance (regions : list MemRegion) := {
   uartIdx      : nat ;
   uartBaseAddr : Z ;
-  pfBound      : Is_true ((0 <=? uartBaseAddr) && (uartBaseAddr + Z.of_nat UartSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
+  pfBound      : Is_true ((0 <=? uartBaseAddr) && (uartBaseAddr + UartSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
   pfAligned    : Is_true (uartBaseAddr mod (2 ^ Z.of_nat (cfgLgLineBytes UartLineConfig)) =? 0)%Z ;
   pfUart       : nth_error regions uartIdx = Some (uartMemRegion uartBaseAddr pfBound pfAligned)
 }.

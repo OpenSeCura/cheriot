@@ -1110,15 +1110,15 @@ Definition PendingRev := STRUCT_TYPE {
 Record RevConfig := {
   heapStartAddr        : Z ;
   revTableStartAddr    : Z ;
-  revTableSizeInBytes  : nat ;
+  revTableSizeInBytes  : Z ;
   lgRevGranularity     : Z
 }.
 
-Definition heapSize (config : RevConfig) : nat :=
-  (config.(revTableSizeInBytes) * 8 * (2 ^ (Z.to_nat config.(lgRevGranularity))))%nat.
+Definition heapSize (config : RevConfig) : Z :=
+  (config.(revTableSizeInBytes) * 8 * (2 ^ config.(lgRevGranularity)))%Z.
 
 Definition heapEndAddr (config : RevConfig) : Z :=
-  config.(heapStartAddr) + Z.of_nat (heapSize config).
+  config.(heapStartAddr) + heapSize config.
 
 Definition isRevokableAddr {ty : Kind -> Type} (config : RevConfig) (a : Expr ty (Bit (AddrSz + 1))) : Expr ty Bool :=
   And [ Sge a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;

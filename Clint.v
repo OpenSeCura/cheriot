@@ -130,10 +130,10 @@ Definition clintMemRegion
            : MemRegion := {|
   regionName        := "clint" ;
   regionBase        := base ;
-  regionSize        := Z.to_nat ClintSizeBytes ;
+  regionSize        := ClintSizeBytes ;
   regionLineCfg     := ClintLineConfig ;
   isReadOnly        := false ;
-  regionKind        := @CustomMem "clint" (Z.to_nat ClintSizeBytes) ClintLineConfig clintChildren (clintLineReadAction base) (clintLineWriteAction base) None ;
+  regionKind        := @CustomMem "clint" ClintSizeBytes ClintLineConfig clintChildren (clintLineReadAction base) (clintLineWriteAction base) None ;
   regionInMemory    := pfBound ;
   regionBaseAligned := pfAligned ;
   regionSizeAligned := I

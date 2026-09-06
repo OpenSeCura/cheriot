@@ -44,7 +44,7 @@ Definition RevokerControlSignature : Z := 0x5500.
 Definition RevokerControlSignatureWidth : Z := Eval compute in (Xlen / 2).
 
 Definition RevokerNumRegs : nat := Eval compute in (length RevokerRegNames).
-Definition RevokerSizeBytes : nat := Eval compute in (RevokerNumRegs * Z.to_nat NumBytesXlen)%nat.
+Definition RevokerSizeBytes : Z := Eval compute in (Z.of_nat RevokerNumRegs * NumBytesXlen)%Z.
 
 Definition revokerChildren : list (Tree Elem) :=
   [ Leaf "base" (EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero))) ;
@@ -77,7 +77,7 @@ Definition revokerLineReadAction
            (ty : Kind -> Type)
            (addr : Expr ty Addr)
            : Action ty tRev (LineReadRp RevokerLineConfig) :=
-  Let offset <- getMemOffset base (Z.of_nat RevokerSizeBytes) addr ;
+  Let offset <- getMemOffset base RevokerSizeBytes addr ;
   Let regIdx : Bit RevokerRegIdxWidth <- TruncMsb RevokerRegIdxWidth LgNumBytesXlen #offset ;
   ReadReg "base" revokerBasePath (fun baseVal =>
   ReadReg "top" revokerTopPath (fun topVal =>
@@ -108,7 +108,7 @@ Definition revokerLineWriteAction
            (ty : Kind -> Type)
            (rq : Expr ty (LineWriteRq RevokerLineConfig))
            : Action ty tRev (Bit 0) :=
-  Let offset <- getMemOffset base (Z.of_nat RevokerSizeBytes) (rq`"addr") ;
+  Let offset <- getMemOffset base RevokerSizeBytes (rq`"addr") ;
   Let regIdx : Bit RevokerRegIdxWidth <- TruncMsb RevokerRegIdxWidth LgNumBytesXlen #offset ;
   Let writeWord : Bit Xlen <- ToBit (rq`"data") ;
   If (Eq #regIdx (revokerRegIdxBit "base")) Then (
@@ -154,7 +154,7 @@ Qed.
 
 Definition revokerMemRegion
            (base : Z)
-           (pfBound : Is_true ((0 <=? base) && (base + Z.of_nat RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
+           (pfBound : Is_true ((0 <=? base) && (base + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
            (pfAligned : Is_true (base mod NumBytesXlen =? 0)%Z)
            : MemRegion := {|
   regionName        := "revoker" ;
@@ -176,7 +176,7 @@ Arguments revokerMemRegion base pfBound pfAligned : clear implicits.
 Record RevokerInstance (regions : list MemRegion) := {
   revokerIdx      : nat ;
   revokerBaseAddr : Z ;
-  pfBound         : Is_true ((0 <=? revokerBaseAddr) && (revokerBaseAddr + Z.of_nat RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
+  pfBound         : Is_true ((0 <=? revokerBaseAddr) && (revokerBaseAddr + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
   pfAligned       : Is_true (revokerBaseAddr mod NumBytesXlen =? 0)%Z ;
   pfRevoker       : nth_error regions revokerIdx = Some (revokerMemRegion revokerBaseAddr pfBound pfAligned)
 }.

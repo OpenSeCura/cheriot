@@ -56,10 +56,10 @@ Definition cfgNumLineTags (cfg : LineConfig) : nat :=
   | RawLine _ => 0%nat
   end.
 
-Definition cfgRegionTagSize (regionSize : nat) (cfg : LineConfig) : nat :=
-  if cfgHasTags cfg then (regionSize / Z.to_nat NumBytesFullCapSz)%nat else 0%nat.
+Definition cfgRegionTagSize (regionSize : Z) (cfg : LineConfig) : nat :=
+  if cfgHasTags cfg then Z.to_nat (regionSize / NumBytesFullCapSz) else 0%nat.
 
-Definition defaultTagsInit (regionSize : nat) (cfg : LineConfig)
+Definition defaultTagsInit (regionSize : Z) (cfg : LineConfig)
   : option (option (type (Array (cfgRegionTagSize regionSize cfg) Bool))) :=
   Some (Some (Build_SameTuple (tupleElems := List.repeat false (cfgRegionTagSize regionSize cfg))
                               (Is_true_Nat_eq_implies (repeat_length _ _)))).
@@ -77,8 +77,8 @@ Notation LineWriteRq cfg := (STRUCT_TYPE {
   "tagMask"  :: Array (cfgNumLineTags cfg) Bool
 }).
 
-Inductive RegionKind (regionName : string) (regionSize : nat) (cfg : LineConfig) :=
-| InternalMem (initData : option (option (type (Array regionSize (Bit 8)))))
+Inductive RegionKind (regionName : string) (regionSize : Z) (cfg : LineConfig) :=
+| InternalMem (initData : option (option (type (Array (Z.to_nat regionSize) (Bit 8)))))
               (initTags : option (option (type (Array (cfgRegionTagSize regionSize cfg) Bool))))
 | ExternalMem
 | CustomMem (children : list (Tree Elem))
@@ -95,13 +95,13 @@ Arguments CustomMem {regionName regionSize cfg} children readAction writeAction 
 Record MemRegion := {
   regionName        : string ;
   regionBase        : Z ;
-  regionSize        : nat ;
+  regionSize        : Z ;
   regionLineCfg     : LineConfig ;
   isReadOnly        : bool ;
   regionKind        : RegionKind regionName regionSize regionLineCfg ;
-  regionInMemory    : Is_true ((0 <=? regionBase) && (regionBase + Z.of_nat regionSize <=? Z.shiftl 1 AddrSz))%Z ;
+  regionInMemory    : Is_true ((0 <=? regionBase) && (regionBase + regionSize <=? Z.shiftl 1 AddrSz))%Z ;
   regionBaseAligned : Is_true (regionBase mod (2 ^ Z.of_nat (cfgLgLineBytes regionLineCfg)) =? 0)%Z ;
-  regionSizeAligned : Is_true (Z.of_nat regionSize mod (2 ^ Z.of_nat (cfgLgLineBytes regionLineCfg)) =? 0)%Z
+  regionSizeAligned : Is_true (regionSize mod (2 ^ Z.of_nat (cfgLgLineBytes regionLineCfg)) =? 0)%Z
 }.
 
 Definition hasTags (r : MemRegion) : bool :=
@@ -117,8 +117,8 @@ Definition numLineTags (r : MemRegion) : nat :=
   cfgNumLineTags r.(regionLineCfg).
 
 Definition disjointBool (r1 r2 : MemRegion) : bool :=
-  (r1.(regionBase) + Z.of_nat r1.(regionSize) <=? r2.(regionBase))%Z ||
-  (r2.(regionBase) + Z.of_nat r2.(regionSize) <=? r1.(regionBase))%Z.
+  (r1.(regionBase) + r1.(regionSize) <=? r2.(regionBase))%Z ||
+  (r2.(regionBase) + r2.(regionSize) <=? r1.(regionBase))%Z.
 
 Fixpoint pairwiseDisjoint (l : list MemRegion) : bool :=
   match l with
@@ -127,7 +127,7 @@ Fixpoint pairwiseDisjoint (l : list MemRegion) : bool :=
   end.
 
 Definition isRegionAddr {ty : Kind -> Type} (r : MemRegion) (addr : Expr ty Addr) : Expr ty Bool :=
-  And [ Sge addr $(r.(regionBase)) ; Slt addr $(r.(regionBase) + Z.of_nat r.(regionSize)) ].
+  And [ Sge addr $(r.(regionBase)) ; Slt addr $(r.(regionBase) + r.(regionSize)) ].
 
 Definition regionTagSize (r : MemRegion) : nat :=
   cfgRegionTagSize r.(regionSize) r.(regionLineCfg).
@@ -153,10 +153,10 @@ Proof. lia. Qed.
 
 Definition internalMemRegionChildren
            (r : MemRegion)
-           (initData : option (option (type (Array r.(regionSize) (Bit 8)))))
+           (initData : option (option (type (Array (Z.to_nat r.(regionSize)) (Bit 8)))))
            (initTags : option (option (type (Array (regionTagSize r) Bool))))
            : list (Tree Elem) :=
-  [ Leaf "mainMem" (EMem {| memSize := r.(regionSize);
+  [ Leaf "mainMem" (EMem {| memSize := Z.to_nat r.(regionSize);
                             memKind := Bit 8;
                             memPort := 1;
                             memInit := initData |}) ;
@@ -177,7 +177,7 @@ Arguments externalMemRegionChildren r : clear implicits.
 
 Definition internalMemRegionTree
            (r : MemRegion)
-           (initData : option (option (type (Array r.(regionSize) (Bit 8)))))
+           (initData : option (option (type (Array (Z.to_nat r.(regionSize)) (Bit 8)))))
            (initTags : option (option (type (Array (regionTagSize r) Bool))))
            : Tree Elem :=
   Node r.(regionName) (internalMemRegionChildren r initData initTags).
@@ -205,7 +205,7 @@ Definition memRegionTree (r : MemRegion) : Tree Elem :=
 
 Section InternalMemRegionActions.
   Variable r : MemRegion.
-  Variable initData : option (option (type (Array r.(regionSize) (Bit 8)))).
+  Variable initData : option (option (type (Array (Z.to_nat r.(regionSize)) (Bit 8)))).
   Variable initTags : option (option (type (Array (regionTagSize r) Bool))).
   Variable ty : Kind -> Type.
 
@@ -215,7 +215,7 @@ Section InternalMemRegionActions.
 
   Definition internalMemRegionLineRead (addr : Expr ty Addr)
              : Action ty tInt (LineReadRp r.(regionLineCfg)) :=
-    Let offset <- getMemOffset r.(regionBase) (Z.of_nat r.(regionSize)) addr ;
+    Let offset <- getMemOffset r.(regionBase) (Z.of_nat (Z.to_nat r.(regionSize))) addr ;
     LetA dataBytes : Array (lineBytes r) (Bit 8) <-
       sliceMem mainMemPath I (lineBytes r) #offset ;
     LetA tagArr : Array (numLineTags r) Bool <-
@@ -237,7 +237,7 @@ Section InternalMemRegionActions.
     if r.(isReadOnly) then (
       Retv
     ) else (
-      Let offset <- getMemOffset r.(regionBase) (Z.of_nat r.(regionSize)) (rq`"addr") ;
+      Let offset <- getMemOffset r.(regionBase) (Z.of_nat (Z.to_nat r.(regionSize))) (rq`"addr") ;
       Act (updSliceMem mainMemPath (lineBytes r) #offset (rq`"data") (rq`"dataMask")) ;
       if hasTags r then (
         Let tagAddr : Bit TagAddrWidth <- TruncMsb TagAddrWidth LgNumBytesFullCapSz (rq`"addr") ;

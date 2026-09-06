@@ -32,11 +32,11 @@ Local Open Scope guru_scope.
  * =========================================================================== *)
 
 Definition RamBase        : Z := MemStartAddr.
-Definition RamSize        : nat := Z.to_nat (256 * 1024). (* 256 KB *)
+Definition RamSize        : Z := 256 * 1024. (* 256 KB *)
 Definition RamLineConfig  : LineConfig := @TaggedLine (Z.to_nat LgNumBytesFullCapSz) I.
 
 Definition RevTableBase       : Z := 0x00001000.
-Definition RevTableSize       : nat := Z.to_nat (4 * 1024). (* 4 KB bitmap *)
+Definition RevTableSize       : Z := 4 * 1024. (* 4 KB bitmap *)
 Definition RevTableLineConfig : LineConfig := RawLine (Z.to_nat LgNumBytesXlen).
 
 Definition ClintBaseAddr   : Z := 0x02000000.
@@ -61,13 +61,13 @@ Definition concreteRevConfig : RevConfig := {|
 
 Definition fixedBinary : list (bits 8) := map (fun v => bits.of_Z 8 v) binary.
 
-Definition binary_le_RamSize : Is_true (List.length binary <=? RamSize)%nat := I.
+Definition binary_le_RamSize : Is_true (List.length binary <=? Z.to_nat RamSize)%nat := I.
 
 Definition paddedBinary : list (bits 8) :=
-  (fixedBinary ++ List.repeat (bits.of_Z 8 0) (RamSize - List.length binary))%list.
+  (fixedBinary ++ List.repeat (bits.of_Z 8 0) (Z.to_nat RamSize - List.length binary))%list.
 
 Lemma paddedBinary_length :
-  List.length paddedBinary = RamSize.
+  List.length paddedBinary = Z.to_nat RamSize.
 Proof.
   unfold paddedBinary, fixedBinary.
   rewrite length_app.
@@ -79,7 +79,7 @@ Proof.
   lia.
 Qed.
 
-Definition ramInitData : option (option (type (Array RamSize (Bit 8)))) :=
+Definition ramInitData : option (option (type (Array (Z.to_nat RamSize) (Bit 8)))) :=
   Some (Some (Build_SameTuple (tupleElems := paddedBinary)
                               (Is_true_Nat_eq_implies paddedBinary_length))).
 
@@ -121,12 +121,10 @@ Definition concreteRegions : list MemRegion := [
  * fix comments all over
  *)
 
-(*
 Lemma concreteRegionsDisjoint : Is_true (pairwiseDisjoint concreteRegions).
 Proof.
   exact I.
 Qed.
-*)
 
 (* ===========================================================================
  * 4. Peripheral Instances (Proofs of Membership by Index)
