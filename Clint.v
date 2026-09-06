@@ -33,7 +33,7 @@ Local Notation ByteSz := 8%Z.
  * 1. CLINT Register Offsets & Tree Structure
  * =========================================================================== *)
 
-Definition ClintSizeBytes : Z := 256.
+Definition ClintSizeBytes : Z := 8.
 
 Definition CLINT_MTIME_OFFSET  : Z := 0x00.
 Definition CLINT_MTIMEH_OFFSET : Z := 0x04.

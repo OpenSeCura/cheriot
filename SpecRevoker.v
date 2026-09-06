@@ -185,13 +185,7 @@ Definition revokerRegion {regions} (rev : RevokerInstance regions) : MemRegion :
   revokerMemRegion rev.(revokerBaseAddr) rev.(pfBound) rev.(pfAligned).
 
 (* ===========================================================================
- * 2. Accessing Region at Index in Spec Memory Tree
- * =========================================================================== *)
-
-
-
-(* ===========================================================================
- * 3. Autonomous Revoker Step Action & Interrupt Query
+ * 2. Autonomous Revoker Step Action & Interrupt Query
  * =========================================================================== *)
 
 Section RevokerAction.
