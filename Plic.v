@@ -240,22 +240,24 @@ Section PlicCoreLogic.
     ) ;
     Retv.
 
-  (* Latch pending IRQs from external wires *)
+  (* Latch pending IRQs from external wires (ignoring wires while in_service) *)
   Fixpoint updatePendingWithIrqs
            (curr : nat)
            (pends : Expr ty (Array n Bool))
+           (insvs : Expr ty (Array n Bool))
            (irqs : Expr ty (Array n Bool)) : Expr ty (Array n Bool) :=
     match curr with
     | 0%nat => pends
     | S rest =>
         let idx := ($(Z.of_nat rest) : Expr ty (Bit Xlen)) in
-        let newPend := Or [ pends @[ idx ] ; irqs @[ idx ] ] in
-        updatePendingWithIrqs rest (pends @[ idx <- newPend ]) irqs
+        let newPend := Or [ pends @[ idx ] ; And [ irqs @[ idx ] ; Not (insvs @[ idx ]) ] ] in
+        updatePendingWithIrqs rest (pends @[ idx <- newPend ]) insvs irqs
     end.
 
   Definition plicStepWithIrqs (irqs : Expr ty (Array n Bool)) : Action ty tPlic (Bit 0) :=
-    LetA curPends : Array n Bool <- ReadReg "pending" (plicPendingPath n) (fun v => Return #v) ;
-    Let newPends : Array n Bool <- updatePendingWithIrqs n #curPends irqs ;
+    LetA curPends : Array n Bool <- ReadReg "pending"    (plicPendingPath n)   (fun v => Return #v) ;
+    LetA curInsvs : Array n Bool <- ReadReg "in_service" (plicInServicePath n) (fun v => Return #v) ;
+    Let newPends : Array n Bool <- updatePendingWithIrqs n #curPends #curInsvs irqs ;
     WriteReg (plicPendingPath n) #newPends Retv.
 
   Definition plicStepWithIrqList
