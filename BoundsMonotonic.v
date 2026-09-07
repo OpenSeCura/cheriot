@@ -133,6 +133,11 @@ Proof. rewrite Emax_eq_AddrSz_add_1_sub_CapBSz; pose proof CapBSz_lt_AddrSz; lia
 Theorem Emax_lt_AddrSz : Emax < AddrSz.
 Proof. rewrite Emax_eq_AddrSz_add_1_sub_CapBSz; pose proof CapBSz_gt_2; lia. Qed.
 
+(* ========================================================================= *)
+(* ARITHMETIC & BIT-VECTOR UTILITIES                                         *)
+(* Modular arithmetic, bit-level properties, leading zero bounds, and Ltac.  *)
+(* ========================================================================= *)
+
 Theorem mod_neg1_m : forall m, 1 < m -> (-1) mod m = m - 1.
 Proof.
   intros m Hm.
@@ -329,6 +334,11 @@ Ltac solve_lia :=
           end;
           try solve_unsigned_nonneg;
           lia ].
+
+(* ========================================================================= *)
+(* EXPONENT COMPUTATION & MASKING LEMMAS                                     *)
+(* Semantic evaluation of e_init, bitwise shift/mask operations, and cE.     *)
+(* ========================================================================= *)
 
 Lemma e_init_val : forall (clz: bits ExpSz),
   Zmod.unsigned clz <= AddrSz - CapBSz ->
@@ -554,6 +564,12 @@ Proof.
     + apply (evalLetPropGen_sound _ (cont (evalLetExpr t)) P (H (evalLetExpr t) eq_refl)).
     + apply (evalLetPropGen_sound _ (cont (evalLetExpr f)) P (H (evalLetExpr f) eq_refl)).
 Qed.
+
+(* ========================================================================= *)
+(* BOUNDS CIRCUIT SEMANTICS: BASE & TOP EXTRACTION                           *)
+(* Proves that Bounds extracts base as floor(base / 2^ef) * 2^ef and         *)
+(* bounds the resulting top address.                                         *)
+(* ========================================================================= *)
 
 Lemma bounds_base_math : forall (base length : bits AddrSz) (isRoundDown : bool) (bounds : type BoundsRes),
   bounds = evalLetExpr (Bounds base length isRoundDown) ->
@@ -822,6 +838,10 @@ Proof.
   apply Z.mod_pos_bound; exact Hpos.
 Qed.
 
+(* ========================================================================= *)
+(* LEADING ZEROS ANALYSIS & HARDWARE BIT-ARRAY BRIDGE                        *)
+(* Bridges Kami array indexing to Z.testbit and analyzes countLeadingZeros.  *)
+(* ========================================================================= *)
 
 Lemma unsigned_lastn_AddrSz_sub_CapBSz : forall (x : bits AddrSz),
   Zmod.unsigned (Zmod_lastn (AddrSz - CapBSz) x) = Zmod.unsigned x / 2^CapBSz.
@@ -1109,6 +1129,11 @@ Proof.
   rewrite Z.mul_comm.
   exact Hlen.
 Qed.
+
+(* ========================================================================= *)
+(* ROUNDDOWN & ROUNDUP INTERMEDIATE PROPERTIES                               *)
+(* Establishes bounds_roundDown_length_le and bounds_length_roundUp_le.      *)
+(* ========================================================================= *)
 
 Lemma bounds_roundDown_length_le : forall (base length : bits AddrSz) (bounds : type BoundsRes),
   bounds = evalLetExpr (Bounds base length true) ->
@@ -2447,6 +2472,12 @@ Proof.
     * apply (bounds_length_roundUp_le (base:=base) (length:=length) (bounds:=bounds)); exact HB.
 Qed.
 
+(* ========================================================================= *)
+(* CAPABILITY BOUNDS ALIGNMENT MULTIPLES                                     *)
+(* Establishes that decoded capability base and top are multiples of         *)
+(* 2^ECorrected, and proves floor/ceil monotonicity lemmas.                  *)
+(* ========================================================================= *)
+
 Lemma ecap_base_multiple : forall cap addr ecap,
   ecap = evalLetExpr (DecodeCap cap addr) ->
   let ECorrected := Zmod.to_Z (evalExpr (get_ECorrected_from_E (evalExpr (get_E_from_cE (cap@%"cE"))))) in
@@ -2498,7 +2529,9 @@ Proof.
   - lia.
 Qed.
 
-(* Step 2: Since e_br <= E, 2^e_br divides 2^E. *)
+(** [multiple_divides]:
+    Divisibility transfer: since e1 <= e2, any multiple of 2^e2 is also a
+    multiple of 2^e1. *)
 Lemma multiple_divides : forall e1 e2 x,
   0 <= e1 <= e2 ->
   x mod 2^e2 = 0 ->
@@ -2518,7 +2551,9 @@ Proof.
     assert (0 < 2^e2) by lia. lia.
 Qed.
 
-(* Step 3: bounds.base = floor(base / 2^e_br) * 2^e_br >= ecap.base *)
+(** [floor_geq]:
+    Floor monotonicity: if b >= ecap_b and ecap_b is aligned to 2^eb,
+    then floor(b / 2^eb) * 2^eb >= ecap_b. *)
 Lemma floor_geq : forall b eb ecap_b,
   0 <= eb ->
   b >= ecap_b ->
@@ -2535,7 +2570,9 @@ Proof.
   lia.
 Qed.
 
-(* Step 4: bounds.top <= ceil((base + length) / 2^e_br) * 2^e_br <= ecap.top *)
+(** [ceil_leq]:
+    Ceiling monotonicity: if bl <= ecap_top and ecap_top is aligned to 2^eb,
+    then ceil((bl + 2^eb - 1) / 2^eb) * 2^eb <= ecap_top. *)
 Lemma ceil_leq : forall bl eb ecap_top,
   0 <= eb ->
   bl <= ecap_top ->
@@ -2578,19 +2615,22 @@ Proof.
 Qed.
 
 
-(* ===========================================================================
-   Proof of bounds_E_le_ecap_ECorrected.
+(* ========================================================================= *)
+(* EXPONENT CONTAINMENT & SPAN BOUND (bounds_E_le_ecap_ECorrected)           *)
+(*                                                                           *)
+(* Proves that Bounds never selects an exponent higher than the parent       *)
+(* capability's corrected exponent (ECorrected). Established from 3 facts:   *)
+(*   1. A decoded capability spans <= 2^CapBSz - 1 slots at its own exponent *)
+(*      (ecap_span_le).                                                      *)
+(*   2. A contained request is therefore <= 2^CapBSz - 1 slots once aligned  *)
+(*      (aligned_request_width_le).                                          *)
+(*   3. Bounds never selects an exponent above one at which the request      *)
+(*      fits (bounds_E_le_aligned_width).                                    *)
+(* ========================================================================= *)
 
-   The lemma below used to be admitted above the arithmetic helper
-   lemmas.  It is proved here, after the helpers it depends on, from
-   three facts: a decoded capability spans at most 2^CapBSz - 1 slots at its
-   own exponent (ecap_span_le), a contained request is therefore no
-   wider than 2^CapBSz - 1 slots once aligned (aligned_request_width_le), and
-   Bounds never selects an exponent above one at which the request
-   fits (bounds_E_le_aligned_width).
-   =========================================================================== *)
-
-(** * Bit-vector value helpers *)
+(* ------------------------------------------------------------------------- *)
+(* Bit-vector value helpers                                                  *)
+(* ------------------------------------------------------------------------- *)
 
 Lemma unsigned_bit_le_1 : forall (h : bits 1), 0 <= Zmod.unsigned h <= 1.
 Proof.
@@ -2634,7 +2674,9 @@ Proof.
   apply Z.mod_small. lia.
 Qed.
 
-(** * Arithmetic core of the span bound *)
+(* ------------------------------------------------------------------------- *)
+(* Arithmetic core of the span bound                                         *)
+(* ------------------------------------------------------------------------- *)
 
 Lemma pow_split : forall x y, 0 <= x -> 0 <= y -> 2^x * 2^y = 2^(x + y).
 Proof. intros. rewrite <- Z.pow_add_r by lia. reflexivity. Qed.
@@ -2829,7 +2871,9 @@ Proof.
     lia.
 Qed.
 
-(** * Decoded span bound *)
+(* ------------------------------------------------------------------------- *)
+(* Decoded span bound                                                        *)
+(* ------------------------------------------------------------------------- *)
 
 Lemma base_top_shape : forall (addr : type Addr) (EC : type (Bit ExpSz))
                               (T : type (Bit CapBSz)) (B : type (Bit CapBSz)),
@@ -2888,7 +2932,9 @@ Proof.
     + right. split; [ reflexivity | apply Z.ltb_ge; exact Ht ].
 Qed.
 
-(** * Connecting the span bound to DecodeCap *)
+(* ------------------------------------------------------------------------- *)
+(* Connecting the span bound to DecodeCap                                    *)
+(* ------------------------------------------------------------------------- *)
 
 Lemma ECorrected_le_Emax : forall (cap : type Cap),
   Zmod.unsigned (evalExpr (get_ECorrected_from_E (evalExpr (get_E_from_cE (cap@%"cE"))))) <= Emax.
@@ -2934,7 +2980,9 @@ Proof.
   apply ECorrected_le_Emax.
 Qed.
 
-(** * Aligned containment width (proof-plan step 2) *)
+(* ------------------------------------------------------------------------- *)
+(* Aligned containment width                                                 *)
+(* ------------------------------------------------------------------------- *)
 
 Lemma mod_le_self_pos : forall x d,
   0 <= x -> 0 < d -> x mod d <= x.
@@ -2970,7 +3018,9 @@ Proof.
   lia.
 Qed.
 
-(** * Arithmetic core of the no-overflow argument *)
+(* ------------------------------------------------------------------------- *)
+(* Arithmetic core of the no-overflow argument                               *)
+(* ------------------------------------------------------------------------- *)
 
 Lemma no_ovf_arith : forall (p B0 L iF lost : Z),
   0 < p ->
@@ -3269,7 +3319,9 @@ Proof.
       exact Heinit_le.
 Qed.
 
-(** * The selected exponent never exceeds the saturation bound *)
+(* ------------------------------------------------------------------------- *)
+(* Selected exponent never exceeds saturation bound (bounds_E_le_Emax)       *)
+(* ------------------------------------------------------------------------- *)
 
 Lemma bounds_E_le_Emax : forall base length isRoundDown bounds,
   bounds = evalLetExpr (Bounds base length isRoundDown) ->
@@ -3391,7 +3443,9 @@ Proof.
   exact H_ef_bound.
 Qed.
 
-(** * The exponent comparison behind BoundsMonotonic *)
+(* ------------------------------------------------------------------------- *)
+(* Exponent comparison: bounds_E_le_ecap_ECorrected                          *)
+(* ------------------------------------------------------------------------- *)
 
 Lemma bounds_E_le_ecap_ECorrected :
   forall cap addr base length isRoundDown ecap bounds,
@@ -3421,6 +3475,10 @@ Proof.
       * apply (@to_Z_nonneg AddrSz). apply AddrSz_nonneg.
       * eapply ecap_span_le. exact Hecap.
 Qed.
+
+(* ========================================================================= *)
+(* Final Complete Theorem: BoundsMonotonic                                   *)
+(* ========================================================================= *)
 
 Theorem BoundsMonotonic cap addr base length isRoundDown:
   let ecap : type ECap := evalLetExpr (DecodeCap cap addr) in
@@ -3475,9 +3533,14 @@ Proof.
     + apply ceil_leq; try eassumption; eauto.
 Qed.
 
-(* ================================================================= *)
-(* Bounds Properties (from FunctionalUnits.v informal proof)         *)
-(* ================================================================= *)
+(* ========================================================================= *)
+(* COMMON BOUNDS PROPERTIES (ROUNDUP & ROUNDDOWN)                            *)
+(* Shared properties of the Bounds functional unit output:                   *)
+(*   - Top equals base plus length (bounds_top_eq)                           *)
+(*   - Base floor containment: bounds.base <= base (bounds_base_le)          *)
+(*   - Length representation: bounds.length = m * 2^e (bounds_length_m_e)   *)
+(*   - Minimality of top bound (bounds_roundUp_min)                          *)
+(* ========================================================================= *)
 
 Lemma bounds_top_eq : forall (base length : bits AddrSz) (isRoundDown : bool) (bounds : type BoundsRes),
   bounds = evalLetExpr (Bounds base length isRoundDown) ->
@@ -3778,9 +3841,11 @@ Proof.
 Qed.
 
 
-(* ================================================================= *)
-(* Helper Lemmas for Normalization and Covering                      *)
-(* ================================================================= *)
+(* ========================================================================= *)
+(* ROUNDUP SPECIFICATION: COVERING & NORMALIZATION HELPERS                   *)
+(* Arithmetic and bitwise lemmas supporting RoundUp covering and             *)
+(* mantissa normalization properties.                                        *)
+(* ========================================================================= *)
 
 Lemma testbit_false_lt_pow2 : forall (a k : Z),
   0 <= a ->
@@ -3923,9 +3988,12 @@ Proof.
   discriminate H.
 Qed.
 
-(* ================================================================= *)
-(* Property 4: Normalization (bounds_roundUp_m_norm)                 *)
-(* ================================================================= *)
+(* ========================================================================= *)
+(* ROUNDUP PROPERTY 4: MANTISSA NORMALIZATION                                *)
+(* Lemma bounds_roundUp_m_norm:                                              *)
+(* Proves that if exponent e > 0, the top bit of m is 1:                    *)
+(*   e > 0 -> 2^(CapBSz - 1) <= m                                            *)
+(* ========================================================================= *)
 
 Lemma bounds_roundUp_m_norm : forall (base length : bits AddrSz) (bounds : type BoundsRes),
   bounds = evalLetExpr (Bounds base length false) ->
@@ -4104,9 +4172,11 @@ Proof.
     lia.
 Qed.
 
-(* ================================================================= *)
-(* Helper Lemmas for Covering (Property 2b)                          *)
-(* ================================================================= *)
+(* ========================================================================= *)
+(* ROUNDUP PROPERTY 2b HELPERS: COVERING ARITHMETIC                          *)
+(* Mask arithmetic and bitwise reasoning establishing that the computed      *)
+(* bounds cover the requested range: outBase + outLength >= base + length.   *)
+(* ========================================================================= *)
 
 Lemma unsigned_mask_e_eq : forall (e : Z),
   0 <= e <= AddrSz - CapBSz ->
@@ -4292,9 +4362,12 @@ Proof.
     exact H2.
 Qed.
 
-(* ================================================================= *)
-(* Property 2b: Covering (bounds_roundUp_covering)                   *)
-(* ================================================================= *)
+(* ========================================================================= *)
+(* ROUNDUP PROPERTY 2b: RANGE COVERING                                       *)
+(* Lemma bounds_roundUp_covering:                                            *)
+(* Proves that the allocated bounds cover the requested range:              *)
+(*   outBase + outLength >= base + length                                    *)
+(* ========================================================================= *)
 
 Lemma bounds_roundUp_covering :
   forall (base length : bits AddrSz) (bounds : type BoundsRes),
@@ -4603,9 +4676,9 @@ Proof.
     exact Hstep2.
 Qed.
 
-(* ================================================================= *)
-(* Final Complete Theorem: Bounds_RoundUp_Properties                 *)
-(* ================================================================= *)
+(* ========================================================================= *)
+(* Final Complete Theorem: BoundsRoundUpProperties                           *)
+(* ========================================================================= *)
 
 Theorem BoundsRoundUpProperties :
   forall (base length : bits AddrSz) (bounds : type BoundsRes),
@@ -4640,9 +4713,11 @@ Proof.
   - apply (bounds_roundUp_m_norm HB).
 Qed.
 
-(* ================================================================= *)
-(* RoundDown Circuit Properties                                      *)
-(* ================================================================= *)
+(* ========================================================================= *)
+(* ROUNDDOWN SPECIFICATION & TRAILING ZEROS ANALYSIS                         *)
+(* Analyzes countTrailingZeros hardware loop and establishes exact base      *)
+(* preservation and length containment for RoundDown mode.                   *)
+(* ========================================================================= *)
 
 Lemma testbit_low_zeros_mod : forall (a : Z) (k : Z),
   0 <= k ->
@@ -5055,9 +5130,9 @@ Proof.
     exact Hd_ge.
 Qed.
 
-(* ================================================================= *)
-(* Final Complete Theorem: BoundsRoundDownProperties                 *)
-(* ================================================================= *)
+(* ========================================================================= *)
+(* Final Complete Theorem: BoundsRoundDownProperties                         *)
+(* ========================================================================= *)
 
 Theorem BoundsRoundDownProperties :
   forall (base length : bits AddrSz) (bounds : type BoundsRes),
