@@ -112,7 +112,7 @@ Definition concreteRegions : list MemRegion := [
   revTableRegion ;
   clintMemRegion ClintBaseAddr I I ;
   revokerMemRegion RevokerBaseAddr I I ;
-  plicMemRegion 2 PlicBaseAddr I I ;
+  plicMemRegion 3 PlicBaseAddr I I ;
   uartMemRegion UartBaseAddr I I
 ].
 
@@ -124,8 +124,8 @@ Definition concreteClint : ClintInstance concreteRegions :=
 Definition concreteRevoker : RevokerInstance concreteRegions :=
   @Build_RevokerInstance concreteRegions 3%nat RevokerBaseAddr I I eq_refl.
 
-Definition concretePlic : PlicInstance 2%nat concreteRegions :=
-  @Build_PlicInstance 2%nat concreteRegions 4%nat PlicBaseAddr I I I eq_refl.
+Definition concretePlic : PlicInstance 3%nat concreteRegions :=
+  @Build_PlicInstance 3%nat concreteRegions 4%nat PlicBaseAddr I I I eq_refl.
 
 Definition concreteUart : UartInstance concreteRegions :=
   @Build_UartInstance concreteRegions 5%nat UartBaseAddr I I eq_refl.

@@ -41,7 +41,7 @@ Section Spec.
   Variable clint : ClintInstance regions.
   Variable rev : RevokerInstance regions.
   Variable uart : UartInstance regions.
-  Variable plic : PlicInstance (length (collectIrqActions regions)) regions.
+  Variable plic : PlicInstance (S (length (collectIrqActions regions))) regions.
   Local Notation sysTree := (specSysTree regions).
 
   Section Ty.
