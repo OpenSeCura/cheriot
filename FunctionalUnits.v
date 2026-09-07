@@ -940,6 +940,7 @@ Section FunctionalUnits.
     @RetE _ TagECap (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap }).
 
   Definition BoundsRes := STRUCT_TYPE {
+    "m" :: Bit CapBSz ;
     "cE" :: Bit ExpSz ;
     "base" :: Bit (AddrSz + 1) ;
     "top" :: Bit (AddrSz + 2) ;
@@ -951,15 +952,13 @@ Section FunctionalUnits.
       CSETBOUNDS ALGORITHM & INFORMAL PROOF OF CORRECTNESS
       ===================================================================
 
-      Problem Statement:
+      Problem Statement (for the non RoundDown case):
       Given input base (AddrSz bits) and length (AddrSz bits),
       compute mantissa m (CapBSz bits), exponent e (LgAddrSz bits) s.t.:
-        1) outBase = floor(base / 2^e) * 2^e
-        2) outLength = m * 2^e
-        3) outBase <= base
-        4) outBase + outLength >= base + length
-        5) outBase + (m - 1) * 2^e < base + length
-        6) MSB of m is 1 unless e is 0.
+        1) outBase = floor(base / 2^e) * 2^e <= base
+        2) outLength = m * 2^e, and outBase + outLength >= base + length
+        3) outBase + (m - 1) * 2^e < base + length
+        4) MSB of m is 1 unless e is 0.
 
       ALGORITHM DEFINITION:
 
@@ -1036,7 +1035,7 @@ Section FunctionalUnits.
         Conditions Satisfied:
           0) if isOverflow then m = ceil((m_raw + b_e) / 2) else m = m_raw
           1) outBase = floor(base / 2^e) * 2^e <= base
-          2) outBase + m * 2^e >= base + length
+          2) outLength = m * 2^e, and outBase + m * 2^e >= base + length
           3) outBase + (m - 1) * 2^e < base + length
           4) MSB of m is 1 unless e is 0.
 
@@ -1128,6 +1127,7 @@ Section FunctionalUnits.
                                (ConstBit (InvDefault _))
                                #ef;
       @RetE _ BoundsRes (STRUCT {
+                          "m" ::= #mf;
                           "cE" ::= #cE;
                           "base" ::= #outBase;
                           "top" ::= #outTop;

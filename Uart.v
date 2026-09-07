@@ -14,9 +14,7 @@
  * limitations under the License.
  *)
 
-(* TODO:
- * fix Uart
- *)
+(* TODO: Fix UART *)
 
 From Stdlib Require Import String List ZArith Zmod Bool Psatz Nat Arith.
 From Guru Require Import Syntax Notations Semantics Library Composition SimulatorOnly.
