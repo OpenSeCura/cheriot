@@ -12,93 +12,115 @@ Local Open Scope string_scope.
 Local Open Scope Z_scope.
 
 
-(** * Architectural Constant Relations and Basic Properties
-    These theorems capture the relations between architectural parameters
-    (AddrSz, ExpSz, CapBSz, CapcTSz, Emax).
-    Throughout the rest of this file, these constants are NEVER unfolded directly;
-    instead, their properties and relationships are invoked via these theorems. *)
+(* ========================================================================= *)
+(* PRIMARY ARCHITECTURAL INVARIANTS                                          *)
+(*                                                                           *)
+(* These 4 core properties define the CHERI capability parameters:          *)
+(*   1. Exponent is positive:                0 < ExpSz                       *)
+(*   2. Address width is power of exponent:  2 ^ ExpSz = AddrSz              *)
+(*   3. Mantissa fits inside address:        2 < CapBSz < AddrSz             *)
+(*   4. Maximum exponent formula:            Emax = AddrSz + 1 - CapBSz      *)
+(*                                                                           *)
+(* ONLY these 4 theorems unfold definitions from SpecDefines.                *)
+(* Every other property in the entire codebase is derived purely from them.  *)
+(* ========================================================================= *)
 
-Theorem AddrSz_pos : 0 < AddrSz.
-Proof. unfold AddrSz, Xlen. lia. Qed.
-
-Theorem AddrSz_nonneg : 0 <= AddrSz.
-Proof. pose proof AddrSz_pos. lia. Qed.
-
-Theorem AddrSz_gt_1 : 1 < AddrSz.
-Proof. unfold AddrSz, Xlen. lia. Qed.
-
-Theorem ExpSz_pos : 0 < ExpSz.
+Theorem invariant_ExpSz_pos : 0 < ExpSz.
 Proof. unfold ExpSz, LgAddrSz, AddrSz, Xlen. lia. Qed.
 
-Theorem ExpSz_nonneg : 0 <= ExpSz.
-Proof. pose proof ExpSz_pos. lia. Qed.
-
-Theorem CapBSz_pos : 0 < CapBSz.
-Proof. unfold CapBSz, CapcTSz. lia. Qed.
-
-Theorem CapBSz_ge_2 : 2 <= CapBSz.
-Proof. unfold CapBSz, CapcTSz. lia. Qed.
-
-Theorem CapBSz_gt_2 : 2 < CapBSz.
-Proof. unfold CapBSz, CapcTSz. lia. Qed.
-
-Theorem CapBSz_lt_AddrSz : CapBSz < AddrSz.
-Proof. unfold CapBSz, CapcTSz, AddrSz, Xlen. lia. Qed.
-
-Theorem AddrSz_sub_CapBSz_pos : 0 < AddrSz - CapBSz.
-Proof. pose proof CapBSz_lt_AddrSz. lia. Qed.
-
-Theorem AddrSz_sub_CapBSz_nonneg : 0 <= AddrSz - CapBSz.
-Proof. pose proof CapBSz_lt_AddrSz. lia. Qed.
-
-Theorem two_pow_ExpSz_eq_AddrSz : 2 ^ ExpSz = AddrSz.
+Theorem invariant_two_pow_ExpSz_eq_AddrSz : 2 ^ ExpSz = AddrSz.
 Proof. unfold ExpSz, LgAddrSz, AddrSz, Xlen. reflexivity. Qed.
 
-Theorem two_pow_ExpSz_pos : 0 < 2 ^ ExpSz.
-Proof. rewrite two_pow_ExpSz_eq_AddrSz. apply AddrSz_pos. Qed.
+Theorem invariant_CapBSz_bounds : 2 < CapBSz < AddrSz.
+Proof. unfold CapBSz, CapcTSz, AddrSz, Xlen. lia. Qed.
 
-Theorem two_pow_AddrSz_pos : 0 < 2 ^ AddrSz.
-Proof. apply Z.pow_pos_nonneg; [lia | pose proof AddrSz_pos; lia]. Qed.
-
-Theorem two_pow_CapBSz_pos : 0 < 2 ^ CapBSz.
-Proof. apply Z.pow_pos_nonneg; [lia | pose proof CapBSz_pos; lia]. Qed.
-
-Theorem two_pow_AddrSz_add_1_pos : 0 < 2 ^ (AddrSz + 1).
-Proof. apply Z.pow_pos_nonneg; [lia | pose proof AddrSz_pos; lia]. Qed.
-
-Theorem two_pow_AddrSz_add_1_gt_1 : 1 < 2 ^ (AddrSz + 1).
-Proof. unfold AddrSz, Xlen. reflexivity. Qed.
-
-Theorem two_pow_AddrSz_add_2_pos : 0 < 2 ^ (AddrSz + 2).
-Proof. apply Z.pow_pos_nonneg; [lia | pose proof AddrSz_pos; lia]. Qed.
-
-Theorem Emax_eq_AddrSz_add_1_sub_CapBSz : Emax = AddrSz + 1 - CapBSz.
+Theorem invariant_Emax_eq : Emax = AddrSz + 1 - CapBSz.
 Proof.
   change Emax with (2^ExpSz - CapcTSz).
-  rewrite two_pow_ExpSz_eq_AddrSz.
+  rewrite invariant_two_pow_ExpSz_eq_AddrSz.
   unfold CapBSz, CapcTSz.
   lia.
 Qed.
 
-Theorem Emax_minus_1_eq_AddrSz_sub_CapBSz : Emax - 1 = AddrSz - CapBSz.
+(* ========================================================================= *)
+(* DERIVED ARCHITECTURAL THEOREMS                                            *)
+(* Proved purely from the 4 invariants above (NO unfolding of constants).    *)
+(* ========================================================================= *)
+
+Theorem ExpSz_pos : 0 < ExpSz.
+Proof. exact invariant_ExpSz_pos. Qed.
+
+Theorem two_pow_ExpSz_eq_AddrSz : 2 ^ ExpSz = AddrSz.
+Proof. exact invariant_two_pow_ExpSz_eq_AddrSz. Qed.
+
+Theorem CapBSz_gt_2 : 2 < CapBSz.
+Proof. pose proof invariant_CapBSz_bounds; lia. Qed.
+
+Theorem CapBSz_lt_AddrSz : CapBSz < AddrSz.
+Proof. pose proof invariant_CapBSz_bounds; lia. Qed.
+
+Theorem Emax_eq_AddrSz_add_1_sub_CapBSz : Emax = AddrSz + 1 - CapBSz.
+Proof. exact invariant_Emax_eq. Qed.
+
+Theorem AddrSz_gt_1 : 1 < AddrSz.
 Proof.
-  rewrite Emax_eq_AddrSz_add_1_sub_CapBSz.
+  rewrite <- two_pow_ExpSz_eq_AddrSz.
+  pose proof ExpSz_pos.
+  assert (2^1 <= 2^ExpSz) by (apply Z.pow_le_mono_r; lia).
   lia.
 Qed.
+
+Theorem AddrSz_pos : 0 < AddrSz.
+Proof. pose proof AddrSz_gt_1; lia. Qed.
+
+Theorem AddrSz_nonneg : 0 <= AddrSz.
+Proof. pose proof AddrSz_pos; lia. Qed.
+
+Theorem ExpSz_nonneg : 0 <= ExpSz.
+Proof. pose proof ExpSz_pos; lia. Qed.
+
+Theorem CapBSz_pos : 0 < CapBSz.
+Proof. pose proof CapBSz_gt_2; lia. Qed.
+
+Theorem CapBSz_ge_2 : 2 <= CapBSz.
+Proof. pose proof CapBSz_gt_2; lia. Qed.
+
+Theorem AddrSz_sub_CapBSz_pos : 0 < AddrSz - CapBSz.
+Proof. pose proof CapBSz_lt_AddrSz; lia. Qed.
+
+Theorem AddrSz_sub_CapBSz_nonneg : 0 <= AddrSz - CapBSz.
+Proof. pose proof CapBSz_lt_AddrSz; lia. Qed.
+
+Theorem two_pow_ExpSz_pos : 0 < 2 ^ ExpSz.
+Proof. rewrite two_pow_ExpSz_eq_AddrSz; apply AddrSz_pos. Qed.
+
+Theorem two_pow_AddrSz_pos : 0 < 2 ^ AddrSz.
+Proof. apply Z.pow_pos_nonneg; [ lia | pose proof AddrSz_pos; lia ]. Qed.
+
+Theorem two_pow_CapBSz_pos : 0 < 2 ^ CapBSz.
+Proof. apply Z.pow_pos_nonneg; [ lia | pose proof CapBSz_pos; lia ]. Qed.
+
+Theorem two_pow_AddrSz_add_1_pos : 0 < 2 ^ (AddrSz + 1).
+Proof. apply Z.pow_pos_nonneg; [ lia | pose proof AddrSz_pos; lia ]. Qed.
+
+Theorem two_pow_AddrSz_add_1_gt_1 : 1 < 2 ^ (AddrSz + 1).
+Proof.
+  assert (Hpos: 1 <= AddrSz + 1) by (pose proof AddrSz_pos; lia).
+  assert (2^1 <= 2^(AddrSz + 1)) by (apply Z.pow_le_mono_r; lia).
+  lia.
+Qed.
+
+Theorem two_pow_AddrSz_add_2_pos : 0 < 2 ^ (AddrSz + 2).
+Proof. apply Z.pow_pos_nonneg; [ lia | pose proof AddrSz_pos; lia ]. Qed.
+
+Theorem Emax_minus_1_eq_AddrSz_sub_CapBSz : Emax - 1 = AddrSz - CapBSz.
+Proof. rewrite Emax_eq_AddrSz_add_1_sub_CapBSz; lia. Qed.
 
 Theorem Emax_nonneg : 0 <= Emax.
-Proof.
-  rewrite Emax_eq_AddrSz_add_1_sub_CapBSz.
-  pose proof CapBSz_lt_AddrSz.
-  lia.
-Qed.
+Proof. rewrite Emax_eq_AddrSz_add_1_sub_CapBSz; pose proof CapBSz_lt_AddrSz; lia. Qed.
 
 Theorem Emax_lt_AddrSz : Emax < AddrSz.
-Proof.
-  rewrite Emax_eq_AddrSz_add_1_sub_CapBSz.
-  pose proof CapBSz_gt_2.
-  lia.
-Qed.
+Proof. rewrite Emax_eq_AddrSz_add_1_sub_CapBSz; pose proof CapBSz_gt_2; lia. Qed.
 
 Theorem mod_neg1_m : forall m, 1 < m -> (-1) mod m = m - 1.
 Proof.
