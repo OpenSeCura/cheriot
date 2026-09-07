@@ -956,21 +956,23 @@ Lemma eval_readNatToFinType_mkBoolArray : forall (w : bits (AddrSz - CapBSz)) (i
   Z.testbit (Zmod.unsigned w) (Z.of_nat i).
 Proof.
   intros w i.
+  let sz := eval compute in (Z.to_nat (AddrSz - CapBSz)) in
   repeat (destruct i as [| i]; [
     intro Hlt; unfold readNatToFinType, mkBoolArray;
-    change (Z.to_nat (AddrSz - CapBSz)) with 23%nat;
-    change (_ <? 23)%nat with true;
+    change (Z.to_nat (AddrSz - CapBSz)) with sz;
+    change (_ <? sz)%nat with true;
     cbn [evalExpr readDiffTupleStr getFinStructOption String.eqb Ascii.eqb fst eqb readDiffTuple
          finNum Fst Snd mapDiffTuple Fst Snd snd evalAndBinary fold_left map InvDefault evalFromBit
          evalOrBinary orb getDefault];
     rewrite readSameTuple_nth with (d := false);
-    change (evalFromBit (k:=Array 23 Bool) w)
-      with (@evalFromBitArray 23 Bool (fun v : type (Bit (kindSize Bool)) => Zmod.eqb v Zmod.one) w);
+    change (evalFromBit (k:=Array sz Bool) w)
+      with (@evalFromBitArray sz Bool (fun v : type (Bit (kindSize Bool)) => Zmod.eqb v Zmod.one) w);
     cbn [finNum];
     rewrite evalFromBitArray_nth by lia;
     reflexivity
-  | ]).
-  intro Hlt; change (Z.to_nat (AddrSz - CapBSz)) with 23%nat in Hlt; lia.
+  | ]);
+  intro Hlt;
+  change (Z.to_nat (AddrSz - CapBSz)) with sz in Hlt; lia.
 Qed.
 
 Lemma countLeadingZerosLoop_step : forall ni no arr count (accum : bits no),
@@ -1129,7 +1131,7 @@ Proof.
   pose proof (e_init_val Hclz_bound) as He_val.
   pose proof (bits_ExpSz_range clz) as [H1 H2].
   destruct pick_b.
-  - (* pick_b = true: mf = 511, ef = e_b *)
+  - (* pick_b = true: mf = 2^CapBSz - 1, ef = e_b *)
     subst ef mf e_roundDown m_roundDown.
     cbn [snd evalExpr evalLetExpr].
     rewrite Zmod.unsigned_slu.
@@ -1719,15 +1721,17 @@ Lemma readNatToFinType_evalFromBitArray_AddrSz : forall (w : bits AddrSz) (i : n
   Z.testbit (Zmod.unsigned w) (Z.of_nat i).
 Proof.
   intros w i.
+  let asz := eval compute in (Z.to_nat AddrSz) in
+  let sz := eval compute in (Z.to_nat (AddrSz + 1 - CapBSz)) in
   repeat (destruct i as [| i]; [
     intro Hlt; unfold readNatToFinType;
-    change (PosDef.Pos.to_nat (Pos.of_succ_nat (Z.to_nat AddrSz - 1))) with 32%nat;
+    change (PosDef.Pos.to_nat (Pos.of_succ_nat (Z.to_nat AddrSz - 1))) with asz;
     change (_ <? Z.to_nat AddrSz)%nat with true;
     cbn [readDiffTuple finNum Fst Snd evalFromBit evalOrBinary orb getDefault];
     rewrite readSameTuple_nth with (d := false);
-    cbn [finNum]; rewrite evalFromBitArray_nth by (change (Z.to_nat AddrSz) with 32%nat; lia); reflexivity
-  | ]).
-  intro Hlt; change (Z.to_nat (AddrSz + 1 - CapBSz)) with 24%nat in Hlt; lia.
+    cbn [finNum]; rewrite evalFromBitArray_nth by (change (Z.to_nat AddrSz) with asz; lia); reflexivity
+  | ]);
+  intro Hlt; change (Z.to_nat (AddrSz + 1 - CapBSz)) with sz in Hlt; lia.
 Qed.
 
 Lemma bounds_length_roundUp_le : forall base length bounds,
@@ -2549,9 +2553,9 @@ Qed.
 
    The lemma below used to be admitted above the arithmetic helper
    lemmas.  It is proved here, after the helpers it depends on, from
-   three facts: a decoded capability spans at most 511 slots at its
+   three facts: a decoded capability spans at most 2^CapBSz - 1 slots at its
    own exponent (ecap_span_le), a contained request is therefore no
-   wider than 511 slots once aligned (aligned_request_width_le), and
+   wider than 2^CapBSz - 1 slots once aligned (aligned_request_width_le), and
    Bounds never selects an exponent above one at which the request
    fits (bounds_E_le_aligned_width).
    =========================================================================== *)
@@ -4690,22 +4694,23 @@ Lemma eval_readNatToFinType_mkBoolArray_AddrSz : forall (w : bits AddrSz) (i : n
   Z.testbit (Zmod.unsigned w) (Z.of_nat i).
 Proof.
   intros w i.
+  let asz := eval compute in (Z.to_nat AddrSz) in
   repeat (destruct i as [| i]; [
     intro Hlt; unfold readNatToFinType, mkBoolArray;
-    change (Z.to_nat AddrSz) with 32%nat in Hlt;
-    change (Z.to_nat AddrSz) with 32%nat;
-    change (_ <? 32)%nat with true;
+    change (Z.to_nat AddrSz) with asz in Hlt;
+    change (Z.to_nat AddrSz) with asz;
+    change (_ <? asz)%nat with true;
     cbn [evalExpr readDiffTupleStr getFinStructOption String.eqb Ascii.eqb fst eqb readDiffTuple
          finNum Fst Snd mapDiffTuple Fst Snd snd evalAndBinary fold_left map InvDefault evalFromBit
          evalOrBinary orb getDefault];
     rewrite readSameTuple_nth with (d := false);
-    change (evalFromBit (k:=Array 32 Bool) w)
-      with (@evalFromBitArray 32 Bool (fun v : type (Bit (kindSize Bool)) => Zmod.eqb v Zmod.one) w);
+    change (evalFromBit (k:=Array asz Bool) w)
+      with (@evalFromBitArray asz Bool (fun v : type (Bit (kindSize Bool)) => Zmod.eqb v Zmod.one) w);
     cbn [finNum];
     rewrite evalFromBitArray_nth by lia;
     reflexivity
-  | ]).
-  intro Hlt; change (Z.to_nat AddrSz) with 32%nat in Hlt; lia.
+  | ]);
+  intro Hlt; change (Z.to_nat AddrSz) with asz in Hlt; lia.
 Qed.
 
 Lemma countTrailingZerosLoop_testbit_false : forall (base : bits AddrSz) (count : nat) (idx : nat) (accum : bits ExpSz),
