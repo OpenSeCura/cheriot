@@ -77,9 +77,12 @@ Section Spec.
   Definition specUartRxStep : Action ty sysTree (Bit 0) :=
     liftAction np_mem (uartRxStepAction uart ty).
 
-  (* Autonomous background PLIC step *)
-  Definition specPlicStep : Action ty sysTree (Bit 0) :=
-    liftAction np_mem (plicSampleAndStep plic ty eq_refl).
+  (* Autonomous background PLIC steps *)
+  Definition specPlicPendingsStep : Action ty sysTree (Bit 0) :=
+    liftAction np_mem (plicPendingsStep plic ty eq_refl).
+
+  Definition specPlicClaimStep : Action ty sysTree (Bit 0) :=
+    liftAction np_mem (plicClaimStep plic ty).
 
   Definition updateMipBit (bitIdx : Expr ty (Bit LgXlen)) (bitVal : Expr ty Bool) : Action ty sysTree (Bit 0) :=
     liftAction np_rf (
@@ -158,7 +161,8 @@ Section Spec.
       specRevokerStep ty ;
       specUartTxStep ty ;
       specUartRxStep ty ;
-      specPlicStep ty ;
+      specPlicPendingsStep ty ;
+      specPlicClaimStep ty ;
       specExternalInterruptRule ty ;
       specTimerInterruptRule ty
     ].

@@ -14,7 +14,7 @@
  * limitations under the License.
  *)
 
-From Stdlib Require Import String List ZArith Zmod Bool.
+From Stdlib Require Import String List ZArith Zmod Bool Nat.
 Import ListNotations.
 Open Scope string_scope.
 From Guru Require Import Syntax Notations Semantics Library Composition MergeFold.
@@ -36,7 +36,9 @@ Definition PLIC_ENABLE_OFFSET    : Z := 0x002000.
 Definition PLIC_THRESHOLD_OFFSET : Z := 0x200000.
 Definition PLIC_CLAIM_OFFSET     : Z := 0x200004.
 Definition PlicSizeBytes         : Z := 0x400000. (* 4 MB *)
+Definition PlicOffsetSz          : Z := Eval compute in Z.log2_up PlicSizeBytes.
 Definition PlicLineConfig        : LineConfig := RawLine (Z.to_nat LgNumBytesXlen).
+Definition plicNumBytes (n : nat) : nat := Nat.div (n + 7) 8.
 
 (* ===========================================================================
  * Tree Structure (Ordered by MMIO Offset)
@@ -71,6 +73,7 @@ Definition plicChildren (n : nat) : list (Tree Elem) :=
     Node "pending"    (pendingLeaves n) ;
     Node "enables"    (enableLeaves n) ;
     Leaf "threshold"  (EReg (Build_Reg (Bit Xlen) (Some Zmod.zero))) ;
+    Leaf "claim"      (EReg (Build_Reg (Bit Xlen) (Some Zmod.zero))) ;
     Node "in_service" (inServiceLeaves n) ].
 
 Definition plicTree (n : nat) : Tree Elem :=
@@ -90,6 +93,8 @@ Section PlicPaths.
     getNodePath tPlic "plic.in_service".
   Definition plicThresholdPath : RegPath tPlic :=
     getChildRegPathTree tPlic "threshold".
+  Definition plicClaimPath : RegPath tPlic :=
+    getChildRegPathTree tPlic "claim".
 
   Definition priorityPathsWithKind : list (RegOfKind (t:=tPlic) (Bit Xlen)) :=
     map (embedRegOfKind plicPrioritiesNodePath)
@@ -165,10 +170,10 @@ Section PlicCoreLogic.
            : Action ty tPlic ans :=
     match prios, pends, ens, insvs with
     | rPrio :: rPrios', rPend :: rPends', rEn :: rEns', rInsv :: rInsvs' =>
-        ReadReg "" rPrio.(rk_path) (fun val_prio =>
-        ReadReg "" rPend.(rk_path) (fun val_pend =>
-        ReadReg "" rEn.(rk_path)   (fun val_en =>
-        ReadReg "" rInsv.(rk_path) (fun val_insv =>
+        ReadReg "val_prio" rPrio.(rk_path) (fun val_prio =>
+        ReadReg "val_pend" rPend.(rk_path) (fun val_pend =>
+        ReadReg "val_en"   rEn.(rk_path)   (fun val_en =>
+        ReadReg "val_insv" rInsv.(rk_path) (fun val_insv =>
           let pf_prio := Kind_eqb_eq _ _ rPrio.(rk_pf) in
           let pf_pend := Kind_eqb_eq _ _ rPend.(rk_pf) in
           let pf_en   := Kind_eqb_eq _ _ rEn.(rk_pf) in
@@ -206,43 +211,6 @@ Section PlicCoreLogic.
            st_insvs  := insvs |}
     ).
 
-  Definition makeMeipLeaf
-             (thresh : Expr ty (Bit Xlen))
-             (prios : Expr ty (Array n (Bit Xlen)))
-             (pends : Expr ty (Array n Bool))
-             (ens : Expr ty (Array n Bool))
-             (insvs : Expr ty (Array n Bool))
-             (i : nat) : LetExpr ty Bool :=
-    match i with
-    | 0%nat => RetE (ConstBool false)
-    | S _ =>
-        let idx := ($(Z.of_nat i) : Expr ty (Bit Xlen)) in
-        LetE pend : Bool       <- pends @[ idx ] ;
-        LetE en : Bool         <- ens @[ idx ] ;
-        LetE insv : Bool       <- insvs @[ idx ] ;
-        LetE prio : Bit Xlen   <- prios @[ idx ] ;
-        LetE active : Bool     <- And [ #pend ; #en ; Not #insv ; Sgt #prio thresh ] ;
-        RetE #active
-    end.
-
-  (* Combinational MEIP evaluation using merge_fold_list *)
-  Definition meipExpr
-             (thresh : Expr ty (Bit Xlen))
-             (prios : Expr ty (Array n (Bit Xlen)))
-             (pends : Expr ty (Array n Bool))
-             (ens : Expr ty (Array n Bool))
-             (insvs : Expr ty (Array n Bool)) : LetExpr ty Bool :=
-    let leaves := map (makeMeipLeaf thresh prios pends ens insvs) (seq 0 n) in
-    merge_fold_list (liftLet (fun (a b : ty Bool) => RetE (Or [ #a ; #b ])))
-                    (RetE (ConstBool false))
-                    leaves.
-
-  Definition plicMeip : Action ty tPlic Bool :=
-    readPlicState (fun st =>
-      LetL meipVal : Bool <- meipExpr st.(st_thresh) st.(st_prios) st.(st_pends) st.(st_ens) st.(st_insvs) ;
-      Return #meipVal
-    ).
-
   Definition makeClaimLeaf
              (thresh : Expr ty (Bit Xlen))
              (prios : Expr ty (Array n (Bit Xlen)))
@@ -273,17 +241,29 @@ Section PlicCoreLogic.
     let leaves := map (makeClaimLeaf thresh prios pends ens insvs) (seq 0 n) in
     merge_fold_list (liftLet plicResComb) (RetE plicResEmpty) leaves.
 
-  Definition plicClaim : Action ty tPlic (Bit Xlen) :=
+  Definition updateClaim : Action ty tPlic (Bit 0) :=
     readPlicState (fun st =>
       LetL bestRes : PlicResType <-
         findMaxActive st.(st_thresh) st.(st_prios) st.(st_pends) st.(st_ens) st.(st_insvs) ;
-      Let claimedId : Bit Xlen <- ##bestRes`"id" ;
-      If (isNotZero #claimedId) Then (
-        Act (writeRegsList (pendingPathsWithKind n) #claimedId (ConstBool false)) ;
-        Act (writeRegsList (inServicePathsWithKind n) #claimedId (ConstBool true)) ;
+      Act (WriteReg (plicClaimPath n) (##bestRes`"id") Retv) ;
+      Retv
+    ).
+
+  Definition plicMeip : Action ty tPlic Bool :=
+    ReadReg "claim" (plicClaimPath n) (fun val_claim =>
+      Return (isNotZero (Var _ _ val_claim))
+    ).
+
+  Definition plicClaim : Action ty tPlic (Bit Xlen) :=
+    ReadReg "claim" (plicClaimPath n) (fun val_claim =>
+      let claimedId := Var _ _ val_claim in
+      If (isNotZero claimedId) Then (
+        Act (writeRegsList (pendingPathsWithKind n) claimedId (ConstBool false)) ;
+        Act (writeRegsList (inServicePathsWithKind n) claimedId (ConstBool true)) ;
+        Act (WriteReg (plicClaimPath n) $0 Retv) ;
         Retv
       ) ;
-      Return #claimedId
+      Return claimedId
     ).
 
   Definition plicComplete (completedId : Expr ty (Bit Xlen)) : Action ty tPlic (Bit 0) :=
@@ -315,7 +295,7 @@ Section PlicCoreLogic.
     | _, _, _ => Retv
     end.
 
-  Definition plicStepWithIrqs (irqs : list (Expr ty Bool)) : Action ty tPlic (Bit 0) :=
+  Definition updatePendings (irqs : list (Expr ty Bool)) : Action ty tPlic (Bit 0) :=
     match pendingPathsWithKind n, inServicePathsWithKind n with
     | _ :: devPends, _ :: devInsvs => updatePendingLeaves devPends devInsvs irqs
     | _, _ => Retv
@@ -332,47 +312,49 @@ Section PlicMmio.
   Variable ty : Kind -> Type.
   Local Notation tPlic := (plicTree n).
 
-  (* Pack Array n Bool into Bit Xlen (for pending and enables registers) *)
-  Fixpoint packArrayBoolToWord (curr : nat) (arr : Expr ty (Array n Bool)) (acc : Expr ty (Bit Xlen)) : Expr ty (Bit Xlen) :=
-    match curr with
-    | 0%nat => acc
-    | S rest =>
-        let idx := ($(Z.of_nat rest) : Expr ty (Bit Xlen)) in
-        let bitVal := ITE (arr @[ idx ]) (Const ty (Bit Xlen) (bits.of_Z Xlen (Z.shiftl 1 (Z.of_nat rest)))) $0 in
-        packArrayBoolToWord rest arr (Or [ acc ; bitVal ])
-    end.
+  Definition boolArrayToByteArray
+             (arr : Expr ty (Array n Bool))
+             : Expr ty (Array (plicNumBytes n) (Bit 8)) :=
+    FromBit (Array (plicNumBytes n) (Bit 8))
+            (castBits (add_sub_cancel (kindSize (Array (plicNumBytes n) (Bit 8)))
+                                      (kindSize (Array n Bool)))
+                      (ZeroExtendTo (kindSize (Array (plicNumBytes n) (Bit 8)))
+                                    (ToBit arr))).
 
   Definition plicLineReadAction
              (addr : Expr ty Addr)
              : Action ty tPlic (LineReadRp PlicLineConfig) :=
-    Let rawOffset : Addr <- Sub addr $(base) ;
-    Let offset : Addr <- {< TruncMsb (AddrSz - 2) 2 #rawOffset, Const ty (Bit 2) Zmod.zero >} ;
+    Let offset <- getMemOffset base PlicSizeBytes addr ;
     Let isClaim     : Bool <- Eq #offset $(PLIC_CLAIM_OFFSET) ;
     Let isThreshold : Bool <- Eq #offset $(PLIC_THRESHOLD_OFFSET) ;
-    Let isEnable    : Bool <- Eq #offset $(PLIC_ENABLE_OFFSET) ;
-    Let isPending   : Bool <- Eq #offset $(PLIC_PENDING_OFFSET) ;
-    Let isPrio      : Bool <- Slt #offset $(PLIC_PENDING_OFFSET) ;
-    LetIf rVal : Bit Xlen <-
-      If #isClaim Then (
-        @plicClaim n ty
-      ) Else (
-        readPlicState (fun st =>
-          Let prioWord : Bit Xlen <- ZeroExtendTo Xlen (TruncMsb (AddrSz - 2) 2 #rawOffset) ;
-          Let isSrcPrio : Bool <- And [ #isPrio ; Sge #prioWord $1 ; Slt #prioWord $(Z.of_nat n) ] ;
-          Let readWord : Bit Xlen <-
-            Or [ ITE0 #isThreshold st.(st_thresh) ;
-                 ITE0 #isEnable (packArrayBoolToWord n st.(st_ens) $0) ;
-                 ITE0 #isPending (packArrayBoolToWord n st.(st_pends) $0) ;
-                 ITE0 #isSrcPrio (st.(st_prios) @[ #prioWord ]) ] ;
-          Return #readWord
-        )
-      ) ;
-    Let dataArr : Array (cfgLineBytes PlicLineConfig) (Bit 8) <-
-      FromBit (Array (cfgLineBytes PlicLineConfig) (Bit 8)) #rVal ;
-    @Return ty tPlic (LineReadRp PlicLineConfig) (STRUCT {
-      "data" ::= #dataArr ;
-      "tag"  ::= Const ty (Array (cfgNumLineTags PlicLineConfig) Bool) (getDefault _)
-    }).
+    Let isEnable    : Bool <- Sge #offset $(PLIC_ENABLE_OFFSET) ;
+    Let isPending   : Bool <- Sge #offset $(PLIC_PENDING_OFFSET) ;
+    readPlicState (fun st =>
+      Let prioOffset <- Sub #offset $(PLIC_PRIORITY_BASE) ;
+      Let prioIdx : Bit Xlen <- ZeroExtendTo Xlen (TruncMsb (PlicOffsetSz - LgNumBytesXlen) LgNumBytesXlen #prioOffset) ;
+      Let prioVal : Bit Xlen <- st.(st_prios) @[ #prioIdx ] ;
+      Let pendOffset <- Sub #offset $(PLIC_PENDING_OFFSET) ;
+      Let pendSlice : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
+        Syntax.slice (boolArrayToByteArray st.(st_pends)) #pendOffset (Z.to_nat NumBytesXlen) ;
+      Let pendVal : Bit Xlen <- ToBit #pendSlice ;
+      Let enOffset <- Sub #offset $(PLIC_ENABLE_OFFSET) ;
+      Let enSlice : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
+        Syntax.slice (boolArrayToByteArray st.(st_ens)) #enOffset (Z.to_nat NumBytesXlen) ;
+      Let enVal : Bit Xlen <- ToBit #enSlice ;
+      LetIf claimedId : Bit Xlen <- If #isClaim Then (@plicClaim n ty) ;
+      Let rVal : Bit Xlen <-
+        Or [ #prioVal ;
+             ITE0 #isPending #pendVal ;
+             ITE0 #isEnable #enVal ;
+             ITE0 #isThreshold st.(st_thresh) ;
+             #claimedId ] ;
+      Let dataArr : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
+        FromBit (Array (Z.to_nat NumBytesXlen) (Bit 8)) #rVal ;
+      @Return ty tPlic (LineReadRp PlicLineConfig) (STRUCT {
+        "data" ::= #dataArr ;
+        "tag"  ::= Const ty (Array (cfgNumLineTags PlicLineConfig) Bool) (getDefault _)
+      })
+    ).
 
   (* Write a list of values to a list of leaf registers *)
   Fixpoint writeRegs
@@ -392,13 +374,12 @@ Section PlicMmio.
   Definition plicLineWriteAction
              (rq : Expr ty (LineWriteRq PlicLineConfig))
              : Action ty tPlic (Bit 0) :=
-    Let rawOffset : Addr <- Sub (rq`"addr") $(base) ;
-    Let offset : Addr <- {< TruncMsb (AddrSz - 2) 2 #rawOffset, Const ty (Bit 2) Zmod.zero >} ;
+    Let offset <- getMemOffset base PlicSizeBytes (rq`"addr") ;
     Let writeWord : Bit Xlen <- ToBit (rq`"data") ;
     Let isComplete  : Bool <- Eq #offset $(PLIC_CLAIM_OFFSET) ;
     Let isThreshold : Bool <- Eq #offset $(PLIC_THRESHOLD_OFFSET) ;
-    Let isEnable    : Bool <- Eq #offset $(PLIC_ENABLE_OFFSET) ;
-    Let isPrio      : Bool <- Slt #offset $(PLIC_PENDING_OFFSET) ;
+    Let isEnable    : Bool <- Sge #offset $(PLIC_ENABLE_OFFSET) ;
+    Let isPrio      : Bool <- ConstBool true ;
     If #isComplete Then (
       @plicComplete n ty #writeWord
     ) ;
@@ -416,8 +397,9 @@ Section PlicMmio.
       end
     ) ;
     If #isPrio Then (
-      Let prioWord : Bit Xlen <- ZeroExtendTo Xlen (TruncMsb (AddrSz - 2) 2 #rawOffset) ;
-      If (And [ Sge #prioWord $1 ; Slt #prioWord $(Z.of_nat n) ]) Then (
+      Let prioOffset <- Sub #offset $(PLIC_PRIORITY_BASE) ;
+      Let prioWord : Bit Xlen <- ZeroExtendTo Xlen (TruncMsb (PlicOffsetSz - LgNumBytesXlen) LgNumBytesXlen #prioOffset) ;
+      If (isNotZero #prioWord) Then (
         Act (writeRegsList (priorityPathsWithKind n) #prioWord #writeWord) ;
         Retv
       ) ;
@@ -500,11 +482,14 @@ Section PlicSystem.
         )
     end k.
 
-  Definition plicSampleAndStep
+  Definition plicPendingsStep
              (pfCount : S (length (collectIrqActions regions)) = n)
              : Action ty memTree (Bit 0) :=
     @sampleIrqsCPS (collectIrqActions regions) (fun irqs Hlen =>
-      plicAction (@plicStepWithIrqs n ty irqs)
+      plicAction (@updatePendings n ty irqs)
     ).
+
+  Definition plicClaimStep : Action ty memTree (Bit 0) :=
+    plicAction (@updateClaim n ty).
 
 End PlicSystem.
