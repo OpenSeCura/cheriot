@@ -956,7 +956,7 @@ Lemma eval_readNatToFinType_mkBoolArray : forall (w : bits (AddrSz - CapBSz)) (i
   Z.testbit (Zmod.unsigned w) (Z.of_nat i).
 Proof.
   intros w i.
-  do 23 (destruct i as [| i]; [
+  repeat (destruct i as [| i]; [
     intro Hlt; unfold readNatToFinType, mkBoolArray;
     change (Z.to_nat (AddrSz - CapBSz)) with 23%nat;
     change (_ <? 23)%nat with true;
@@ -1719,8 +1719,7 @@ Lemma readNatToFinType_evalFromBitArray_AddrSz : forall (w : bits AddrSz) (i : n
   Z.testbit (Zmod.unsigned w) (Z.of_nat i).
 Proof.
   intros w i.
-  change (Z.to_nat (AddrSz + 1 - CapBSz)) with 24%nat.
-  do 24 (destruct i as [| i]; [
+  repeat (destruct i as [| i]; [
     intro Hlt; unfold readNatToFinType;
     change (PosDef.Pos.to_nat (Pos.of_succ_nat (Z.to_nat AddrSz - 1))) with 32%nat;
     change (_ <? Z.to_nat AddrSz)%nat with true;
@@ -4686,13 +4685,14 @@ Proof.
 Qed.
 
 Lemma eval_readNatToFinType_mkBoolArray_AddrSz : forall (w : bits AddrSz) (i : nat),
-  (i < 32)%nat ->
+  (i < Z.to_nat AddrSz)%nat ->
   evalExpr (readNatToFinType (ConstBool false) (ReadArrayConst (mkBoolArray AddrSz (Var type (Bit AddrSz) w))) i) =
   Z.testbit (Zmod.unsigned w) (Z.of_nat i).
 Proof.
   intros w i.
-  do 32 (destruct i as [| i]; [
+  repeat (destruct i as [| i]; [
     intro Hlt; unfold readNatToFinType, mkBoolArray;
+    change (Z.to_nat AddrSz) with 32%nat in Hlt;
     change (Z.to_nat AddrSz) with 32%nat;
     change (_ <? 32)%nat with true;
     cbn [evalExpr readDiffTupleStr getFinStructOption String.eqb Ascii.eqb fst eqb readDiffTuple
@@ -4705,12 +4705,12 @@ Proof.
     rewrite evalFromBitArray_nth by lia;
     reflexivity
   | ]).
-  intro Hlt; lia.
+  intro Hlt; change (Z.to_nat AddrSz) with 32%nat in Hlt; lia.
 Qed.
 
 Lemma countTrailingZerosLoop_testbit_false : forall (base : bits AddrSz) (count : nat) (idx : nat) (accum : bits ExpSz),
-  (idx + count <= 32)%nat ->
-  (idx < 32)%nat ->
+  (idx + count <= Z.to_nat AddrSz)%nat ->
+  (idx < Z.to_nat AddrSz)%nat ->
   Zmod.unsigned accum = Z.of_nat idx ->
   let res := evalLetExpr (@countTrailingZerosLoop type (Z.to_nat AddrSz) ExpSz (mkBoolArray AddrSz (Var type (Bit AddrSz) base)) idx count false accum) in
   Z.of_nat idx < Zmod.unsigned res ->
@@ -4730,42 +4730,52 @@ Proof.
     + cbn zeta iota in Hres_gt, Hi.
       assert (Hb_test: Z.testbit (Zmod.unsigned base) (Z.of_nat idx) = false).
       { rewrite <- Hbeq.
-        rewrite eval_readNatToFinType_mkBoolArray_AddrSz by lia.
+        rewrite eval_readNatToFinType_mkBoolArray_AddrSz by exact Hidx_lt.
         reflexivity. }
-      assert (Hidx_cases: (S idx < 32)%nat \/ S idx = 32%nat) by lia.
-      destruct Hidx_cases as [Hidx_next_lt | Hidx_next_32].
+      assert (Hidx_cases: (S idx < Z.to_nat AddrSz)%nat \/ S idx = Z.to_nat AddrSz) by lia.
+      destruct Hidx_cases as [Hidx_next_lt | Hidx_next_eq].
       * assert (Haccum_next: Zmod.unsigned (accum + 1)%Zmod = Z.of_nat (S idx)).
         { rewrite Zmod.unsigned_add.
           rewrite Haccum.
           unfold Zmod.one.
           rewrite Zmod.unsigned_of_Z.
           rewrite Zplus_mod_idemp_r.
-          pose proof two_pow_ExpSz_eq_AddrSz as Hpow.
-          change AddrSz with 32 in Hpow.
-          rewrite (Z.mod_small (Z.of_nat idx + 1) (2^ExpSz)) by lia.
-          rewrite Nat2Z.inj_succ.
-          reflexivity. }
-        assert (Hbound': (S idx + count' <= 32)%nat) by lia.
+          rewrite two_pow_ExpSz_eq_AddrSz.
+          assert (Hidx_z: 0 <= Z.of_nat idx + 1 < AddrSz).
+          { pose proof AddrSz_pos.
+            split; [ lia | ].
+            apply Nat2Z.inj_lt in Hidx_next_lt.
+            rewrite Nat2Z.inj_succ in Hidx_next_lt.
+            rewrite Z2Nat.id in Hidx_next_lt by lia.
+            lia. }
+          rewrite (Z.mod_small (Z.of_nat idx + 1) AddrSz) by exact Hidx_z.
+          lia. }
+        assert (Hbound': (S idx + count' <= Z.to_nat AddrSz)%nat) by lia.
         destruct (Z.eq_dec i (Z.of_nat idx)) as [Heq | Hneq].
         -- subst i. exact Hb_test.
         -- apply (IHcount' (S idx) (accum + 1)%Zmod Hbound' Hidx_next_lt Haccum_next).
            ++ rewrite Nat2Z.inj_succ. lia.
            ++ rewrite Nat2Z.inj_succ. lia.
-      * (* S idx = 32: count' must be 0 because idx + S count' <= 32 *)
+      * (* S idx = Z.to_nat AddrSz: count' must be 0 because idx + S count' <= Z.to_nat AddrSz *)
         assert (Hcount0: count' = 0%nat) by lia.
         subst count'.
-        simpl countTrailingZerosLoop in Hres_gt.
-        cbn [evalLetExpr evalExpr] in Hres_gt.
-        change (Z.pow_pos 2 5) with (2^ExpSz) in Hres_gt.
+        assert (Hres_eq: evalLetExpr (@countTrailingZerosLoop type (Z.to_nat AddrSz) ExpSz
+                            (mkBoolArray AddrSz (Var type (Bit AddrSz) base))
+                            (S idx) 0 false (accum + 1)%Zmod) = (accum + 1)%Zmod) by reflexivity.
+        rewrite Hres_eq in Hres_gt.
         assert (Haccum_0: Zmod.unsigned (accum + 1)%Zmod = 0).
         { rewrite Zmod.unsigned_add.
           rewrite Haccum.
           unfold Zmod.one.
           rewrite Zmod.unsigned_of_Z.
           rewrite Zplus_mod_idemp_r.
-          replace (Z.of_nat idx + 1) with 32 by lia.
+          assert (Hidx_val: Z.of_nat idx + 1 = AddrSz).
+          { apply (f_equal Z.of_nat) in Hidx_next_eq.
+            rewrite Nat2Z.inj_succ in Hidx_next_eq.
+            rewrite Z2Nat.id in Hidx_next_eq by (pose proof AddrSz_nonneg; lia).
+            exact Hidx_next_eq. }
+          rewrite Hidx_val.
           rewrite two_pow_ExpSz_eq_AddrSz.
-          change AddrSz with 32.
           apply Z_mod_same_full. }
         rewrite Haccum_0 in Hres_gt.
         lia.
@@ -4777,18 +4787,16 @@ Lemma ctz_base_mod_pow2_zero : forall (base : bits AddrSz) (e_b : bits ExpSz),
 Proof.
   intros base e_b He_b.
   rewrite evalLetExpr_countTrailingZerosArray in He_b.
-  assert (Hbound: (0 + 32 <= 32)%nat) by lia.
-  assert (Hidx_lt: (0 < 32)%nat) by lia.
+  assert (Hbound: (0 + Z.to_nat AddrSz <= Z.to_nat AddrSz)%nat) by lia.
+  assert (Hidx_lt: (0 < Z.to_nat AddrSz)%nat) by (pose proof AddrSz_pos; lia).
   assert (Haccum: Zmod.unsigned (Zmod.zero : bits ExpSz) = Z.of_nat 0) by apply Zmod.unsigned_0.
-  change (Z.to_nat AddrSz) with 32%nat in He_b.
   destruct (Zmod.unsigned e_b =? 0) eqn:Hz.
   - apply Z.eqb_eq in Hz. rewrite Hz.
     change (2^0) with 1. apply Zmod_1_r.
   - apply Z.eqb_neq in Hz.
     pose proof (bits.unsigned_range e_b ltac:(apply ExpSz_nonneg)) as [Heb0 _].
     assert (Hgt: Z.of_nat 0 < Zmod.unsigned e_b) by lia.
-    pose proof (@countTrailingZerosLoop_testbit_false base 32%nat 0%nat (Zmod.zero : bits ExpSz) Hbound Hidx_lt Haccum) as Hfalse.
-    change (Z.to_nat AddrSz) with 32%nat in Hfalse.
+    pose proof (@countTrailingZerosLoop_testbit_false base (Z.to_nat AddrSz) 0%nat (Zmod.zero : bits ExpSz) Hbound Hidx_lt Haccum) as Hfalse.
     rewrite <- He_b in Hfalse.
     apply testbit_low_zeros_mod; [ lia | ].
     intros i Hi.
