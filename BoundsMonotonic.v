@@ -16,17 +16,17 @@ Local Open Scope Z_scope.
 (* PRIMARY ARCHITECTURAL INVARIANTS                                          *)
 (*                                                                           *)
 (* These 4 core properties define the CHERI capability parameters:          *)
-(*   1. Exponent is positive:                0 < ExpSz                       *)
+(*   1. Base width from compressed top:      CapBSz = CapcTSz + 1            *)
 (*   2. Address width is power of exponent:  2 ^ ExpSz = AddrSz              *)
 (*   3. Mantissa fits inside address:        2 < CapBSz < AddrSz             *)
-(*   4. Maximum exponent formula:            Emax = AddrSz + 1 - CapBSz      *)
+(*   4. Maximum exponent definition:         Emax = 2 ^ ExpSz - CapcTSz      *)
 (*                                                                           *)
 (* ONLY these 4 theorems unfold definitions from SpecDefines.                *)
 (* Every other property in the entire codebase is derived purely from them.  *)
 (* ========================================================================= *)
 
-Theorem invariant_ExpSz_pos : 0 < ExpSz.
-Proof. unfold ExpSz, LgAddrSz, AddrSz, Xlen. lia. Qed.
+Theorem invariant_CapBSz_eq : CapBSz = CapcTSz + 1.
+Proof. unfold CapBSz, CapcTSz. reflexivity. Qed.
 
 Theorem invariant_two_pow_ExpSz_eq_AddrSz : 2 ^ ExpSz = AddrSz.
 Proof. unfold ExpSz, LgAddrSz, AddrSz, Xlen. reflexivity. Qed.
@@ -34,12 +34,10 @@ Proof. unfold ExpSz, LgAddrSz, AddrSz, Xlen. reflexivity. Qed.
 Theorem invariant_CapBSz_bounds : 2 < CapBSz < AddrSz.
 Proof. unfold CapBSz, CapcTSz, AddrSz, Xlen. lia. Qed.
 
-Theorem invariant_Emax_eq : Emax = AddrSz + 1 - CapBSz.
+Theorem invariant_Emax_def : Emax = 2 ^ ExpSz - CapcTSz.
 Proof.
   change Emax with (2^ExpSz - CapcTSz).
-  rewrite invariant_two_pow_ExpSz_eq_AddrSz.
-  unfold CapBSz, CapcTSz.
-  lia.
+  reflexivity.
 Qed.
 
 (* ========================================================================= *)
@@ -47,28 +45,17 @@ Qed.
 (* Proved purely from the 4 invariants above (NO unfolding of constants).    *)
 (* ========================================================================= *)
 
-Theorem ExpSz_pos : 0 < ExpSz.
-Proof. exact invariant_ExpSz_pos. Qed.
-
-Theorem two_pow_ExpSz_eq_AddrSz : 2 ^ ExpSz = AddrSz.
-Proof. exact invariant_two_pow_ExpSz_eq_AddrSz. Qed.
-
 Theorem CapBSz_gt_2 : 2 < CapBSz.
 Proof. pose proof invariant_CapBSz_bounds; lia. Qed.
 
 Theorem CapBSz_lt_AddrSz : CapBSz < AddrSz.
 Proof. pose proof invariant_CapBSz_bounds; lia. Qed.
 
-Theorem Emax_eq_AddrSz_add_1_sub_CapBSz : Emax = AddrSz + 1 - CapBSz.
-Proof. exact invariant_Emax_eq. Qed.
+Theorem AddrSz_gt_3 : 3 < AddrSz.
+Proof. pose proof invariant_CapBSz_bounds; lia. Qed.
 
 Theorem AddrSz_gt_1 : 1 < AddrSz.
-Proof.
-  rewrite <- two_pow_ExpSz_eq_AddrSz.
-  pose proof ExpSz_pos.
-  assert (2^1 <= 2^ExpSz) by (apply Z.pow_le_mono_r; lia).
-  lia.
-Qed.
+Proof. pose proof AddrSz_gt_3; lia. Qed.
 
 Theorem AddrSz_pos : 0 < AddrSz.
 Proof. pose proof AddrSz_gt_1; lia. Qed.
@@ -76,8 +63,32 @@ Proof. pose proof AddrSz_gt_1; lia. Qed.
 Theorem AddrSz_nonneg : 0 <= AddrSz.
 Proof. pose proof AddrSz_pos; lia. Qed.
 
+Theorem ExpSz_pos : 0 < ExpSz.
+Proof.
+  destruct (Z_le_gt_dec ExpSz 0) as [Hle | Hgt]; [ | lia ].
+  assert (2^ExpSz <= 1).
+  { destruct (Z.eq_dec ExpSz 0) as [Heq | Hlt].
+    - rewrite Heq. rewrite Z.pow_0_r. lia.
+    - assert (ExpSz < 0) by lia.
+      rewrite Z.pow_neg_r by lia. lia. }
+  rewrite invariant_two_pow_ExpSz_eq_AddrSz in H.
+  pose proof AddrSz_gt_3.
+  lia.
+Qed.
+
 Theorem ExpSz_nonneg : 0 <= ExpSz.
 Proof. pose proof ExpSz_pos; lia. Qed.
+
+Theorem two_pow_ExpSz_eq_AddrSz : 2 ^ ExpSz = AddrSz.
+Proof. exact invariant_two_pow_ExpSz_eq_AddrSz. Qed.
+
+Theorem Emax_eq_AddrSz_add_1_sub_CapBSz : Emax = AddrSz + 1 - CapBSz.
+Proof.
+  rewrite invariant_Emax_def.
+  rewrite invariant_two_pow_ExpSz_eq_AddrSz.
+  pose proof invariant_CapBSz_eq.
+  lia.
+Qed.
 
 Theorem CapBSz_pos : 0 < CapBSz.
 Proof. pose proof CapBSz_gt_2; lia. Qed.
