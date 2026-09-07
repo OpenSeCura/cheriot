@@ -27,20 +27,11 @@ Proof. pose proof AddrSz_pos. lia. Qed.
 Theorem AddrSz_gt_1 : 1 < AddrSz.
 Proof. unfold AddrSz, Xlen. lia. Qed.
 
-Theorem mod_neg1_m : forall m, 1 < m -> (-1) mod m = m - 1.
-Proof.
-  intros m Hm.
-  rewrite (Z.mod_unique (-1) m (-1) (m - 1)); [ reflexivity | lia | ring ].
-Qed.
-
 Theorem ExpSz_pos : 0 < ExpSz.
 Proof. unfold ExpSz, LgAddrSz, AddrSz, Xlen. lia. Qed.
 
 Theorem ExpSz_nonneg : 0 <= ExpSz.
 Proof. pose proof ExpSz_pos. lia. Qed.
-
-Theorem CapBSz_eq : CapBSz = CapcTSz + 1.
-Proof. unfold CapBSz, CapcTSz. reflexivity. Qed.
 
 Theorem CapBSz_pos : 0 < CapBSz.
 Proof. unfold CapBSz, CapcTSz. lia. Qed.
@@ -81,16 +72,11 @@ Proof. unfold AddrSz, Xlen. reflexivity. Qed.
 Theorem two_pow_AddrSz_add_2_pos : 0 < 2 ^ (AddrSz + 2).
 Proof. apply Z.pow_pos_nonneg; [lia | pose proof AddrSz_pos; lia]. Qed.
 
-Theorem Emax_eq : Emax = 2 ^ ExpSz - CapcTSz.
-Proof. unfold Emax, ExpSz, LgAddrSz, AddrSz, Xlen, CapcTSz. reflexivity. Qed.
-
-Theorem Emax_eq_AddrSz_sub_CapcTSz : Emax = AddrSz - CapcTSz.
-Proof. rewrite <- two_pow_ExpSz_eq_AddrSz. apply Emax_eq. Qed.
-
 Theorem Emax_eq_AddrSz_add_1_sub_CapBSz : Emax = AddrSz + 1 - CapBSz.
 Proof.
-  rewrite CapBSz_eq.
-  rewrite Emax_eq_AddrSz_sub_CapcTSz.
+  change Emax with (2^ExpSz - CapcTSz).
+  rewrite two_pow_ExpSz_eq_AddrSz.
+  unfold CapBSz, CapcTSz.
   lia.
 Qed.
 
@@ -100,14 +86,25 @@ Proof.
   lia.
 Qed.
 
-Theorem Emax_pos : 0 < Emax.
-Proof. unfold Emax, ExpSz, LgAddrSz, AddrSz, Xlen, CapcTSz. lia. Qed.
-
 Theorem Emax_nonneg : 0 <= Emax.
-Proof. pose proof Emax_pos. lia. Qed.
+Proof.
+  rewrite Emax_eq_AddrSz_add_1_sub_CapBSz.
+  pose proof CapBSz_lt_AddrSz.
+  lia.
+Qed.
 
 Theorem Emax_lt_AddrSz : Emax < AddrSz.
-Proof. unfold Emax, ExpSz, LgAddrSz, AddrSz, Xlen, CapcTSz. lia. Qed.
+Proof.
+  rewrite Emax_eq_AddrSz_add_1_sub_CapBSz.
+  pose proof CapBSz_gt_2.
+  lia.
+Qed.
+
+Theorem mod_neg1_m : forall m, 1 < m -> (-1) mod m = m - 1.
+Proof.
+  intros m Hm.
+  rewrite (Z.mod_unique (-1) m (-1) (m - 1)); [ reflexivity | lia | ring ].
+Qed.
 
 Lemma multiple : forall x n k,
   0 <= n <= k ->
