@@ -71,11 +71,17 @@ Section Spec.
     liftAction np_mem (SpecRevoker.specRevokerStep rev config ty).
 
   (* Autonomous background UART steps *)
-  Definition specUartTxStep : Action ty sysTree (Bit 0) :=
-    liftAction np_mem (uartTxStepAction uart ty).
+  Definition specUartTxDataStep : Action ty sysTree (Bit 0) :=
+    liftAction np_mem (uartTxDataStepAction uart ty).
 
-  Definition specUartRxStep : Action ty sysTree (Bit 0) :=
-    liftAction np_mem (uartRxStepAction uart ty).
+  Definition specUartTxDeqStep : Action ty sysTree (Bit 0) :=
+    liftAction np_mem (uartTxDeqStepAction uart ty).
+
+  Definition specUartRxRdyStep : Action ty sysTree (Bit 0) :=
+    liftAction np_mem (uartRxRdyStepAction uart ty).
+
+  Definition specUartRxDataStep : Action ty sysTree (Bit 0) :=
+    liftAction np_mem (uartRxDataStepAction uart ty).
 
   (* Autonomous background PLIC steps *)
   Definition specPlicPendingsStep : Action ty sysTree (Bit 0) :=
@@ -159,8 +165,10 @@ Section Spec.
       specTickCycle ty ;
       specTickTimer ty ;
       specRevokerStep ty ;
-      specUartTxStep ty ;
-      specUartRxStep ty ;
+      specUartTxDataStep ty ;
+      specUartTxDeqStep ty ;
+      specUartRxRdyStep ty ;
+      specUartRxDataStep ty ;
       specPlicPendingsStep ty ;
       specPlicClaimStep ty ;
       specExternalInterruptRule ty ;
