@@ -292,33 +292,23 @@ Section PlicCoreLogic.
     ) ;
     Retv.
 
-  (* Latch pending IRQs from external wires into leaf registers (skipping source 0) *)
-  Fixpoint updatePendingLeaves
-           (pends : list (RegOfKind (t:=tPlic) Bool))
-           (insvs : list (RegOfKind (t:=tPlic) Bool))
-           (irqs  : list (Expr ty Bool))
-           : Action ty tPlic (Bit 0) :=
-    match pends, insvs, irqs with
-    | pendRk :: pendsRest, insvRk :: insvsRest, irqVal :: irqsRest =>
-        let pf_pend := Kind_eqb_eq _ _ pendRk.(rk_pf) in
-        let pf_insv := Kind_eqb_eq _ _ insvRk.(rk_pf) in
-        ReadReg "" pendRk.(rk_path) (fun val_pend =>
-        ReadReg "" insvRk.(rk_path) (fun val_insv =>
-          let c_pend := eq_rect (regKind (getRegFromPath pendRk.(rk_path))) (fun K => ty K) val_pend _ pf_pend in
-          let c_insv := eq_rect (regKind (getRegFromPath insvRk.(rk_path))) (fun K => ty K) val_insv _ pf_insv in
-          let newPend := Or [ Var _ _ c_pend ; And [ irqVal ; Not (Var _ _ c_insv) ] ] in
-          let c_newPend := eq_rect Bool (fun K => Expr ty K) newPend _ (eq_sym pf_pend) in
-          Act (WriteReg pendRk.(rk_path) c_newPend Retv) ;
-          updatePendingLeaves pendsRest insvsRest irqsRest
-        ))
-    | _, _, _ => Retv
-    end.
+  Definition updatePendingLeaf
+             (pendRk : RegOfKind (t:=tPlic) Bool)
+             (insvRk : RegOfKind (t:=tPlic) Bool)
+             (irqVal : Expr ty Bool)
+             : Action ty tPlic (Bit 0) :=
+    let pf_pend := Kind_eqb_eq _ _ pendRk.(rk_pf) in
+    let pf_insv := Kind_eqb_eq _ _ insvRk.(rk_pf) in
+    ReadReg "" pendRk.(rk_path) (fun val_pend =>
+    ReadReg "" insvRk.(rk_path) (fun val_insv =>
+      let c_pend := eq_rect (regKind (getRegFromPath pendRk.(rk_path))) (fun K => ty K) val_pend _ pf_pend in
+      let c_insv := eq_rect (regKind (getRegFromPath insvRk.(rk_path))) (fun K => ty K) val_insv _ pf_insv in
+      let newPend := Or [ Var _ _ c_pend ; And [ irqVal ; Not (Var _ _ c_insv) ] ] in
+      let c_newPend := eq_rect Bool (fun K => Expr ty K) newPend _ (eq_sym pf_pend) in
+      Act (WriteReg pendRk.(rk_path) c_newPend Retv) ;
+      Retv
+    )).
 
-  Definition updatePendings (irqs : list (Expr ty Bool)) : Action ty tPlic (Bit 0) :=
-    match pendingPathsWithKind n, inServicePathsWithKind n with
-    | _ :: devPends, _ :: devInsvs => updatePendingLeaves devPends devInsvs irqs
-    | _, _ => Retv
-    end.
 End PlicCoreLogic.
 
 (* ===========================================================================
@@ -474,25 +464,27 @@ Section PlicSystem.
   Definition plicMeipSystem : Action ty memTree Bool :=
     plicAction (@plicMeip n ty).
 
-  Fixpoint sampleIrqsCPS
+  Fixpoint plicPendingStepsHelper
            (acts : list (forall ty, Action ty memTree Bool))
-           (k : forall (irqs : list (Expr ty Bool)), length irqs = length acts -> Action ty memTree (Bit 0))
-           : Action ty memTree (Bit 0) :=
-    match acts as acts' return (forall (irqs : list (Expr ty Bool)), length irqs = length acts' -> Action ty memTree (Bit 0)) -> Action ty memTree (Bit 0) with
-    | [] => fun k => k [] eq_refl
-    | act :: rest => fun k =>
-        LetA irqVal : Bool <- act ty ;
-        @sampleIrqsCPS rest (fun restIrqs Hlen =>
-          k (#irqVal :: restIrqs) (f_equal S Hlen)
-        )
-    end k.
+           (pends : list (RegOfKind (t:=plicTree n) Bool))
+           (insvs : list (RegOfKind (t:=plicTree n) Bool))
+           : list (Action ty memTree (Bit 0)) :=
+    match acts, pends, insvs with
+    | act :: restActs, pendRk :: restPends, insvRk :: restInsvs =>
+        (LetA irqVal : Bool <- act ty ;
+         plicAction (@updatePendingLeaf n ty pendRk insvRk #irqVal))
+        :: plicPendingStepsHelper restActs restPends restInsvs
+    | _, _, _ => []
+    end.
 
-  Definition plicPendingsStep
+  Definition plicPendingsSteps
              (pfCount : S (length (collectIrqActions regions)) = n)
-             : Action ty memTree (Bit 0) :=
-    @sampleIrqsCPS (collectIrqActions regions) (fun irqs Hlen =>
-      plicAction (@updatePendings n ty irqs)
-    ).
+             : list (Action ty memTree (Bit 0)) :=
+    match pendingPathsWithKind n, inServicePathsWithKind n with
+    | _ :: devPends, _ :: devInsvs =>
+        plicPendingStepsHelper (collectIrqActions regions) devPends devInsvs
+    | _, _ => []
+    end.
 
   Definition plicClaimStep : Action ty memTree (Bit 0) :=
     plicAction (@updateClaim n ty).

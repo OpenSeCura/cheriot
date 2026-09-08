@@ -78,8 +78,8 @@ Section Spec.
     liftAction np_mem (uartRxStepAction uart ty).
 
   (* Autonomous background PLIC steps *)
-  Definition specPlicPendingsStep : Action ty sysTree (Bit 0) :=
-    liftAction np_mem (plicPendingsStep plic ty eq_refl).
+  Definition specPlicPendingsSteps : list (Action ty sysTree (Bit 0)) :=
+    map (fun act => liftAction np_mem act) (plicPendingsSteps plic ty eq_refl).
 
   Definition specPlicClaimStep : Action ty sysTree (Bit 0) :=
     liftAction np_mem (plicClaimStep plic ty).
@@ -154,17 +154,16 @@ Section Spec.
  * =========================================================================== *)
 
   Definition spec : Mod sysTree :=
-    fun ty => [
+    fun ty => ([
       specStep ty ;
       specTickCycle ty ;
       specTickTimer ty ;
       specRevokerStep ty ;
       specUartTxStep ty ;
       specUartRxStep ty ;
-      specPlicPendingsStep ty ;
       specPlicClaimStep ty ;
       specExternalInterruptRule ty ;
       specTimerInterruptRule ty
-    ].
+    ] ++ specPlicPendingsSteps ty)%list.
 
 End Spec.
