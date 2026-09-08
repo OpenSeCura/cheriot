@@ -144,7 +144,9 @@ Arguments revokerLineWriteAction base ty rq : clear implicits.
 Definition revokerLocalInterrupt
            {ty : Kind -> Type}
            : Action ty tRev Bool :=
-  ReadReg "interruptStatus" revokerInterruptStatusPath (fun v => Return #v).
+  ReadReg "intStatus" revokerInterruptStatusPath (fun intStatus =>
+  ReadReg "intRequest" revokerInterruptRequestedPath (fun intRequest =>
+  Return (And [#intStatus ; #intRequest]))).
 
 Lemma revokerBaseAlignedLemma (base : Z) (pf : Is_true (base mod NumBytesXlen =? 0)%Z) :
   Is_true (base mod (2 ^ Z.of_nat (cfgLgLineBytes RevokerLineConfig)) =? 0)%Z.
@@ -285,7 +287,6 @@ Section RevokerAction.
         LetA intReq : Bool <- readRevokerInterruptRequested ;
         If #intReq Then (
           Act (writeRevokerInterruptStatus (ConstBool true)) ;
-          Act (writeRevokerInterruptRequested (ConstBool false)) ;
           Retv
         ) ;
         Retv
@@ -293,6 +294,7 @@ Section RevokerAction.
       Retv
     ) Else (
       (* IDLE STATE: epoch is even *)
+      Act (writeRevokerInterruptStatus (ConstBool false)) ;
       LetA isKicked : Bool <- readRevokerControl ;
       If #isKicked Then (
         (* Start sweep: initialize scanAddr to base and advance epoch to odd *)
@@ -308,8 +310,4 @@ Section RevokerAction.
       Retv
     ) ;
     Retv.
-
-  Definition revokerInterrupt : Action ty memTree Bool :=
-    readRevokerInterruptStatus.
-
 End RevokerAction.
