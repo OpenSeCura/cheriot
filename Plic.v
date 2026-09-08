@@ -56,11 +56,14 @@ Definition pendingLeaves (n : nat) : list (Tree Elem) :=
          (EReg (Build_Reg Bool (Some false)))
   ) (seq 0 n).
 
+Definition plicNumEnableWords (n : nat) : nat :=
+  Nat.div (n + Z.to_nat (Xlen - 1)) (Z.to_nat Xlen).
+
 Definition enableLeaves (n : nat) : list (Tree Elem) :=
   map (fun idx =>
     Leaf ("en_" ++ hex_string_of_Z (Z.of_nat idx))%string
-         (EReg (Build_Reg Bool (Some false)))
-  ) (seq 0 n).
+         (EReg (Build_Reg (Bit Xlen) (Some Zmod.zero)))
+  ) (seq 0 (plicNumEnableWords n)).
 
 Definition inServiceLeaves (n : nat) : list (Tree Elem) :=
   map (fun idx =>
@@ -104,9 +107,9 @@ Section PlicPaths.
     map (embedRegOfKind plicPendingNodePath)
         (getTreeRegsOfKind Bool (getNode plicPendingNodePath)).
 
-  Definition enablesPathsWithKind : list (RegOfKind (t:=tPlic) Bool) :=
+  Definition enablesPathsWithKind : list (RegOfKind (t:=tPlic) (Bit Xlen)) :=
     map (embedRegOfKind plicEnablesNodePath)
-        (getTreeRegsOfKind Bool (getNode plicEnablesNodePath)).
+        (getTreeRegsOfKind (Bit Xlen) (getNode plicEnablesNodePath)).
 
   Definition inServicePathsWithKind : list (RegOfKind (t:=tPlic) Bool) :=
     map (embedRegOfKind plicInServiceNodePath)
@@ -156,59 +159,75 @@ Section PlicCoreLogic.
     (ls : list (Expr ty k)) (def : Expr ty k) : Expr ty (Array n k) :=
     ArrayBuilder (fun (i : FinType n) => nth (finNum i) ls def).
 
+  Fixpoint readRegs
+           {k : Kind}
+           (paths : list (RegOfKind (t:=tPlic) k))
+           {ans : Kind}
+           (k_cont : list (Expr ty k) -> Action ty tPlic ans)
+           : Action ty tPlic ans :=
+    match paths with
+    | nil => k_cont nil
+    | rk :: rest =>
+        ReadReg "" rk.(rk_path) (fun val =>
+          let pf := Kind_eqb_eq _ _ rk.(rk_pf) in
+          let c_val := eq_rect (regKind (getRegFromPath rk.(rk_path))) (fun K => ty K) val _ pf in
+          readRegs rest (fun vals => k_cont (Var _ _ c_val :: vals))
+        )
+    end.
+
   Fixpoint readAllSources
            (prios : list (RegOfKind (t:=tPlic) (Bit Xlen)))
            (pends : list (RegOfKind (t:=tPlic) Bool))
-           (ens   : list (RegOfKind (t:=tPlic) Bool))
            (insvs : list (RegOfKind (t:=tPlic) Bool))
            {ans : Kind}
            (k : list (Expr ty (Bit Xlen)) ->
                 list (Expr ty Bool) ->
                 list (Expr ty Bool) ->
-                list (Expr ty Bool) ->
                 Action ty tPlic ans)
            : Action ty tPlic ans :=
-    match prios, pends, ens, insvs with
-    | rPrio :: rPrios', rPend :: rPends', rEn :: rEns', rInsv :: rInsvs' =>
+    match prios, pends, insvs with
+    | rPrio :: rPrios', rPend :: rPends', rInsv :: rInsvs' =>
         ReadReg "val_prio" rPrio.(rk_path) (fun val_prio =>
         ReadReg "val_pend" rPend.(rk_path) (fun val_pend =>
-        ReadReg "val_en"   rEn.(rk_path)   (fun val_en =>
         ReadReg "val_insv" rInsv.(rk_path) (fun val_insv =>
           let pf_prio := Kind_eqb_eq _ _ rPrio.(rk_pf) in
           let pf_pend := Kind_eqb_eq _ _ rPend.(rk_pf) in
-          let pf_en   := Kind_eqb_eq _ _ rEn.(rk_pf) in
           let pf_insv := Kind_eqb_eq _ _ rInsv.(rk_pf) in
           let c_prio := eq_rect (regKind (getRegFromPath rPrio.(rk_path))) (fun K => ty K) val_prio _ pf_prio in
           let c_pend := eq_rect (regKind (getRegFromPath rPend.(rk_path))) (fun K => ty K) val_pend _ pf_pend in
-          let c_en   := eq_rect (regKind (getRegFromPath rEn.(rk_path)))   (fun K => ty K) val_en   _ pf_en in
           let c_insv := eq_rect (regKind (getRegFromPath rInsv.(rk_path))) (fun K => ty K) val_insv _ pf_insv in
-          readAllSources rPrios' rPends' rEns' rInsvs' (fun pList dList eList iList =>
+          readAllSources rPrios' rPends' rInsvs' (fun pList dList iList =>
             k (Var _ _ c_prio :: pList)
               (Var _ _ c_pend :: dList)
-              (Var _ _ c_en   :: eList)
               (Var _ _ c_insv :: iList)
           )
-        ))))
-    | _, _, _, _ => k nil nil nil nil
+        )))
+    | _, _, _ => k nil nil nil
     end.
 
   Definition readPlicState {ans : Kind}
              (k : PlicState ty n -> Action ty tPlic ans) : Action ty tPlic ans :=
     LetA thresh : Bit Xlen <- ReadReg "threshold" (plicThresholdPath n) (fun v => Return #v) ;
-    readAllSources (priorityPathsWithKind n)
-                   (pendingPathsWithKind n)
-                   (enablesPathsWithKind n)
-                   (inServicePathsWithKind n)
-                   (fun prioList pendList enList insvList =>
-      let prios := listToExprArray prioList ($0 : Expr ty (Bit Xlen)) in
-      let pends := listToExprArray pendList (ConstBool false) in
-      let ens   := listToExprArray enList   (ConstBool false) in
-      let insvs := listToExprArray insvList (ConstBool false) in
-      k {| st_thresh := #thresh ;
-           st_prios  := prios ;
-           st_pends  := pends ;
-           st_ens    := ens ;
-           st_insvs  := insvs |}
+    readRegs (enablesPathsWithKind n) (fun enList =>
+      readAllSources (priorityPathsWithKind n)
+                     (pendingPathsWithKind n)
+                     (inServicePathsWithKind n)
+                     (fun prioList pendList insvList =>
+        let prios := listToExprArray prioList ($0 : Expr ty (Bit Xlen)) in
+        let pends := listToExprArray pendList (ConstBool false) in
+        let insvs := listToExprArray insvList (ConstBool false) in
+        let ens : Expr ty (Array n Bool) :=
+          ArrayBuilder (fun (i : FinType n) =>
+            let wordExpr := nth (finNum i / Z.to_nat Xlen)%nat enList ($0 : Expr ty (Bit Xlen)) in
+            let wordBits := FromBit (Array (Z.to_nat Xlen) Bool) wordExpr in
+            readNatToFinType (ConstBool false) (ReadArrayConst wordBits) (finNum i mod Z.to_nat Xlen)%nat
+          ) in
+        k {| st_thresh := #thresh ;
+             st_prios  := prios ;
+             st_pends  := pends ;
+             st_ens    := ens ;
+             st_insvs  := insvs |}
+      )
     ).
 
   Definition makeClaimLeaf
@@ -338,9 +357,8 @@ Section PlicMmio.
         Syntax.slice (boolArrayToByteArray st.(st_pends)) #pendOffset (Z.to_nat NumBytesXlen) ;
       Let pendVal : Bit Xlen <- ToBit #pendSlice ;
       Let enOffset <- Sub #offset $(PLIC_ENABLE_OFFSET) ;
-      Let enSlice : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
-        Syntax.slice (boolArrayToByteArray st.(st_ens)) #enOffset (Z.to_nat NumBytesXlen) ;
-      Let enVal : Bit Xlen <- ToBit #enSlice ;
+      Let enWordIdx : Bit Xlen <- ZeroExtendTo Xlen (TruncMsb (PlicOffsetSz - LgNumBytesXlen) LgNumBytesXlen #enOffset) ;
+      LetIf enVal : Bit Xlen <- If #isEnable Then (readRegsList (enablesPathsWithKind n) #enWordIdx) ;
       LetIf claimedId : Bit Xlen <- If #isClaim Then (@plicClaim n ty) ;
       Let rVal : Bit Xlen <-
         Or [ #prioVal ;
@@ -355,21 +373,6 @@ Section PlicMmio.
         "tag"  ::= Const ty (Array (cfgNumLineTags PlicLineConfig) Bool) (getDefault _)
       })
     ).
-
-  (* Write a list of values to a list of leaf registers *)
-  Fixpoint writeRegs
-           {k : Kind}
-           (vals : list (Expr ty k))
-           (paths : list (RegOfKind (t:=tPlic) k))
-           : Action ty tPlic (Bit 0) :=
-    match vals, paths with
-    | val :: valsRest, rk :: pathsRest =>
-        let pf := Kind_eqb_eq _ _ rk.(rk_pf) in
-        let c_val := eq_rect k (fun K => Expr ty K) val _ (eq_sym pf) in
-        Act (WriteReg rk.(rk_path) c_val Retv) ;
-        writeRegs valsRest pathsRest
-    | _, _ => Retv
-    end.
 
   Definition plicLineWriteAction
              (rq : Expr ty (LineWriteRq PlicLineConfig))
@@ -388,13 +391,14 @@ Section PlicMmio.
       Retv
     ) ;
     If #isEnable Then (
-      Let bits : Array (Z.to_nat Xlen) Bool <-
-        FromBit (Array (Z.to_nat Xlen) Bool) #writeWord ;
-      let allBits := map (fun i => ReadArrayConst #bits i) (genFinType (Z.to_nat Xlen)) in
-      match allBits, enablesPathsWithKind n with
-      | _ :: devBits, _ :: devEnables => writeRegs devBits devEnables
-      | _, _ => Retv
-      end
+      Let enOffset <- Sub #offset $(PLIC_ENABLE_OFFSET) ;
+      Let enWordIdx : Bit Xlen <- ZeroExtendTo Xlen (TruncMsb (PlicOffsetSz - LgNumBytesXlen) LgNumBytesXlen #enOffset) ;
+      Let cleanWriteWord : Bit Xlen <-
+        ITE (Eq #enWordIdx $0)
+            {< TruncMsb (Xlen - 1) 1 #writeWord, Const ty (Bit 1) Zmod.zero >}
+            #writeWord ;
+      Act (writeRegsList (enablesPathsWithKind n) #enWordIdx #cleanWriteWord) ;
+      Retv
     ) ;
     If #isPrio Then (
       Let prioOffset <- Sub #offset $(PLIC_PRIORITY_BASE) ;
