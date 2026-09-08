@@ -80,6 +80,7 @@ Definition uartChildren : list (Tree Elem) :=
     Leaf "lcr_cfg"     (EReg (Build_Reg (Bit 7) (Some (bits.of_Z 7 3)))) ;
     Leaf "mcr_dtr"     (EReg (Build_Reg Bool (Some false))) ;
     Leaf "mcr_rts"     (EReg (Build_Reg Bool (Some false))) ;
+    Leaf "mcr_out1"    (EReg (Build_Reg Bool (Some false))) ;
     Leaf "mcr_out2"    (EReg (Build_Reg Bool (Some false))) ;
     Leaf "mcr_loop"    (EReg (Build_Reg Bool (Some false))) ;
     Leaf "lsr_oe"      (EReg (Build_Reg Bool (Some false))) ;
@@ -89,6 +90,7 @@ Definition uartChildren : list (Tree Elem) :=
     Leaf "scr"         (EReg (Build_Reg (Bit 8) (Some Zmod.zero))) ;
     Leaf "dll"         (EReg (Build_Reg (Bit 8) (Some Zmod.zero))) ;
     Leaf "dlm"         (EReg (Build_Reg (Bit 8) (Some Zmod.zero))) ;
+    Leaf "thre_ip"     (EReg (Build_Reg Bool (Some true))) ;
     Leaf "txData"      (ESend (Bit 8)) ;
     Leaf "txRdy"       (ERecv Bool) ;
     Leaf "rxData"      (ERecv (Option (Bit 8))) ;
@@ -116,6 +118,7 @@ Definition uartLcrCfgPath   : RegPath uartTree := getChildRegPathTree uartTree "
 
 Definition uartMcrDtrPath   : RegPath uartTree := getChildRegPathTree uartTree "mcr_dtr".
 Definition uartMcrRtsPath   : RegPath uartTree := getChildRegPathTree uartTree "mcr_rts".
+Definition uartMcrOut1Path  : RegPath uartTree := getChildRegPathTree uartTree "mcr_out1".
 Definition uartMcrOut2Path  : RegPath uartTree := getChildRegPathTree uartTree "mcr_out2".
 Definition uartMcrLoopPath  : RegPath uartTree := getChildRegPathTree uartTree "mcr_loop".
 
@@ -127,6 +130,7 @@ Definition uartLsrBiPath    : RegPath uartTree := getChildRegPathTree uartTree "
 Definition uartScrPath      : RegPath uartTree := getChildRegPathTree uartTree "scr".
 Definition uartDllPath      : RegPath uartTree := getChildRegPathTree uartTree "dll".
 Definition uartDlmPath      : RegPath uartTree := getChildRegPathTree uartTree "dlm".
+Definition uartThreIpPath   : RegPath uartTree := getChildRegPathTree uartTree "thre_ip".
 
 Definition uartTxDataPath   : SendPath uartTree := getChildSendPathTree uartTree "txData".
 Definition uartTxRdyPath    : RecvPath uartTree := getChildRecvPathTree uartTree "txRdy".
@@ -174,11 +178,16 @@ Section UartOperations.
     If #isLoopback Then (
       LetA rxFull : Bool <- liftAction np_rx_fifo (@isFull UartFifoCapacity (Bit 8) ty) ;
       If (Not #rxFull) Then (
-        liftAction np_rx_fifo (@enq UartFifoCapacity (Bit 8) ty dByte)
+        Act (liftAction np_rx_fifo (@enq UartFifoCapacity (Bit 8) ty dByte)) ;
+        WriteReg uartThreIpPath (ConstBool true) Retv
+      ) Else (
+        Act (WriteReg uartLsrOePath (ConstBool true) Retv) ;
+        WriteReg uartThreIpPath (ConstBool true) Retv
       ) ;
       Retv
     ) ;
     If (Not #isLoopback) Then (
+      Act (WriteReg uartThreIpPath (ConstBool false) Retv) ;
       LetA txFull : Bool <- liftAction np_tx_fifo (@isFull UartFifoCapacity (Bit 8) ty) ;
       If (Not #txFull) Then (
         liftAction np_tx_fifo (@enq UartFifoCapacity (Bit 8) ty dByte)
@@ -190,21 +199,25 @@ Section UartOperations.
   (* Read IIR: computes highest priority pending interrupt dynamically into a Xlen-bit word *)
   Definition readIir : Action ty uartTree (Bit Xlen) :=
     LetA is_rx_empty : Bool <- liftAction np_rx_fifo (@isEmpty UartFifoCapacity (Bit 8) ty) ;
-    LetA is_tx_empty : Bool <- liftAction np_tx_fifo (@isEmpty UartFifoCapacity (Bit 8) ty) ;
     LetA erbfi       : Bool <- ReadReg "ier_erbfi" uartIerErbfiPath (fun v => Return #v) ;
     LetA etbei       : Bool <- ReadReg "ier_etbei" uartIerEtbeiPath (fun v => Return #v) ;
     LetA elsi        : Bool <- ReadReg "ier_elsi" uartIerElsiPath (fun v => Return #v) ;
-    LetA edssi       : Bool <- ReadReg "ier_edssi" uartIerEdssiPath (fun v => Return #v) ;
     LetA oe          : Bool <- ReadReg "lsr_oe" uartLsrOePath (fun v => Return #v) ;
     LetA pe          : Bool <- ReadReg "lsr_pe" uartLsrPePath (fun v => Return #v) ;
     LetA fe          : Bool <- ReadReg "lsr_fe" uartLsrFePath (fun v => Return #v) ;
     LetA bi          : Bool <- ReadReg "lsr_bi" uartLsrBiPath (fun v => Return #v) ;
     LetA fifo_en     : Bool <- ReadReg "fcr_fifo_en" uartFcrFifoEnPath (fun v => Return #v) ;
+    LetA thre_ip     : Bool <- ReadReg "thre_ip" uartThreIpPath (fun v => Return #v) ;
     Let hasLineErr   : Bool <- Or [ #oe ; #pe ; #fe ; #bi ] ;
     Let p1 : Bool <- And [ #hasLineErr ; #elsi ] ;
     Let p2 : Bool <- And [ Not #is_rx_empty ; #erbfi ] ;
-    Let p3 : Bool <- And [ #is_tx_empty ; #etbei ] ;
-    Let p4 : Bool <- #edssi ;
+    Let p3 : Bool <- And [ #thre_ip ; #etbei ] ;
+    Let p4 : Bool <- ConstBool false ;
+    Let isThreInt : Bool <- And [ Not #p1 ; Not #p2 ; #p3 ] ;
+    If #isThreInt Then (
+      Act (WriteReg uartThreIpPath (ConstBool false) Retv) ;
+      Retv
+    ) ;
     Let iir_val : Bit 3 <-
       ITE #p1 $(UART_IIR_LINE_STATUS)
         (ITE #p2 $(UART_IIR_RX_DATA)
@@ -215,6 +228,7 @@ Section UartOperations.
 
   (* Read LSR: returns status and clears sticky error bits *)
   Definition readLsr : Action ty uartTree (Bit Xlen) :=
+    LetA fifo_en     : Bool <- ReadReg "fcr_fifo_en" uartFcrFifoEnPath (fun v => Return #v) ;
     LetA is_rx_empty : Bool <- liftAction np_rx_fifo (@isEmpty UartFifoCapacity (Bit 8) ty) ;
     LetA is_tx_empty : Bool <- liftAction np_tx_fifo (@isEmpty UartFifoCapacity (Bit 8) ty) ;
     LetA oe          : Bool <- ReadReg "lsr_oe" uartLsrOePath (fun v => Return #v) ;
@@ -225,94 +239,92 @@ Section UartOperations.
     Act (WriteReg uartLsrPePath (ConstBool false) Retv) ;
     Act (WriteReg uartLsrFePath (ConstBool false) Retv) ;
     Act (WriteReg uartLsrBiPath (ConstBool false) Retv) ;
-    Let anyErr : Bool <- Or [ #oe ; #pe ; #fe ; #bi ] ;
+    Let fifoErr : Bool <- And [ #fifo_en ; Or [ #pe ; #fe ; #bi ] ] ;
     Let dr : Bool <- Not #is_rx_empty ;
     Let thre : Bool <- #is_tx_empty ;
     Let temt : Bool <- #is_tx_empty ;
     Return {< Const ty (Bit (Xlen - 8)) Zmod.zero,
-              ToBit #anyErr, ToBit #temt, ToBit #thre,
+              ToBit #fifoErr, ToBit #temt, ToBit #thre,
               ToBit #bi, ToBit #fe, ToBit #pe, ToBit #oe, ToBit #dr >}.
 
   (* UART Interrupt Output: evaluated for PLIC connection *)
   Definition uartIrq : Action ty uartTree Bool :=
     LetA is_rx_empty : Bool <- liftAction np_rx_fifo (@isEmpty UartFifoCapacity (Bit 8) ty) ;
-    LetA is_tx_empty : Bool <- liftAction np_tx_fifo (@isEmpty UartFifoCapacity (Bit 8) ty) ;
     LetA erbfi       : Bool <- ReadReg "ier_erbfi" uartIerErbfiPath (fun v => Return #v) ;
     LetA etbei       : Bool <- ReadReg "ier_etbei" uartIerEtbeiPath (fun v => Return #v) ;
     LetA elsi        : Bool <- ReadReg "ier_elsi" uartIerElsiPath (fun v => Return #v) ;
-    LetA edssi       : Bool <- ReadReg "ier_edssi" uartIerEdssiPath (fun v => Return #v) ;
     LetA oe          : Bool <- ReadReg "lsr_oe" uartLsrOePath (fun v => Return #v) ;
     LetA pe          : Bool <- ReadReg "lsr_pe" uartLsrPePath (fun v => Return #v) ;
     LetA fe          : Bool <- ReadReg "lsr_fe" uartLsrFePath (fun v => Return #v) ;
     LetA bi          : Bool <- ReadReg "lsr_bi" uartLsrBiPath (fun v => Return #v) ;
-    LetA out2        : Bool <- ReadReg "mcr_out2" uartMcrOut2Path (fun v => Return #v) ;
+    LetA thre_ip     : Bool <- ReadReg "thre_ip" uartThreIpPath (fun v => Return #v) ;
     Let hasLineErr   : Bool <- Or [ #oe ; #pe ; #fe ; #bi ] ;
     Let p1 : Bool <- And [ #hasLineErr ; #elsi ] ;
     Let p2 : Bool <- And [ Not #is_rx_empty ; #erbfi ] ;
-    Let p3 : Bool <- And [ #is_tx_empty ; #etbei ] ;
-    Let p4 : Bool <- #edssi ;
+    Let p3 : Bool <- And [ #thre_ip ; #etbei ] ;
+    Let p4 : Bool <- ConstBool false ;
     Let any_irq : Bool <- Or [ #p1 ; #p2 ; #p3 ; #p4 ] ;
-    Return (And [ #any_irq ; Or [ #out2 ; ConstBool true ] ]).
+    Return #any_irq.
 
   (* =========================================================================
-   * 4 Decoupled Hardware Rules for Streaming PHY Interface
+   * 3 Decoupled Hardware Rules for Streaming PHY Interface
    * ========================================================================= *)
 
-  (* TX Rule 1: Always presents data onto txData whenever TX FIFO is not empty *)
-  Definition uartTxDataStep : Action ty uartTree (Bit 0) :=
-    LetA txEmpty : Bool <- liftAction np_tx_fifo (@isEmpty UartFifoCapacity (Bit 8) ty) ;
-    If (Not #txEmpty) Then (
-      LetA txHead : Option (Bit 8) <- liftAction np_tx_fifo (@first UartFifoCapacity (Bit 8) ty) ;
-      Let hasData : Bool <- ##txHead `? "Some" ;
-      If #hasData Then (
-        Let txByte : Bit 8 <- ##txHead `! "Some" ;
-        Act (Send uartTxDataPath #txByte Retv) ;
-        Retv
-      ) ;
-      Retv
-    ) ;
-    Retv.
-
-  (* TX Rule 2: Samples txRdy; if ready and TX FIFO is not empty, dequeues *)
-  Definition uartTxDeqStep : Action ty uartTree (Bit 0) :=
+  (* TX Rule: Atomically presents data onto txData and dequeues when txRdy is true *)
+  Definition uartTxStep : Action ty uartTree (Bit 0) :=
     Recv "txRdy" uartTxRdyPath (fun txRdy =>
-      If #txRdy Then (
+      LetA isLoop : Bool <- ReadReg "mcr_loop" uartMcrLoopPath (fun v => Return #v) ;
+      If (Not #isLoop) Then (
         LetA txEmpty : Bool <- liftAction np_tx_fifo (@isEmpty UartFifoCapacity (Bit 8) ty) ;
         If (Not #txEmpty) Then (
-          liftAction np_tx_fifo (@deq UartFifoCapacity (Bit 8) ty)
+          LetA txHead : Option (Bit 8) <- liftAction np_tx_fifo (@first UartFifoCapacity (Bit 8) ty) ;
+          Let hasData : Bool <- ##txHead `? "Some" ;
+          If #hasData Then (
+            Let txByte : Bit 8 <- ##txHead `! "Some" ;
+            Act (Send uartTxDataPath #txByte Retv) ;
+            If #txRdy Then (
+              LetA hadOne : Bool <- liftAction np_tx_fifo (@hasOneElem UartFifoCapacity (Bit 8) ty) ;
+              Act (liftAction np_tx_fifo (@deq UartFifoCapacity (Bit 8) ty)) ;
+              If #hadOne Then (
+                WriteReg uartThreIpPath (ConstBool true) Retv
+              ) ;
+              Retv
+            ) ;
+            Retv
+          ) ;
+          Retv
         ) ;
         Retv
       ) ;
       Retv
     ).
 
-  (* RX Rule 3: Always sends rxRdy whenever RX FIFO is not full *)
-  Definition uartRxRdyStep : Action ty uartTree (Bit 0) :=
-    LetA rxFull : Bool <- liftAction np_rx_fifo (@isFull UartFifoCapacity (Bit 8) ty) ;
-    If (Not #rxFull) Then (
-      Act (Send uartRxRdyPath (Const ty (Bit 0) Zmod.zero) Retv) ;
-      Retv
+  (* RX Rule: Atomically sends rxRdy when FIFO not full, and samples rxData *)
+  Definition uartRxStep : Action ty uartTree (Bit 0) :=
+    LetA isLoop : Bool <- ReadReg "mcr_loop" uartMcrLoopPath (fun v => Return #v) ;
+    If (Not #isLoop) Then (
+      LetA rxFull : Bool <- liftAction np_rx_fifo (@isFull UartFifoCapacity (Bit 8) ty) ;
+      If (Not #rxFull) Then (
+        Act (Send uartRxRdyPath (Const ty (Bit 0) Zmod.zero) Retv) ;
+        Retv
+      ) ;
+      Recv "rxData" uartRxDataPath (fun rxOpt =>
+        Let hasData : Bool <- ##rxOpt `? "Some" ;
+        If #hasData Then (
+          Let rxByte : Bit 8 <- ##rxOpt `! "Some" ;
+          If (Not #rxFull) Then (
+            Act (liftAction np_rx_fifo (@enq UartFifoCapacity (Bit 8) ty rxByte)) ;
+            Retv
+          ) Else (
+            Act (WriteReg uartLsrOePath (ConstBool true) Retv) ;
+            Retv
+          ) ;
+          Retv
+        ) ;
+        Retv
+      )
     ) ;
     Retv.
-
-  (* RX Rule 4: Samples rxData; enqueues if not full, flags overrun error if full *)
-  Definition uartRxDataStep : Action ty uartTree (Bit 0) :=
-    Recv "rxData" uartRxDataPath (fun rxOpt =>
-      Let hasData : Bool <- ##rxOpt `? "Some" ;
-      If #hasData Then (
-        Let rxByte : Bit 8 <- ##rxOpt `! "Some" ;
-        LetA rxFull : Bool <- liftAction np_rx_fifo (@isFull UartFifoCapacity (Bit 8) ty) ;
-        If (Not #rxFull) Then (
-          Act (liftAction np_rx_fifo (@enq UartFifoCapacity (Bit 8) ty rxByte)) ;
-          Retv
-        ) Else (
-          Act (WriteReg uartLsrOePath (ConstBool true) Retv) ;
-          Retv
-        ) ;
-        Retv
-      ) ;
-      Retv
-    ).
 
 End UartOperations.
 
@@ -320,10 +332,8 @@ Arguments readRbr {ty}.
 Arguments readIir {ty}.
 Arguments readLsr {ty}.
 Arguments uartIrq {ty}.
-Arguments uartTxDataStep {ty}.
-Arguments uartTxDeqStep {ty}.
-Arguments uartRxRdyStep {ty}.
-Arguments uartRxDataStep {ty}.
+Arguments uartTxStep {ty}.
+Arguments uartRxStep {ty}.
 Arguments writeThr [ty] dataByte.
 
 (* ===========================================================================
@@ -354,6 +364,7 @@ Definition uartLineReadAction
   ReadReg "lcr_cfg"   uartLcrCfgPath   (fun lcrCfg =>
   ReadReg "mcr_dtr"   uartMcrDtrPath   (fun dtr =>
   ReadReg "mcr_rts"   uartMcrRtsPath   (fun rts =>
+  ReadReg "mcr_out1"  uartMcrOut1Path  (fun out1 =>
   ReadReg "mcr_out2"  uartMcrOut2Path  (fun out2 =>
   ReadReg "mcr_loop"  uartMcrLoopPath  (fun loop =>
   ReadReg "scr"       uartScrPath      (fun scrVal =>
@@ -361,8 +372,15 @@ Definition uartLineReadAction
   ReadReg "dlm"       uartDlmPath      (fun dlmVal =>
   Let ierWord : Bit Xlen <- {< Const ty (Bit (Xlen - 4)) Zmod.zero, ToBit #edssi, ToBit #elsi, ToBit #etbei, ToBit #erbfi >} ;
   Let lcrWord : Bit Xlen <- {< Const ty (Bit (Xlen - 8)) Zmod.zero, ToBit #dlab, #lcrCfg >} ;
-  Let mcrWord : Bit Xlen <- {< Const ty (Bit (Xlen - 5)) Zmod.zero, ToBit #loop, ToBit #out2, Const ty (Bit 1) Zmod.zero, ToBit #rts, ToBit #dtr >} ;
-  Let msrWord : Bit Xlen <- Const ty (Bit Xlen) (bits.of_Z Xlen 176) ;
+  Let mcrWord : Bit Xlen <- {< Const ty (Bit (Xlen - 5)) Zmod.zero, ToBit #loop, ToBit #out2, ToBit #out1, ToBit #rts, ToBit #dtr >} ;
+  Let msr_dcd : Bool <- ITE #loop #out2 (ConstBool true) ;
+  Let msr_ri  : Bool <- ITE #loop #out1 (ConstBool false) ;
+  Let msr_dsr : Bool <- ITE #loop #dtr  (ConstBool true) ;
+  Let msr_cts : Bool <- ITE #loop #rts  (ConstBool true) ;
+  Let msrWord : Bit Xlen <-
+    {< Const ty (Bit (Xlen - 8)) Zmod.zero,
+       ToBit #msr_dcd, ToBit #msr_ri, ToBit #msr_dsr, ToBit #msr_cts,
+       Const ty (Bit 4) Zmod.zero >} ;
   Let readWord : Bit Xlen <-
     Or [ ITE0 #isRbr (ZeroExtendTo Xlen #rbrByte) ;
          ITE0 (And [ Eq #regIdx (uartRegIdxBit "rbr_thr_dll") ; #dlab ]) (ZeroExtendTo Xlen #dllVal) ;
@@ -379,7 +397,7 @@ Definition uartLineReadAction
   @Return ty uartTree (LineReadRp UartLineConfig) (STRUCT {
     "data" ::= #dataArr ;
     "tag"  ::= Const ty (Array (cfgNumLineTags UartLineConfig) Bool) (getDefault _)
-  }))))))))))))).
+  })))))))))))))).
 
 Definition uartLineWriteAction
            (base : Z)
@@ -403,10 +421,19 @@ Definition uartLineWriteAction
     WriteReg uartDlmPath #dataByte Retv
   ) ;
   If (And [ Eq #regIdx (uartRegIdxBit "ier_dlm") ; Not #dlab ]) Then (
-    WriteReg uartIerErbfiPath (##writeBits$[0]) (
-    WriteReg uartIerEtbeiPath (##writeBits$[1]) (
-    WriteReg uartIerElsiPath  (##writeBits$[2]) (
-    WriteReg uartIerEdssiPath (##writeBits$[3]) Retv)))
+    LetA old_etbei : Bool <- ReadReg "ier_etbei" uartIerEtbeiPath (fun v => Return #v) ;
+    Act (WriteReg uartIerErbfiPath (##writeBits$[0]) Retv) ;
+    Act (WriteReg uartIerEtbeiPath (##writeBits$[1]) Retv) ;
+    Act (WriteReg uartIerElsiPath  (##writeBits$[2]) Retv) ;
+    Act (WriteReg uartIerEdssiPath (##writeBits$[3]) Retv) ;
+    If (And [ Not #old_etbei ; ##writeBits$[1] ]) Then (
+      LetA txEmpty : Bool <- liftAction np_tx_fifo (@isEmpty UartFifoCapacity (Bit 8) ty) ;
+      If #txEmpty Then (
+        WriteReg uartThreIpPath (ConstBool true) Retv
+      ) ;
+      Retv
+    ) ;
+    Retv
   ) ;
   If (Eq #regIdx (uartRegIdxBit "iir_fcr")) Then (
     Act (WriteReg uartFcrFifoEnPath (##writeBits$[0]) Retv) ;
@@ -414,7 +441,8 @@ Definition uartLineWriteAction
       liftAction np_rx_fifo (@clear UartFifoCapacity (Bit 8) ty)
     ) ;
     If (##writeBits$[2]) Then (
-      liftAction np_tx_fifo (@clear UartFifoCapacity (Bit 8) ty)
+      Act (liftAction np_tx_fifo (@clear UartFifoCapacity (Bit 8) ty)) ;
+      WriteReg uartThreIpPath (ConstBool true) Retv
     ) ;
     Retv
   ) ;
@@ -425,8 +453,9 @@ Definition uartLineWriteAction
   If (Eq #regIdx (uartRegIdxBit "mcr")) Then (
     WriteReg uartMcrDtrPath  (##writeBits$[0]) (
     WriteReg uartMcrRtsPath  (##writeBits$[1]) (
+    WriteReg uartMcrOut1Path (##writeBits$[2]) (
     WriteReg uartMcrOut2Path (##writeBits$[3]) (
-    WriteReg uartMcrLoopPath (##writeBits$[4]) Retv)))
+    WriteReg uartMcrLoopPath (##writeBits$[4]) Retv))))
   ) ;
   If (Eq #regIdx (uartRegIdxBit "scr")) Then (
     WriteReg uartScrPath #dataByte Retv
@@ -487,16 +516,10 @@ Section UartSystem.
   Definition uartAction {k : Kind} (act : Action ty uartTree k) : Action ty memTree k :=
     nthRegionAction uart.(uartIdx) regions (uartRegion uart) uart.(pfUart) act.
 
-  Definition uartTxDataStepAction : Action ty memTree (Bit 0) :=
-    uartAction (@uartTxDataStep ty).
+  Definition uartTxStepAction : Action ty memTree (Bit 0) :=
+    uartAction (@uartTxStep ty).
 
-  Definition uartTxDeqStepAction : Action ty memTree (Bit 0) :=
-    uartAction (@uartTxDeqStep ty).
-
-  Definition uartRxRdyStepAction : Action ty memTree (Bit 0) :=
-    uartAction (@uartRxRdyStep ty).
-
-  Definition uartRxDataStepAction : Action ty memTree (Bit 0) :=
-    uartAction (@uartRxDataStep ty).
+  Definition uartRxStepAction : Action ty memTree (Bit 0) :=
+    uartAction (@uartRxStep ty).
 
 End UartSystem.

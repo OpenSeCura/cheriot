@@ -83,6 +83,10 @@ Section Fifo.
       ( RegRead sz <- "fifo.size" in fifoTree;
         Return (isZero #sz) ).
 
+    Definition hasOneElem : Action ty fifoTree Bool :=
+      ( RegRead sz <- "fifo.size" in fifoTree;
+        Return (Eq #sz $1) ).
+
     Definition enq (val: ty k) : Action ty fifoTree (Bit 0) :=
       ( LetA isFull <- isFull;
         If (Not #isFull)
