@@ -379,6 +379,7 @@ Section PlicMmio.
              : Action ty tPlic (Bit 0) :=
     Let offset <- getMemOffset base PlicSizeBytes (rq`"addr") ;
     Let writeWord : Bit Xlen <- ToBit (rq`"data") ;
+    (* Only the lowerbound checks are done; upper bound automatically falls off *)
     Let isComplete  : Bool <- Eq #offset $(PLIC_CLAIM_OFFSET) ;
     Let isThreshold : Bool <- Eq #offset $(PLIC_THRESHOLD_OFFSET) ;
     Let isEnable    : Bool <- Sge #offset $(PLIC_ENABLE_OFFSET) ;
