@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Bool Psatz Nat Arith.
 From Guru Require Import Library Syntax Notations.
-From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic Uart Spec Binary.
+From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic UartController Spec Binary.
 
 Set Implicit Arguments.
 Unset Strict Implicit.

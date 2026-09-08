@@ -42,6 +42,11 @@ Definition uartRegIdx (name : string) :=
 Definition UartNumRegs : nat := Eval compute in (length UartRegNames).
 Definition UartSizeBytes : Z := Eval compute in (Z.of_nat UartNumRegs * NumBytesXlen)%Z.
 
+Definition UartRegIdxWidth : Z := Eval compute in (Z.log2_up (Z.of_nat UartNumRegs)).
+
+Notation uartRegIdxBit name :=
+  ($(Z.of_nat (uartRegIdx name))).
+
 Definition UART_RBR_THR_DLL_OFFSET : Z := 0.   (* 0x00: RBR (r), THR (w), DLL (r/w, DLAB=1) *)
 Definition UART_IER_DLM_OFFSET     : Z := 4.   (* 0x04: IER (r/w), DLM (r/w, DLAB=1) *)
 Definition UART_IIR_FCR_OFFSET     : Z := 8.   (* 0x08: IIR (r), FCR (w) *)
@@ -263,128 +268,81 @@ Definition uartLineReadAction
            (ty : Kind -> Type)
            (addr : Expr ty Addr)
            : Action ty uartTree (LineReadRp UartLineConfig) :=
-  Let rawOffset : Addr <- Sub addr $(base) ;
-  Let offset : Addr <- {< TruncMsb (AddrSz - 2) 2 #rawOffset, Const ty (Bit 2) Zmod.zero >} ;
+  Let offset <- getMemOffset base UartSizeBytes addr ;
+  Let regIdx : Bit UartRegIdxWidth <- TruncMsb UartRegIdxWidth LgNumBytesXlen #offset ;
   LetA lcrVal : Bit 8 <- ReadReg "lcr" uartLcrPath (fun v => Return #v) ;
   Let dlab : Bool <- isDlabSet #lcrVal ;
-  Let isRbrThrDll : Bool <- Eq #offset $(UART_RBR_THR_DLL_OFFSET) ;
-  Let isIerDlm    : Bool <- Eq #offset $(UART_IER_DLM_OFFSET) ;
-  Let isIirFcr    : Bool <- Eq #offset $(UART_IIR_FCR_OFFSET) ;
-  Let isLcr       : Bool <- Eq #offset $(UART_LCR_OFFSET) ;
-  Let isMcr       : Bool <- Eq #offset $(UART_MCR_OFFSET) ;
-  Let isLsr       : Bool <- Eq #offset $(UART_LSR_OFFSET) ;
-  Let isMsr       : Bool <- Eq #offset $(UART_MSR_OFFSET) ;
-  Let isScr       : Bool <- Eq #offset $(UART_SCR_OFFSET) ;
-  LetIf rVal8 : Bit 8 <-
-    If #isRbrThrDll Then (
-      LetIf rRbrDll : Bit 8 <-
-        If #dlab Then (
-          ReadReg "dll" uartDllPath (fun v => Return #v)
-        ) Else (
-          readRbr
-        ) ;
-      Return #rRbrDll
-    ) Else (
-      LetIf rValIerDlm : Bit 8 <-
-        If #isIerDlm Then (
-          LetIf rIerDlm : Bit 8 <-
-            If #dlab Then (
-              ReadReg "dlm" uartDlmPath (fun v => Return #v)
-            ) Else (
-              ReadReg "ier" uartIerPath (fun v => Return #v)
-            ) ;
-          Return #rIerDlm
-        ) Else (
-          LetIf rValIir : Bit 8 <-
-            If #isIirFcr Then (
-              readIir
-            ) Else (
-              LetIf rValLcr : Bit 8 <-
-                If #isLcr Then (
-                  Return #lcrVal
-                ) Else (
-                  LetIf rValMcr : Bit 8 <-
-                    If #isMcr Then (
-                      ReadReg "mcr" uartMcrPath (fun v => Return #v)
-                    ) Else (
-                      LetIf rValLsr : Bit 8 <-
-                        If #isLsr Then (
-                          readLsr
-                        ) Else (
-                          LetIf rValMsr : Bit 8 <-
-                            If #isMsr Then (
-                              ReadReg "msr" uartMsrPath (fun v => Return #v)
-                            ) Else (
-                              LetIf rValScr : Bit 8 <-
-                                If #isScr Then (
-                                  ReadReg "scr" uartScrPath (fun v => Return #v)
-                                ) Else (
-                                  Return $0
-                                ) ;
-                              Return #rValScr
-                            ) ;
-                          Return #rValMsr
-                        ) ;
-                      Return #rValLsr
-                    ) ;
-                  Return #rValMcr
-                ) ;
-              Return #rValLcr
-            ) ;
-          Return #rValIir
-        ) ;
-      Return #rValIerDlm
-    ) ;
-  Let rValXlen : Bit Xlen <- ZeroExtend (Xlen - 8) #rVal8 ;
+  Let isRbr : Bool <- And [ Eq #regIdx (uartRegIdxBit "rbr_thr_dll") ; Not #dlab ] ;
+  Let isLsr : Bool <- Eq #regIdx (uartRegIdxBit "lsr") ;
+  Let isIir : Bool <- Eq #regIdx (uartRegIdxBit "iir_fcr") ;
+  LetIf rbrByte : Bit 8 <-
+    If #isRbr Then readRbr Else (Return $0) ;
+  LetIf lsrByte : Bit 8 <-
+    If #isLsr Then readLsr Else (Return $0) ;
+  LetIf iirByte : Bit 8 <-
+    If #isIir Then readIir Else (Return $0) ;
+  ReadReg "ier" uartIerPath (fun ierVal =>
+  ReadReg "mcr" uartMcrPath (fun mcrVal =>
+  ReadReg "msr" uartMsrPath (fun msrVal =>
+  ReadReg "scr" uartScrPath (fun scrVal =>
+  ReadReg "dll" uartDllPath (fun dllVal =>
+  ReadReg "dlm" uartDlmPath (fun dlmVal =>
+  Let readByte : Bit 8 <-
+    Or [ ITE0 #isRbr #rbrByte ;
+         ITE0 (And [ Eq #regIdx (uartRegIdxBit "rbr_thr_dll") ; #dlab ]) #dllVal ;
+         ITE0 (And [ Eq #regIdx (uartRegIdxBit "ier_dlm") ; Not #dlab ]) #ierVal ;
+         ITE0 (And [ Eq #regIdx (uartRegIdxBit "ier_dlm") ; #dlab ]) #dlmVal ;
+         ITE0 #isIir #iirByte ;
+         ITE0 (Eq #regIdx (uartRegIdxBit "lcr")) #lcrVal ;
+         ITE0 (Eq #regIdx (uartRegIdxBit "mcr")) #mcrVal ;
+         ITE0 #isLsr #lsrByte ;
+         ITE0 (Eq #regIdx (uartRegIdxBit "msr")) #msrVal ;
+         ITE0 (Eq #regIdx (uartRegIdxBit "scr")) #scrVal ] ;
+  Let readWord : Bit Xlen <- ZeroExtend (Xlen - 8) #readByte ;
   Let dataArr : Array (cfgLineBytes UartLineConfig) (Bit 8) <-
-    FromBit (Array (cfgLineBytes UartLineConfig) (Bit 8)) #rValXlen ;
+    FromBit (Array (cfgLineBytes UartLineConfig) (Bit 8)) #readWord ;
   @Return ty uartTree (LineReadRp UartLineConfig) (STRUCT {
     "data" ::= #dataArr ;
     "tag"  ::= Const ty (Array (cfgNumLineTags UartLineConfig) Bool) (getDefault _)
-  }).
+  }))))))).
 
 Definition uartLineWriteAction
            (base : Z)
            (ty : Kind -> Type)
            (rq : Expr ty (LineWriteRq UartLineConfig))
            : Action ty uartTree (Bit 0) :=
-  Let rawOffset : Addr <- Sub (rq`"addr") $(base) ;
-  Let offset : Addr <- {< TruncMsb (AddrSz - 2) 2 #rawOffset, Const ty (Bit 2) Zmod.zero >} ;
+  Let offset <- getMemOffset base UartSizeBytes (rq`"addr") ;
+  Let regIdx : Bit UartRegIdxWidth <- TruncMsb UartRegIdxWidth LgNumBytesXlen #offset ;
   Let writeWord : Bit Xlen <- ToBit (rq`"data") ;
-  Let dataByte  : Bit 8    <- TruncLsb 24 8 #writeWord ;
+  Let dataByte  : Bit 8    <- TruncLsb (Xlen - 8) 8 #writeWord ;
   LetA lcrVal   : Bit 8    <- ReadReg "lcr" uartLcrPath (fun v => Return #v) ;
   Let dlab : Bool <- isDlabSet #lcrVal ;
-  Let isRbrThrDll : Bool <- Eq #offset $(UART_RBR_THR_DLL_OFFSET) ;
-  Let isIerDlm    : Bool <- Eq #offset $(UART_IER_DLM_OFFSET) ;
-  Let isIirFcr    : Bool <- Eq #offset $(UART_IIR_FCR_OFFSET) ;
-  Let isLcr       : Bool <- Eq #offset $(UART_LCR_OFFSET) ;
-  Let isMcr       : Bool <- Eq #offset $(UART_MCR_OFFSET) ;
-  Let isScr       : Bool <- Eq #offset $(UART_SCR_OFFSET) ;
-  If (And [ #isRbrThrDll ; #dlab ]) Then (
+  If (And [ Eq #regIdx (uartRegIdxBit "rbr_thr_dll") ; #dlab ]) Then (
     WriteReg uartDllPath #dataByte Retv
   ) ;
-  If (And [ #isRbrThrDll ; Not #dlab ]) Then (
+  If (And [ Eq #regIdx (uartRegIdxBit "rbr_thr_dll") ; Not #dlab ]) Then (
     writeThr #dataByte
   ) ;
-  If (And [ #isIerDlm ; #dlab ]) Then (
+  If (And [ Eq #regIdx (uartRegIdxBit "ier_dlm") ; #dlab ]) Then (
     WriteReg uartDlmPath #dataByte Retv
   ) ;
-  If (And [ #isIerDlm ; Not #dlab ]) Then (
+  If (And [ Eq #regIdx (uartRegIdxBit "ier_dlm") ; Not #dlab ]) Then (
     WriteReg uartIerPath #dataByte Retv
   ) ;
-  If #isIirFcr Then (
+  If (Eq #regIdx (uartRegIdxBit "iir_fcr")) Then (
     writeFcr #dataByte
   ) ;
-  If #isLcr Then (
+  If (Eq #regIdx (uartRegIdxBit "lcr")) Then (
     WriteReg uartLcrPath #dataByte Retv
   ) ;
-  If #isMcr Then (
+  If (Eq #regIdx (uartRegIdxBit "mcr")) Then (
     WriteReg uartMcrPath #dataByte Retv
   ) ;
-  If #isScr Then (
+  If (Eq #regIdx (uartRegIdxBit "scr")) Then (
     WriteReg uartScrPath #dataByte Retv
   ) ;
   Retv.
+
 
 Arguments uartLineReadAction base ty addr : clear implicits.
 Arguments uartLineWriteAction base ty rq : clear implicits.

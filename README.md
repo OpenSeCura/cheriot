@@ -29,7 +29,7 @@ While `cheriot-sail` is the defacto standard specification, our ISA specificatio
      - **Misaligned Accesses** (`EXC_LoadAddrMisaligned`, `EXC_StoreAddrMisaligned`): `MTVAL.RegIdx` points to the capability register (`cs1`) performing the dereference.
 
 5. **MMIO Register Decoding & Peripheral Interrupt Semantics**:
-   - **Word-Aligned Register Decoding**: For peripherals (`SpecRevoker.v`, `Clint.v`, `Plic.v`, `Uart.v`), register offset decoding ignores the low 2 bits (`LgNumBytesXlen`), treating accesses within a 4-byte boundary as addressing the corresponding 32-bit register.
+   - **Word-Aligned Register Decoding**: For peripherals (`SpecRevoker.v`, `Clint.v`, `Plic.v`, `UartController.v`), register offset decoding ignores the low 2 bits (`LgNumBytesXlen`), treating accesses within a 4-byte boundary as addressing the corresponding 32-bit register.
    - **Revoker W1C Semantics**: In `SpecRevoker.v`, the `interruptStatus` register implements true Write-1-to-Clear (W1C) semantics: writing a word with bit 0 set clears the interrupt, while bit 0 = 0 leaves the status untouched. Writes to unrelated registers do not disturb `interruptStatus`.
    - **CLINT Sticky Interrupt Latch**: In `Clint.v`, standard RISC-V timer comparisons (`mtime >= mtimecmp`) are unsigned (`Sge`). To prevent dropped interrupts when `mtimecmp = 2^64 - 1` and `mtime` rolls over to 0, an internal sticky latch (`interruptPending`) captures the match and holds the interrupt asserted across rollover. The latch is cleared only when software reprograms `mtimecmp` (or writes `mtime`) such that the comparator threshold is in the future (`mtime < mtimecmp`).
 
