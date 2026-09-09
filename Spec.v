@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Psatz Bool.
 From Guru Require Import Syntax Notations Semantics Library Composition.
-From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchMemory SpecDevice Clint SpecRevoker Plic UartController.
+From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchMemory SpecDevice Clint SpecRevoker Plic SifiveUartController.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -40,7 +40,7 @@ Section Spec.
   Variable regions : list MemRegion.
   Variable clint : ClintInstance regions.
   Variable rev : RevokerInstance regions.
-  Variable uart : UartInstance regions.
+  Variable uart : SifiveUartInstance regions.
   Variable plic : PlicInstance (S (length (collectIrqActions regions))) regions.
   Local Notation sysTree := (specSysTree regions).
 
@@ -71,11 +71,17 @@ Section Spec.
     liftAction np_mem (SpecRevoker.specRevokerStep rev config ty).
 
   (* Autonomous background UART steps *)
+  Definition specUartIpStep : Action ty sysTree (Bit 0) :=
+    liftAction np_mem (sifiveUartIpStepAction uart ty).
+
+  Definition specUartDivStep : Action ty sysTree (Bit 0) :=
+    liftAction np_mem (sifiveUartDivStepAction uart ty).
+
   Definition specUartTxStep : Action ty sysTree (Bit 0) :=
-    liftAction np_mem (uartTxStepAction uart ty).
+    liftAction np_mem (sifiveUartTxStepAction uart ty).
 
   Definition specUartRxStep : Action ty sysTree (Bit 0) :=
-    liftAction np_mem (uartRxStepAction uart ty).
+    liftAction np_mem (sifiveUartRxStepAction uart ty).
 
   (* Autonomous background PLIC steps *)
   Definition specPlicPendingsSteps : list (Action ty sysTree (Bit 0)) :=
@@ -159,6 +165,8 @@ Section Spec.
       specTickCycle ty ;
       specTickTimer ty ;
       specRevokerStep ty ;
+      specUartIpStep ty ;
+      specUartDivStep ty ;
       specUartTxStep ty ;
       specUartRxStep ty ;
       specPlicClaimStep ty ;

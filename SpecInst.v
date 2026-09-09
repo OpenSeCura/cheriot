@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Bool Psatz Nat Arith.
 From Guru Require Import Library Syntax Notations.
-From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic UartController Spec Binary.
+From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic SifiveUartController Spec Binary.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -113,7 +113,7 @@ Definition concreteRegions : list MemRegion := [
   clintMemRegion ClintBaseAddr I I ;
   revokerMemRegion RevokerBaseAddr I I ;
   plicMemRegion 3 PlicBaseAddr I I ;
-  uartMemRegion UartBaseAddr I I
+  sifiveUartMemRegion UartBaseAddr I I
 ].
 
 Definition concreteRegionsDisjoint : Is_true (pairwiseDisjoint concreteRegions) := I.
@@ -127,8 +127,8 @@ Definition concreteRevoker : RevokerInstance concreteRegions :=
 Definition concretePlic : PlicInstance 3%nat concreteRegions :=
   @Build_PlicInstance 3%nat concreteRegions 4%nat PlicBaseAddr I I I eq_refl.
 
-Definition concreteUart : UartInstance concreteRegions :=
-  @Build_UartInstance concreteRegions 5%nat UartBaseAddr I I eq_refl.
+Definition concreteUart : SifiveUartInstance concreteRegions :=
+  @Build_SifiveUartInstance concreteRegions 5%nat UartBaseAddr I I eq_refl.
 
 (* ===========================================================================
  * Fully Instantiated System Tree and Specification Mod
