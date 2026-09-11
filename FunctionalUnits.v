@@ -267,7 +267,7 @@ Scr
     Implicit Read : pcc.perms
     Note: Decoder will cause exceptions if no ASR
     Note: ScrSanitizer will untag invalid capability, but not overwrite ecap
-    Note: ScrSanitizer only checks for LSB = 1'b0 for MePcc, Mtcc and MePrevPcc
+    Note: ScrSanitizer only checks for LSB = 1'b0 for MePcc and Mtcc (MePrevPcc needs no sanitizing)
     Functional Units:
       a) ScrSanitizer (check if the last LSB bit is 0 for certain SCR writes)
       b) ScrCsr (creates ScrCsrPayload with SCR write info using ScrSanitizer tag)
