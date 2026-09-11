@@ -103,7 +103,7 @@ Section DecodeUncompressed.
     (* System Operations & CSR Validation *)
     LetE isCsrOp: Bool <- And [ #isSystem; isNotZero (#funct3`[1:0]) ] ;
     LetE csrAllowRead  : Bool <- Or [ csrAllowReadNoAsrDecoder csrAddr; #hasAsr ] ;
-    LetE csrAllowWrite : Bool <- Or [ csrAllowReadNoAsrDecoder csrAddr; #hasAsr ] ;
+    LetE csrAllowWrite : Bool <- Or [ csrAllowWriteNoAsrDecoder csrAddr; #hasAsr ] ;
 
     LetE isCsrWriteAlways : Bool <- Or [ Eq #funct3 $1; Eq #funct3 $5 ] ; (* CSRRW / CSRRWI *)
     LetE isCsrBitMod      : Bool <- Or [ Eq #funct3 $2; Eq #funct3 $3; Eq #funct3 $6; Eq #funct3 $7 ] ; (* CSRRS/RC/RSI/RCI *)

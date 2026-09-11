@@ -1126,6 +1126,9 @@ Section FunctionalUnits.
       LetE cE : Bit ExpSz <- ITE (And [isZero #ef; isNotZero (TruncMsb 1 (CapBSz - 1) #mf)])
                                (ConstBit (InvDefault _))
                                #ef;
+      LetE mask_ef : Addr <- TruncLsb 1 AddrSz (Not #cram);
+      LetE base_mod_ef : Bit AddrSz <- And [#base; #mask_ef];
+      LetE length_mod_ef : Bit AddrSz <- And [#length; #mask_ef];
       @RetE _ BoundsRes (STRUCT {
                           "m" ::= #mf;
                           "cE" ::= #cE;
@@ -1133,7 +1136,7 @@ Section FunctionalUnits.
                           "top" ::= #outTop;
                           "cram" ::= #cram;
                           "length" ::= #outLen;
-                          "exact" ::= Or [isNotZero #base_mod_e; isNotZero #length_mod_e] })).
+                          "exact" ::= And [isZero #base_mod_ef; isZero #length_mod_ef] })).
 
   Definition BoundsExact (inBounds boundsAreExact instIsExact : ty Bool) : LetExpr ty Bool :=
     @RetE _ Bool (And [ #inBounds; Or [ Not #instIsExact; #boundsAreExact ] ]).
