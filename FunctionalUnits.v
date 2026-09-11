@@ -1216,7 +1216,7 @@ Section FunctionalUnits.
     LetE scrIdx : Bit ScrAddrSz <- getScr inst ;
     LetE isMePcc : Bool <- Eq #scrIdx $(getScrAddr "MePcc"%string) ;
     LetE isMtcc : Bool <- Eq #scrIdx $(getScrAddr "Mtcc"%string) ;
-    (* MePrevPcc is effectively read-only, so it will always be sanitized *)
+    (* MePrevPcc is effectively read-only, so it never needs sanitizing *)
     LetE isSpecialPcc : Bool <- Or [ #isMePcc; #isMtcc ] ;
     LetE lsbZero : Bool <-
       Eq (TruncLsb (AddrSz - 1) 1 #addr) (Const ty (Bit 1) Zmod.zero) ;
