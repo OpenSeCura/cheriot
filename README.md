@@ -36,6 +36,13 @@ While `cheriot-sail` is the defacto standard specification, our ISA specificatio
    - **Revoker W1C Semantics**: In `SpecRevoker.v`, the `interruptStatus` register implements true Write-1-to-Clear (W1C) semantics: writing a word with bit 0 set clears the interrupt, while bit 0 = 0 leaves the status untouched. Writes to unrelated registers do not disturb `interruptStatus`.
    - **CLINT Sticky Interrupt Latch**: In `Clint.v`, standard RISC-V timer comparisons (`mtime >= mtimecmp`) are unsigned (`Sge`). To prevent dropped interrupts when `mtimecmp = 2^64 - 1` and `mtime` rolls over to 0, an internal sticky latch (`interruptPending`) captures the match and holds the interrupt asserted across rollover. The latch is cleared only when software reprograms `mtimecmp` (or writes `mtime`) such that the comparator threshold is in the future (`mtime < mtimecmp`).
 
+6. **Timer Compare (`mtimecmp`) Exposed as CSRs**:
+   - In `cheriot-sail` (and in standard RISC-V / ACLINT), `mtimecmp` is a **memory-mapped** CLINT register at CLINT offset `0x4000` (`sail-riscv/model/riscv_platform.sail`).
+   - In our ISA specification, the timer compare is instead exposed as **CSRs**, reusing the `Sstc` encoding: `mtimecmp` (`0x14D`) and `mtimecmph` (`0x15D`) in `CsrTable` (`SpecDefines.v`). Both require `ASR` permission for read and for write.
+   - We reuse the `Sstc` addresses rather than allocating machine-mode ones because CHERIoT has no privilege hierarchy: isolation derives from capabilities and the `ASR` permission, not from privilege rings, so the privilege level encoded in CSR address bits [9:8] carries no meaning here. The trade-off is that a stock RISC-V toolchain will disassemble these as `stimecmp`/`stimecmph`.
+   - Consequently `Clint.v` models only `mtime` (offset `0x00`) and `mtimeh` (offset `0x04`), giving an 8-byte CLINT region. There is no memory-mapped `mtimecmp` and no `msip`.
+   - The timer interrupt is raised by `specTimerInterruptRule` (`Spec.v`), which reads the `mtimecmp`/`mtimecmph` CSRs together with the `mtime` MMIO register and sets `mip.MTIP` on an unsigned `mtime >= mtimecmp`.
+
 ---
 
 ## Multi-Core Memory Consistency & Pipeline Refinement Specification

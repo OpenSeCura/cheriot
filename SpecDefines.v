@@ -212,8 +212,8 @@ Definition CsrTable := [
   ("mcycleh"%string,   0xc80, true,  false) ;
   ("minstret"%string,  0xc02, true,  false) ;
   ("minstreth"%string, 0xc82, true,  false) ;
-  ("mtimecmp"%string,  0x744, false, false) ;
-  ("mtimecmph"%string, 0x784, false, false) ;
+  ("mtimecmp"%string,  0x14D, false, false) ;
+  ("mtimecmph"%string, 0x15D, false, false) ;
   ("mstatus"%string,   0x300, false, false) ;
   ("mie"%string,       0x304, false, false) ;
   ("mip"%string,       0x344, false, false) ;
