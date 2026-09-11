@@ -560,7 +560,7 @@ Section AluRF.
               ) ;
             Retv
           ) ;
-        Retv
+        writeRegsList scrPathsWithKind ($(getScrIdx "MePrevPcc") : Expr ty (Bit ScrIdxSz)) #currPcc
       ) ;
     Let execOut : ExecuteOut <- STRUCT {
       "deferredReq" ::= ITE0 #isDeferred (mkSome #deferredReq) ;
