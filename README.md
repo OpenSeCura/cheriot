@@ -13,6 +13,8 @@ While `cheriot-sail` is the defacto standard specification, our ISA specificatio
    - In `cheriot-sail`, invalid `CJALR` targets/sentries synchronously raise hardware exceptions in the execute stage.
    - In our ISA specification, `CJALR`, `CJAL`, and branches do **not** synchronously fault on invalid targets/sentries. Instead, they clear `PCC.tag` (marking `PCC` invalid). The exception is deferred until the subsequent **Instruction Fetch (IF)** stage.
    - The architectural register **`MePrevPcc`** records the `PCC` of every committed instruction, allowing the OS trap handler to accurately attribute the fetch exception back to the source jump instruction.
+   - `MePrevPcc` is deliberately **not** updated when an instruction traps. This is what makes the attribution work: on a deferred jump fault, `MePcc` holds the `PCC` of the faulting *fetch* while `MePrevPcc` still holds the `PCC` of the *jump* that produced it.
+   - `MePrevPcc` is effectively **read-only** to software. Hardware overwrites it on every non-trapping commit, so a `CSpecialRW` write to it is superseded by the very instruction performing the write.
 
 2. **5-bit `cE` Capability Encoding**:
    - In standard CHERIoT, capability bounds use a compressed exponent E.
@@ -20,7 +22,8 @@ While `cheriot-sail` is the defacto standard specification, our ISA specificatio
    - The property M_msb = (cE != 0) is leveraged such that cE = 0x1F (all ones) represents E = 0 with M_msb = 1, allowing exact 32-bit representation of decompressed bounds.
 
 3. **`ScrSanitizer` Tag Sanitization**:
-   - Tag validation on SCR writes only checks LSB = 0 for `MePcc`, `Mtcc`, and `MePrevPcc`. Writing an invalid target clears the tag rather than raising an immediate fault or modifying the capability metadata.
+   - Tag validation on SCR writes only checks LSB = 0 for `MePcc` and `Mtcc`. Writing an invalid target clears the tag rather than raising an immediate fault or modifying the capability metadata.
+   - `MePrevPcc` is deliberately excluded from this check: it is read-only in practice (see §1), so any value software attempts to write is discarded before it can be observed.
 
 4. **Unified `MTVAL` Encoding for All Exceptions**:
    - In our ISA specification, all exceptions, including standard RISC-V exceptions, set `MTVAL` in the same structured format (`{S, RegIdx, Cause}`) that CHERI exceptions use, regardless of whether `MCAUSE` is a CHERI or standard RISC-V cause code.
