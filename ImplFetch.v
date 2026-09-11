@@ -27,13 +27,15 @@ Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
 Section FetchStages.
+  Variable dom : string.
   Variable fetchCapacity deferredCapacity : nat.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable ty : Kind -> Type.
 
   Local Notation memTree := (memIfc ty).(memTree).
-  Local Notation coreTree := (coreTree memTree fetchCapacity deferredCapacity).
+  Local Notation coreTree := (coreTree dom memTree fetchCapacity deferredCapacity).
   Local Notation capacity := fetchCapacity.
+  Local Notation gprPathsWithKind := (gprPathsWithKind dom).
 
   Definition np_rf : NodePath coreTree :=
     getNodePath coreTree "core.rf".
@@ -54,7 +56,7 @@ Section FetchStages.
    *                  Enqueue pcc into fetchBuf.
    * ========================================================================= *)
   Definition fetchRq : Action ty coreTree (Bit 0) :=
-    LetA fetchBuf_isFull : Bool <- liftAction np_fetchFifo (@isFull capacity FullECapWithTag ty) ;
+    LetA fetchBuf_isFull : Bool <- liftAction np_fetchFifo (@isFull dom capacity FullECapWithTag ty) ;
     LetA canReadInstRq   : Bool <- liftAction np_mem ((memIfc ty).(mem_canReadInstRq)) ;
 
     Let canFetch : Bool <- And [ Not #fetchBuf_isFull ; #canReadInstRq ] ;
@@ -63,7 +65,7 @@ Section FetchStages.
     If #canFetch Then (
       LetA pcc : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
       Act (liftAction np_mem ((memIfc ty).(mem_readInstRq) ##pcc`"addr")) ;
-      liftAction np_fetchFifo (@enq capacity FullECapWithTag ty pcc)
+      liftAction np_fetchFifo (@enq dom capacity FullECapWithTag ty pcc)
     ) ;
     Retv.
 
@@ -78,7 +80,7 @@ Section FetchStages.
    *                  Return Option FetchOut { pcc, inst, fetchExc }.
    * ========================================================================= *)
   Definition fetchRp : Action ty coreTree (Option FetchOut) :=
-    LetA inputHead     : Option FullECapWithTag <- liftAction np_fetchFifo (@first capacity FullECapWithTag ty) ;
+    LetA inputHead     : Option FullECapWithTag <- liftAction np_fetchFifo (@first dom capacity FullECapWithTag ty) ;
     LetA isInstRpValid : Bool                   <- liftAction np_mem ((memIfc ty).(mem_isInstRpValid)) ;
 
     Let isReady : Bool <- And [ ##inputHead `? "Some" ; #isInstRpValid ] ;
@@ -88,7 +90,7 @@ Section FetchStages.
       If #isReady Then (
         Let  pcc         : FullECapWithTag <- ##inputHead `! "Some" ;
         LetA rawInst     : Inst            <- liftAction np_mem ((memIfc ty).(mem_getInstRp)) ;
-        Act (liftAction np_fetchFifo (@deq capacity FullECapWithTag ty)) ;
+        Act (liftAction np_fetchFifo (@deq dom capacity FullECapWithTag ty)) ;
 
         (* Fetch Exception Checks *)
         Let pccECap   : ECap <- ##pcc`"ecap" ;

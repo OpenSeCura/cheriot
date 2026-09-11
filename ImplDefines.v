@@ -30,22 +30,27 @@ Local Open Scope guru_scope.
  * Hardware Pipeline / Queue Tree Definitions
  * =========================================================================== *)
 
-Definition fetchTree (capacity : nat) : Tree Elem :=
-  Node "fetch" [
-    Node "fetchBuf" [ fifoTree capacity FullECapWithTag ]
-  ].
+Section ImplDefines.
+  Variable dom : string.
 
-Definition deferredTree (capacity : nat) : Tree Elem :=
-  Node "deferred" [
-    Node "inputBuf" [ fifoTree capacity DeferredReq ] ;
-    Node "loadBuf"  [ fifoTree capacity PendingLoad ] ;
-    Node "revBuf"   [ fifoTree capacity PendingRev ]
-  ].
+  Definition fetchTree (capacity : nat) : Tree DomainElem :=
+    Node "fetch" [
+      Node "fetchBuf" [ fifoTree dom capacity FullECapWithTag ]
+    ].
 
-Definition coreTree (memTree : Tree Elem) (fetchCapacity deferredCapacity : nat) : Tree Elem :=
-  Node "core" [
-    rfTree ;
-    Node "mem" [ memTree ] ;
-    fetchTree fetchCapacity ;
-    deferredTree deferredCapacity
-  ].
+  Definition deferredTree (capacity : nat) : Tree DomainElem :=
+    Node "deferred" [
+      Node "inputBuf" [ fifoTree dom capacity DeferredReq ] ;
+      Node "loadBuf"  [ fifoTree dom capacity PendingLoad ] ;
+      Node "revBuf"   [ fifoTree dom capacity PendingRev ]
+    ].
+
+  Definition coreTree (memTree : Tree DomainElem) (fetchCapacity deferredCapacity : nat) : Tree DomainElem :=
+    Node "core" [
+      rfTree dom ;
+      Node "mem" [ memTree ] ;
+      fetchTree fetchCapacity ;
+      deferredTree deferredCapacity
+    ].
+
+End ImplDefines.

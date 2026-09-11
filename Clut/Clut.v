@@ -39,237 +39,240 @@ Definition ClutIdx := Bit LgClutSz.
 Definition ClutSz := Eval compute in (Z.shiftl 1 LgClutSz).
 
 Section Clut.
-  Variable ty: Kind -> Type.
+  Variable dom: string.
+  Section Ty.
+    Variable ty: Kind -> Type.
 
-  Local Open Scope guru.
-  Local Open Scope string.
+    Local Open Scope guru.
 
-  Definition ClutEntry := STRUCT_TYPE {
-                              "top" :: PhyAddr ;
-                              "base" :: PhyAddr ;
-                              "ReadPerm" :: Bool ;
-                              "WritePerm" :: Bool }.
+    Definition ClutEntry := STRUCT_TYPE {
+                                "top" :: PhyAddr ;
+                                "base" :: PhyAddr ;
+                                "ReadPerm" :: Bool ;
+                                "WritePerm" :: Bool }.
 
-  Definition DmaReq := STRUCT_TYPE {
-                           "addr" :: PseudoAddr ;
-                           "size" :: PhyAddr ;
-                           "isWrite" :: Bool }.
+    Definition DmaReq := STRUCT_TYPE {
+                             "addr" :: PseudoAddr ;
+                             "size" :: PhyAddr ;
+                             "isWrite" :: Bool }.
 
-  Goal (kindSize ClutEntry >= LgClutSz).
-  Proof.
-    cbv.
-    discriminate.
-  Qed.
+    Goal (kindSize ClutEntry >= LgClutSz).
+    Proof.
+      cbv.
+      discriminate.
+    Qed.
 
-  Goal (LgClutSz >= 1).
-  Proof.
-    cbv.
-    discriminate.
-  Qed.
+    Goal (LgClutSz >= 1).
+    Proof.
+      cbv.
+      discriminate.
+    Qed.
 
-  (* Command from Processor to insert or remove *)
-  Definition Command := STRUCT_TYPE {
-                            "clutEntry" :: ClutEntry ;
-                            "isInsert"  :: Bool }.
+    (* Command from Processor to insert or remove *)
+    Definition Command := STRUCT_TYPE {
+                              "clutEntry" :: ClutEntry ;
+                              "isInsert"  :: Bool }.
 
-  Definition ConfigReq := STRUCT_TYPE {
-                              "offset"  :: Bit 2;
-                              "value"   :: Bit Xlen;
-                              "isWrite" :: Bool }.
+    Definition ConfigReq := STRUCT_TYPE {
+                                "offset"  :: Bit 2;
+                                "value"   :: Bit Xlen;
+                                "isWrite" :: Bool }.
 
-  Definition LeftOverCommandSize := Eval compute in (kindSize (Option Command) - Xlen).
-  Definition RespToProcSize := Eval compute in kindSize (Option (Bit (LgClutSz + 1))).
+    Definition LeftOverCommandSize := Eval compute in (kindSize (Option Command) - Xlen).
+    Definition RespToProcSize := Eval compute in kindSize (Option (Bit (LgClutSz + 1))).
 
-  Definition clutIfc : Tree Elem :=
-    Node "" [
-      (* Keeps track if entry is used *)
-      Leaf "valids" (EReg {| regKind := Array (Z.to_nat ClutSz) Bool; regInit := Some (getDefault _) |});
-      (* Keeps track of outstanding transactions *)
-      Leaf "busys" (EReg {| regKind := Array (Z.to_nat ClutSz) Bool; regInit := Some (getDefault _) |});
-      (* Command from processor split into two registers *)
-      Leaf "procCommand1" (EReg {| regKind := Bit Xlen; regInit := Some (getDefault _) |});
-      Leaf "procCommand2" (EReg {| regKind := Bit LeftOverCommandSize; regInit := Some (getDefault _) |});
-      (* Response to processor *)
-      Leaf "respToProc" (EReg {| regKind := Option (Bit (LgClutSz + 1)); regInit := Some (getDefault _) |});
-      (* All the entries *)
-      Leaf "entries" (EReg {| regKind := Array (Z.to_nat ClutSz) ClutEntry; regInit := None |});
-      (* Response to processor send *)
-      Leaf "respToProc_out" (ESend (Bit Xlen));
-      (* Response to DMA if it can access the request received for DMA check access *)
-      Node "dmaCanAccess" (repeat (Leaf "dmaCanAccess" (ESend Bool)) NumChannels);
-      (* Config from processor *)
-      Leaf "config" (ERecv (Option ConfigReq));
-      (* Return from a read memory transaction to clear busy bit *)
-      Leaf "readMemResults" (ERecv (Array NumChannels (Option ClutIdx)));
-      (* Request from DMA to check validity of access *)
-      Leaf "dmaCheckAccess" (ERecv (Array NumChannels DmaReq))
-    ].
+    Definition clutIfc : Tree DomainElem :=
+      Node "" [
+        (* Keeps track if entry is used *)
+        Leaf "valids" (dom, EReg {| regKind := Array (Z.to_nat ClutSz) Bool; regInit := Some (getDefault _); regCross := false |});
+        (* Keeps track of outstanding transactions *)
+        Leaf "busys" (dom, EReg {| regKind := Array (Z.to_nat ClutSz) Bool; regInit := Some (getDefault _); regCross := false |});
+        (* Command from processor split into two registers *)
+        Leaf "procCommand1" (dom, EReg {| regKind := Bit Xlen; regInit := Some (getDefault _); regCross := false |});
+        Leaf "procCommand2" (dom, EReg {| regKind := Bit LeftOverCommandSize; regInit := Some (getDefault _); regCross := false |});
+        (* Response to processor *)
+        Leaf "respToProc" (dom, EReg {| regKind := Option (Bit (LgClutSz + 1)); regInit := Some (getDefault _); regCross := false |});
+        (* All the entries *)
+        Leaf "entries" (dom, EReg {| regKind := Array (Z.to_nat ClutSz) ClutEntry; regInit := None; regCross := false |});
+        (* Response to processor send *)
+        Leaf "respToProc_out" (dom, ESend (Bit Xlen));
+        (* Response to DMA if it can access the request received for DMA check access *)
+        Node "dmaCanAccess" (repeat (Leaf "dmaCanAccess" (dom, ESend Bool)) NumChannels);
+        (* Config from processor *)
+        Leaf "config" (dom, ERecv (Option ConfigReq));
+        (* Return from a read memory transaction to clear busy bit *)
+        Leaf "readMemResults" (dom, ERecv (Array NumChannels (Option ClutIdx)));
+        (* Request from DMA to check validity of access *)
+        Leaf "dmaCheckAccess" (dom, ERecv (Array NumChannels DmaReq))
+      ].
 
-  Definition cl := clutIfc.
+    Local Notation cl := clutIfc.
 
-  Definition dmaCanAccessPath (i: FinType NumChannels) : SendPath clutIfc.
-  Proof.
-    refine (Build_SendPath clutIfc (inr (inr (inr (inr (inr (inr (inr (inl (FinType_to_sumUnit i))))))))) _).
-    destruct i as [inum ilt].
-    unfold NumChannels in *.
-    repeat (destruct inum; [reflexivity | ]).
-    contradiction.
-  Defined.
+    Definition dmaCanAccessPath (i: FinType NumChannels) : SendPath clutIfc.
+    Proof.
+      refine (Build_SendPath clutIfc (inr (inr (inr (inr (inr (inr (inr (inl (FinType_to_sumUnit i))))))))) _).
+      destruct i as [inum ilt].
+      unfold NumChannels in *.
+      repeat (destruct inum; [reflexivity | ]).
+      contradiction.
+    Defined.
 
-  Lemma dmaCanAccessKind i : Bool = getSendKind (dmaCanAccessPath i).
-  Proof.
-    destruct i as [inum ilt].
-    unfold NumChannels in *.
-    repeat (destruct inum; [reflexivity | ]).
-    contradiction.
-  Qed.
+    Lemma dmaCanAccessKind i : Bool = getSendKind (dmaCanAccessPath i).
+    Proof.
+      destruct i as [inum ilt].
+      unfold NumChannels in *.
+      repeat (destruct inum; [reflexivity | ]).
+      contradiction.
+    Qed.
 
-  Definition commandFromProc: Action ty cl (Bit 0) :=
-    ( RegRead valids <- ".valids" in cl;
-      RegRead busys <- ".busys" in cl;
-      RegRead procCommand1 <- ".procCommand1" in cl;
-      RegRead procCommand2 <- ".procCommand2" in cl;
-      RegRead optResp <- ".respToProc" in cl;
-      RegRead entries <- ".entries" in cl;
-      Let optCommand : Option Command <- FromBit (Option Command) {< #procCommand2, #procCommand1 >};
+    Definition commandFromProc: Action ty cl (Bit 0) :=
+      ( RegRead valids <- ".valids" in cl;
+        RegRead busys <- ".busys" in cl;
+        RegRead procCommand1 <- ".procCommand1" in cl;
+        RegRead procCommand2 <- ".procCommand2" in cl;
+        RegRead optResp <- ".respToProc" in cl;
+        RegRead entries <- ".entries" in cl;
+        Let optCommand : Option Command <- FromBit (Option Command) {< #procCommand2, #procCommand1 >};
 
-      (* Find an empty slot in freeIndex. Highest bit of freeIndex is 1 if no empty slot is found *)
-      LetL optFreeIndex: Bit (LgClutSz + 1) <- countTrailingZerosArray (Not #valids) (LgClutSz + 1);
-      Let freeIndex: ClutIdx <- TruncLsb 1 LgClutSz #optFreeIndex;
-      Let freeIndexValid: Bool <- Not (FromBit Bool (TruncMsb 1 LgClutSz #optFreeIndex));
+        (* Find an empty slot in freeIndex. Highest bit of freeIndex is 1 if no empty slot is found *)
+        LetL optFreeIndex: Bit (LgClutSz + 1) <- countTrailingZerosArray (Not #valids) (LgClutSz + 1);
+        Let freeIndex: ClutIdx <- TruncLsb 1 LgClutSz #optFreeIndex;
+        Let freeIndexValid: Bool <- Not (FromBit Bool (TruncMsb 1 LgClutSz #optFreeIndex));
 
-      Let rmIndex: ClutIdx <- TruncLsb (kindSize ClutEntry - LgClutSz) LgClutSz (ToBit ((#optCommand `! "Some")`"clutEntry"));
+        Let rmIndex: ClutIdx <- TruncLsb (kindSize ClutEntry - LgClutSz) LgClutSz (ToBit ((#optCommand `! "Some")`"clutEntry"));
 
-      LetIf dummy <- If (And [#optCommand `? "Some"; Not (#optResp `? "Some")]) Then (
-          RegWrite ".procCommand1" in cl <- ConstDef;
-          LetIf dummy <- If ((#optCommand `! "Some")`"isInsert") Then (
-              RegWrite ".respToProc" in cl <- mkSome #optFreeIndex;
-              LetIf dummy <- If (#freeIndexValid) Then (
-                  RegWrite ".entries" in cl <- #entries@[ #freeIndex <- (##optCommand `! "Some")`"clutEntry"];
-                  RegWrite ".valids" in cl <- #valids@[ #freeIndex <- ConstBool true ];
-                  Return ConstDef );
-              Return #dummy )
-            Else (
-              LetIf dummy <- If (Not (#busys@[#rmIndex])) Then (
-                  RegWrite ".valids" in cl <- #valids@[ #freeIndex <- ConstBool false ];
-                  RegWrite ".respToProc" in cl <- mkSome $1;
-                  Return ConstDef )
-                Else (
-                  RegWrite ".respToProc" in cl <- mkSome $0;
-                  Return ConstDef);
-              Return #dummy
-            );
-          Return #dummy );
-      Return #dummy).
+        LetIf dummy <- If (And [#optCommand `? "Some"; Not (#optResp `? "Some")]) Then (
+            RegWrite ".procCommand1" in cl <- ConstDef;
+            LetIf dummy <- If ((#optCommand `! "Some")`"isInsert") Then (
+                RegWrite ".respToProc" in cl <- mkSome #optFreeIndex;
+                LetIf dummy <- If (#freeIndexValid) Then (
+                    RegWrite ".entries" in cl <- #entries@[ #freeIndex <- (##optCommand `! "Some")`"clutEntry"];
+                    RegWrite ".valids" in cl <- #valids@[ #freeIndex <- ConstBool true ];
+                    Return ConstDef );
+                Return #dummy )
+              Else (
+                LetIf dummy <- If (Not (#busys@[#rmIndex])) Then (
+                    RegWrite ".valids" in cl <- #valids@[ #freeIndex <- ConstBool false ];
+                    RegWrite ".respToProc" in cl <- mkSome $1;
+                    Return ConstDef )
+                  Else (
+                    RegWrite ".respToProc" in cl <- mkSome $0;
+                    Return ConstDef);
+                Return #dummy
+              );
+            Return #dummy );
+        Return #dummy).
 
-  (* This is the interface to configure the Clut from the processor, and to read the Clut responses to insert/delete*)
-  Definition configFromProc: Action ty cl (Bit 0) :=
-    ( RegRead procCommand1 <- ".procCommand1" in cl;
-      RegRead procCommand2 <- ".procCommand2" in cl;
-      RegRead respToProc <- ".respToProc" in cl;
-      Let optCommand : Option Command <- FromBit (Option Command) {< #procCommand2, #procCommand1 >};
-      Get config <- ".config" in cl;
-      Let configData <- #config `! "Some";
-      Let configOffset <- #configData`"offset";
-      Let configValue <- #configData`"value";
-      LetIf dummy <- If (#config `? "Some") Then (
-          LetIf dummy <- If (#configData`"isWrite") Then (
-              LetIf dummy <- If (And [Not (#optCommand `? "Some"); isZero #configOffset]) Then (
-                  RegWrite ".procCommand1" in cl <- #configValue;
-                  Return ConstDef )
-                Else (
-                  LetIf dummy <- If (And [Not (#optCommand `? "Some"); Eq #configOffset $1]) Then (
-                      RegWrite ".procCommand2"
-                      in cl <- TruncLsb (Xlen - LeftOverCommandSize) LeftOverCommandSize #configValue;
-                      Return ConstDef)
-                    Else (
-                      LetIf dummy <- If (#respToProc `? "Some") Then (
-                          RegWrite ".respToProc"
-                          in cl <- FromBit (Option (Bit (LgClutSz + 1)))
-                               (TruncLsb (Xlen - RespToProcSize) RespToProcSize #configValue);
-                          Return ConstDef );
-                      Return #dummy);
-                  Return #dummy);
-              Return #dummy)
-            Else (
-              Put ".respToProc_out" in cl <- (ITE (isZero #configOffset)
-                                           #procCommand1
-                                           (ITE (Eq #configOffset $1)
-                                               (ZeroExtendTo Xlen (##procCommand2))
-                                               (ZeroExtendTo Xlen (ToBit (##respToProc)))));
+    (* This is the interface to configure the Clut from the processor, and to read the Clut responses to insert/delete*)
+    Definition configFromProc: Action ty cl (Bit 0) :=
+      ( RegRead procCommand1 <- ".procCommand1" in cl;
+        RegRead procCommand2 <- ".procCommand2" in cl;
+        RegRead respToProc <- ".respToProc" in cl;
+        Let optCommand : Option Command <- FromBit (Option Command) {< #procCommand2, #procCommand1 >};
+        Get config <- ".config" in cl;
+        Let configData <- #config `! "Some";
+        Let configOffset <- #configData`"offset";
+        Let configValue <- #configData`"value";
+        LetIf dummy <- If (#config `? "Some") Then (
+            LetIf dummy <- If (#configData`"isWrite") Then (
+                LetIf dummy <- If (And [Not (#optCommand `? "Some"); isZero #configOffset]) Then (
+                    RegWrite ".procCommand1" in cl <- #configValue;
+                    Return ConstDef )
+                  Else (
+                    LetIf dummy <- If (And [Not (#optCommand `? "Some"); Eq #configOffset $1]) Then (
+                        RegWrite ".procCommand2"
+                        in cl <- TruncLsb (Xlen - LeftOverCommandSize) LeftOverCommandSize #configValue;
+                        Return ConstDef)
+                      Else (
+                        LetIf dummy <- If (#respToProc `? "Some") Then (
+                            RegWrite ".respToProc"
+                            in cl <- FromBit (Option (Bit (LgClutSz + 1)))
+                                 (TruncLsb (Xlen - RespToProcSize) RespToProcSize #configValue);
+                            Return ConstDef );
+                        Return #dummy);
+                    Return #dummy);
+                Return #dummy)
+              Else (
+                Put ".respToProc_out" in cl <- (ITE (isZero #configOffset)
+                                             #procCommand1
+                                             (ITE (Eq #configOffset $1)
+                                                 (ZeroExtendTo Xlen (##procCommand2))
+                                                 (ZeroExtendTo Xlen (ToBit (##respToProc)))));
+                Return ConstDef
+              );
+            Return #dummy);
+        Return #dummy).
+
+    Section PerChannel.
+      Variable channelIdA: FinType NumChannels.
+
+      Definition dmaCanAccessPathS := dmaCanAccessPath channelIdA.
+      Definition dmaCanAccessKindS := dmaCanAccessKind channelIdA.
+
+      (* DMA checks if it can access a particular pseudo-address *)
+      (* On read checks, it outputs true only if the there's no pending read transaction for the same entry *)
+      Definition dmaCheckAccess: Action ty cl (Bit 0) :=
+        ( Get dmaReqs <- ".dmaCheckAccess" in cl;
+          Let dmaReq : DmaReq <- ReadArrayConst #dmaReqs channelIdA;
+          (* Split the incoming address into Clut index and Physical address *)
+          Let clutIdx: ClutIdx <- TruncMsb LgClutSz PhyAddrSz (#dmaReq`"addr");
+          Let phyAddr: PhyAddr <- TruncLsb LgClutSz PhyAddrSz (#dmaReq`"addr");
+          
+          (* Read corresponding Clut Entry using Clut index *)
+          RegRead entries <- ".entries" in cl;
+          RegRead valids <- ".valids" in cl;
+          RegRead busys <- ".busys" in cl;
+          Let entry: ClutEntry <- #entries@[#clutIdx];
+          Let valid: Bool <- #valids@[#clutIdx];
+
+          (* Check for bounds: base <= addr <= top and perms *)
+          Let bounds: Bool <- And [Sle (#entry`"base") #phyAddr; Sle (Add [#phyAddr; (#dmaReq`"size")]) (#entry`"top")];
+          Let perms: Bool <- ITE (#dmaReq`"isWrite") (#entry`"WritePerm") (##entry`"ReadPerm");
+
+          Let validAccess <- And [#valid; #bounds; #perms];
+          LetIf dummy <- If #validAccess Then (
+              (* If it's a read transaction, then it must not be already busy *)
+              Send dmaCanAccessPathS (match dmaCanAccessKindS in _ = Y return Expr ty Y with
+                                     | eq_refl => Or [#dmaReq`"isWrite"; Not #busys@[#clutIdx]]
+                                     end) (
+                  (* If it's a read transaction, mark as busy *)
+                  LetIf dummy <- If (Not (#dmaReq`"isWrite")) Then (
+                      RegWrite ".busys" in cl <- #busys@[#clutIdx <- ConstBool true];
+                      Return ConstDef
+                    );
+                  Return #dummy ));
+          Return #dummy ).
+
+      (* When a read from the bus returns, mark entry as not-busy *)
+      Definition finishRead: Action ty cl (Bit 0) :=
+        ( Get readResults <- ".readMemResults" in cl;
+          Let optReadResult : Option ClutIdx <- ReadArrayConst #readResults channelIdA;
+          Let readResult: ClutIdx <- #optReadResult `! "Some";
+          RegRead valids <- ".valids" in cl;
+          RegRead busys <- ".busys" in cl;
+
+          LetIf dummy <- If (And [#optReadResult `? "Some"; #valids@[#readResult]]) Then (
+              RegWrite ".busys" in cl <- #busys@[#readResult <- ConstBool false];
               Return ConstDef
             );
-          Return #dummy);
-      Return #dummy).
+          Return #dummy).
+    End PerChannel.
+  End Ty.
 
-  Section PerChannel.
-    Variable channelIdA: FinType NumChannels.
-
-    Definition dmaCanAccessPathS := dmaCanAccessPath channelIdA.
-    Definition dmaCanAccessKindS := dmaCanAccessKind channelIdA.
-
-    (* DMA checks if it can access a particular pseudo-address *)
-    (* On read checks, it outputs true only if the there's no pending read transaction for the same entry *)
-    Definition dmaCheckAccess: Action ty cl (Bit 0) :=
-      ( Get dmaReqs <- ".dmaCheckAccess" in cl;
-        Let dmaReq : DmaReq <- ReadArrayConst #dmaReqs channelIdA;
-        (* Split the incoming address into Clut index and Physical address *)
-        Let clutIdx: ClutIdx <- TruncMsb LgClutSz PhyAddrSz (#dmaReq`"addr");
-        Let phyAddr: PhyAddr <- TruncLsb LgClutSz PhyAddrSz (#dmaReq`"addr");
-        
-        (* Read corresponding Clut Entry using Clut index *)
-        RegRead entries <- ".entries" in cl;
-        RegRead valids <- ".valids" in cl;
-        RegRead busys <- ".busys" in cl;
-        Let entry: ClutEntry <- #entries@[#clutIdx];
-        Let valid: Bool <- #valids@[#clutIdx];
-
-        (* Check for bounds: base <= addr <= top and perms *)
-        Let bounds: Bool <- And [Sle (#entry`"base") #phyAddr; Sle (Add [#phyAddr; (#dmaReq`"size")]) (#entry`"top")];
-        Let perms: Bool <- ITE (#dmaReq`"isWrite") (#entry`"WritePerm") (##entry`"ReadPerm");
-
-        Let validAccess <- And [#valid; #bounds; #perms];
-        LetIf dummy <- If #validAccess Then (
-            (* If it's a read transaction, then it must not be already busy *)
-            Send dmaCanAccessPathS (match dmaCanAccessKindS in _ = Y return Expr ty Y with
-                                   | eq_refl => Or [#dmaReq`"isWrite"; Not #busys@[#clutIdx]]
-                                   end) (
-                (* If it's a read transaction, mark as busy *)
-                LetIf dummy <- If (Not (#dmaReq`"isWrite")) Then (
-                    RegWrite ".busys" in cl <- #busys@[#clutIdx <- ConstBool true];
-                    Return ConstDef
-                  );
-                Return #dummy ));
-        Return #dummy ).
-
-    (* When a read from the bus returns, mark entry as not-busy *)
-    Definition finishRead: Action ty cl (Bit 0) :=
-      ( Get readResults <- ".readMemResults" in cl;
-        Let optReadResult : Option ClutIdx <- ReadArrayConst #readResults channelIdA;
-        Let readResult: ClutIdx <- #optReadResult `! "Some";
-        RegRead valids <- ".valids" in cl;
-        RegRead busys <- ".busys" in cl;
-
-        LetIf dummy <- If (And [#optReadResult `? "Some"; #valids@[#readResult]]) Then (
-            RegWrite ".busys" in cl <- #busys@[#readResult <- ConstBool false];
-            Return ConstDef
-          );
-        Return #dummy).
-  End PerChannel.
+  Definition clut : Mod clutIfc :=
+    fun ty => (dom, commandFromProc ty) :: (dom, configFromProc ty) ::
+                map (fun c => (dom, dmaCheckAccess ty c)) (genFinType NumChannels) ++
+                map (fun c => (dom, finishRead ty c)) (genFinType NumChannels).
+  
 End Clut.
-
-Definition clut: Mod clutIfc :=
-  fun ty => commandFromProc ty :: configFromProc ty ::
-              map (dmaCheckAccess ty) (genFinType NumChannels) ++
-              map (finishRead ty) (genFinType NumChannels).
 
 From Guru Require Import Extraction.
 Set Extraction Output Directory "./Clut".
 
 From Guru Require Import Compiler.
-Definition compiledMod := compile clut.
+Definition compiledMod := compile (clut "core").
 Extraction "Compile" kindSize Z.log2_up getDefault isEq compiledMod.
 
 From Guru Require Import Simulator.
-Definition main : IO unit := evalModCyclesIO clutIfc 10 clut.
+Definition main : IO unit := evalModCyclesIO (clutIfc "core") 10 (clut "core").
 Extraction "Simulate" main.

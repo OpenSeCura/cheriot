@@ -24,27 +24,27 @@ Set Asymmetric Patterns.
 Import ListNotations.
 
 Section Fifo.
+  Variable dom: string.
   Variable capacity: nat.
   Variable k: Kind.
 
-  Local Open Scope string.
   Local Open Scope guru_scope.
 
 (* ===========================================================================
  * FIFO State Tree Definition
  * =========================================================================== *)
 
-  Definition elemLeaves : list (Tree Elem) :=
+  Definition elemLeaves : list (Tree DomainElem) :=
     map (fun idx =>
       Leaf ("elem_" ++ hex_string_of_Z (Z.of_nat idx))%string
-           (EReg (Build_Reg k None))
+           (dom, EReg (Build_Reg k None false))
     ) (seq 0 capacity).
 
-  Definition fifoTree : Tree Elem :=
+  Definition fifoTree : Tree DomainElem :=
     Node "fifo"
       [ Node "elems" elemLeaves;
-        Leaf "size" (EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat (capacity + 1)))) (Some (getDefault _))));
-        Leaf "deq_idx" (EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat capacity))) (Some (getDefault _))))].
+        Leaf "size" (dom, EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat (capacity + 1)))) (Some (getDefault _)) false));
+        Leaf "deq_idx" (dom, EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat capacity))) (Some (getDefault _)) false))].
 
   Definition elemPathsWithKind : list (RegOfKind (t:=fifoTree) k) :=
     map (embedRegOfKind (getNodePath fifoTree "fifo.elems"))

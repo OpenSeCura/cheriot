@@ -32,7 +32,7 @@ Local Open Scope guru_scope.
    =========================================================================== *)
 
 Record MemIfc {ty: Kind -> Type} := {
-  memTree : Tree Elem ;
+  memTree : Tree DomainElem ;
 
   (* 1. Instruction Memory Channel *)
   mem_canReadInstRq   : Action ty memTree Bool ;
@@ -109,6 +109,7 @@ Section ImplMemoryLayout.
 End ImplMemoryLayout.
 
 Section MemoryModel.
+  Variable dom : string.
   Variable config : ImplMemConfig.
 
   Local Notation isMemAddr := (isMemAddr config).
@@ -119,18 +120,20 @@ Section MemoryModel.
   Local Notation paddedBinary := (paddedBinary config).
   Local Notation paddedBinary_length := (paddedBinary_length config).
 
-  Definition memoryTree : Tree Elem :=
+  Definition memoryTree : Tree DomainElem :=
     Node "mem" [
-      Leaf "mainMem" (EReg {| regKind := Array config.(mainMemSize) (Bit 8);
+      Leaf "mainMem" (dom, EReg {| regKind := Array config.(mainMemSize) (Bit 8);
                               regInit := Some (Build_SameTuple (tupleElems := paddedBinary)
-                                                 (Is_true_Nat_eq_implies paddedBinary_length)) |}) ;
-      Leaf "tags" (EReg {| regKind := Array tagsSize Bool;
+                                                 (Is_true_Nat_eq_implies paddedBinary_length));
+                              regCross := false |}) ;
+      Leaf "tags" (dom, EReg {| regKind := Array tagsSize Bool;
                            regInit := Some (Build_SameTuple (tupleElems := List.repeat false tagsSize)
-                                               (Is_true_Nat_eq_implies (repeat_length false tagsSize))) |}) ;
-      Leaf "instRpReg"   (EReg (Build_Reg (Option Inst) (Some (getDefault _)))) ;
-      Leaf "bytesRpReg"  (EReg (Build_Reg (Option (Bit FullCapSz)) (Some (getDefault _)))) ;
-      Leaf "tagRpReg"    (EReg (Build_Reg (Option Bool) (Some (getDefault _)))) ;
-      Leaf "revBitRpReg" (EReg (Build_Reg (Option Bool) (Some (getDefault _))))
+                                               (Is_true_Nat_eq_implies (repeat_length false tagsSize)));
+                           regCross := false |}) ;
+      Leaf "instRpReg"   (dom, EReg (Build_Reg (Option Inst) (Some (getDefault _)) false)) ;
+      Leaf "bytesRpReg"  (dom, EReg (Build_Reg (Option (Bit FullCapSz)) (Some (getDefault _)) false)) ;
+      Leaf "tagRpReg"    (dom, EReg (Build_Reg (Option Bool) (Some (getDefault _)) false)) ;
+      Leaf "revBitRpReg" (dom, EReg (Build_Reg (Option Bool) (Some (getDefault _)) false))
     ].
 
   Section Ty.
