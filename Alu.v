@@ -560,6 +560,7 @@ Section AluRF.
               ) ;
             Retv
           ) ;
+        (* MePrevPcc is effectively a read-only SCR *)
         writeRegsList scrPathsWithKind ($(getScrIdx "MePrevPcc") : Expr ty (Bit ScrIdxSz)) #currPcc
       ) ;
     Let execOut : ExecuteOut <- STRUCT {
