@@ -85,6 +85,7 @@ Definition ramInitData : option (option (type (Array (Z.to_nat RamSize) (Bit 8))
 
 Definition ramRegion : MemRegion := {|
   regionName        := "ram" ;
+  regionDom         := "core" ;
   regionBase        := RamBase ;
   regionSize        := RamSize ;
   regionLineCfg     := RamLineConfig ;
@@ -97,6 +98,7 @@ Definition ramRegion : MemRegion := {|
 
 Definition revTableRegion : MemRegion := {|
   regionName        := "revTable" ;
+  regionDom         := "core" ;
   regionBase        := RevTableBase ;
   regionSize        := RevTableSize ;
   regionLineCfg     := RevTableLineConfig ;
@@ -110,35 +112,37 @@ Definition revTableRegion : MemRegion := {|
 Definition concreteRegions : list MemRegion := [
   ramRegion ;
   revTableRegion ;
-  clintMemRegion ClintBaseAddr I I ;
-  revokerMemRegion RevokerBaseAddr I I ;
-  plicMemRegion 3 PlicBaseAddr I I ;
-  sifiveUartMemRegion UartBaseAddr I I
+  @clintMemRegion "core" ClintBaseAddr I I ;
+  @revokerMemRegion "core" RevokerBaseAddr I I ;
+  @plicMemRegion "core" 3 PlicBaseAddr I I ;
+  @sifiveUartMemRegion "peripheral" UartBaseAddr I I
 ].
 
 Definition concreteRegionsDisjoint : Is_true (pairwiseDisjoint concreteRegions) := I.
 
-Definition concreteClint : ClintInstance concreteRegions :=
-  @Build_ClintInstance concreteRegions 2%nat ClintBaseAddr I I eq_refl.
+Definition concreteClint : @ClintInstance "core" concreteRegions :=
+  @Build_ClintInstance "core" concreteRegions 2%nat ClintBaseAddr I I eq_refl.
 
-Definition concreteRevoker : RevokerInstance concreteRegions :=
-  @Build_RevokerInstance concreteRegions 3%nat RevokerBaseAddr I I eq_refl.
+Definition concreteRevoker : @RevokerInstance "core" concreteRegions :=
+  @Build_RevokerInstance "core" concreteRegions 3%nat RevokerBaseAddr I I eq_refl.
 
-Definition concretePlic : PlicInstance 3%nat concreteRegions :=
-  @Build_PlicInstance 3%nat concreteRegions 4%nat PlicBaseAddr I I I eq_refl.
+Definition concretePlic : @PlicInstance "core" 3%nat concreteRegions :=
+  @Build_PlicInstance "core" 3%nat concreteRegions 4%nat PlicBaseAddr I I I eq_refl.
 
-Definition concreteUart : SifiveUartInstance concreteRegions :=
-  @Build_SifiveUartInstance concreteRegions 5%nat UartBaseAddr I I eq_refl.
+Definition concreteUart : @SifiveUartInstance "peripheral" concreteRegions :=
+  @Build_SifiveUartInstance "peripheral" concreteRegions 5%nat UartBaseAddr I I eq_refl.
 
 (* ===========================================================================
  * Fully Instantiated System Tree and Specification Mod
  * =========================================================================== *)
 
-Definition specSysTreeInst : Tree Elem :=
-  specSysTree concreteRegions.
+Definition specSysTreeInst : Tree DomainElem :=
+  specSysTree "core" concreteRegions.
 
 Definition specModInst : Mod specSysTreeInst :=
-  @spec concreteRevConfig
+  @spec "core"
+        "peripheral"
+        concreteRevConfig
         concreteRegions
         concreteClint
         concreteRevoker

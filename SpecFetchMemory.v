@@ -267,124 +267,129 @@ End CombinationalDeferred.
  * Spec Memory Execution Transition Section
  * =========================================================================== *)
 
-Definition specCoreTree (regions : list MemRegion) : Tree Elem :=
-  Node "core" [
-    rfTree ;
-    specMemTree regions
-  ].
+Section SpecCoreTree.
+  Variable dom : string.
 
-Section SpecFetchMemory.
-  Variable config : RevConfig.
-  Variable regions : list MemRegion.
-  Variable ty : Kind -> Type.
+  Definition specCoreTree (regions : list MemRegion) : Tree DomainElem :=
+    Node "core" [
+      rfTree dom ;
+      specMemTree regions
+    ].
 
-  Local Notation memTree := (specMemTree regions).
-  Local Notation coreTree := (specCoreTree regions).
+  Section SpecFetchMemory.
+    Variable config : RevConfig.
+    Variable regions : list MemRegion.
+    Variable ty : Kind -> Type.
 
-  Definition np_rf : NodePath coreTree :=
-    getNodePath coreTree "core.rf".
+    Local Notation memTree := (specMemTree regions).
+    Local Notation coreTree := (specCoreTree regions).
 
-  Definition np_mem : NodePath coreTree :=
-    getNodePath coreTree "core.mem".
+    Definition np_rf : NodePath coreTree :=
+      getNodePath coreTree "core.rf".
 
-  Local Notation computeRevBitAddr := (computeRevBitAddr config).
+    Definition np_mem : NodePath coreTree :=
+      getNodePath coreTree "core.mem".
 
-  Local Notation readRevBit := (readRevBit config regions).
+    Local Notation computeRevBitAddr := (computeRevBitAddr config).
 
-  (* ===========================================================================
-   * specFetch (Atomic Combinational Fetch)
-   * =========================================================================== *)
-  Definition specFetch : Action ty coreTree FetchOut :=
-    LetA pcc : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
-    LetA rawFull : FullCapWithTag <- liftAction np_mem (specMemRead regions (##pcc`"addr") $LgNumBytesInstSz) ;
-    Let rawInst : Inst <- ##rawFull`"addr" ;
+    Local Notation readRevBit := (readRevBit config regions).
 
-    (* Fetch Exception Checks *)
-    Let pccECap      : ECap <- ##pcc`"ecap" ;
-    Let isComp       : Bool <- isCompressed rawInst ;
-    Let instBytesLen : Addr <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
-    Let tagExc       : Bool <- Not ##pcc`"tag" ;
-    Let sealExc      : Bool <- isSealed pccECap ;
-    Let permExc      : Bool <- Not (##pccECap`"perms"`"EX") ;
-    Let boundsExc    : Bool <- Or [
-      Slt (ZeroExtendTo (AddrSz + 2) ##pcc`"addr") (ZeroExtendTo (AddrSz + 2) ##pccECap`"base") ;
-      Sgt (ZeroExtendTo (AddrSz + 2) (Add [ ##pcc`"addr" ; #instBytesLen ])) (##pccECap`"top")
-    ] ;
+    (* ===========================================================================
+     * specFetch (Atomic Combinational Fetch)
+     * =========================================================================== *)
+    Definition specFetch : Action ty coreTree FetchOut :=
+      LetA pcc : FullECapWithTag <- liftAction np_rf (readRegsList (gprPathsWithKind dom) ($0 : Expr ty (Bit RegIdxSzReal))) ;
+      LetA rawFull : FullCapWithTag <- liftAction np_mem (specMemRead regions (##pcc`"addr") $LgNumBytesInstSz) ;
+      Let rawInst : Inst <- ##rawFull`"addr" ;
 
-    Let fetchOut : FetchOut <- STRUCT {
-      "pcc"      ::= #pcc ;
-      "inst"     ::= #rawInst ;
-      "fetchExc" ::= STRUCT {
-        "tag"    ::= #tagExc ;
-        "seal"   ::= #sealExc ;
-        "perm"   ::= #permExc ;
-        "bounds" ::= #boundsExc
-      }
-    } ;
-    Return #fetchOut.
+      (* Fetch Exception Checks *)
+      Let pccECap      : ECap <- ##pcc`"ecap" ;
+      Let isComp       : Bool <- isCompressed rawInst ;
+      Let instBytesLen : Addr <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
+      Let tagExc       : Bool <- Not ##pcc`"tag" ;
+      Let sealExc      : Bool <- isSealed pccECap ;
+      Let permExc      : Bool <- Not (##pccECap`"perms"`"EX") ;
+      Let boundsExc    : Bool <- Or [
+        Slt (ZeroExtendTo (AddrSz + 2) ##pcc`"addr") (ZeroExtendTo (AddrSz + 2) ##pccECap`"base") ;
+        Sgt (ZeroExtendTo (AddrSz + 2) (Add [ ##pcc`"addr" ; #instBytesLen ])) (##pccECap`"top")
+      ] ;
 
-  (* ===========================================================================
-   * specExecuteDeferredReq (Single Deferred Request Execution)
-   * =========================================================================== *)
-  Definition specExecuteDeferredReq (req : ty DeferredReq) : Action ty coreTree (Bit 0) :=
-    LetL action : DeferredAction <- dispatchDeferredReq req false ;
+      Let fetchOut : FetchOut <- STRUCT {
+        "pcc"      ::= #pcc ;
+        "inst"     ::= #rawInst ;
+        "fetchExc" ::= STRUCT {
+          "tag"    ::= #tagExc ;
+          "seal"   ::= #sealExc ;
+          "perm"   ::= #permExc ;
+          "bounds" ::= #boundsExc
+        }
+      } ;
+      Return #fetchOut.
 
-    If (##action `? "Mem") Then (
-      Let memAct : MemAction <- ##action `! "Mem" ;
+    (* ===========================================================================
+     * specExecuteDeferredReq (Single Deferred Request Execution)
+     * =========================================================================== *)
+    Definition specExecuteDeferredReq (req : ty DeferredReq) : Action ty coreTree (Bit 0) :=
+      LetL action : DeferredAction <- dispatchDeferredReq req false ;
 
-      If (##memAct `? "Store") Then (
-        Let st        : StoreCmd                  <- ##memAct `! "Store" ;
-        Let addr      : Addr                      <- ##st`"addr" ;
-        Let stVal     : FullCapWithTag            <- ##st`"stVal" ;
-        Let memSize   : Bit LgLgNumBytesFullCapSz <- ##st`"memSize" ;
+      If (##action `? "Mem") Then (
+        Let memAct : MemAction <- ##action `! "Mem" ;
 
-        Act (liftAction np_mem (specMemWrite regions #addr #stVal #memSize)) ;
-        Act (liftAction np_rf (updateMshwmOnStore #addr)) ;
-        Act (liftAction np_rf incrementMinstret) ;
-        Retv
-      ) Else (
-        Let ld        : LoadCmd           <- ##memAct `! "Load" ;
-        Let addr      : Addr              <- ##ld`"addr" ;
-        Let pending   : PendingLoad       <- ##ld`"pending" ;
+        If (##memAct `? "Store") Then (
+          Let st        : StoreCmd                  <- ##memAct `! "Store" ;
+          Let addr      : Addr                      <- ##st`"addr" ;
+          Let stVal     : FullCapWithTag            <- ##st`"stVal" ;
+          Let memSize   : Bit LgLgNumBytesFullCapSz <- ##st`"memSize" ;
 
-        LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions #addr (##pending`"memSize")) ;
-        LetL outcome  : LoadOutcome       <- dispatchLoadResponse pending memVal false ;
-
-        If (#outcome `? "RevLookup") Then (
-          Let  revInfo : RevCmd        <- #outcome `! "RevLookup" ;
-          Let  pr      : PendingRev    <- ##revInfo`"pendingRev" ;
-          LetA revBit  : Bool          <- liftAction np_mem (readRevBit (##revInfo`"base")) ;
-          LetL wbInfo  : WbCmd         <- dispatchRevResponse pr revBit ;
-          If (isNotZero (##wbInfo`"dstIdx")) Then (
-            liftAction np_rf (writeRegsList gprPathsWithKind (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
-          ) ;
-          Act (liftAction np_rf incrementMinstret) ;
+          Act (liftAction np_mem (specMemWrite regions #addr #stVal #memSize)) ;
+          Act (liftAction np_rf (updateMshwmOnStore dom #addr)) ;
+          Act (liftAction np_rf (incrementMinstret dom)) ;
           Retv
         ) Else (
-          Let wbInfo : WbCmd <- #outcome `! "Writeback" ;
-          If (isNotZero (##wbInfo`"dstIdx")) Then (
-            liftAction np_rf (writeRegsList gprPathsWithKind (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
+          Let ld        : LoadCmd           <- ##memAct `! "Load" ;
+          Let addr      : Addr              <- ##ld`"addr" ;
+          Let pending   : PendingLoad       <- ##ld`"pending" ;
+
+          LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions #addr (##pending`"memSize")) ;
+          LetL outcome  : LoadOutcome       <- dispatchLoadResponse pending memVal false ;
+
+          If (#outcome `? "RevLookup") Then (
+            Let  revInfo : RevCmd        <- #outcome `! "RevLookup" ;
+            Let  pr      : PendingRev    <- ##revInfo`"pendingRev" ;
+            LetA revBit  : Bool          <- liftAction np_mem (readRevBit (##revInfo`"base")) ;
+            LetL wbInfo  : WbCmd         <- dispatchRevResponse pr revBit ;
+            If (isNotZero (##wbInfo`"dstIdx")) Then (
+              liftAction np_rf (writeRegsList (gprPathsWithKind dom) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
+            ) ;
+            Act (liftAction np_rf (incrementMinstret dom)) ;
+            Retv
+          ) Else (
+            Let wbInfo : WbCmd <- #outcome `! "Writeback" ;
+            If (isNotZero (##wbInfo`"dstIdx")) Then (
+              liftAction np_rf (writeRegsList (gprPathsWithKind dom) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
+            ) ;
+            Act (liftAction np_rf (incrementMinstret dom)) ;
+            Retv
           ) ;
-          Act (liftAction np_rf incrementMinstret) ;
           Retv
         ) ;
         Retv
+      ) Else (
+        Act (liftAction np_rf (incrementMinstret dom)) ;
+        Retv
       ) ;
-      Retv
-    ) Else (
-      Act (liftAction np_rf incrementMinstret) ;
-      Retv
-    ) ;
-    Retv.
+      Retv.
 
-  (* ===========================================================================
-   * specExecuteDeferred (Executing Option DeferredReq)
-   * =========================================================================== *)
-  Definition specExecuteDeferred (reqOpt : ty (Option DeferredReq)) : Action ty coreTree (Bit 0) :=
-    If (##reqOpt `? "Some") Then (
-      Let req : DeferredReq <- ##reqOpt `! "Some" ;
-      specExecuteDeferredReq req
-    ) ;
-    Retv.
+    (* ===========================================================================
+     * specExecuteDeferred (Executing Option DeferredReq)
+     * =========================================================================== *)
+    Definition specExecuteDeferred (reqOpt : ty (Option DeferredReq)) : Action ty coreTree (Bit 0) :=
+      If (##reqOpt `? "Some") Then (
+        Let req : DeferredReq <- ##reqOpt `! "Some" ;
+        specExecuteDeferredReq req
+      ) ;
+      Retv.
 
-End SpecFetchMemory.
+  End SpecFetchMemory.
+
+End SpecCoreTree.

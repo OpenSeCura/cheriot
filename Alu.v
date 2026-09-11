@@ -397,7 +397,15 @@ Section Alu.
 End Alu.
 
 Section AluRF.
+  Variable dom : string.
   Variable ty : Kind -> Type.
+  Local Notation rfTree := (rfTree dom).
+  Local Notation gprPathsWithKind := (gprPathsWithKind dom).
+  Local Notation scrPathsWithKind := (scrPathsWithKind dom).
+  Local Notation csrPathsWithKind := (csrPathsWithKind dom).
+  Local Notation incrementMinstret := (incrementMinstret dom).
+  Local Notation incrementMcycle := (incrementMcycle dom).
+  Local Notation updateMshwmOnStore := (updateMshwmOnStore dom).
 
   Definition executeNonDeferred (aluOut : ty AluOutUnion)
     : Action ty rfTree ExecuteOut :=

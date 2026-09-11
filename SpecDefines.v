@@ -994,86 +994,91 @@ Definition AluOutUnion := STRUCT_TYPE {
   "Op"          :: AluOpUnion
 }.
 
-Definition gprLeaves : list (Tree Elem) :=
-  map (fun '(_, idx) =>
-    Leaf ("gpr_" ++ hex_string_of_Z idx)%string
-         (EReg (Build_Reg FullECapWithTag (Some (getDefault _))))
-  ) (enumerate (repeat tt (Z.to_nat NumRegs))).
+Section RfTree.
+  Variable dom : string.
 
-Definition scrLeaves : list (Tree Elem) :=
-  map (fun '(name, _) =>
-    Leaf name (EReg (Build_Reg FullECapWithTag (Some (getDefault _))))
-  ) ScrTable.
+  Definition gprLeaves : list (Tree DomainElem) :=
+    map (fun '(_, idx) =>
+      Leaf ("gpr_" ++ hex_string_of_Z idx)%string
+           (dom, EReg (Build_Reg FullECapWithTag (Some (getDefault _)) false))
+    ) (enumerate (repeat tt (Z.to_nat NumRegs))).
 
-Definition csrLeaves : list (Tree Elem) :=
-  map (fun '(name, _, _, _) =>
-    Leaf name (EReg (Build_Reg (Bit Xlen) (Some (getDefault _))))
-  ) CsrTable.
+  Definition scrLeaves : list (Tree DomainElem) :=
+    map (fun '(name, _) =>
+      Leaf name (dom, EReg (Build_Reg FullECapWithTag (Some (getDefault _)) false))
+    ) ScrTable.
 
-Definition rfTree : Tree Elem :=
-  Node "rf" [
-    Node "gprs" gprLeaves ;
-    Node "scrs" scrLeaves ;
-    Node "csrs" csrLeaves
-  ].
+  Definition csrLeaves : list (Tree DomainElem) :=
+    map (fun '(name, _, _, _) =>
+      Leaf name (dom, EReg (Build_Reg (Bit Xlen) (Some (getDefault _)) false))
+    ) CsrTable.
 
-Definition gprPaths : list (RegPath rfTree) :=
-  map (embedRegPath (getNodePath rfTree "rf.gprs"))
-      (getTreeRegPaths (getNode (getNodePath rfTree "rf.gprs"))).
+  Definition rfTree : Tree DomainElem :=
+    Node "rf" [
+      Node "gprs" gprLeaves ;
+      Node "scrs" scrLeaves ;
+      Node "csrs" csrLeaves
+    ].
 
-Definition scrPaths : list (RegPath rfTree) :=
-  map (embedRegPath (getNodePath rfTree "rf.scrs"))
-      (getTreeRegPaths (getNode (getNodePath rfTree "rf.scrs"))).
+  Definition gprPaths : list (RegPath rfTree) :=
+    map (embedRegPath (getNodePath rfTree "rf.gprs"))
+        (getTreeRegPaths (getNode (getNodePath rfTree "rf.gprs"))).
 
-Definition csrPaths : list (RegPath rfTree) :=
-  map (embedRegPath (getNodePath rfTree "rf.csrs"))
-      (getTreeRegPaths (getNode (getNodePath rfTree "rf.csrs"))).
+  Definition scrPaths : list (RegPath rfTree) :=
+    map (embedRegPath (getNodePath rfTree "rf.scrs"))
+        (getTreeRegPaths (getNode (getNodePath rfTree "rf.scrs"))).
 
-Definition gprPathsWithKind : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
-  map (embedRegOfKind (getNodePath rfTree "rf.gprs"))
-      (getTreeRegsOfKind FullECapWithTag (getNode (getNodePath rfTree "rf.gprs"))).
+  Definition csrPaths : list (RegPath rfTree) :=
+    map (embedRegPath (getNodePath rfTree "rf.csrs"))
+        (getTreeRegPaths (getNode (getNodePath rfTree "rf.csrs"))).
 
-Definition scrPathsWithKind : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
-  map (embedRegOfKind (getNodePath rfTree "rf.scrs"))
-      (getTreeRegsOfKind FullECapWithTag (getNode (getNodePath rfTree "rf.scrs"))).
+  Definition gprPathsWithKind : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
+    map (embedRegOfKind (getNodePath rfTree "rf.gprs"))
+        (getTreeRegsOfKind FullECapWithTag (getNode (getNodePath rfTree "rf.gprs"))).
 
-Definition csrPathsWithKind : list (RegOfKind (t:=rfTree) (Bit Xlen)) :=
-  map (embedRegOfKind (getNodePath rfTree "rf.csrs"))
-      (getTreeRegsOfKind (Bit Xlen) (getNode (getNodePath rfTree "rf.csrs"))).
+  Definition scrPathsWithKind : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
+    map (embedRegOfKind (getNodePath rfTree "rf.scrs"))
+        (getTreeRegsOfKind FullECapWithTag (getNode (getNodePath rfTree "rf.scrs"))).
 
-Notation incrementDXlenCsr lowCsr highCsr :=
-  (LetA currLow  : Bit Xlen  <- readRegsList csrPathsWithKind ($(getCsrIdx lowCsr) : Expr _ (Bit CsrIdxSz)) ;
-   LetA currHigh : Bit Xlen  <- readRegsList csrPathsWithKind ($(getCsrIdx highCsr) : Expr _ (Bit CsrIdxSz)) ;
-   Let  newVal   : Bit DXlen <- Add [ {< #currHigh, #currLow >} ; $1 ] ;
-   Act (writeRegsList csrPathsWithKind ($(getCsrIdx lowCsr) : Expr _ (Bit CsrIdxSz)) (TruncLsb Xlen Xlen #newVal)) ;
-   writeRegsList csrPathsWithKind ($(getCsrIdx highCsr) : Expr _ (Bit CsrIdxSz)) (TruncMsb Xlen Xlen #newVal)).
+  Definition csrPathsWithKind : list (RegOfKind (t:=rfTree) (Bit Xlen)) :=
+    map (embedRegOfKind (getNodePath rfTree "rf.csrs"))
+        (getTreeRegsOfKind (Bit Xlen) (getNode (getNodePath rfTree "rf.csrs"))).
 
-Section CsrHelpers.
-  Variable ty : Kind -> Type.
+  Notation incrementDXlenCsr lowCsr highCsr :=
+    (LetA currLow  : Bit Xlen  <- readRegsList csrPathsWithKind ($(getCsrIdx lowCsr) : Expr _ (Bit CsrIdxSz)) ;
+     LetA currHigh : Bit Xlen  <- readRegsList csrPathsWithKind ($(getCsrIdx highCsr) : Expr _ (Bit CsrIdxSz)) ;
+     Let  newVal   : Bit DXlen <- Add [ {< #currHigh, #currLow >} ; $1 ] ;
+     Act (writeRegsList csrPathsWithKind ($(getCsrIdx lowCsr) : Expr _ (Bit CsrIdxSz)) (TruncLsb Xlen Xlen #newVal)) ;
+     writeRegsList csrPathsWithKind ($(getCsrIdx highCsr) : Expr _ (Bit CsrIdxSz)) (TruncMsb Xlen Xlen #newVal)).
 
-  Definition incrementMinstret : Action ty rfTree (Bit 0) :=
-    incrementDXlenCsr "minstret" "minstreth".
+  Section CsrHelpers.
+    Variable ty : Kind -> Type.
 
-  Definition incrementMcycle : Action ty rfTree (Bit 0) :=
-    incrementDXlenCsr "mcycle" "mcycleh".
+    Definition incrementMinstret : Action ty rfTree (Bit 0) :=
+      incrementDXlenCsr "minstret" "minstreth".
 
-  Definition updateMshwmOnStore (stAddr : Expr ty Addr) : Action ty rfTree (Bit 0) :=
-    LetA mshwm        : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrIdx "mshwm") : Expr _ (Bit CsrIdxSz)) ;
-    LetA mshwmb       : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrIdx "mshwmb") : Expr _ (Bit CsrIdxSz)) ;
-    Let  shouldUpdate : Bool     <- And [ Sge stAddr #mshwmb ; Slt stAddr #mshwm ] ;
-    If #shouldUpdate Then (
-      Let alignedAddr : Bit Xlen <- {< TruncMsb (AddrSz - LgMshwmAlign) LgMshwmAlign stAddr,
-                                       Const ty (Bit LgMshwmAlign) (bits.of_Z LgMshwmAlign 0) >} ;
-      Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mshwm") : Expr _ (Bit CsrIdxSz)) #alignedAddr) ;
-      Retv
-    ) ;
-    Retv.
+    Definition incrementMcycle : Action ty rfTree (Bit 0) :=
+      incrementDXlenCsr "mcycle" "mcycleh".
 
-End CsrHelpers.
+    Definition updateMshwmOnStore (stAddr : Expr ty Addr) : Action ty rfTree (Bit 0) :=
+      LetA mshwm        : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrIdx "mshwm") : Expr _ (Bit CsrIdxSz)) ;
+      LetA mshwmb       : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrIdx "mshwmb") : Expr _ (Bit CsrIdxSz)) ;
+      Let  shouldUpdate : Bool     <- And [ Sge stAddr #mshwmb ; Slt stAddr #mshwm ] ;
+      If #shouldUpdate Then (
+        Let alignedAddr : Bit Xlen <- {< TruncMsb (AddrSz - LgMshwmAlign) LgMshwmAlign stAddr,
+                                         Const ty (Bit LgMshwmAlign) (bits.of_Z LgMshwmAlign 0) >} ;
+        Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mshwm") : Expr _ (Bit CsrIdxSz)) #alignedAddr) ;
+        Retv
+      ) ;
+      Retv.
 
-Arguments incrementMinstret {ty}.
-Arguments incrementMcycle {ty}.
-Arguments updateMshwmOnStore {ty} stAddr.
+  End CsrHelpers.
+
+End RfTree.
+
+Arguments incrementMinstret dom {ty}.
+Arguments incrementMcycle dom {ty}.
+Arguments updateMshwmOnStore dom {ty} stAddr.
 
 Definition DeferredReq := STRUCT_TYPE {
   "dstIdx" :: Bit RegIdxSz ;

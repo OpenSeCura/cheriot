@@ -81,7 +81,7 @@ Inductive RegionKind (regionName : string) (regionSize : Z) (cfg : LineConfig) :
 | InternalMem (initData : option (option (type (Array (Z.to_nat regionSize) (Bit 8)))))
               (initTags : option (option (type (Array (cfgRegionTagSize regionSize cfg) Bool))))
 | ExternalMem
-| CustomMem (children : list (Tree Elem))
+| CustomMem (children : list (Tree DomainElem))
             (readAction : forall ty, Expr ty Addr ->
                           Action ty (Node regionName children) (LineReadRp cfg))
             (writeAction : forall ty, Expr ty (LineWriteRq cfg) ->
@@ -94,6 +94,7 @@ Arguments CustomMem {regionName regionSize cfg} children readAction writeAction 
 
 Record MemRegion := {
   regionName        : string ;
+  regionDom         : string ;
   regionBase        : Z ;
   regionSize        : Z ;
   regionLineCfg     : LineConfig ;
@@ -155,21 +156,21 @@ Definition internalMemRegionChildren
            (r : MemRegion)
            (initData : option (option (type (Array (Z.to_nat r.(regionSize)) (Bit 8)))))
            (initTags : option (option (type (Array (regionTagSize r) Bool))))
-           : list (Tree Elem) :=
-  [ Leaf "mainMem" (EMem {| memSize := Z.to_nat r.(regionSize);
+           : list (Tree DomainElem) :=
+  [ Leaf "mainMem" (r.(regionDom), EMem {| memSize := Z.to_nat r.(regionSize);
                             memKind := Bit 8;
                             memPort := 1;
                             memInit := initData |}) ;
-    Leaf "tags" (EMem {| memSize := regionTagSize r;
+    Leaf "tags" (r.(regionDom), EMem {| memSize := regionTagSize r;
                          memKind := Bool;
                          memPort := 1;
                          memInit := initTags |})
   ].
 
-Definition externalMemRegionChildren (r : MemRegion) : list (Tree Elem) :=
-  [ Leaf "lineReadRq" (ESend Addr) ;
-    Leaf "lineReadRp" (ERecv (LineReadRp r.(regionLineCfg))) ;
-    Leaf "lineWriteRq" (ESend (LineWriteRq r.(regionLineCfg)))
+Definition externalMemRegionChildren (r : MemRegion) : list (Tree DomainElem) :=
+  [ Leaf "lineReadRq" (r.(regionDom), ESend Addr) ;
+    Leaf "lineReadRp" (r.(regionDom), ERecv (LineReadRp r.(regionLineCfg))) ;
+    Leaf "lineWriteRq" (r.(regionDom), ESend (LineWriteRq r.(regionLineCfg)))
   ].
 
 Arguments internalMemRegionChildren r initData initTags : clear implicits.
@@ -179,20 +180,20 @@ Definition internalMemRegionTree
            (r : MemRegion)
            (initData : option (option (type (Array (Z.to_nat r.(regionSize)) (Bit 8)))))
            (initTags : option (option (type (Array (regionTagSize r) Bool))))
-           : Tree Elem :=
+           : Tree DomainElem :=
   Node r.(regionName) (internalMemRegionChildren r initData initTags).
 
-Definition externalMemRegionTree (r : MemRegion) : Tree Elem :=
+Definition externalMemRegionTree (r : MemRegion) : Tree DomainElem :=
   Node r.(regionName) (externalMemRegionChildren r).
 
-Definition customMemRegionTree (r : MemRegion) (children : list (Tree Elem)) : Tree Elem :=
+Definition customMemRegionTree (r : MemRegion) (children : list (Tree DomainElem)) : Tree DomainElem :=
   Node r.(regionName) children.
 
 Arguments internalMemRegionTree r initData initTags : clear implicits.
 Arguments externalMemRegionTree r : clear implicits.
 Arguments customMemRegionTree r children : clear implicits.
 
-Definition memRegionTree (r : MemRegion) : Tree Elem :=
+Definition memRegionTree (r : MemRegion) : Tree DomainElem :=
   match r.(regionKind) with
   | InternalMem initData initTags => internalMemRegionTree r initData initTags
   | ExternalMem => externalMemRegionTree r
@@ -285,7 +286,7 @@ Arguments externalMemRegionLineWrite r [ty] rq.
 
 Section CustomMemRegionActions.
   Variable r : MemRegion.
-  Variable children : list (Tree Elem).
+  Variable children : list (Tree DomainElem).
   Variable readAction : forall ty, Expr ty Addr ->
                         Action ty (Node r.(regionName) children)
                                (LineReadRp r.(regionLineCfg)).
@@ -521,13 +522,13 @@ Arguments memRegionWrite r [ty] addr stVal memSize.
  * Composite Memory Tree & System Routing
  * =========================================================================== *)
 
-Fixpoint specMemChildren (regions : list MemRegion) : list (Tree Elem) :=
+Fixpoint specMemChildren (regions : list MemRegion) : list (Tree DomainElem) :=
   match regions with
   | [] => []
   | r :: rs => [ memRegionTree r ; Node "mem" (specMemChildren rs) ]
   end.
 
-Definition specMemTree (regions : list MemRegion) : Tree Elem :=
+Definition specMemTree (regions : list MemRegion) : Tree DomainElem :=
   Node "mem" (specMemChildren regions).
 
 Definition child0Path {A : Type} {name : string} {c0 : Tree A} {cs : list (Tree A)}
