@@ -612,7 +612,10 @@ Proof.
          outBase HoutBase
          outLen HoutLen
          outTop HoutTop
-         cE HcE.
+         cE HcE
+         mask_ef Hmask_ef
+         base_mod_ef Hbase_mod_ef
+         length_mod_ef Hlength_mod_ef.
   cbn [mapDiffTuple Fst Snd evalExpr].
   subst outBase cram cE.
   cbn [evalLetExpr evalExpr fold_left map ZeroExtend ZeroExtendTo evalAndBinary get_E_from_cE isAllOnes isZero InvDefault isEq KindCustomInd getDefault].
@@ -719,7 +722,10 @@ Proof.
          outBase HoutBase
          outLen HoutLen
          outTop HoutTop
-         cE HcE.
+         cE HcE
+         mask_ef Hmask_ef
+         base_mod_ef Hbase_mod_ef
+         length_mod_ef Hlength_mod_ef.
   cbn [mapDiffTuple Fst Snd evalExpr].
   rewrite HoutTop.
   cbn [evalLetExpr evalExpr fold_left map snd].
@@ -1175,7 +1181,10 @@ Proof.
          outBase HoutBase
          outLen HoutLen
          outTop HoutTop
-         cE HcE.
+         cE HcE
+         mask_ef Hmask_ef
+         base_mod_ef Hbase_mod_ef
+         length_mod_ef Hlength_mod_ef.
   cbn [mapDiffTuple Fst Snd evalExpr].
   subst outLen cE.
   cbn [evalLetExpr evalExpr fold_left map ZeroExtend ZeroExtendTo evalAndBinary get_E_from_cE isAllOnes isZero InvDefault isEq KindCustomInd getDefault].
@@ -1830,7 +1839,10 @@ Proof.
          outBase HoutBase
          outLen HoutLen
          outTop HoutTop
-         cE HcE.
+         cE HcE
+         mask_ef Hmask_ef
+         base_mod_ef Hbase_mod_ef
+         length_mod_ef Hlength_mod_ef.
   cbn [mapDiffTuple Fst Snd evalExpr].
   subst outLen cE.
   cbn [evalLetExpr evalExpr fold_left map ZeroExtend ZeroExtendTo evalAndBinary get_E_from_cE isAllOnes isZero InvDefault isEq KindCustomInd getDefault].
@@ -3096,7 +3108,10 @@ Proof.
          outBase HoutBase
          outLen HoutLen
          outTop HoutTop
-         cE HcE.
+         cE HcE
+         mask_ef Hmask_ef
+         base_mod_ef Hbase_mod_ef
+         length_mod_ef Hlength_mod_ef.
   cbn [mapDiffTuple Fst Snd evalExpr].
   subst cE.
   cbn [evalLetExpr evalExpr fold_left map ZeroExtend ZeroExtendTo evalAndBinary get_E_from_cE isAllOnes isZero InvDefault isEq KindCustomInd getDefault].
@@ -3363,7 +3378,10 @@ Proof.
          outBase HoutBase
          outLen HoutLen
          outTop HoutTop
-         cE HcE.
+         cE HcE
+         mask_ef Hmask_ef
+         base_mod_ef Hbase_mod_ef
+         length_mod_ef Hlength_mod_ef.
   cbn [mapDiffTuple Fst Snd evalExpr].
   subst cE.
   cbn [evalLetExpr evalExpr fold_left map ZeroExtend ZeroExtendTo evalAndBinary get_E_from_cE isAllOnes isZero InvDefault isEq KindCustomInd getDefault].
@@ -3755,7 +3773,10 @@ Proof.
          outBase HoutBase
          outLen HoutLen
          outTop HoutTop
-         cE HcE.
+         cE HcE
+         mask_ef Hmask_ef
+         base_mod_ef Hbase_mod_ef
+         length_mod_ef Hlength_mod_ef.
   cbn [mapDiffTuple Fst Snd evalExpr].
   subst outLen cE.
   cbn [evalLetExpr evalExpr fold_left map ZeroExtend ZeroExtendTo evalAndBinary get_E_from_cE isAllOnes isZero InvDefault isEq KindCustomInd getDefault].
@@ -4037,7 +4058,10 @@ Proof.
          outBase HoutBase
          outLen HoutLen
          outTop HoutTop
-         cE HcE.
+         cE HcE
+         mask_ef Hmask_ef
+         base_mod_ef Hbase_mod_ef
+         length_mod_ef Hlength_mod_ef.
   cbn [mapDiffTuple Fst Snd evalExpr].
   subst cE.
   cbn [evalLetExpr evalExpr fold_left map ZeroExtend ZeroExtendTo evalAndBinary get_E_from_cE isAllOnes isZero InvDefault isEq KindCustomInd getDefault].
@@ -4417,7 +4441,10 @@ Proof.
          outBase HoutBase
          outLen HoutLen
          outTop HoutTop
-         cE HcE.
+         cE HcE
+         mask_ef Hmask_ef
+         base_mod_ef Hbase_mod_ef
+         length_mod_ef Hlength_mod_ef.
   cbn [mapDiffTuple Fst Snd evalExpr].
   subst cE.
   cbn [evalLetExpr evalExpr fold_left map ZeroExtend ZeroExtendTo evalAndBinary get_E_from_cE isAllOnes isZero InvDefault isEq KindCustomInd getDefault].
@@ -4955,7 +4982,10 @@ Proof.
          outBase HoutBase
          outLen HoutLen
          outTop HoutTop
-         cE HcE.
+         cE HcE
+         mask_ef Hmask_ef
+         base_mod_ef Hbase_mod_ef
+         length_mod_ef Hlength_mod_ef.
   cbn [mapDiffTuple Fst Snd evalExpr].
   subst outBase cE.
   cbn [evalLetExpr evalExpr fold_left map ZeroExtend ZeroExtendTo evalAndBinary get_E_from_cE isAllOnes isZero InvDefault isEq KindCustomInd getDefault].
@@ -5048,7 +5078,10 @@ Proof.
          outBase HoutBase
          outLen HoutLen
          outTop HoutTop
-         cE HcE.
+         cE HcE
+         mask_ef Hmask_ef
+         base_mod_ef Hbase_mod_ef
+         length_mod_ef Hlength_mod_ef.
   cbn [mapDiffTuple Fst Snd evalExpr].
   subst cE.
   cbn [evalLetExpr evalExpr fold_left map ZeroExtend ZeroExtendTo evalAndBinary get_E_from_cE isAllOnes isZero InvDefault isEq KindCustomInd getDefault].
