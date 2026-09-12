@@ -128,7 +128,7 @@ Fixpoint pairwiseDisjoint (l : list MemRegion) : bool :=
   end.
 
 Definition isRegionAddr {ty : Kind -> Type} (r : MemRegion) (addr : Expr ty Addr) : Expr ty Bool :=
-  And [ Sge addr $(r.(regionBase)) ; Slt addr $(r.(regionBase) + r.(regionSize)) ].
+  And [ Uge addr $(r.(regionBase)) ; Ult addr $(r.(regionBase) + r.(regionSize)) ].
 
 Definition regionTagSize (r : MemRegion) : nat :=
   cfgRegionTagSize r.(regionSize) r.(regionLineCfg).

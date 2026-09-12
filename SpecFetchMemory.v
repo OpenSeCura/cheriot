@@ -311,8 +311,8 @@ Section SpecCoreTree.
       Let sealExc      : Bool <- isSealed pccECap ;
       Let permExc      : Bool <- Not (##pccECap`"perms"`"EX") ;
       Let boundsExc    : Bool <- Or [
-        Slt (ZeroExtendTo (AddrSz + 2) ##pcc`"addr") (ZeroExtendTo (AddrSz + 2) ##pccECap`"base") ;
-        Sgt (ZeroExtendTo (AddrSz + 2) (Add [ ##pcc`"addr" ; #instBytesLen ])) (##pccECap`"top")
+        Ult (ZeroExtendTo (AddrSz + 2) ##pcc`"addr") (ZeroExtendTo (AddrSz + 2) ##pccECap`"base") ;
+        Ugt (ZeroExtendTo (AddrSz + 2) (Add [ ##pcc`"addr" ; #instBytesLen ])) (##pccECap`"top")
       ] ;
 
       Let fetchOut : FetchOut <- STRUCT {

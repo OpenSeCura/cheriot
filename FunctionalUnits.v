@@ -851,7 +851,7 @@ Section FunctionalUnits.
     let flipMsb e:= {< Xor [#flipBit; TruncMsb 1 (Xlen-1) e], TruncLsb 1 (Xlen-1) e >} in
     LetE op1_flipped : Bit Xlen <- flipMsb #op1 ;
     LetE op2_flipped : Bit Xlen <- flipMsb #op2 ;
-    LetE ltRes : Bool <- Slt #op1_flipped #op2_flipped;
+    LetE ltRes : Bool <- Ult #op1_flipped #op2_flipped;
     LetE eqRes : Bool <- Eq #op1 #op2;
     LetE cond  : Bool <- Or [ And [ #checkLt; #ltRes ]; And [ #checkEq; #eqRes ] ];
     LetE finalRes : Bool <- ITE #invertRes (Not #cond) #cond;
@@ -1108,7 +1108,7 @@ Section FunctionalUnits.
       LetE b_e : Bool <- (mkBoolArray AddrSz #base) @[ #e_init ];
       LetE isOverflow : Bool <- FromBit Bool (TruncMsb 1 CapBSz #m_raw);
       LetE e_unsat : Bit ExpSz <- Add [#e_init; ITE #isOverflow $1 $0];
-      LetE isESaturated : Bool <- Sgt #e_unsat $(AddrSz - CapBSz);
+      LetE isESaturated : Bool <- Ugt #e_unsat $(AddrSz - CapBSz);
       LetE e_normal : Bit ExpSz <- ITE #isESaturated $(AddrSz + 1 - CapBSz) #e_unsat;
 
       LetE m_raw_lsb : Bool <- FromBit Bool (TruncLsb CapBSz 1 #m_raw);
@@ -1118,7 +1118,7 @@ Section FunctionalUnits.
       LetE m_normal : Bit CapBSz <- ITE #isOverflow #m_ovf (TruncLsb 1 CapBSz #m_raw);
 
       LETE e_b: Bit ExpSz <- countTrailingZerosArray (mkBoolArray AddrSz #base) _;
-      LetE pick_b: Bool <- Slt #e_b #e_init;
+      LetE pick_b: Bool <- Ult #e_b #e_init;
       LetE e_roundDown: Bit ExpSz <- ITE #pick_b #e_b #e_init;
       LetE m_roundDown: Bit CapBSz <-
         ITE #pick_b (Const ty (Bit CapBSz) (InvDefault _)) (TruncLsb 1 CapBSz #d);
@@ -1158,7 +1158,7 @@ Section FunctionalUnits.
     LetE top_hi : Bit 2 <- TruncMsb 2 AddrSz #top ;
     LetE base_hi : Bit 2 <- ZeroExtend 1 (TruncMsb 1 AddrSz #base) ;
     LetE borrow_bit : Bit 2 <- ZeroExtend 1 (ToBit #borrow) ;
-    LetE isSaturatedLen : Bool <- Sgt #top_hi (Add [ #base_hi; #borrow_bit ]) ;
+    LetE isSaturatedLen : Bool <- Ugt #top_hi (Add [ #base_hi; #borrow_bit ]) ;
     LetE isSaturatedTop : Bool <- isNotZero (TruncMsb 2 AddrSz #top) ;
     LetE isSaturatedBase : Bool <- isNotZero (TruncMsb 1 AddrSz #base) ;
     LetE isSaturated : Bool <-
@@ -1194,14 +1194,14 @@ Section FunctionalUnits.
     "eq" :: Bool }.
 
   Definition ComparatorTopOrRep (addr topRep : ty (Bit (AddrSz + 2))) (checkLte : ty Bool) : LetExpr ty ComparatorOut :=
-    LetE ltRes : Bool <- Slt #addr #topRep;
+    LetE ltRes : Bool <- Ult #addr #topRep;
     LetE eqRes : Bool <- Eq #addr #topRep;
     LetE lteRes : Bool <- Or [ #ltRes; #eqRes ];
     LetE outLt : Bool <- ITE #checkLte #lteRes #ltRes;
     @RetE _ ComparatorOut (STRUCT { "lt" ::= #outLt; "eq" ::= #eqRes }).
 
   Definition ComparatorBase (addr base : ty (Bit (AddrSz + 1))) : LetExpr ty Bool :=
-    LetE geRes : Bool <- Sge #addr #base;
+    LetE geRes : Bool <- Uge #addr #base;
     RetE #geRes.
 
   Definition AddrBoundsCheck (tag topLt baseGe : ty Bool) : LetExpr ty Bool :=

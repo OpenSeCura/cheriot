@@ -150,7 +150,7 @@ Section Plic.
     LetE a_prio : Bit Xlen <- ##a`"prio" ;
     LetE b_id   : Bit Xlen <- ##b`"id" ;
     LetE b_prio : Bit Xlen <- ##b`"prio" ;
-    LetE a_wins : Bool <- Or [Sgt #a_prio #b_prio; And[Eq #a_prio #b_prio; Sle #a_id #b_id]];
+    LetE a_wins : Bool <- Or [Ugt #a_prio #b_prio; And[Eq #a_prio #b_prio; Ule #a_id #b_id]];
     RetE (ITE #a_wins #a #b).
 
   Section PlicCoreLogic.
@@ -248,7 +248,7 @@ Section Plic.
           LetE en : Bool         <- ens @[ idx ] ;
           LetE insv : Bool       <- insvs @[ idx ] ;
           LetE prio : Bit Xlen   <- prios @[ idx ] ;
-          LetE active : Bool     <- And [ #pend ; #en ; Not #insv ; Sgt #prio thresh ] ;
+          LetE active : Bool     <- And [ #pend ; #en ; Not #insv ; Ugt #prio thresh ] ;
           RetE (ITE #active (mkPlicRes idx #prio) plicResEmpty)
       end.
 
@@ -339,8 +339,8 @@ Section Plic.
       Let offset <- getMemOffset base PlicSizeBytes addr ;
       Let isClaim     : Bool <- Eq #offset $(PLIC_CLAIM_OFFSET) ;
       Let isThreshold : Bool <- Eq #offset $(PLIC_THRESHOLD_OFFSET) ;
-      Let isEnable    : Bool <- Sge #offset $(PLIC_ENABLE_OFFSET) ;
-      Let isPending   : Bool <- Sge #offset $(PLIC_PENDING_OFFSET) ;
+      Let isEnable    : Bool <- Uge #offset $(PLIC_ENABLE_OFFSET) ;
+      Let isPending   : Bool <- Uge #offset $(PLIC_PENDING_OFFSET) ;
       readPlicState (fun st =>
         Let prioOffset <- Sub #offset $(PLIC_PRIORITY_BASE) ;
         Let prioIdx : Bit Xlen <- ZeroExtendTo Xlen (TruncMsb (PlicOffsetSz - LgNumBytesXlen) LgNumBytesXlen #prioOffset) ;
@@ -375,7 +375,7 @@ Section Plic.
       (* Only the lowerbound checks are done; upper bound automatically falls off *)
       Let isComplete  : Bool <- Eq #offset $(PLIC_CLAIM_OFFSET) ;
       Let isThreshold : Bool <- Eq #offset $(PLIC_THRESHOLD_OFFSET) ;
-      Let isEnable    : Bool <- Sge #offset $(PLIC_ENABLE_OFFSET) ;
+      Let isEnable    : Bool <- Uge #offset $(PLIC_ENABLE_OFFSET) ;
       Let isPrio      : Bool <- ConstBool true ;
       If #isComplete Then (
         @plicComplete n ty #writeWord

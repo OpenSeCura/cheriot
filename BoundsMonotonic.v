@@ -1925,7 +1925,7 @@ Proof.
     change (bits.of_Z ExpSz 1) with (Zmod.one : bits ExpSz) in E_ovf.
     assert (HE_ovf_val: Zmod.unsigned E_ovf = if Zmod.unsigned clz =? 0 then AddrSz + 1 - CapBSz else (AddrSz + 1 - CapBSz) - Zmod.unsigned clz).
     { subst E_ovf. rewrite He_init_eq. exact He_plus1_val. }
-    unfold Sgt in *; cbn [evalLetExpr evalExpr fold_left map].
+    unfold Ugt in *; cbn [evalLetExpr evalExpr fold_left map].
     rewrite !Zmod.add_0_l.
     change (bits.of_Z ExpSz 1) with (Zmod.one : bits ExpSz).
     fold E_ovf in |- *.
@@ -2381,7 +2381,7 @@ Proof.
     change (evalExpr $0) with (bits.of_Z ExpSz 0).
     rewrite Zmod.add_0_r.
     subst isESaturated.
-    unfold Sgt in *; cbn [evalLetExpr evalExpr fold_left map].
+    unfold Ugt in *; cbn [evalLetExpr evalExpr fold_left map].
     rewrite !Zmod.add_0_l.
     change (bits.of_Z ExpSz 0) with (Zmod.zero : bits ExpSz).
     rewrite !Zmod.add_0_r.
@@ -3294,7 +3294,7 @@ Proof.
       assert (Hclz_nz: Zmod.unsigned clz <> 0) by lia.
       apply Z.eqb_neq in Hclz_nz.
       subst isESaturated.
-      unfold Sgt.
+      unfold Ugt.
       cbn [evalLetExpr evalExpr fold_left map].
       subst e_unsat.
       cbn [evalLetExpr evalExpr fold_left map].
@@ -3316,7 +3316,7 @@ Proof.
       lia.
     + (* isOverflow = false *)
       subst isESaturated e_unsat.
-      unfold Sgt.
+      unfold Ugt.
       cbn [evalLetExpr evalExpr fold_left map].
       rewrite !Zmod.add_0_l.
       change (evalExpr $0) with (bits.of_Z ExpSz 0).
@@ -4128,7 +4128,7 @@ Proof.
     assert (He_fin_val: Zmod.unsigned ef = (AddrSz - CapBSz) - Zmod.unsigned clz).
     { rewrite Hef, He_normal.
       subst isESaturated e_unsat.
-      unfold Sgt.
+      unfold Ugt.
       cbn [evalLetExpr evalExpr fold_left map].
       rewrite !Zmod.add_0_l.
       change (evalExpr $0) with (bits.of_Z ExpSz 0).
@@ -4595,7 +4595,7 @@ Proof.
     assert (Hef_val: Zmod.unsigned ef = e0 + 1).
     { rewrite Hef, He_normal.
       subst isESaturated e_unsat.
-      unfold Sgt.
+      unfold Ugt.
       cbn [evalLetExpr evalExpr fold_left map].
       rewrite !Zmod.add_0_l.
       change (evalExpr $1) with (bits.of_Z ExpSz 1).
@@ -4675,7 +4675,7 @@ Proof.
     assert (Hef_val: Zmod.unsigned ef = e0).
     { rewrite Hef, He_normal.
       subst isESaturated e_unsat.
-      unfold Sgt.
+      unfold Ugt.
       cbn [evalLetExpr evalExpr fold_left map].
       rewrite !Zmod.add_0_l.
       change (evalExpr $0) with (bits.of_Z ExpSz 0).

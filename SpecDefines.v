@@ -397,7 +397,7 @@ Section CapEncoding.
       LetE cB <- TruncLsb 1 CapcTSz #B;
       LetE Tmsb <- TruncMsb 1 CapcTSz #T;
       LetE Bmsb <- TruncMsb 1 CapcTSz #B;
-      LetE carry_out <- ToBit (Slt #cT #cB);
+      LetE carry_out <- ToBit (Ult #cT #cB);
       @RetE _ (Bit 1) (Xor [#Tmsb; #Bmsb; #carry_out]).
 
     Definition get_cE_from_E_T_B (E: ty (Bit ExpSz)) (T B: ty (Bit CapBSz)) : LetExpr ty (Bit ExpSz) :=
@@ -410,13 +410,13 @@ Section CapEncoding.
       LetE Mmsb <- get_Mmsb_from_cE cE;
       LetE cB <- TruncLsb 1 CapcTSz #B;
       LetE Bmsb <- TruncMsb 1 CapcTSz #B;
-      LetE carry_out <- ToBit (Slt #cT #cB);
+      LetE carry_out <- ToBit (Ult #cT #cB);
       LetE Tmsb <- Xor [#Bmsb; #Mmsb; #carry_out];
       @RetE _ (Bit CapBSz) ({< #Tmsb, #cT >}).
 
     Definition Emax := Eval compute in (Z.shiftl 1 ExpSz - CapcTSz).
     Definition get_ECorrected_from_E (E: ty (Bit ExpSz)) : Expr ty (Bit ExpSz) :=
-      (ITE (Sge #E $Emax) $Emax #E).
+      (ITE (Uge #E $Emax) $Emax #E).
   End CapRelated.
 
   Section BaseTop.
@@ -435,11 +435,11 @@ Section CapEncoding.
         LetE aMid: Bit CapBSz <- TruncLsb (AddrSz - CapBSz) CapBSz #aMidTop;
         LetE aTop: Bit (AddrSz - CapBSz) <- TruncMsb (AddrSz - CapBSz) CapBSz #aMidTop;
 
-        LetE aHi <- ZeroExtendTo (AddrSz - CapBSz) (ToBit (Slt #aMid #B));
+        LetE aHi <- ZeroExtendTo (AddrSz - CapBSz) (ToBit (Ult #aMid #B));
         LetE aTopB <- ITE0 (isNotZero #aTop) (Sub #aTop #aHi);
         LetE base <- Sll (ZeroExtendTo (AddrSz + 1) ({< #aTopB, #B >})) #ECorrected;
 
-        LetE tHi <- ZeroExtendTo (AddrSz - CapBSz) (ToBit (Slt #T #B));
+        LetE tHi <- ZeroExtendTo (AddrSz - CapBSz) (ToBit (Ult #T #B));
         LetE aTopT <- Add [#aTopB; #tHi];
         LetE top <- Sll (ZeroExtendTo (AddrSz + 2) ({< #aTopT, #T >})) #ECorrected;
 
@@ -869,10 +869,10 @@ Definition isSentryIh ty (oType: ty (Bit CapOTypeSz)) : Expr ty Bool :=
   Eq #oType $CallSentryIh.
 
 Definition exOTypes ty (addr: ty Addr) : Expr ty Bool :=
-  And [ Sgt #addr $0; Sle #addr $7 ].
+  And [ Ugt #addr $0; Ule #addr $7 ].
 
 Definition nonExOTypes ty (addr: ty Addr) : Expr ty Bool :=
-  And [ Sgt #addr $8; Sle #addr $15 ].
+  And [ Ugt #addr $8; Ule #addr $15 ].
 
 (* ===========================================================================
  * DataTypes
@@ -1205,7 +1205,7 @@ Section RfTree.
     Definition updateMshwmOnStore (stAddr : Expr ty Addr) : Action ty rfTree (Bit 0) :=
       LetA mshwm        : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mshwm") : Expr _ (Bit CsrIdxSz)) ;
       LetA mshwmb       : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mshwmb") : Expr _ (Bit CsrIdxSz)) ;
-      Let  shouldUpdate : Bool     <- And [ Sge stAddr #mshwmb ; Slt stAddr #mshwm ] ;
+      Let  shouldUpdate : Bool     <- And [ Uge stAddr #mshwmb ; Ult stAddr #mshwm ] ;
       If #shouldUpdate Then (
         Let alignedAddr : Bit Xlen <- {< TruncMsb (AddrSz - LgMshwmAlign) LgMshwmAlign stAddr,
                                          Const ty (Bit LgMshwmAlign) (bits.of_Z LgMshwmAlign 0) >} ;
@@ -1268,8 +1268,8 @@ Definition heapEndAddr (config : RevConfig) : Z :=
   config.(heapStartAddr) + heapSize config.
 
 Definition isRevokableAddr {ty : Kind -> Type} (config : RevConfig) (a : Expr ty (Bit (AddrSz + 1))) : Expr ty Bool :=
-  And [ Sge a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;
-        Slt a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) (heapEndAddr config))) ].
+  And [ Uge a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;
+        Ult a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) (heapEndAddr config))) ].
 
 Definition RevBitLookup := STRUCT_TYPE {
   "isRevokable" :: Bool ;

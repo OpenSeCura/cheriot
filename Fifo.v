@@ -73,7 +73,7 @@ Section Fifo.
           RetE (TruncLsb _ _
                   (castBits (sub_add_comm _ _)
                      (Sub #extendedSum
-                        (ITE (Slt #extendedSum $(Z.of_nat capacity)) $0 $(Z.of_nat capacity)))))).
+                        (ITE (Ult #extendedSum $(Z.of_nat capacity)) $0 $(Z.of_nat capacity)))))).
 
     Definition isFull : Action ty fifoTree Bool :=
       ( RegRead sz <- "fifo.size" in fifoTree;

@@ -178,8 +178,8 @@ Section SifiveUart.
       LetA rxCount : Bit SifiveUartFifoCountWidth <- liftAction np_rx_fifo (@fifoCount dom SifiveUartFifoCapacity (Bit 8) ty) ;
       LetA txcnt   : Bit SifiveUartWatermarkWidth <- ReadReg "txctrl_txcnt" sifiveUartTxctrlTxcntPath (fun v => Return #v) ;
       LetA rxcnt   : Bit SifiveUartWatermarkWidth <- ReadReg "rxctrl_rxcnt" sifiveUartRxctrlRxcntPath (fun v => Return #v) ;
-      Let txwm_ip  : Bool <- Slt #txCount (ZeroExtendTo SifiveUartFifoCountWidth #txcnt) ;
-      Let rxwm_ip  : Bool <- Sgt #rxCount (ZeroExtendTo SifiveUartFifoCountWidth #rxcnt) ;
+      Let txwm_ip  : Bool <- Ult #txCount (ZeroExtendTo SifiveUartFifoCountWidth #txcnt) ;
+      Let rxwm_ip  : Bool <- Ugt #rxCount (ZeroExtendTo SifiveUartFifoCountWidth #rxcnt) ;
       Act (WriteReg sifiveUartIpTxwmPath #txwm_ip Retv) ;
       WriteReg sifiveUartIpRxwmPath #rxwm_ip Retv.
 

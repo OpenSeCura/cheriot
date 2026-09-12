@@ -252,7 +252,7 @@ Section Revoker.
         LetA scanAddrMsb : Bit TagAddrWidth <- readRevokerScanAddr ;
         LetA topAddrMsb  : Bit TagAddrWidth <- readRevokerTop ;
         Let scanAddr     : Addr <- {< #scanAddrMsb, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
-        Let isDone       : Bool <- Sge #scanAddrMsb #topAddrMsb ;
+        Let isDone       : Bool <- Uge #scanAddrMsb #topAddrMsb ;
 
         If (Not #isDone) Then (
           (* 1. Inspect capability at current scanAddr *)

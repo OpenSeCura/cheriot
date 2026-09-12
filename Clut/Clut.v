@@ -226,7 +226,7 @@ Section Clut.
           Let valid: Bool <- #valids@[#clutIdx];
 
           (* Check for bounds: base <= addr <= top and perms *)
-          Let bounds: Bool <- And [Sle (#entry`"base") #phyAddr; Sle (Add [#phyAddr; (#dmaReq`"size")]) (#entry`"top")];
+          Let bounds: Bool <- And [Ule (#entry`"base") #phyAddr; Ule (Add [#phyAddr; (#dmaReq`"size")]) (#entry`"top")];
           Let perms: Bool <- ITE (#dmaReq`"isWrite") (#entry`"WritePerm") (##entry`"ReadPerm");
 
           Let validAccess <- And [#valid; #bounds; #perms];

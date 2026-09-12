@@ -115,7 +115,7 @@ Section SpecDom.
         LetA hi : Bit Xlen <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mtimecmph") : Expr _ (Bit CsrIdxSz))) ;
         Let mtimecmpDXlen : Bit DXlen <- {< #hi, #lo >} ;
         LetA mtimeDXlen   : Bit DXlen <- liftAction np_mem (readClintMtimeAction clint ty) ;
-        Let mtipVal       : Bool      <- Sge #mtimeDXlen #mtimecmpDXlen ;
+        Let mtipVal       : Bool      <- Uge #mtimeDXlen #mtimecmpDXlen ;
         If #mtipVal Then (liftAction np_rf (RegWrite "rf.mtip" in rfTree <- Const ty Bool true ; Retv)) ;
         Retv.
 
