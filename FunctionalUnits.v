@@ -521,23 +521,6 @@ DecodeCap:
   cap: cs2.addr (CSetHigh)
   addr: cs1.addr (CSetHigh)
 
-FenceI:
-  Outputs: isFenceI
-  - FenceI : Fence
-  inst: inst (Fence)
-
-Deferred (Mux):
-  Outputs: isDeferred, (MemPayload {memSize, LoadOp {isUnsigned, isLM, isLG} OR Store {tag, cap, addr}} OR
-                        FenceOp {RR, RW, WR, WW})
-  - Load   : Load
-  - Store  : Store
-  - Fence  : Fence
-  cs1Perms: cs1.perms (Load)
-  inst: inst (Load, Store, Fence)
-  storeTag: cs2.tag (Store)
-  storeCap: EncodeCap (Store)
-  storeData: cs2.addr (Store)
-
 Exception (Mux):
   Outputs: isException, mcause, isScr, regIdx, mtval
   - ECall  : ECall
@@ -551,6 +534,23 @@ Exception (Mux):
   cs1ECap: cs1.ecap (Load, Store)
   inBounds: AddrBoundsCheck (Load, Store)
   addr: AdderBeforeBoundsCheck (Load, Store)
+
+Deferred (Mux):
+  Outputs: isDeferred, (MemPayload {memSize, LoadOp {isUnsigned, isLM, isLG} OR Store {tag, cap, addr}} OR
+                        FenceOp {RR, RW, WR, WW})
+  - Load   : Load
+  - Store  : Store
+  - Fence  : Fence
+  cs1Perms: cs1.perms (Load)
+  inst: inst (Load, Store, Fence)
+  storeTag: cs2.tag (Store)
+  storeCap: EncodeCap (Store)
+  storeData: cs2.addr (Store)
+
+FenceI:
+  Outputs: isFenceI
+  - FenceI : Fence
+  inst: inst (Fence)
 
 ControlFlow (Mux):
   Outputs: isCf, CfPayload {NewPcc, CfOp {ControlFlowAddrOnly {Branch {isTaken} OR Cjal} OR
@@ -579,9 +579,9 @@ ScrCsr (Mux):
   operand: zimm5 (Csr & isImm), cs1.addr (Csr & !isImm, Scr)
   oldVal: cs2.addr (Csr)
 
-FenceI
-Deferred
 Exception
+Deferred
+FenceI
 ControlFlow
 ScrCsr
 
@@ -695,11 +695,11 @@ Section DecodeInstGroup.
         Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds";
              ##group`"Load"; ##group`"Store" ] ; *)
 
-      "ControlFlow_isMret" ::= ##group`"Mret" ;
-      "ControlFlow_isCjalr" ::= ##group`"Cjalr" ;
-
       "Exception_isECall" ::= ##group`"ECall" ;
       "Exception_isEBreak" ::= ##group`"EBreak" ;
+
+      "ControlFlow_isMret" ::= ##group`"Mret" ;
+      "ControlFlow_isCjalr" ::= ##group`"Cjalr" ;
 
       "ScrCsr_isSet" ::= ##group`"Csr_Set" ;
       "ScrCsr_isClear" ::= ##group`"Csr_Clear" ;
@@ -803,6 +803,7 @@ Section GetFunctionalUnits.
       "SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
       "Bounds" ::= Or [ ##group`"CSetBounds"; ##group`"Cram"; ##group`"Crrl" ] ;
       "BoundsExact" ::= ##group`"CSetBounds_isExact" ;
+      "Saturater" ::= Or [ ##group`"CGetBase"; ##group`"CGetLen"; ##group`"CGetTop" ] ;
       "Shifter" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
              ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"Shift" ] ;
@@ -828,12 +829,11 @@ Section GetFunctionalUnits.
       "ScrSanitizer" ::= ##group`"Scr" ;
       "EncodeCap" ::= Or [ ##group`"CGetHigh"; ##group`"Store" ] ;
       "DecodeCap" ::= ##group`"CSetHigh" ;
-      "Deferred" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"Fence" ] ;
       "Exception" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"ECall"; ##group`"EBreak" ] ;
+      "Deferred" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"Fence" ] ;
+      "FenceI" ::= ##group`"Fence" ;
       "ControlFlow" ::= Or [ ##group`"Mret"; ##group`"Cjal"; ##group`"Cjalr"; ##group`"Branch" ] ;
-      "ScrCsr" ::= Or [ ##group`"Scr"; ##group`"Csr" ] ;
-      "Saturater" ::= Or [ ##group`"CGetBase"; ##group`"CGetLen"; ##group`"CGetTop" ] ;
-      "FenceI" ::= ##group`"Fence"
+      "ScrCsr" ::= Or [ ##group`"Scr"; ##group`"Csr" ]
     }).
 End GetFunctionalUnits.
 

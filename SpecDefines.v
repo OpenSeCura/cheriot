@@ -171,6 +171,7 @@ Definition FunctionalUnits := STRUCT_TYPE {
   "SealerUnsealer" :: Bool ;
   "Bounds" :: Bool ;
   "BoundsExact" :: Bool ;
+  "Saturater" :: Bool ;
   "Shifter" :: Bool ;
   "AdderBeforeRepCheck" :: Bool ;
   "ComparatorTopOrRep" :: Bool ;
@@ -181,12 +182,11 @@ Definition FunctionalUnits := STRUCT_TYPE {
   "ScrSanitizer" :: Bool ;
   "EncodeCap" :: Bool ;
   "DecodeCap" :: Bool ;
-  "Deferred" :: Bool ;
   "Exception" :: Bool ;
+  "Deferred" :: Bool ;
+  "FenceI" :: Bool ;
   "ControlFlow" :: Bool ;
-  "ScrCsr" :: Bool ;
-  "Saturater" :: Bool ;
-  "FenceI" :: Bool
+  "ScrCsr" :: Bool
 }.
 
 Definition CapPerms := STRUCT_TYPE { "U0" :: Bool ;
@@ -927,6 +927,9 @@ Definition AluControl := STRUCT_TYPE {
   (* Logical *)
   "Logical_op2_isCs2AddrNotSimm12" :: Bool ;
 
+  (* SealerUnsealer *)
+  (* SealerUnsealer_isUnseal = Unseal *)
+
   (* Bounds *)
   "Bounds_isRoundDown" :: Bool ;
   "Bounds_isExact" :: Bool ;
@@ -978,14 +981,8 @@ Definition AluControl := STRUCT_TYPE {
   (* AddrBoundsCheck *)
   (* AddrBoundsCheck_tag_isPccTagNotCs1Tag = BranchOrCjalOrAuiPcc *)
 
-  (* SealerUnsealer *)
-  (* SealerUnsealer_isUnseal = Unseal *)
-
-  (* ControlFlow *)
-  "ControlFlow_isMret" :: Bool ;
-  (* ControlFlow_isCjal = Cjal *)
-  "ControlFlow_isCjalr" :: Bool ;
-  (* ControlFlow_isBranch = Branch *)
+  (* EncodeCap *)
+  (* EncodeCap_ecap_isCs2EcapNotCs1Ecap = Store *)
 
   (* Exception *)
   "Exception_isECall" :: Bool ;
@@ -1001,14 +998,17 @@ Definition AluControl := STRUCT_TYPE {
   (* FenceI *)
   (* FenceI_isFence = Fence *)
 
+  (* ControlFlow *)
+  "ControlFlow_isMret" :: Bool ;
+  (* ControlFlow_isCjal = Cjal *)
+  "ControlFlow_isCjalr" :: Bool ;
+  (* ControlFlow_isBranch = Branch *)
+
   (* ScrCsr *)
   "ScrCsr_isSet" :: Bool ;
   "ScrCsr_isClear" :: Bool ;
   "ScrCsr_isWrite" :: Bool ;
   "ScrCsr_operand_isImm" :: Bool ;
-
-  (* EncodeCap *)
-  (* EncodeCap_ecap_isCs2EcapNotCs1Ecap = Store *)
 
   (* Reg_tag *)
   (* Reg_tag_pccTag = Cjal *)
