@@ -425,8 +425,18 @@ Section AluRF.
                                                           ($(getCsrIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
     LetA mip            : Bit Xlen                   <- readRegsList csrPathsWithKind
                                                           ($(getCsrIdx "mip") : Expr ty (Bit CsrIdxSz)) ;
+    LetA mie            : Bit Xlen                   <- readRegsList csrPathsWithKind
+                                                          ($(getCsrIdx "mie") : Expr ty (Bit CsrIdxSz)) ;
+    Let  pending        : Bit Xlen                   <- And [ #mip ; #mie ] ;
     Let  currMIE        : Bool                       <- getMstatusMIE #mstatus ;
-    Let  isInterrupt    : Bool                       <- And [ #currMIE ; isNotZero #mip ] ;
+    Let  isInterrupt    : Bool                       <- And [ #currMIE ; isNotZero #pending ] ;
+
+    (* Cause number, not the bitmask; external outranks timer.  ITE not caseDefault,
+       which would OR the two when both are pending. *)
+    Let  pendingArr     : Array (Z.to_nat Xlen) Bool <- FromBit (Array (Z.to_nat Xlen) Bool) #pending ;
+    Let  meipPending    : Bool                       <- ReadArray #pendingArr ($MEIP_Bit : Expr ty (Bit LgXlen)) ;
+    Let  mtipPending    : Bool                       <- ReadArray #pendingArr ($MTIP_Bit : Expr ty (Bit LgXlen)) ;
+    Let  intCauseNo     : Bit (Xlen - 1)             <- ITE #meipPending $MEIP_Bit (ITE0 #mtipPending $MTIP_Bit) ;
     Let  isTrap         : Bool                       <- Or [ #isInterrupt ; #isExc ] ;
 
     Let  isDeferred     : Bool                       <- And [ Not #isTrap ; #noExc `? "Deferred" ] ;
@@ -458,7 +468,7 @@ Section AluRF.
         Let  mstatus1   : Bit Xlen        <- setMstatusMPIE #mstatus #currMIE ;
         Let  newMstatus : Bit Xlen        <- setMstatusMIE #mstatus1 (ConstBool false) ;
         Let  newMcause  : Bit Xlen        <- ITE #isInterrupt
-                                                {< Const ty (Bit 1) (bits.of_Z 1 1), TruncLsb 1 (Xlen - 1) #mip >}
+                                                {< Const ty (Bit 1) (bits.of_Z 1 1), #intCauseNo >}
                                                 (encodeMcause ##excVal`"mcause") ;
         Let  newMtval   : Bit Xlen        <- ITE #isInterrupt $0 (encodeCheriMtval ##excVal`"mtval") ;
 
