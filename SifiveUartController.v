@@ -45,14 +45,6 @@ Definition SifiveUartRegIdxWidth : Z := Eval compute in (Z.log2_up (Z.of_nat Sif
 Notation sifiveUartRegIdxBit name :=
   ($(Z.of_nat (sifiveUartRegIdx name))).
 
-Definition SIFIVE_UART_TXDATA_OFFSET : Z := 0.   (* 0x00: txdata (w: data, r: full) *)
-Definition SIFIVE_UART_RXDATA_OFFSET : Z := 4.   (* 0x04: rxdata (r: data, empty) *)
-Definition SIFIVE_UART_TXCTRL_OFFSET : Z := 8.   (* 0x08: txctrl (txen, nstop, txcnt) *)
-Definition SIFIVE_UART_RXCTRL_OFFSET : Z := 12.  (* 0x0C: rxctrl (rxen, rxcnt) *)
-Definition SIFIVE_UART_IE_OFFSET     : Z := 16.  (* 0x10: ie (txwm, rxwm) *)
-Definition SIFIVE_UART_IP_OFFSET     : Z := 20.  (* 0x14: ip (txwm, rxwm) *)
-Definition SIFIVE_UART_DIV_OFFSET    : Z := 24.  (* 0x18: div (baud rate divisor) *)
-
 Definition SifiveUartFifoCapacity : nat := 8.
 
 Definition SifiveUartWatermarkWidth : Z :=
