@@ -191,7 +191,7 @@ Section Alu.
     LetE ComparatorGeneral_op1 : Bit Xlen <- #cs1Addr ;
     LetE ComparatorGeneral_op2 : Bit Xlen <-
       ITE (##aluControl`"ComparatorGeneral_op2_isCs2AddrNotSimm12") #cs2Addr #simm12 ;
-    LetE ComparatorGeneral_isUnsigned : Bool <- ##aluControl`"isUnsigned" ;
+    LetE ComparatorGeneral_isUnsigned : Bool <- ##aluControl`"ComparatorGeneral_isUnsigned" ;
     LetE ComparatorGeneral_checkLt    : Bool <- ##aluControl`"ComparatorGeneral_checkLt" ;
     LetE ComparatorGeneral_checkEq    : Bool <- ##aluControl`"ComparatorGeneral_checkEq" ;
     LetE ComparatorGeneral_invertRes  : Bool <- ##aluControl`"ComparatorGeneral_invertRes" ;
@@ -221,8 +221,8 @@ Section Alu.
     LetE Bounds_instIsExact : Bool <- ##aluControl`"Bounds_isExact" ;
     LETE BoundsExactOut : Bool <- BoundsExact Bounds_instIsExact AddrBoundsCheckOut Bounds_boundsExact ;
 
-    LetE Saturater_isBase : Bool <- ##aluControl`"CGetBase" ;
-    LetE Saturater_isTop : Bool <- ##aluControl`"CGetTop" ;
+    LetE Saturater_isBase : Bool <- ##aluControl`"Saturater_isBase" ;
+    LetE Saturater_isTop : Bool <- ##aluControl`"Saturater_isTop" ;
     LetE Saturater_isLen : Bool <- ##aluControl`"CGetLen" ;
     LETE SaturaterOut : Bit Xlen <-
       Saturater Saturater_isBase Saturater_isTop Saturater_isLen cs1Base cs1Top AdderToOutputOut ;
@@ -235,9 +235,9 @@ Section Alu.
 
     LETE ScrSanitizerOut : Bool <- ScrSanitizer cs1Tag cs1Addr inst ;
 
-    LetE isMret : Bool <- ##aluControl`"Mret" ;
+    LetE isMret : Bool <- ##aluControl`"ControlFlow_isMret" ;
     LetE isCjal : Bool <- ##aluControl`"Cjal" ;
-    LetE isCjalr : Bool <- ##aluControl`"Cjalr" ;
+    LetE isCjalr : Bool <- ##aluControl`"ControlFlow_isCjalr" ;
     LetE isBranch : Bool <- ##aluControl`"Branch" ;
     LetE isCond : Bool <- ##ComparatorGeneralOut`"cond" ;
 
@@ -272,7 +272,7 @@ Section Alu.
       caseDefault (k := ECap) [ (##aluControl`"Reg_ecap_pccEcap", ##aluIn`"pcc"`"ecap") ;
                                  (##aluControl`"Reg_ecap_cs1Ecap", ##cs1`"ecap") ;
                                  (##aluControl`"Scr", #cs2ECap) ;
-                                 (##aluControl`"CSetHigh", #decodedECap) ;
+                                 (##aluControl`"Reg_ecap_decodedECap", #decodedECap) ;
                                  (##aluControl`"CAndPerm", ##CAndPermOut`"ecap") ;
                                  (##aluControl`"SealOrUnseal", ##SealerUnsealerOut`"ecap") ;
                                  (##aluControl`"CSetBounds", #Bounds_outECap) ]
@@ -281,30 +281,30 @@ Section Alu.
     LetE Reg_addr : Addr <-
       caseDefault (k := Addr) [
           (##aluControl`"Reg_addr_AdderBeforeBoundsCheck", #AdderBeforeBoundsCheckOut) ;
-          (##aluControl`"Slt",
+          (##aluControl`"Reg_addr_ComparatorGeneralLt",
            ZeroExtendTo Xlen (ToBit (##ComparatorGeneralOut`"cond"))) ;
           (##aluControl`"Shift", #ShifterOut) ;
-          (##aluControl`"Logical", #LogicalOut) ;
+          (##aluControl`"Reg_addr_Logical", #LogicalOut) ;
           (##aluControl`"Reg_addr_AdderToOutput", #AdderToOutputOut) ;
-          (##aluControl`"CGetPerm", ZeroExtendTo Xlen (ToBit (##cs1ECap`"perms"))) ;
-          (##aluControl`"CGetType", ZeroExtendTo Xlen #cs1OType) ;
-          (##aluControl`"CGetTag",  ZeroExtendTo Xlen (ToBit #cs1Tag)) ;
-          (##aluControl`"CGetAddr", #cs1Addr) ;
-          (##aluControl`"CGetHigh", ZeroExtendTo Xlen (ToBit #encodedCap)) ;
+          (##aluControl`"Reg_addr_CGetPerm", ZeroExtendTo Xlen (ToBit (##cs1ECap`"perms"))) ;
+          (##aluControl`"Reg_addr_CGetType", ZeroExtendTo Xlen #cs1OType) ;
+          (##aluControl`"Reg_addr_CGetTag",  ZeroExtendTo Xlen (ToBit #cs1Tag)) ;
+          (##aluControl`"Reg_addr_CGetAddr", #cs1Addr) ;
+          (##aluControl`"Reg_addr_CGetHigh", ZeroExtendTo Xlen (ToBit #encodedCap)) ;
           (##aluControl`"Reg_addr_Saturater", #SaturaterOut) ;
           (##aluControl`"Reg_addr_cs2Addr", #cs2Addr) ;
           (##aluControl`"Reg_addr_cs1Addr", #cs1Addr) ;
           (##aluControl`"CAndPerm", #cs1Addr) ;
           (##aluControl`"SealOrUnseal", #cs1Addr) ;
           (##aluControl`"CSetBounds", TruncLsb 1 AddrSz (##BoundsOut`"base")) ;
-          (##aluControl`"Cram", TruncLsb 1 AddrSz (##BoundsOut`"cram")) ;
-          (##aluControl`"Crrl", TruncLsb 1 AddrSz (##BoundsOut`"length")) ;
+          (##aluControl`"Reg_addr_BoundsCram", TruncLsb 1 AddrSz (##BoundsOut`"cram")) ;
+          (##aluControl`"Reg_addr_BoundsCrrl", TruncLsb 1 AddrSz (##BoundsOut`"length")) ;
           (##aluControl`"CTestSubset", ZeroExtendTo Xlen (ToBit #CapSubsetOut)) ;
-          (##aluControl`"CSetEqual", ZeroExtendTo Xlen (ToBit #CapEqOut)) ]
+          (##aluControl`"Reg_addr_CapEq", ZeroExtendTo Xlen (ToBit #CapEqOut)) ]
         #uimm20 ;
 
-    LetE ecall : Bool <- ##aluControl`"ECall" ;
-    LetE ebreak : Bool <- ##aluControl`"EBreak" ;
+    LetE ecall : Bool <- ##aluControl`"Exception_isECall" ;
+    LetE ebreak : Bool <- ##aluControl`"Exception_isEBreak" ;
     LetE isLoad : Bool <- ##aluControl`"Load" ;
     LetE isStore : Bool <- ##aluControl`"Store" ;
 
@@ -328,9 +328,9 @@ Section Alu.
   
     LetE ScrCsr_operand : Addr <-
       ITE (##aluControl`"ScrCsr_operand_isImm") (ZeroExtendTo Xlen #zimm5) #cs1Addr ;
-    LetE ScrCsr_isSet : Bool <- ##aluControl`"Csr_Set" ;
-    LetE ScrCsr_isClear : Bool <- ##aluControl`"Csr_Clear" ;
-    LetE ScrCsr_isWrite : Bool <- ##aluControl`"ScrCsr_Write" ;
+    LetE ScrCsr_isSet : Bool <- ##aluControl`"ScrCsr_isSet" ;
+    LetE ScrCsr_isClear : Bool <- ##aluControl`"ScrCsr_isClear" ;
+    LetE ScrCsr_isWrite : Bool <- ##aluControl`"ScrCsr_isWrite" ;
     LETE ScrCsrOut : Option ScrCsrPayload <-
       ScrCsr ScrCsr_isSet ScrCsr_isClear ScrCsr_isWrite
              cs2Idx ScrSanitizerOut cs1ECap ScrCsr_operand cs2Addr ;

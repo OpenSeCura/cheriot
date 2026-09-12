@@ -585,8 +585,6 @@ Exception
 ControlFlow
 ScrCsr
 
-NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
-
 Reg.tag: 0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGetTag, CGetAddr, CGetHigh,
             CGetTop, CGetLen, Cram, Crrl, CSetEqual, CTestSubset, Csr, CSetHigh, CClearTag, Load, Store),
          pcc.tag (Cjal),
@@ -641,8 +639,11 @@ Section DecodeInstGroup.
       (* "AdderBeforeBoundsCheck_offset_simm12" ::=
         Or [ ##group`"Cjalr"; ##group`"Load"; ##group`"Store";
              And [ ##group`"CIncAddr"; ##group`"isImm" ] ] ; *)
+
+      "AdderToOutput_isSub" ::= Or [ And [ ##group`"AddSub"; ##group`"AddSub_isSub" ]; ##group`"CGetLen" ] ;
       "AdderToOutput_base_pccAddr" ::=
         Or [ ##group`"Cjal"; ##group`"Cjalr" ] ;
+      (* "AdderToOutput_base_cs1Addr" ::= ##group`"AddSub" ; *)
       "AdderToOutput_offset_const2" ::=
         And [ ##group`"isCompressed";
               Or [ ##group`"Cjal"; ##group`"Cjalr" ] ] ;
@@ -651,23 +652,33 @@ Section DecodeInstGroup.
               Or [ ##group`"Cjal"; ##group`"Cjalr" ] ] ; *)
       "AdderToOutput_offset_cs2Addr" ::= And [ ##group`"AddSub"; Not ##group`"isImm" ] ;
       "AdderToOutput_offset_simm12" ::= And [ ##group`"AddSub"; ##group`"isImm" ] ;
-      "AdderToOutput_isSub" ::= Or [ And [ ##group`"AddSub"; ##group`"AddSub_isSub" ]; ##group`"CGetLen" ] ;
-      "ComparatorGeneral_op2_isCs2AddrNotSimm12" ::=
-        Or [ ##group`"Branch"; ##group`"CSetEqual";
-              And [ ##group`"Slt"; Not ##group`"isImm" ] ] ;
+
+      "ComparatorGeneral_isUnsigned" ::= ##group`"isUnsigned" ;
       "ComparatorGeneral_checkLt" ::= ##group`"ComparatorGeneral_checkLt" ;
       "ComparatorGeneral_checkEq" ::= ##group`"ComparatorGeneral_checkEq" ;
       "ComparatorGeneral_invertRes" ::= ##group`"ComparatorGeneral_invertRes" ;
+      "ComparatorGeneral_op2_isCs2AddrNotSimm12" ::=
+        Or [ ##group`"Branch"; ##group`"CSetEqual";
+              And [ ##group`"Slt"; Not ##group`"isImm" ] ] ;
+
       "Logical_op2_isCs2AddrNotSimm12" ::= And [ ##group`"Logical"; Not ##group`"isImm" ] ;
-      "Bounds_reqLimit_cs2Addr" ::= And [ ##group`"CSetBounds"; Not ##group`"isImm" ] ;
-      "Bounds_reqLimit_cs1Addr" ::= Or [ ##group`"Cram"; ##group`"Crrl" ] ;
+
       "Bounds_isRoundDown" ::= ##group`"CSetBounds_isRoundDown" ;
       "Bounds_isExact" ::= ##group`"CSetBounds_isExact" ;
       "Bounds_isImm" ::= And [ ##group`"CSetBounds"; ##group`"isImm" ] ;
+      "Bounds_reqLimit_cs2Addr" ::= And [ ##group`"CSetBounds"; Not ##group`"isImm" ] ;
+      "Bounds_reqLimit_cs1Addr" ::= Or [ ##group`"Cram"; ##group`"Crrl" ] ;
+      (* "Bounds_reqLimit_zimm12" ::= And [ ##group`"CSetBounds"; ##group`"isImm" ] ; *)
+
+      "Saturater_isBase" ::= ##group`"CGetBase" ;
+      "Saturater_isTop" ::= ##group`"CGetTop" ;
+
+      "Shifter_isRight" ::= ##group`"Shift_isRight" ;
+      "Shifter_isArith" ::= ##group`"Shift_isArith" ;
       "Shifter_shamt_cs2Addr" ::= And [ ##group`"Shift"; Not ##group`"isImm" ] ;
       (* "Shifter_shamt_shamt" ::= And [ ##group`"Shift"; ##group`"isImm" ] ; *)
-      "Shifter_isArith" ::= ##group`"Shift_isArith" ;
-      "Shifter_isRight" ::= ##group`"Shift_isRight" ;
+
+      "ComparatorTopOrRep_checkLte" ::= Or [ ##group`"CTestSubset"; ##group`"CSetBounds" ] ;
       "ComparatorTopOrRep_addr_AdderBeforeBoundsCheck" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
              ##group`"CIncAddr"; ##group`"CSetBounds"; ##group`"Load";
@@ -675,13 +686,25 @@ Section DecodeInstGroup.
       (* "ComparatorTopOrRep_addr_cs1Addr" ::= ConstTBool false ; *)
       (* "ComparatorTopOrRep_topRep_cs1Top" ::=
         Or [ ##group`"CSetBounds"; ##group`"Load"; ##group`"Store" ] ; *)
-      "ComparatorTopOrRep_checkLte" ::= Or [ ##group`"CTestSubset"; ##group`"CSetBounds" ] ;
+
       "ComparatorBase_addr_AdderBeforeBoundsCheck" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
              ##group`"CIncAddr"; ##group`"Load"; ##group`"Store" ] ;
+      (* "ComparatorBase_addr_cs1Addr" ::= ##group`"CSetBounds" ; *)
       (* "ComparatorBase_base_cs1Base" ::=
         Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds";
              ##group`"Load"; ##group`"Store" ] ; *)
+
+      "ControlFlow_isMret" ::= ##group`"Mret" ;
+      "ControlFlow_isCjalr" ::= ##group`"Cjalr" ;
+
+      "Exception_isECall" ::= ##group`"ECall" ;
+      "Exception_isEBreak" ::= ##group`"EBreak" ;
+
+      "ScrCsr_isSet" ::= ##group`"Csr_Set" ;
+      "ScrCsr_isClear" ::= ##group`"Csr_Clear" ;
+      "ScrCsr_isWrite" ::= ##group`"ScrCsr_Write" ;
+      "ScrCsr_operand_isImm" ::= And [ ##group`"Csr"; ##group`"isImm" ] ;
 
       "Reg_tag_cs1Tag" ::= Or [ ##group`"Cjalr"; ##group`"CMove" ] ;
       "Reg_tag_AddrBoundsCheck" ::=
@@ -691,51 +714,41 @@ Section DecodeInstGroup.
       "Reg_ecap_cs1Ecap" ::=
         Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CClearTag";
              ##group`"CMove" ] ;
+      "Reg_ecap_decodedECap" ::= ##group`"CSetHigh" ;
+
       "Reg_addr_AdderBeforeBoundsCheck" ::=
         Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"Load"; ##group`"Store" ] ;
+      "Reg_addr_ComparatorGeneralLt" ::= ##group`"Slt" ;
+      "Reg_addr_Logical" ::= ##group`"Logical" ;
       "Reg_addr_AdderToOutput" ::=
         Or [ ##group`"Cjal"; ##group`"Cjalr"; ##group`"AddSub" ] ;
+      "Reg_addr_CGetPerm" ::= ##group`"CGetPerm" ;
+      "Reg_addr_CGetType" ::= ##group`"CGetType" ;
+      "Reg_addr_CGetTag" ::= ##group`"CGetTag" ;
+      "Reg_addr_CGetAddr" ::= ##group`"CGetAddr" ;
+      "Reg_addr_CGetHigh" ::= ##group`"CGetHigh" ;
       "Reg_addr_Saturater" ::=
         Or [ ##group`"CGetBase"; ##group`"CGetLen"; ##group`"CGetTop" ] ;
       "Reg_addr_cs2Addr" ::= Or [ ##group`"CSetAddr"; ##group`"Scr"; ##group`"Csr" ] ;
       "Reg_addr_cs1Addr" ::=
         Or [ ##group`"CClearTag"; ##group`"CMove"; ##group`"CSetHigh" ] ;
-      "ECall" ::= ##group`"ECall" ;
-      "EBreak" ::= ##group`"EBreak" ;
+      "Reg_addr_BoundsCram" ::= ##group`"Cram" ;
+      "Reg_addr_BoundsCrrl" ::= ##group`"Crrl" ;
+      "Reg_addr_CapEq" ::= ##group`"CSetEqual" ;
+      (* "Reg_addr_uimm20" ::= ##group`"Lui" ; *)
+
+      "Branch" ::= ##group`"Branch" ;
+      "Cjal" ::= ##group`"Cjal" ;
       "Load" ::= ##group`"Load" ;
       "Store" ::= ##group`"Store" ;
       "Fence" ::= ##group`"Fence" ;
-      "Branch" ::= ##group`"Branch" ;
-      "Cjal" ::= ##group`"Cjal" ;
-      "AddSub" ::= ##group`"AddSub" ;
-      "CGetLen" ::= ##group`"CGetLen" ;
       "Unseal" ::= ##group`"Unseal" ;
+      "CSetBounds" ::= ##group`"CSetBounds" ;
+      "CGetLen" ::= ##group`"CGetLen" ;
       "Shift" ::= ##group`"Shift" ;
       "CTestSubset" ::= ##group`"CTestSubset" ;
-      "CSetBounds" ::= ##group`"CSetBounds" ;
-      "Mret" ::= ##group`"Mret" ;
-      "Cjalr" ::= ##group`"Cjalr" ;
       "Scr" ::= ##group`"Scr" ;
-      "ScrCsr_Write" ::= ##group`"ScrCsr_Write" ;
-      "ScrCsr_operand_isImm" ::= And [ ##group`"Csr"; ##group`"isImm" ] ;
-      "Csr_Set" ::= ##group`"Csr_Set" ;
-      "Csr_Clear" ::= ##group`"Csr_Clear" ;
       "CAndPerm" ::= ##group`"CAndPerm" ;
-      "isUnsigned" ::= ##group`"isUnsigned" ;
-      "Lui" ::= ##group`"Lui" ;
-      "Slt" ::= ##group`"Slt" ;
-      "Logical" ::= ##group`"Logical" ;
-      "CGetPerm" ::= ##group`"CGetPerm" ;
-      "CGetType" ::= ##group`"CGetType" ;
-      "CGetBase" ::= ##group`"CGetBase" ;
-      "CGetTag" ::= ##group`"CGetTag" ;
-      "CGetAddr" ::= ##group`"CGetAddr" ;
-      "CGetHigh" ::= ##group`"CGetHigh" ;
-      "CGetTop" ::= ##group`"CGetTop" ;
-      "Cram" ::= ##group`"Cram" ;
-      "Crrl" ::= ##group`"Crrl" ;
-      "CSetEqual" ::= ##group`"CSetEqual" ;
-      "CSetHigh" ::= ##group`"CSetHigh" ;
       "BranchOrCjalOrAuiPcc" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
       "BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr" ::=
