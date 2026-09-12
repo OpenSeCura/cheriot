@@ -387,17 +387,17 @@ AddCapBSz:
   baseExp: pcc.exp (Branch, Cjal, AuiPcc), cs1.exp (AuiCgp, CIncAddr, CSetAddr)
 
 ComparatorGeneral:
+  Outputs: cond, eq
   - EQ         : Branch (when BEQ/BNE), CSetEqual
   - LTSigned   : Branch (when BLT/BGE), Slt (when SLT/SLTI)
   - LTUnsigned : Branch (when BLTU/BGEU), Slt (when SLTU/SLTIU)
   - Invert     : Branch (when BNE, BGE, BGEU)
-  Outputs: cond, eq
   op1: cs1.addr (Branch, Slt, CSetEqual)
   op2: cs2.addr (Branch, Slt & !isImm, CSetEqual), simm12 (Slt & isImm)
 
 CjalrUnit:
-  - CheckSentryAndUnseal : Cjalr
   Outputs: tag, ecap, interruptStatus
+  - CheckSentryAndUnseal : Cjalr
   cs1: cs1 (Cjalr)
   inst: inst (Cjalr)
   currIntStatus: currInterruptStatus (Cjalr)
@@ -410,27 +410,27 @@ Logical:
   op2: cs2.addr (Logical & !isImm), simm12 (Logical & isImm)
 
 CAndPerm:
-  - MaskPerms : CAndPerm
   Outputs: tag, ecap
+  - MaskPerms : CAndPerm
   tag: cs1.tag (CAndPerm)
   ecap: cs1.ecap (CAndPerm)
   cs2Addr: cs2.addr (CAndPerm)
 
 SealerUnsealer:
+  Outputs: tag, ecap
   - Seal   : Seal
   - Unseal : Unseal
-  Outputs: tag, ecap
   tag: cs1.tag (Seal, Unseal)
   ecap: cs1.ecap (Seal, Unseal)
   cs2: cs2 (Seal, Unseal)
   inBounds: AddrBoundsCheck (Seal, Unseal)
 
 Bounds:
+  Outputs: base, length, top, E, cram, crrl, exact
   - SetBounds   : CSetBounds
   - ComputeCram : Cram
   - ComputeCrrl : Crrl
   - RoundDown   : CSetBounds (when CSetBoundsRoundDown)
-  Outputs: base, length, top, E, cram, crrl, exact
   base: cs1.addr (CSetBounds, Cram, Crrl)
   length: cs2.addr (CSetBounds & !isImm), zimm12 (CSetBounds & isImm), cs1.addr (Cram, Crrl)
 
@@ -461,9 +461,9 @@ AdderBeforeRepCheck:
   shifter: Shifter (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
 
 ComparatorTopOrRep:
+  Outputs: lt, eq
   - LTEUnsigned : CTestSubset, CSetBounds
   - LTUnsigned  : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, Load, Store, Seal, Unseal
-  Outputs: lt, eq
   addr: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetBounds, Load, Store),
         cs2.addr (Seal, CSetAddr), cs1.otype (Unseal), cs1.top (CTestSubset)
   topRep: AdderBeforeRepCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr),
@@ -511,27 +511,27 @@ ScrSanitizer:
   inst: inst (Scr)
 
 EncodeCap:
-  - Compress : CGetHigh, Store
   Outputs: cap
+  - Compress : CGetHigh, Store
   ecap: cs1.ecap (CGetHigh), cs2.ecap (Store)
 
 DecodeCap:
-  - Decompress : CSetHigh
   Outputs: ecap
+  - Decompress : CSetHigh
   cap: cs2.addr (CSetHigh)
   addr: cs1.addr (CSetHigh)
 
 FenceI:
-  - FenceI : Fence
   Outputs: isFenceI
+  - FenceI : Fence
   inst: inst (Fence)
 
 Deferred (Mux):
+  Outputs: isDeferred, (MemPayload {memSize, LoadOp {isUnsigned, isLM, isLG} OR Store {tag, cap, addr}} OR
+                        FenceOp {RR, RW, WR, WW})
   - Load   : Load
   - Store  : Store
   - Fence  : Fence
-  Outputs: isDeferred, (MemPayload {memSize, LoadOp {isUnsigned, isLM, isLG} OR Store {tag, cap, addr}} OR
-                        FenceOp {RR, RW, WR, WW})
   cs1Perms: cs1.perms (Load)
   inst: inst (Load, Store, Fence)
   storeTag: cs2.tag (Store)
@@ -539,11 +539,11 @@ Deferred (Mux):
   storeData: cs2.addr (Store)
 
 Exception (Mux):
+  Outputs: isException, mcause, isScr, regIdx, mtval
   - ECall  : ECall
   - EBreak : EBreak
   - Load   : Load
   - Store  : Store
-  Outputs: isException, mcause, isScr, regIdx, mtval
   fetchExc: fetchExc (all)
   decodeExc: decodeExc (all)
   inst: inst (all)
@@ -553,12 +553,12 @@ Exception (Mux):
   addr: AdderBeforeBoundsCheck (Load, Store)
 
 ControlFlow (Mux):
+  Outputs: isCf, CfPayload {NewPcc, CfOp {ControlFlowAddrOnly {Branch {isTaken} OR Cjal} OR
+                                          ControlFlowAddrECap {Cjalr {newInterruptStatus} OR Mret}}}
   - Mret   : Mret
   - Cjal   : Cjal
   - Cjalr  : Cjalr
   - Branch : Branch
-  Outputs: isCf, CfPayload {NewPcc, CfOp {ControlFlowAddrOnly {Branch {isTaken} OR Cjal} OR
-                                          ControlFlowAddrECap {Cjalr {newInterruptStatus} OR Mret}}}
   isCond: ComparatorGeneral.cond (Branch)
   cs2: cs2 (Mret)
   addrIn: AdderBeforeBoundsCheck (Branch, Cjal, Cjalr)
@@ -569,12 +569,12 @@ ControlFlow (Mux):
   pccTag: pcc.tag (Branch, Cjal, Cjalr, Mret)
 
 ScrCsr (Mux):
+  Outputs: isScrCsr, SpecialDest, SpecialValue, isWrite
   - Set   : Csr_Set
   - Clear : Csr_Clear
   - Write : ScrCsr_Write
-  Outputs: isScrCsr, SpecialDest, SpecialValue, isWrite
   cs2Idx: cs2Idx (Csr, Scr)
-  newTag: ScrSanitizerOut (Scr)
+  newTag: ScrSanitizer (Scr)
   cs1Ecap: cs1.ecap (Scr)
   operand: zimm5 (Csr & isImm), cs1.addr (Csr & !isImm, Scr)
   oldVal: cs2.addr (Csr)
@@ -831,7 +831,7 @@ Section FunctionalUnits.
     LetE sum : Addr <- Add [ #base; #offset ];
     RetE #sum.
 
-  Definition AdderToOutput (base offset : ty (Bit Xlen)) (isSub : ty Bool) : LetExpr ty (Bit Xlen) :=
+  Definition AdderToOutput (isSub : ty Bool) (base offset : ty (Bit Xlen)) : LetExpr ty (Bit Xlen) :=
     LetE op2 : Bit Xlen <- ITE #isSub (Not #offset) #offset;
     LetE cin : Bit Xlen <- ZeroExtendTo Xlen (ToBit #isSub);
     LetE sum : Bit Xlen <- Add [ #base; #op2; #cin ];
@@ -845,7 +845,7 @@ Section FunctionalUnits.
     "cond" :: Bool ;
     "eq"   :: Bool }.
 
-  Definition ComparatorGeneral (op1 op2 : ty (Bit Xlen)) (isUnsigned checkLt checkEq invertRes : ty Bool)
+  Definition ComparatorGeneral (isUnsigned checkLt checkEq invertRes : ty Bool) (op1 op2 : ty (Bit Xlen))
   : LetExpr ty ComparatorGeneralRes :=
     LetE flipBit : Bit 1 <- ToBit (Not #isUnsigned) ;
     let flipMsb e:= {< Xor [#flipBit; TruncMsb 1 (Xlen-1) e], TruncLsb 1 (Xlen-1) e >} in
@@ -898,7 +898,7 @@ Section FunctionalUnits.
                                    "ecap"            ::= #nextPccECap;
                                    "interruptStatus" ::= #nextIntStatus }).
 
-  Definition Logical (op1 op2 : ty (Bit Xlen)) (opSel : ty (Bit 2)) : LetExpr ty (Bit Xlen) :=
+  Definition Logical (opSel : ty (Bit 2)) (op1 op2 : ty (Bit Xlen)) : LetExpr ty (Bit Xlen) :=
     LetE andRes : Bit Xlen <- And [ #op1; #op2 ];
     LetE orRes  : Bit Xlen <- Or [ #op1; #op2 ];
     LetE xorRes : Bit Xlen <- Xor [ #op1; #op2 ];
@@ -923,7 +923,7 @@ Section FunctionalUnits.
     LetE outECap : ECap <- ##ecap `{ "perms" <- #newPerms } ;
     @RetE _ TagECap (STRUCT { "tag" ::= #outTag; "ecap" ::= #outECap }).
 
-  Definition SealerUnsealer (isUnseal inBounds tag : ty Bool) (ecap : ty ECap) (cs2 : ty FullECapWithTag)
+  Definition SealerUnsealer (isUnseal : ty Bool) (inBounds tag : ty Bool) (ecap : ty ECap) (cs2 : ty FullECapWithTag)
   : LetExpr ty TagECap :=
     LetE ecap2 : ECap <- ##cs2`"ecap" ;
     LetE perms1 : CapPerms <- ##ecap`"perms" ;
@@ -1089,7 +1089,7 @@ Section FunctionalUnits.
           By Step 1 of the previous proof, d >= 2^(CapBSz - 1), so MSB is strictly 1. (QED)
    *)
 
-  Definition Bounds (base length : ty Addr) (isRoundDown : ty Bool) : LetExpr ty BoundsRes :=
+  Definition Bounds (isRoundDown : ty Bool) (base length : ty Addr) : LetExpr ty BoundsRes :=
     ( LetE lenTrunc : Bit (AddrSz - CapBSz) <- TruncMsb (AddrSz - CapBSz) CapBSz #length;
       LETE clz: Bit ExpSz <- countLeadingZerosArray (mkBoolArray (AddrSz - CapBSz) #lenTrunc) _;
       LetE e_init: Bit ExpSz <- Add [$(AddrSz + 1 - CapBSz); Not #clz];
@@ -1145,11 +1145,12 @@ Section FunctionalUnits.
                           "length" ::= #outLen;
                           "exact" ::= And [isZero #base_mod_ef; isZero #length_mod_ef] })).
 
-  Definition BoundsExact (inBounds boundsAreExact instIsExact : ty Bool) : LetExpr ty Bool :=
+  Definition BoundsExact (instIsExact inBounds boundsAreExact : ty Bool) : LetExpr ty Bool :=
     @RetE _ Bool (And [ #inBounds; Or [ Not #instIsExact; #boundsAreExact ] ]).
 
-  Definition Saturater (base : ty (Bit (AddrSz + 1))) (top : ty (Bit (AddrSz + 2)))
-                       (sub : ty (Bit AddrSz)) (isBase isTop isLen : ty Bool)
+  Definition Saturater (isBase isTop isLen : ty Bool)
+                       (base : ty (Bit (AddrSz + 1))) (top : ty (Bit (AddrSz + 2)))
+                       (sub : ty (Bit AddrSz))
   : LetExpr ty (Bit Xlen) :=
     LetE T31 : Bool <- FromBit Bool (TruncMsb 1 (AddrSz - 1) (TruncLsb 2 AddrSz #top)) ;
     LetE B31 : Bool <- FromBit Bool (TruncMsb 1 (AddrSz - 1) (TruncLsb 1 AddrSz #base)) ;
@@ -1173,7 +1174,7 @@ Section FunctionalUnits.
     @RetE _ (Bit Xlen) (ITE #isSaturated (Const ty (Bit Xlen) (InvDefault _)) #rawData).
 
   (* If isArith is set for left shift, results are wrong *)
-  Definition Shifter (data : ty (Bit Xlen)) (shamt : ty (Bit LgXlen)) (isRight isArith : ty Bool)
+  Definition Shifter (isRight isArith : ty Bool) (data : ty (Bit Xlen)) (shamt : ty (Bit LgXlen))
   : LetExpr ty (Bit Xlen) :=
     ( let rev e := ToBit (ArrayReverse (FromBit (Array (Z.to_nat Xlen) Bool) e)) in
       LetE inpVal : Bit Xlen <- ITE #isRight #data (rev #data) ;
@@ -1193,7 +1194,7 @@ Section FunctionalUnits.
     "lt" :: Bool ;
     "eq" :: Bool }.
 
-  Definition ComparatorTopOrRep (addr topRep : ty (Bit (AddrSz + 2))) (checkLte : ty Bool) : LetExpr ty ComparatorOut :=
+  Definition ComparatorTopOrRep (checkLte : ty Bool) (addr topRep : ty (Bit (AddrSz + 2))) : LetExpr ty ComparatorOut :=
     LetE ltRes : Bool <- Ult #addr #topRep;
     LetE eqRes : Bool <- Eq #addr #topRep;
     LetE lteRes : Bool <- Or [ #ltRes; #eqRes ];
@@ -1471,12 +1472,12 @@ Section FunctionalUnits.
     LetE cfPayloadOpt : Option CfPayload <- ITE0 #isCf (mkSome #cfPayload) ;
     RetE #cfPayloadOpt.
 
-  Definition ScrCsr (cs2Idx : ty (TaggedUnion Cs2Source))
+  Definition ScrCsr (isSet isClear isWrite : ty Bool)
+                    (cs2Idx : ty (TaggedUnion Cs2Source))
                     (newTag : ty Bool)
                     (cs1Ecap : ty ECap)
                     (operand : ty Addr)
-                    (oldVal : ty Addr)
-                    (isSet isClear isWrite : ty Bool) : LetExpr ty (Option ScrCsrPayload) :=
+                    (oldVal : ty Addr) : LetExpr ty (Option ScrCsrPayload) :=
     LetE isScrCsr : Bool <- #cs2Idx `? "ScrCsr" ;
     LetE scrCsrIdx : (TaggedUnion ScrCsrIdx) <- #cs2Idx `! "ScrCsr" ;
     (* isSet and isClear are false for Scr and for CSRRW[I], leaving newAddr = operand *)
@@ -1494,7 +1495,7 @@ Section FunctionalUnits.
     LetE scrCsr : Option ScrCsrPayload <- ITE0 #isScrCsr (mkSome #scrCsrPayload) ;
     RetE #scrCsr.
 
-  Definition FenceI (inst : ty Inst) (isFence : ty Bool) : LetExpr ty Bool :=
+  Definition FenceI (isFence : ty Bool) (inst : ty Inst) : LetExpr ty Bool :=
     RetE (And [ #isFence ; isNotZero (#inst`[12:12]) ]).
 
 End FunctionalUnits.

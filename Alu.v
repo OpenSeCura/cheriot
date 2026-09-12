@@ -119,7 +119,7 @@ Section Alu.
         $(InstSz/8) ;
     LetE AdderToOutput_isSub : Bool <- ##aluControl`"AdderToOutput_isSub" ;
     LETE AdderToOutputOut : Bit Xlen <-
-      AdderToOutput AdderToOutput_base AdderToOutput_offset AdderToOutput_isSub ;
+      AdderToOutput AdderToOutput_isSub AdderToOutput_base AdderToOutput_offset ;
 
     LetE AddCapBSz_baseExp : Bit ExpSz <-
       ITE (#BranchOrCjalOrAuiPcc) #pccExp #cs1Exp ;
@@ -136,7 +136,7 @@ Section Alu.
     LetE Shifter_isRight : Bool <- ##aluControl`"Shifter_isRight" ;
     LetE Shifter_isArith : Bool <- ##aluControl`"Shifter_isArith" ;
     LETE ShifterOut : Bit Xlen <-
-      Shifter Shifter_data Shifter_shamt Shifter_isRight Shifter_isArith ;
+      Shifter Shifter_isRight Shifter_isArith Shifter_data Shifter_shamt ;
 
     LetE AdderBeforeRepCheck_base : Bit (AddrSz + 1) <-
       ITE (#BranchOrCjalOrAuiPcc) #pccBase #cs1Base ;
@@ -159,7 +159,7 @@ Section Alu.
         #cs1Top ;
     LetE ComparatorTopOrRep_checkLte : Bool <- ##aluControl`"ComparatorTopOrRep_checkLte" ;
     LETE ComparatorTopOrRepOut : ComparatorOut <-
-      ComparatorTopOrRep ComparatorTopOrRep_addr ComparatorTopOrRep_topRep ComparatorTopOrRep_checkLte ;
+      ComparatorTopOrRep ComparatorTopOrRep_checkLte ComparatorTopOrRep_addr ComparatorTopOrRep_topRep ;
 
     LetE ComparatorBase_addr : Bit (AddrSz + 1) <-
       caseDefault (k := Bit (AddrSz + 1)) [
@@ -196,9 +196,9 @@ Section Alu.
     LetE ComparatorGeneral_checkEq    : Bool <- ##aluControl`"ComparatorGeneral_checkEq" ;
     LetE ComparatorGeneral_invertRes  : Bool <- ##aluControl`"ComparatorGeneral_invertRes" ;
     LETE ComparatorGeneralOut : ComparatorGeneralRes <-
-      ComparatorGeneral ComparatorGeneral_op1 ComparatorGeneral_op2
-                        ComparatorGeneral_isUnsigned ComparatorGeneral_checkLt
-                        ComparatorGeneral_checkEq ComparatorGeneral_invertRes ;
+      ComparatorGeneral ComparatorGeneral_isUnsigned ComparatorGeneral_checkLt
+                        ComparatorGeneral_checkEq ComparatorGeneral_invertRes
+                        ComparatorGeneral_op1 ComparatorGeneral_op2 ;
 
     LETE CjalrUnitOut : CjalrUnitRes <- CjalrUnit cs1 inst currInterruptStatus ;
 
@@ -206,7 +206,7 @@ Section Alu.
     LetE Logical_op2 : Bit Xlen <-
       ITE (##aluControl`"Logical_op2_isCs2AddrNotSimm12") #cs2Addr #simm12 ;
     LetE Logical_opSel : Bit 2 <- ##inst`[13:12] ;
-    LETE LogicalOut : Bit Xlen <- Logical Logical_op1 Logical_op2 Logical_opSel ;
+    LETE LogicalOut : Bit Xlen <- Logical Logical_opSel Logical_op1 Logical_op2 ;
 
     LETE CAndPermOut : TagECap <- CAndPerm cs1Tag cs1ECap cs2Addr ;
 
@@ -215,17 +215,17 @@ Section Alu.
                                      (##aluControl`"Bounds_reqLimit_cs1Addr", #cs1Addr) ]
         #zimm12 ;
     LetE Bounds_isRoundDown : Bool <- ##aluControl`"Bounds_isRoundDown" ;
-    LETE BoundsOut : BoundsRes <- Bounds cs1Addr Bounds_reqLimit Bounds_isRoundDown ;
+    LETE BoundsOut : BoundsRes <- Bounds Bounds_isRoundDown cs1Addr Bounds_reqLimit ;
 
     LetE Bounds_boundsExact : Bool <- ##BoundsOut`"exact" ;
     LetE Bounds_instIsExact : Bool <- ##aluControl`"Bounds_isExact" ;
-    LETE BoundsExactOut : Bool <- BoundsExact AddrBoundsCheckOut Bounds_boundsExact Bounds_instIsExact ;
+    LETE BoundsExactOut : Bool <- BoundsExact Bounds_instIsExact AddrBoundsCheckOut Bounds_boundsExact ;
 
     LetE Saturater_isBase : Bool <- ##aluControl`"CGetBase" ;
     LetE Saturater_isTop : Bool <- ##aluControl`"CGetTop" ;
     LetE Saturater_isLen : Bool <- ##aluControl`"CGetLen" ;
     LETE SaturaterOut : Bit Xlen <-
-      Saturater cs1Base cs1Top AdderToOutputOut Saturater_isBase Saturater_isTop Saturater_isLen ;
+      Saturater Saturater_isBase Saturater_isTop Saturater_isLen cs1Base cs1Top AdderToOutputOut ;
 
     LETE CapSubsetOut : Bool <-
       CapSubset AddrBoundsCheck_topLt AddrBoundsCheck_baseGe cs1Tag cs2Tag cs1Perms cs2Perms ;
@@ -319,7 +319,7 @@ Section Alu.
     LETE DeferredOpRes : Option DeferredUnion <-
       Deferred isLoad isStore isFence cs1Perms inst AdderBeforeBoundsCheckOut storeTag encodedCap storeData ;
 
-    LETE isFenceIOut : Bool <- FenceI inst isFence ;
+    LETE isFenceIOut : Bool <- FenceI isFence inst ;
 
     LetE RegVal : FullECapWithTag <-
       STRUCT { "tag" ::= #Reg_tag; "ecap" ::= #Reg_ecap; "addr" ::= #Reg_addr } ;
@@ -332,8 +332,8 @@ Section Alu.
     LetE ScrCsr_isClear : Bool <- ##aluControl`"Csr_Clear" ;
     LetE ScrCsr_isWrite : Bool <- ##aluControl`"ScrCsr_Write" ;
     LETE ScrCsrOut : Option ScrCsrPayload <-
-      ScrCsr cs2Idx ScrSanitizerOut cs1ECap ScrCsr_operand cs2Addr
-             ScrCsr_isSet ScrCsr_isClear ScrCsr_isWrite ;
+      ScrCsr ScrCsr_isSet ScrCsr_isClear ScrCsr_isWrite
+             cs2Idx ScrSanitizerOut cs1ECap ScrCsr_operand cs2Addr ;
 
     @RetE _ AluOut (STRUCT {
       "isComp"      ::= #isComp ;

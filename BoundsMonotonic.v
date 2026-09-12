@@ -160,7 +160,7 @@ Proof.
 Qed.
 
 Lemma bounds_E_nonneg : forall base length isRoundDown bounds,
-  bounds = evalLetExpr (Bounds base length isRoundDown) ->
+  bounds = evalLetExpr (Bounds isRoundDown base length) ->
   0 <= Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))).
 Proof.
   intros. unfold Zmod.to_Z.
@@ -546,7 +546,7 @@ Qed.
 (* ========================================================================= *)
 
 Lemma bounds_base_math : forall (base length : bits AddrSz) (isRoundDown : bool) (bounds : type BoundsRes),
-  bounds = evalLetExpr (Bounds base length isRoundDown) ->
+  bounds = evalLetExpr (Bounds isRoundDown base length) ->
   let ef := Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) in
   Zmod.to_Z (bounds@%"base") = (Zmod.to_Z base / 2^ef) * 2^ef.
 Proof.
@@ -657,7 +657,7 @@ Proof.
 Qed.
 
 Lemma bounds_top_rel : forall base length isRoundDown B,
-  B = evalLetExpr (Bounds (ty:=type) base length isRoundDown) ->
+  B = evalLetExpr (Bounds (ty:=type) isRoundDown base length) ->
   Zmod.to_Z (B@%"top") = (Zmod.to_Z (B@%"base") + Zmod.to_Z (B@%"length")) mod 2^(AddrSz + 2).
 Proof.
   intros base length isRoundDown B HB.
@@ -771,7 +771,7 @@ Proof.
 Qed.
 
 Lemma bounds_top_le_add : forall base length isRoundDown bounds,
-  bounds = evalLetExpr (Bounds base length isRoundDown) ->
+  bounds = evalLetExpr (Bounds isRoundDown base length) ->
   Zmod.to_Z (bounds@%"top") <= Zmod.to_Z (bounds@%"base") + Zmod.to_Z (bounds@%"length").
 Proof.
   intros base length isRoundDown bounds HB.
@@ -1116,7 +1116,7 @@ Qed.
 (* ========================================================================= *)
 
 Lemma bounds_roundDown_length_le : forall (base length : bits AddrSz) (bounds : type BoundsRes),
-  bounds = evalLetExpr (Bounds base length true) ->
+  bounds = evalLetExpr (Bounds true base length) ->
   Zmod.to_Z (bounds@%"length") <= Zmod.to_Z length.
 Proof.
   intros base length bounds Hbounds.
@@ -1240,7 +1240,7 @@ Proof.
 Qed.
 
 Lemma bounds_length_roundDown_le : forall (base length : bits AddrSz) (bounds : type BoundsRes),
-  bounds = evalLetExpr (Bounds base length true) ->
+  bounds = evalLetExpr (Bounds true base length) ->
   let ef := Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) in
   Zmod.to_Z (bounds@%"length") <= ((Zmod.to_Z length + (Zmod.to_Z base mod 2^ef) + 2^ef - 1) / 2^ef) * 2^ef.
 Proof.
@@ -1773,7 +1773,7 @@ Proof.
 Qed.
 
 Lemma bounds_length_roundUp_le : forall base length bounds,
-  bounds = evalLetExpr (Bounds base length false) ->
+  bounds = evalLetExpr (Bounds false base length) ->
   let ef := Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) in
   Zmod.to_Z (bounds@%"length") <= ((Zmod.to_Z length + (Zmod.to_Z base mod 2^ef) + 2^ef - 1) / 2^ef) * 2^ef.
 Proof.
@@ -2437,7 +2437,7 @@ Proof.
 Qed.
 
 Lemma bounds_top_math : forall base length isRoundDown bounds,
-  bounds = evalLetExpr (Bounds base length isRoundDown) ->
+  bounds = evalLetExpr (Bounds isRoundDown base length) ->
   let ef := Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) in
   Zmod.to_Z (bounds@%"top") <= ((Zmod.to_Z base + Zmod.to_Z length + 2^ef - 1) / 2^ef) * 2^ef.
 Proof.
@@ -3041,7 +3041,7 @@ Proof.
 Qed.
 
 Lemma bounds_E_le_aligned_width : forall base length isRoundDown bounds e,
-  bounds = evalLetExpr (Bounds base length isRoundDown) ->
+  bounds = evalLetExpr (Bounds isRoundDown base length) ->
   0 <= e <= AddrSz - CapBSz ->
   Zmod.to_Z base mod 2^e + Zmod.to_Z length <= (2^CapBSz - 1) * 2^e ->
   Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) <= e.
@@ -3313,7 +3313,7 @@ Qed.
 (* ------------------------------------------------------------------------- *)
 
 Lemma bounds_E_le_Emax : forall base length isRoundDown bounds,
-  bounds = evalLetExpr (Bounds base length isRoundDown) ->
+  bounds = evalLetExpr (Bounds isRoundDown base length) ->
   Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) <= Emax.
 Proof.
   intros base length isRoundDown bounds Hbounds.
@@ -3442,7 +3442,7 @@ Qed.
 Lemma bounds_E_le_ecap_ECorrected :
   forall cap addr base length isRoundDown ecap bounds,
   ecap = evalLetExpr (DecodeCap cap addr) ->
-  bounds = evalLetExpr (Bounds base length isRoundDown) ->
+  bounds = evalLetExpr (Bounds isRoundDown base length) ->
   Zmod.to_Z base >= Zmod.to_Z (ecap@%"base") /\
     Zmod.to_Z base + Zmod.to_Z length <= Zmod.to_Z (ecap@%"top") ->
   Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE")))
@@ -3474,7 +3474,7 @@ Qed.
 
 Theorem BoundsMonotonic cap addr base length isRoundDown:
   let ecap : type ECap := evalLetExpr (DecodeCap cap addr) in
-  let bounds : type BoundsRes := evalLetExpr (Bounds base length isRoundDown) in
+  let bounds : type BoundsRes := evalLetExpr (Bounds isRoundDown base length) in
   (Zmod.to_Z base >= Zmod.to_Z (ecap@%"base") /\ Zmod.to_Z base + Zmod.to_Z length <= Zmod.to_Z (ecap@%"top")) ->
   (Zmod.to_Z (bounds@%"base") >= Zmod.to_Z (ecap@%"base") /\ Zmod.to_Z (bounds@%"top") <= Zmod.to_Z (ecap@%"top")).
 Proof.
@@ -3535,7 +3535,7 @@ Qed.
 (* ========================================================================= *)
 
 Lemma bounds_top_eq : forall (base length : bits AddrSz) (isRoundDown : bool) (bounds : type BoundsRes),
-  bounds = evalLetExpr (Bounds base length isRoundDown) ->
+  bounds = evalLetExpr (Bounds isRoundDown base length) ->
   Zmod.to_Z (bounds@%"top") = Zmod.to_Z (bounds@%"base") + Zmod.to_Z (bounds@%"length").
 Proof.
   intros base length isRoundDown bounds HB.
@@ -3557,7 +3557,7 @@ Proof.
 Qed.
 
 Lemma bounds_base_le : forall (base length : bits AddrSz) (isRoundDown : bool) (bounds : type BoundsRes),
-  bounds = evalLetExpr (Bounds base length isRoundDown) ->
+  bounds = evalLetExpr (Bounds isRoundDown base length) ->
   Zmod.to_Z (bounds@%"base") <= Zmod.to_Z base.
 Proof.
   intros base length isRoundDown bounds HB.
@@ -3570,7 +3570,7 @@ Proof.
 Qed.
 
 Lemma bounds_roundUp_min : forall (base length : bits AddrSz) (bounds : type BoundsRes),
-  bounds = evalLetExpr (Bounds base length false) ->
+  bounds = evalLetExpr (Bounds false base length) ->
   let ef := Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) in
   Zmod.to_Z (bounds@%"top") - 2^ef < Zmod.to_Z base + Zmod.to_Z length.
 Proof.
@@ -3693,7 +3693,7 @@ Proof.
 Qed.
 
 Lemma bounds_roundDown_top_le : forall (base length : bits AddrSz) (bounds : type BoundsRes),
-  bounds = evalLetExpr (Bounds base length true) ->
+  bounds = evalLetExpr (Bounds true base length) ->
   Zmod.to_Z (bounds@%"top") <= Zmod.to_Z base + Zmod.to_Z length.
 Proof.
   intros base length bounds HB.
@@ -3705,7 +3705,7 @@ Proof.
 Qed.
 
 Lemma bounds_length_m_e : forall (base length : bits AddrSz) (isRoundDown : bool) (bounds : type BoundsRes),
-  bounds = evalLetExpr (Bounds base length isRoundDown) ->
+  bounds = evalLetExpr (Bounds isRoundDown base length) ->
   let e := Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) in
   let m := Zmod.to_Z (bounds@%"m") in
   let outLength := Zmod.to_Z (bounds@%"length") in
@@ -3991,7 +3991,7 @@ Qed.
 (* ========================================================================= *)
 
 Lemma bounds_roundUp_m_norm : forall (base length : bits AddrSz) (bounds : type BoundsRes),
-  bounds = evalLetExpr (Bounds base length false) ->
+  bounds = evalLetExpr (Bounds false base length) ->
   let e := Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) in
   let m := Zmod.to_Z (bounds@%"m") in
   e > 0 -> 2^(CapBSz - 1) <= m.
@@ -4369,7 +4369,7 @@ Qed.
 
 Lemma bounds_roundUp_covering :
   forall (base length : bits AddrSz) (bounds : type BoundsRes),
-  bounds = evalLetExpr (Bounds base length false) ->
+  bounds = evalLetExpr (Bounds false base length) ->
   let outBase := Zmod.to_Z (bounds@%"base") in
   let outLength := Zmod.to_Z (bounds@%"length") in
   outBase + outLength >= Zmod.to_Z base + Zmod.to_Z length.
@@ -4683,7 +4683,7 @@ Qed.
 
 Theorem BoundsRoundUpProperties :
   forall (base length : bits AddrSz) (bounds : type BoundsRes),
-  bounds = evalLetExpr (Bounds base length false) ->
+  bounds = evalLetExpr (Bounds false base length) ->
   let e := Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) in
   let m := Zmod.to_Z (bounds@%"m") in
   let outBase := Zmod.to_Z (bounds@%"base") in
@@ -4916,7 +4916,7 @@ Proof.
 Qed.
 
 Lemma bounds_roundDown_base_eq : forall (base length : bits AddrSz) (bounds : type BoundsRes),
-  bounds = evalLetExpr (Bounds base length true) ->
+  bounds = evalLetExpr (Bounds true base length) ->
   let outBase := Zmod.to_Z (bounds@%"base") in
   outBase = Zmod.to_Z base.
 Proof.
@@ -5011,7 +5011,7 @@ Proof.
 Qed.
 
 Lemma bounds_roundDown_m_norm : forall (base length : bits AddrSz) (bounds : type BoundsRes),
-  bounds = evalLetExpr (Bounds base length true) ->
+  bounds = evalLetExpr (Bounds true base length) ->
   let e := Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) in
   let m := Zmod.to_Z (bounds@%"m") in
   e > 0 -> 2^(CapBSz - 1) <= m.
@@ -5143,7 +5143,7 @@ Qed.
 
 Theorem BoundsRoundDownProperties :
   forall (base length : bits AddrSz) (bounds : type BoundsRes),
-  bounds = evalLetExpr (Bounds base length true) ->
+  bounds = evalLetExpr (Bounds true base length) ->
   let e := Zmod.to_Z (evalExpr (get_E_from_cE (bounds@%"cE"))) in
   let m := Zmod.to_Z (bounds@%"m") in
   let outBase := Zmod.to_Z (bounds@%"base") in
