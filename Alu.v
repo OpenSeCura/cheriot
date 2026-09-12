@@ -398,14 +398,15 @@ End Alu.
 
 Section AluRF.
   Variable dom : string.
+  Variable pcAddrInit : Z.
   Variable ty : Kind -> Type.
-  Local Notation rfTree := (rfTree dom).
-  Local Notation gprPathsWithKind := (gprPathsWithKind dom).
-  Local Notation scrPathsWithKind := (scrPathsWithKind dom).
-  Local Notation csrPathsWithKind := (csrPathsWithKind dom).
-  Local Notation incrementMinstret := (incrementMinstret dom).
-  Local Notation incrementMcycle := (incrementMcycle dom).
-  Local Notation updateMshwmOnStore := (updateMshwmOnStore dom).
+  Local Notation rfTree := (rfTree dom pcAddrInit).
+  Local Notation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
+  Local Notation scrPathsWithKind := (scrPathsWithKind dom pcAddrInit).
+  Local Notation csrPathsWithKind := (csrPathsWithKind dom pcAddrInit).
+  Local Notation incrementMinstret := (incrementMinstret dom pcAddrInit).
+  Local Notation incrementMcycle := (incrementMcycle dom pcAddrInit).
+  Local Notation updateMshwmOnStore := (updateMshwmOnStore dom pcAddrInit).
 
   Definition executeNonDeferred (aluOut : ty AluOutUnion)
     : Action ty rfTree ExecuteOut :=

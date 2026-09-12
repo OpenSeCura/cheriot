@@ -137,11 +137,12 @@ Definition concreteUart : @SifiveUartInstance "peripheral" concreteRegions :=
  * =========================================================================== *)
 
 Definition specSysTreeInst : Tree DomainElem :=
-  specSysTree "core" concreteRegions.
+  specSysTree "core" PcAddrInit concreteRegions.
 
 Definition specModInst : Mod specSysTreeInst :=
   @spec "core"
         "peripheral"
+        PcAddrInit
         concreteRevConfig
         concreteRegions
         concreteClint

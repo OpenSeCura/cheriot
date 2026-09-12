@@ -28,14 +28,15 @@ Local Open Scope guru_scope.
 
 Section FetchStages.
   Variable dom : string.
+  Variable pcAddrInit : Z.
   Variable fetchCapacity deferredCapacity : nat.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable ty : Kind -> Type.
 
   Local Notation memTree := (memIfc ty).(memTree).
-  Local Notation coreTree := (coreTree dom memTree fetchCapacity deferredCapacity).
+  Local Notation coreTree := (coreTree dom pcAddrInit memTree fetchCapacity deferredCapacity).
   Local Notation capacity := fetchCapacity.
-  Local Notation gprPathsWithKind := (gprPathsWithKind dom).
+  Local Notation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
     getNodePath coreTree "core.rf".

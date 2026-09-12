@@ -269,10 +269,11 @@ End CombinationalDeferred.
 
 Section SpecCoreTree.
   Variable dom : string.
+  Variable pcAddrInit : Z.
 
   Definition specCoreTree (regions : list MemRegion) : Tree DomainElem :=
     Node "core" [
-      rfTree dom ;
+      rfTree dom pcAddrInit ;
       specMemTree regions
     ].
 
@@ -298,7 +299,7 @@ Section SpecCoreTree.
      * specFetch (Atomic Combinational Fetch)
      * =========================================================================== *)
     Definition specFetch : Action ty coreTree FetchOut :=
-      LetA pcc : FullECapWithTag <- liftAction np_rf (readRegsList (gprPathsWithKind dom) ($0 : Expr ty (Bit RegIdxSzReal))) ;
+      LetA pcc : FullECapWithTag <- liftAction np_rf (readRegsList (gprPathsWithKind dom pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal))) ;
       LetA rawFull : FullCapWithTag <- liftAction np_mem (specMemRead regions (##pcc`"addr") $LgNumBytesInstSz) ;
       Let rawInst : Inst <- ##rawFull`"addr" ;
 
@@ -342,8 +343,8 @@ Section SpecCoreTree.
           Let memSize   : Bit LgLgNumBytesFullCapSz <- ##st`"memSize" ;
 
           Act (liftAction np_mem (specMemWrite regions #addr #stVal #memSize)) ;
-          Act (liftAction np_rf (updateMshwmOnStore dom #addr)) ;
-          Act (liftAction np_rf (incrementMinstret dom)) ;
+          Act (liftAction np_rf (updateMshwmOnStore dom pcAddrInit #addr)) ;
+          Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
           Retv
         ) Else (
           Let ld        : LoadCmd           <- ##memAct `! "Load" ;
@@ -359,23 +360,23 @@ Section SpecCoreTree.
             LetA revBit  : Bool          <- liftAction np_mem (readRevBit (##revInfo`"base")) ;
             LetL wbInfo  : WbCmd         <- dispatchRevResponse pr revBit ;
             If (isNotZero (##wbInfo`"dstIdx")) Then (
-              liftAction np_rf (writeRegsList (gprPathsWithKind dom) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
+              liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
             ) ;
-            Act (liftAction np_rf (incrementMinstret dom)) ;
+            Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
             Retv
           ) Else (
             Let wbInfo : WbCmd <- #outcome `! "Writeback" ;
             If (isNotZero (##wbInfo`"dstIdx")) Then (
-              liftAction np_rf (writeRegsList (gprPathsWithKind dom) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
+              liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
             ) ;
-            Act (liftAction np_rf (incrementMinstret dom)) ;
+            Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
             Retv
           ) ;
           Retv
         ) ;
         Retv
       ) Else (
-        Act (liftAction np_rf (incrementMinstret dom)) ;
+        Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
         Retv
       ) ;
       Retv.

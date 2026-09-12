@@ -33,10 +33,11 @@ Local Open Scope guru_scope.
 Section SpecDom.
   Variable core : string.
   Variable peripheral : string.
+  Variable pcAddrInit : Z.
 
   Definition specSysTree (regions : list MemRegion) : Tree DomainElem :=
     Node "sys" [
-      specCoreTree core regions
+      specCoreTree core pcAddrInit regions
     ].
 
   Section Spec.
@@ -47,15 +48,15 @@ Section SpecDom.
     Variable uart : @SifiveUartInstance peripheral regions.
     Variable plic : @PlicInstance core (S (length (collectIrqActions regions))) regions.
     Local Notation sysTree := (specSysTree regions).
-    Local Notation gprPathsWithKind := (gprPathsWithKind core).
-    Local Notation scrPathsWithKind := (scrPathsWithKind core).
-    Local Notation csrPathsWithKind := (csrPathsWithKind core).
-    Local Notation incrementMcycle := (incrementMcycle core).
-    Local Notation incrementMinstret := (incrementMinstret core).
-    Local Notation specFetch := (specFetch core).
-    Local Notation specExecuteDeferred := (specExecuteDeferred core).
-    Local Notation regRead := (regRead core).
-    Local Notation executeNonDeferred := (executeNonDeferred core).
+    Local Notation gprPathsWithKind := (gprPathsWithKind core pcAddrInit).
+    Local Notation scrPathsWithKind := (scrPathsWithKind core pcAddrInit).
+    Local Notation csrPathsWithKind := (csrPathsWithKind core pcAddrInit).
+    Local Notation incrementMcycle := (incrementMcycle core pcAddrInit).
+    Local Notation incrementMinstret := (incrementMinstret core pcAddrInit).
+    Local Notation specFetch := (specFetch core pcAddrInit).
+    Local Notation specExecuteDeferred := (specExecuteDeferred core pcAddrInit).
+    Local Notation regRead := (regRead core pcAddrInit).
+    Local Notation executeNonDeferred := (executeNonDeferred core pcAddrInit).
 
     Section Ty.
       Variable ty : Kind -> Type.

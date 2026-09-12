@@ -1064,11 +1064,14 @@ Definition AluOutUnion := STRUCT_TYPE {
 
 Section RfTree.
   Variable dom : string.
+  Variable pcAddrInit : Z.
 
+  (* gpr0 is PCC: it resets to the executable root at the entry point. *)
   Definition gprLeaves : list (Tree DomainElem) :=
     map (fun '(_, idx) =>
       Leaf ("gpr_" ++ hex_string_of_Z idx)%string
-           (dom, EReg (Build_Reg FullECapWithTag (Some (getDefault _)) false))
+           (dom, EReg (Build_Reg FullECapWithTag
+                         (Some (if Z.eqb idx 0 then ExecRoot pcAddrInit else getDefault _)) false))
     ) (enumerate (repeat tt (Z.to_nat NumRegs))).
 
   Definition scrLeaves : list (Tree DomainElem) :=
@@ -1144,9 +1147,9 @@ Section RfTree.
 
 End RfTree.
 
-Arguments incrementMinstret dom {ty}.
-Arguments incrementMcycle dom {ty}.
-Arguments updateMshwmOnStore dom {ty} stAddr.
+Arguments incrementMinstret dom pcAddrInit {ty}.
+Arguments incrementMcycle dom pcAddrInit {ty}.
+Arguments updateMshwmOnStore dom pcAddrInit {ty} stAddr.
 
 Definition DeferredReq := STRUCT_TYPE {
   "dstIdx" :: Bit RegIdxSz ;

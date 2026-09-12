@@ -32,6 +32,7 @@ Local Open Scope guru_scope.
 
 Section ImplDefines.
   Variable dom : string.
+  Variable pcAddrInit : Z.
 
   Definition fetchTree (capacity : nat) : Tree DomainElem :=
     Node "fetch" [
@@ -47,7 +48,7 @@ Section ImplDefines.
 
   Definition coreTree (memTree : Tree DomainElem) (fetchCapacity deferredCapacity : nat) : Tree DomainElem :=
     Node "core" [
-      rfTree dom ;
+      rfTree dom pcAddrInit ;
       Node "mem" [ memTree ] ;
       fetchTree fetchCapacity ;
       deferredTree deferredCapacity
