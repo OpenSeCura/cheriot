@@ -186,263 +186,6 @@ Definition FunctionalUnits := STRUCT_TYPE {
   "FenceI" :: Bool
 }.
 
-(* ===========================================================================
- * CSR & SCR Definitions, Tables, Mappings, and Decoders
- * =========================================================================== *)
-
-Section Enumerate.
-  Variable A: Type.
-  Fixpoint enumerate_aux (i : Z) (l : list A) : list (A * Z) :=
-    match l with
-    | [] => []
-    | x :: xs => (x, i) :: enumerate_aux (i + 1) xs
-    end.
-
-  Definition enumerate := enumerate_aux 0.
-End Enumerate.
-
-Definition getStrIndexOption (s : string) (ls : list string) : option nat :=
-  (fix loop (l : list string) (idx : nat) : option nat :=
-     match l with
-     | [] => None
-     | x :: xs => if String.eqb s x then Some idx else loop xs (S idx)
-     end) ls 0%nat.
-
-(* CSR Table: List of 4-tuples ("name", 12-bit address, allowReadNoAsr, allowWriteNoAsr) *)
-Definition CsrTable := [
-  ("mcycle"%string,    0xc00, true,  false) ;
-  ("mcycleh"%string,   0xc80, true,  false) ;
-  ("minstret"%string,  0xc02, true,  false) ;
-  ("minstreth"%string, 0xc82, true,  false) ;
-  ("mtimecmp"%string,  0x14D, false, false) ;
-  ("mtimecmph"%string, 0x15D, false, false) ;
-  ("mstatus"%string,   0x300, false, false) ;
-  ("mie"%string,       0x304, false, false) ;
-  ("mip"%string,       0x344, false, false) ;
-  ("mcause"%string,    0x342, false, false) ;
-  ("mtval"%string,     0x343, false, false) ;
-  ("mshwm"%string,     0xbc1, true,  true) ;
-  ("mshwmb"%string,    0xbc2, true,  true)
-].
-
-(* Lookup Functions by Name for CsrTable *)
-Fixpoint getCsrEntryFromList (s : string) (table : list ((string * Z * bool * bool) * Z)) :=
-  match table with
-  | [] => None
-  | ((name, addr, r_no_asr, w_no_asr), idx) :: rest =>
-      if String.eqb s name then Some (addr, idx, r_no_asr, w_no_asr)
-      else getCsrEntryFromList s rest
-  end.
-
-Definition getCsrEntryByName (s : string) := getCsrEntryFromList s (enumerate CsrTable).
-
-Definition getCsrAddrByName (s : string) : option Z :=
-  match getCsrEntryByName s with
-  | Some (addr, _, _, _) => Some addr
-  | None => None
-  end.
-
-Definition getCsrIdxByName (s : string) : option Z :=
-  match getCsrEntryByName s with
-  | Some (_, idx, _, _) => Some idx
-  | None => None
-  end.
-
-Definition getCsrAllowReadNoAsrByName (s : string) : option bool :=
-  match getCsrEntryByName s with
-  | Some (_, _, r, _) => Some r
-  | None => None
-  end.
-
-Definition getCsrAllowWriteNoAsrByName (s : string) : option bool :=
-  match getCsrEntryByName s with
-  | Some (_, _, _, w) => Some w
-  | None => None
-  end.
-
-Definition getCsrAddr (s : string) := forceOption (getCsrAddrByName s).
-Definition getCsrIdx (s : string) := forceOption (getCsrIdxByName s).
-Definition getCsrAllowReadNoAsr (s : string) := forceOption (getCsrAllowReadNoAsrByName s).
-Definition getCsrAllowWriteNoAsr (s : string) := forceOption (getCsrAllowWriteNoAsrByName s).
-
-(* SCR Table: List of 2-tuples ("name", 5-bit address) *)
-Definition ScrTable := [
-  ("MePrevPcc"%string, 27) ;
-  ("Mtcc"%string,      28) ;
-  ("Mtdc"%string,      29) ;
-  ("Mscratchc"%string, 30) ;
-  ("MePcc"%string,     31)
-].
-
-(* Lookup Functions by Name for ScrTable *)
-Fixpoint getScrEntryFromList (s : string) (table : list ((string * Z) * Z)) :=
-  match table with
-  | [] => None
-  | ((name, addr), idx) :: rest =>
-      if String.eqb s name then Some (addr, idx)
-      else getScrEntryFromList s rest
-  end.
-
-Definition getScrEntryByName (s : string) := getScrEntryFromList s (enumerate ScrTable).
-
-Definition getScrAddrByName (s : string) : option Z :=
-  match getScrEntryByName s with
-  | Some (addr, _) => Some addr
-  | None => None
-  end.
-
-Definition getScrIdxByName (s : string) : option Z :=
-  match getScrEntryByName s with
-  | Some (_, idx) => Some idx
-  | None => None
-  end.
-
-Definition getScrAddr (s : string) := forceOption (getScrAddrByName s).
-Definition getScrIdx (s : string) := forceOption (getScrIdxByName s).
-
-Definition CsrIdxSz := Z.log2_up (Z.of_nat (length CsrTable)).
-Definition ScrIdxSz := Z.log2_up (Z.of_nat (length ScrTable)).
-
-Definition ScrCsrIdx := [
-  ("Scr"%string, Bit ScrIdxSz) ;
-  ("Csr"%string, Bit CsrIdxSz)
-].
-
-Definition Cs2Source := [
-  ("Reg"%string, Bit RegIdxSzReal) ;
-  ("ScrCsr"%string, TaggedUnion ScrCsrIdx)
-].
-
-Section Cs2Constructors.
-  Variable ty : Kind -> Type.
-  Definition mkCs2Reg (idx : Expr ty (Bit RegIdxSzReal)) : Expr ty (TaggedUnion Cs2Source) :=
-    UNION (Cs2Source, "Reg" ::= idx).
-
-  Definition mkCs2Csr (idx : Expr ty (Bit CsrIdxSz)) : Expr ty (TaggedUnion Cs2Source) :=
-    UNION (Cs2Source, "ScrCsr" ::= UNION (ScrCsrIdx, "Csr" ::= idx)).
-
-  Definition mkCs2Scr (idx : Expr ty (Bit ScrIdxSz)) : Expr ty (TaggedUnion Cs2Source) :=
-    UNION (Cs2Source, "ScrCsr" ::= UNION (ScrCsrIdx, "Scr" ::= idx)).
-End Cs2Constructors.
-
-
-(* ===========================================================================
- * RISC-V & CHERIoT Exception Constants & Info
- * =========================================================================== *)
-
-(* Standard RISC-V mcause values (DECIMAL) *)
-Definition EXC_IllegalInst    := 2.
-Definition EXC_Breakpoint     := 3.
-Definition EXC_LoadAddrAlign  := 4.
-Definition EXC_StoreAddrAlign := 6.
-Definition EXC_ECallM         := 11.
-Definition EXC_CHERI          := 28.
-
-(* CHERI CheriCause values (HEXADECIMAL) *)
-Definition CapEx_BoundsViolation           := 0x01.
-Definition CapEx_TagViolation              := 0x02.
-Definition CapEx_SealViolation             := 0x03.
-Definition CapEx_TypeViolation             := 0x04.
-Definition CapEx_PermitExecuteViolation    := 0x11.
-Definition CapEx_PermitLoadViolation       := 0x12.
-Definition CapEx_PermitStoreViolation      := 0x13.
-Definition CapEx_PermitStoreCapViolation   := 0x15.
-Definition CapEx_AccessSystemRegsViolation := 0x18.
-
-Definition FetchException := STRUCT_TYPE {
-  "tag"    :: Bool ;
-  "seal"   :: Bool ;
-  "perm"   :: Bool ;
-  "bounds" :: Bool
-}.
-
-Definition DecodeException := STRUCT_TYPE {
-  "illegal" :: Bool ;
-  "asr"     :: Bool
-}.
-
-(* Explicit mtval struct *)
-Definition CheriMtval := STRUCT_TYPE {
-  "S"          :: Bool ;
-  "RegIdx"     :: Bit RegIdxSz ;
-  "CheriCause" :: Bit 5
-}.
-
-(* Top-level Exception Payload struct *)
-Definition ExceptionInfo := STRUCT_TYPE {
-  "mcause" :: Bit 5 ;
-  "mtval"  :: CheriMtval
-}.
-
-Section ExceptionConstructors.
-  Variable ty : Kind -> Type.
-
-  Definition mkCheriMtval (s : Expr ty Bool) (regIdx : Expr ty (Bit RegIdxSz)) (cheriCause : Expr ty (Bit 5))
-  : Expr ty CheriMtval :=
-    STRUCT {
-      "S"          ::= s ;
-      "RegIdx"     ::= regIdx ;
-      "CheriCause" ::= cheriCause
-    }.
-
-  Definition mkExceptionInfo (mcause : Expr ty (Bit 5)) (mtval : Expr ty CheriMtval)
-  : Expr ty ExceptionInfo :=
-    STRUCT {
-      "mcause" ::= mcause ;
-      "mtval"  ::= mtval
-    }.
-End ExceptionConstructors.
-
-Section CsrHelpers.
-  Variable ty : Kind -> Type.
-
-  Definition getMstatusMIE (mstatus : Expr ty (Bit Xlen)) : Expr ty Bool :=
-    (FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[MstatusMIE_Bit].
-
-  Definition getMstatusMPIE (mstatus : Expr ty (Bit Xlen)) : Expr ty Bool :=
-    (FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[MstatusMPIE_Bit].
-
-  Definition setMstatusMIE (mstatus : Expr ty (Bit Xlen)) (mie : Expr ty Bool) : Expr ty (Bit Xlen) :=
-    ToBit ((FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[MstatusMIE_Bit <- mie]).
-
-  Definition setMstatusMPIE (mstatus : Expr ty (Bit Xlen)) (mpie : Expr ty Bool) : Expr ty (Bit Xlen) :=
-    ToBit ((FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[MstatusMPIE_Bit <- mpie]).
-
-  Definition encodeCheriMtval (mtval : Expr ty CheriMtval) : Expr ty (Bit Xlen) :=
-    ZeroExtendTo Xlen (ToBit mtval).
-
-  Definition encodeMcause (mcause : Expr ty (Bit 5)) : Expr ty (Bit Xlen) :=
-    ZeroExtendTo Xlen mcause.
-End CsrHelpers.
-
-Section Decoders.
-  Variable ty : Kind -> Type.
-
-  (* Decodes 12-bit architectural CSR address to Option (Bit CsrIdxSz) *)
-  Definition csrAddrDecoder (csrAddr : ty (Bit CsrAddrSz)) : Expr ty (Option (Bit CsrIdxSz)) :=
-    caseDefault (k := Option (Bit CsrIdxSz))
-      (map (fun '((_, addr, _, _), idx) =>
-        (Eq #csrAddr $addr, mkSome (k := Bit CsrIdxSz) $idx)
-      ) (enumerate CsrTable))
-      (mkNone ty).
-
-  (* Decodes 5-bit architectural SCR address to Option (Bit ScrIdxSz) *)
-  Definition scrAddrDecoder (scrAddr : ty (Bit ScrAddrSz)) : Expr ty (Option (Bit ScrIdxSz)) :=
-    caseDefault (k := Option (Bit ScrIdxSz))
-      (map (fun '((_, addr), idx) =>
-        (Eq #scrAddr $addr, mkSome (k := Bit ScrIdxSz) $idx)
-      ) (enumerate ScrTable))
-      (mkNone ty).
-
-  Definition csrAllowReadNoAsrDecoder (csrAddr : ty (Bit CsrAddrSz)) : Expr ty Bool :=
-    Or (map (fun '(_, addr, _, _) => Eq #csrAddr $addr)
-            (filter (fun '(_, _, r, _) => r) CsrTable)).
-
-  Definition csrAllowWriteNoAsrDecoder (csrAddr : ty (Bit CsrAddrSz)) : Expr ty Bool :=
-    Or (map (fun '(_, addr, _, _) => Eq #csrAddr $addr)
-            (filter (fun '(_, _, _, w) => w) CsrTable)).
-End Decoders.
-
 Definition CapPerms := STRUCT_TYPE { "U0" :: Bool ;
                                      "SE" :: Bool ;
                                      "US" :: Bool ;
@@ -757,17 +500,274 @@ Section Roots.
            "top" ::= Zmod.app (Zmod.zero: bits AddrSz) Zmod.one ;
            "base" ::= Zmod.zero }).
 
-    Definition createRootECap (addr: Z): type FullECapWithTag :=
+    Definition createRoot (addr: Z): type FullECapWithTag :=
       (STRUCT_CONST {
            "tag" ::= true;
            "ecap" ::= createRootECap;
            "addr" ::= Zmod.of_Z _ addr }).
   End CreateRoot.
 
-  Definition ExecRootECap (addr: Z) := createRootECap ExecRootPerms addr.
-  Definition MemRootECap (addr: Z) := createRootECap MemRootPerms addr.
-  Definition SealRootECap (addr: Z) := createRootECap SealRootPerms addr.
+  Definition ExecRoot (addr: Z) := createRoot ExecRootPerms addr.
+  Definition MemRoot (addr: Z) := createRoot MemRootPerms addr.
+  Definition SealRoot (addr: Z) := createRoot SealRootPerms addr.
 End Roots.
+
+(* ===========================================================================
+ * CSR & SCR Definitions, Tables, Mappings, and Decoders
+ * =========================================================================== *)
+
+Section Enumerate.
+  Variable A: Type.
+  Fixpoint enumerate_aux (i : Z) (l : list A) : list (A * Z) :=
+    match l with
+    | [] => []
+    | x :: xs => (x, i) :: enumerate_aux (i + 1) xs
+    end.
+
+  Definition enumerate := enumerate_aux 0.
+End Enumerate.
+
+Definition getStrIndexOption (s : string) (ls : list string) : option nat :=
+  (fix loop (l : list string) (idx : nat) : option nat :=
+     match l with
+     | [] => None
+     | x :: xs => if String.eqb s x then Some idx else loop xs (S idx)
+     end) ls 0%nat.
+
+(* CSR Table: List of 4-tuples ("name", 12-bit address, allowReadNoAsr, allowWriteNoAsr) *)
+Definition CsrTable := [
+  ("mcycle"%string,    0xc00, true,  false) ;
+  ("mcycleh"%string,   0xc80, true,  false) ;
+  ("minstret"%string,  0xc02, true,  false) ;
+  ("minstreth"%string, 0xc82, true,  false) ;
+  ("mtimecmp"%string,  0x14D, false, false) ;
+  ("mtimecmph"%string, 0x15D, false, false) ;
+  ("mstatus"%string,   0x300, false, false) ;
+  ("mie"%string,       0x304, false, false) ;
+  ("mip"%string,       0x344, false, false) ;
+  ("mcause"%string,    0x342, false, false) ;
+  ("mtval"%string,     0x343, false, false) ;
+  ("mshwm"%string,     0xbc1, true,  true) ;
+  ("mshwmb"%string,    0xbc2, true,  true)
+].
+
+(* Lookup Functions by Name for CsrTable *)
+Fixpoint getCsrEntryFromList (s : string) (table : list ((string * Z * bool * bool) * Z)) :=
+  match table with
+  | [] => None
+  | ((name, addr, r_no_asr, w_no_asr), idx) :: rest =>
+      if String.eqb s name then Some (addr, idx, r_no_asr, w_no_asr)
+      else getCsrEntryFromList s rest
+  end.
+
+Definition getCsrEntryByName (s : string) := getCsrEntryFromList s (enumerate CsrTable).
+
+Definition getCsrAddrByName (s : string) : option Z :=
+  match getCsrEntryByName s with
+  | Some (addr, _, _, _) => Some addr
+  | None => None
+  end.
+
+Definition getCsrIdxByName (s : string) : option Z :=
+  match getCsrEntryByName s with
+  | Some (_, idx, _, _) => Some idx
+  | None => None
+  end.
+
+Definition getCsrAllowReadNoAsrByName (s : string) : option bool :=
+  match getCsrEntryByName s with
+  | Some (_, _, r, _) => Some r
+  | None => None
+  end.
+
+Definition getCsrAllowWriteNoAsrByName (s : string) : option bool :=
+  match getCsrEntryByName s with
+  | Some (_, _, _, w) => Some w
+  | None => None
+  end.
+
+Definition getCsrAddr (s : string) := forceOption (getCsrAddrByName s).
+Definition getCsrIdx (s : string) := forceOption (getCsrIdxByName s).
+Definition getCsrAllowReadNoAsr (s : string) := forceOption (getCsrAllowReadNoAsrByName s).
+Definition getCsrAllowWriteNoAsr (s : string) := forceOption (getCsrAllowWriteNoAsrByName s).
+
+(* SCR Table: List of 2-tuples ("name", 5-bit address) *)
+Definition ScrTable := [
+  ("MePrevPcc"%string, 27) ;
+  ("Mtcc"%string,      28) ;
+  ("Mtdc"%string,      29) ;
+  ("Mscratchc"%string, 30) ;
+  ("MePcc"%string,     31)
+].
+
+(* Lookup Functions by Name for ScrTable *)
+Fixpoint getScrEntryFromList (s : string) (table : list ((string * Z) * Z)) :=
+  match table with
+  | [] => None
+  | ((name, addr), idx) :: rest =>
+      if String.eqb s name then Some (addr, idx)
+      else getScrEntryFromList s rest
+  end.
+
+Definition getScrEntryByName (s : string) := getScrEntryFromList s (enumerate ScrTable).
+
+Definition getScrAddrByName (s : string) : option Z :=
+  match getScrEntryByName s with
+  | Some (addr, _) => Some addr
+  | None => None
+  end.
+
+Definition getScrIdxByName (s : string) : option Z :=
+  match getScrEntryByName s with
+  | Some (_, idx) => Some idx
+  | None => None
+  end.
+
+Definition getScrAddr (s : string) := forceOption (getScrAddrByName s).
+Definition getScrIdx (s : string) := forceOption (getScrIdxByName s).
+
+Definition CsrIdxSz := Z.log2_up (Z.of_nat (length CsrTable)).
+Definition ScrIdxSz := Z.log2_up (Z.of_nat (length ScrTable)).
+
+Definition ScrCsrIdx := [
+  ("Scr"%string, Bit ScrIdxSz) ;
+  ("Csr"%string, Bit CsrIdxSz)
+].
+
+Definition Cs2Source := [
+  ("Reg"%string, Bit RegIdxSzReal) ;
+  ("ScrCsr"%string, TaggedUnion ScrCsrIdx)
+].
+
+Section Cs2Constructors.
+  Variable ty : Kind -> Type.
+  Definition mkCs2Reg (idx : Expr ty (Bit RegIdxSzReal)) : Expr ty (TaggedUnion Cs2Source) :=
+    UNION (Cs2Source, "Reg" ::= idx).
+
+  Definition mkCs2Csr (idx : Expr ty (Bit CsrIdxSz)) : Expr ty (TaggedUnion Cs2Source) :=
+    UNION (Cs2Source, "ScrCsr" ::= UNION (ScrCsrIdx, "Csr" ::= idx)).
+
+  Definition mkCs2Scr (idx : Expr ty (Bit ScrIdxSz)) : Expr ty (TaggedUnion Cs2Source) :=
+    UNION (Cs2Source, "ScrCsr" ::= UNION (ScrCsrIdx, "Scr" ::= idx)).
+End Cs2Constructors.
+
+
+(* ===========================================================================
+ * RISC-V & CHERIoT Exception Constants & Info
+ * =========================================================================== *)
+
+(* Standard RISC-V mcause values (DECIMAL) *)
+Definition EXC_IllegalInst    := 2.
+Definition EXC_Breakpoint     := 3.
+Definition EXC_LoadAddrAlign  := 4.
+Definition EXC_StoreAddrAlign := 6.
+Definition EXC_ECallM         := 11.
+Definition EXC_CHERI          := 28.
+
+(* CHERI CheriCause values (HEXADECIMAL) *)
+Definition CapEx_BoundsViolation           := 0x01.
+Definition CapEx_TagViolation              := 0x02.
+Definition CapEx_SealViolation             := 0x03.
+Definition CapEx_TypeViolation             := 0x04.
+Definition CapEx_PermitExecuteViolation    := 0x11.
+Definition CapEx_PermitLoadViolation       := 0x12.
+Definition CapEx_PermitStoreViolation      := 0x13.
+Definition CapEx_PermitStoreCapViolation   := 0x15.
+Definition CapEx_AccessSystemRegsViolation := 0x18.
+
+Definition FetchException := STRUCT_TYPE {
+  "tag"    :: Bool ;
+  "seal"   :: Bool ;
+  "perm"   :: Bool ;
+  "bounds" :: Bool
+}.
+
+Definition DecodeException := STRUCT_TYPE {
+  "illegal" :: Bool ;
+  "asr"     :: Bool
+}.
+
+(* Explicit mtval struct *)
+Definition CheriMtval := STRUCT_TYPE {
+  "S"          :: Bool ;
+  "RegIdx"     :: Bit RegIdxSz ;
+  "CheriCause" :: Bit 5
+}.
+
+(* Top-level Exception Payload struct *)
+Definition ExceptionInfo := STRUCT_TYPE {
+  "mcause" :: Bit 5 ;
+  "mtval"  :: CheriMtval
+}.
+
+Section ExceptionConstructors.
+  Variable ty : Kind -> Type.
+
+  Definition mkCheriMtval (s : Expr ty Bool) (regIdx : Expr ty (Bit RegIdxSz)) (cheriCause : Expr ty (Bit 5))
+  : Expr ty CheriMtval :=
+    STRUCT {
+      "S"          ::= s ;
+      "RegIdx"     ::= regIdx ;
+      "CheriCause" ::= cheriCause
+    }.
+
+  Definition mkExceptionInfo (mcause : Expr ty (Bit 5)) (mtval : Expr ty CheriMtval)
+  : Expr ty ExceptionInfo :=
+    STRUCT {
+      "mcause" ::= mcause ;
+      "mtval"  ::= mtval
+    }.
+End ExceptionConstructors.
+
+Section CsrHelpers.
+  Variable ty : Kind -> Type.
+
+  Definition getMstatusMIE (mstatus : Expr ty (Bit Xlen)) : Expr ty Bool :=
+    (FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[MstatusMIE_Bit].
+
+  Definition getMstatusMPIE (mstatus : Expr ty (Bit Xlen)) : Expr ty Bool :=
+    (FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[MstatusMPIE_Bit].
+
+  Definition setMstatusMIE (mstatus : Expr ty (Bit Xlen)) (mie : Expr ty Bool) : Expr ty (Bit Xlen) :=
+    ToBit ((FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[MstatusMIE_Bit <- mie]).
+
+  Definition setMstatusMPIE (mstatus : Expr ty (Bit Xlen)) (mpie : Expr ty Bool) : Expr ty (Bit Xlen) :=
+    ToBit ((FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[MstatusMPIE_Bit <- mpie]).
+
+  Definition encodeCheriMtval (mtval : Expr ty CheriMtval) : Expr ty (Bit Xlen) :=
+    ZeroExtendTo Xlen (ToBit mtval).
+
+  Definition encodeMcause (mcause : Expr ty (Bit 5)) : Expr ty (Bit Xlen) :=
+    ZeroExtendTo Xlen mcause.
+End CsrHelpers.
+
+Section Decoders.
+  Variable ty : Kind -> Type.
+
+  (* Decodes 12-bit architectural CSR address to Option (Bit CsrIdxSz) *)
+  Definition csrAddrDecoder (csrAddr : ty (Bit CsrAddrSz)) : Expr ty (Option (Bit CsrIdxSz)) :=
+    caseDefault (k := Option (Bit CsrIdxSz))
+      (map (fun '((_, addr, _, _), idx) =>
+        (Eq #csrAddr $addr, mkSome (k := Bit CsrIdxSz) $idx)
+      ) (enumerate CsrTable))
+      (mkNone ty).
+
+  (* Decodes 5-bit architectural SCR address to Option (Bit ScrIdxSz) *)
+  Definition scrAddrDecoder (scrAddr : ty (Bit ScrAddrSz)) : Expr ty (Option (Bit ScrIdxSz)) :=
+    caseDefault (k := Option (Bit ScrIdxSz))
+      (map (fun '((_, addr), idx) =>
+        (Eq #scrAddr $addr, mkSome (k := Bit ScrIdxSz) $idx)
+      ) (enumerate ScrTable))
+      (mkNone ty).
+
+  Definition csrAllowReadNoAsrDecoder (csrAddr : ty (Bit CsrAddrSz)) : Expr ty Bool :=
+    Or (map (fun '(_, addr, _, _) => Eq #csrAddr $addr)
+            (filter (fun '(_, _, r, _) => r) CsrTable)).
+
+  Definition csrAllowWriteNoAsrDecoder (csrAddr : ty (Bit CsrAddrSz)) : Expr ty Bool :=
+    Or (map (fun '(_, addr, _, _) => Eq #csrAddr $addr)
+            (filter (fun '(_, _, _, w) => w) CsrTable)).
+End Decoders.
 
 Definition isSealed ty (ecap: ty ECap) : Expr ty Bool := isNotZero (##ecap`"oType").
 Definition isSealingCap ty (ecap : ty ECap) : Expr ty Bool :=
