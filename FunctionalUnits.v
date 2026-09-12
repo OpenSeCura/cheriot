@@ -579,11 +579,11 @@ ScrCsr (Mux):
   operand: zimm5 (Csr & isImm), cs1.addr (Csr & !isImm, Scr)
   oldVal: cs2.addr (Csr)
 
-Exception
+FenceI
 Deferred
+Exception
 ControlFlow
 ScrCsr
-FenceI
 
 NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
 
