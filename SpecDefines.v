@@ -534,29 +534,36 @@ Definition getStrIndexOption (s : string) (ls : list string) : option nat :=
      | x :: xs => if String.eqb s x then Some idx else loop xs (S idx)
      end) ls 0%nat.
 
-(* CSR Table: List of 4-tuples ("name", 12-bit address, allowReadNoAsr, allowWriteNoAsr) *)
+Record CsrEntry := {
+  csrName       : string ;
+  csrAddr       : Z ;
+  csrReadNoAsr  : bool ;
+  csrWriteNoAsr : bool ;
+  csrInit       : Z
+}.
+
 Definition CsrTable := [
-  ("mcycle"%string,    0xc00, true,  false) ;
-  ("mcycleh"%string,   0xc80, true,  false) ;
-  ("minstret"%string,  0xc02, true,  false) ;
-  ("minstreth"%string, 0xc82, true,  false) ;
-  ("mtimecmp"%string,  0x14D, false, false) ;
-  ("mtimecmph"%string, 0x15D, false, false) ;
-  ("mstatus"%string,   0x300, false, false) ;
-  ("mie"%string,       0x304, false, false) ;
-  ("mip"%string,       0x344, false, false) ;
-  ("mcause"%string,    0x342, false, false) ;
-  ("mtval"%string,     0x343, false, false) ;
-  ("mshwm"%string,     0xbc1, true,  true) ;
-  ("mshwmb"%string,    0xbc2, true,  true)
+  {| csrName := "mcycle"    ; csrAddr := 0xc00 ; csrReadNoAsr := true  ; csrWriteNoAsr := false ; csrInit := 0 |} ;
+  {| csrName := "mcycleh"   ; csrAddr := 0xc80 ; csrReadNoAsr := true  ; csrWriteNoAsr := false ; csrInit := 0 |} ;
+  {| csrName := "minstret"  ; csrAddr := 0xc02 ; csrReadNoAsr := true  ; csrWriteNoAsr := false ; csrInit := 0 |} ;
+  {| csrName := "minstreth" ; csrAddr := 0xc82 ; csrReadNoAsr := true  ; csrWriteNoAsr := false ; csrInit := 0 |} ;
+  {| csrName := "mtimecmp"  ; csrAddr := 0x14D ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 2^Xlen-1 |} ;
+  {| csrName := "mtimecmph" ; csrAddr := 0x15D ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 2^Xlen-1 |} ;
+  {| csrName := "mstatus"   ; csrAddr := 0x300 ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 0 |} ;
+  {| csrName := "mie"       ; csrAddr := 0x304 ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 0 |} ;
+  {| csrName := "mip"       ; csrAddr := 0x344 ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 0 |} ;
+  {| csrName := "mcause"    ; csrAddr := 0x342 ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 0 |} ;
+  {| csrName := "mtval"     ; csrAddr := 0x343 ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 0 |} ;
+  {| csrName := "mshwm"     ; csrAddr := 0xbc1 ; csrReadNoAsr := true  ; csrWriteNoAsr := true  ; csrInit := 0 |} ;
+  {| csrName := "mshwmb"    ; csrAddr := 0xbc2 ; csrReadNoAsr := true  ; csrWriteNoAsr := true  ; csrInit := 0 |}
 ].
 
 (* Lookup Functions by Name for CsrTable *)
-Fixpoint getCsrEntryFromList (s : string) (table : list ((string * Z * bool * bool) * Z)) :=
+Fixpoint getCsrEntryFromList (s : string) (table : list (CsrEntry * Z)) : option (CsrEntry * Z) :=
   match table with
   | [] => None
-  | ((name, addr, r_no_asr, w_no_asr), idx) :: rest =>
-      if String.eqb s name then Some (addr, idx, r_no_asr, w_no_asr)
+  | (e, idx) :: rest =>
+      if String.eqb s e.(csrName) then Some (e, idx)
       else getCsrEntryFromList s rest
   end.
 
@@ -564,25 +571,25 @@ Definition getCsrEntryByName (s : string) := getCsrEntryFromList s (enumerate Cs
 
 Definition getCsrAddrByName (s : string) : option Z :=
   match getCsrEntryByName s with
-  | Some (addr, _, _, _) => Some addr
+  | Some (e, _) => Some e.(csrAddr)
   | None => None
   end.
 
 Definition getCsrIdxByName (s : string) : option Z :=
   match getCsrEntryByName s with
-  | Some (_, idx, _, _) => Some idx
+  | Some (_, idx) => Some idx
   | None => None
   end.
 
 Definition getCsrAllowReadNoAsrByName (s : string) : option bool :=
   match getCsrEntryByName s with
-  | Some (_, _, r, _) => Some r
+  | Some (e, _) => Some e.(csrReadNoAsr)
   | None => None
   end.
 
 Definition getCsrAllowWriteNoAsrByName (s : string) : option bool :=
   match getCsrEntryByName s with
-  | Some (_, _, _, w) => Some w
+  | Some (e, _) => Some e.(csrWriteNoAsr)
   | None => None
   end.
 
@@ -591,29 +598,43 @@ Definition getCsrIdx (s : string) := forceOption (getCsrIdxByName s).
 Definition getCsrAllowReadNoAsr (s : string) := forceOption (getCsrAllowReadNoAsrByName s).
 Definition getCsrAllowWriteNoAsr (s : string) := forceOption (getCsrAllowWriteNoAsrByName s).
 
-(* SCR Table: List of 2-tuples ("name", 5-bit address) *)
-Definition ScrTable := [
-  ("MePrevPcc"%string, 27) ;
-  ("Mtcc"%string,      28) ;
-  ("Mtdc"%string,      29) ;
-  ("Mscratchc"%string, 30) ;
-  ("MePcc"%string,     31)
+Record ScrEntry := {
+  scrName : string ;
+  scrAddr : Z ;
+  scrInit : type FullECapWithTag
+}.
+
+(* Only scrInit depends on pcAddrInit; name, address and length do not. *)
+Definition ScrTable (pcAddrInit : Z) := [
+  {| scrName := "MePrevPcc" ; scrAddr := 27 ; scrInit := getDefault _        |} ;
+  {| scrName := "Mtcc"      ; scrAddr := 28 ; scrInit := ExecRoot pcAddrInit |} ;
+  {| scrName := "Mtdc"      ; scrAddr := 29 ; scrInit := MemRoot 0           |} ;
+  {| scrName := "Mscratchc" ; scrAddr := 30 ; scrInit := SealRoot 0          |} ;
+  {| scrName := "MePcc"     ; scrAddr := 31 ; scrInit := ExecRoot pcAddrInit |}
 ].
 
+(* Structural derivations below (indices, addresses, width) use (ScrTable 0).
+   These hold by computation and fail to typecheck if that ever stops being sound. *)
+Section ScrTableStructural.
+  Variable pc : Z.
+  Definition ScrTableNamesIndep : map scrName (ScrTable pc) = map scrName (ScrTable 0) := eq_refl.
+  Definition ScrTableAddrsIndep : map scrAddr (ScrTable pc) = map scrAddr (ScrTable 0) := eq_refl.
+End ScrTableStructural.
+
 (* Lookup Functions by Name for ScrTable *)
-Fixpoint getScrEntryFromList (s : string) (table : list ((string * Z) * Z)) :=
+Fixpoint getScrEntryFromList (s : string) (table : list (ScrEntry * Z)) : option (ScrEntry * Z) :=
   match table with
   | [] => None
-  | ((name, addr), idx) :: rest =>
-      if String.eqb s name then Some (addr, idx)
+  | (e, idx) :: rest =>
+      if String.eqb s e.(scrName) then Some (e, idx)
       else getScrEntryFromList s rest
   end.
 
-Definition getScrEntryByName (s : string) := getScrEntryFromList s (enumerate ScrTable).
+Definition getScrEntryByName (s : string) := getScrEntryFromList s (enumerate (ScrTable 0)).
 
 Definition getScrAddrByName (s : string) : option Z :=
   match getScrEntryByName s with
-  | Some (addr, _) => Some addr
+  | Some (e, _) => Some e.(scrAddr)
   | None => None
   end.
 
@@ -627,7 +648,7 @@ Definition getScrAddr (s : string) := forceOption (getScrAddrByName s).
 Definition getScrIdx (s : string) := forceOption (getScrIdxByName s).
 
 Definition CsrIdxSz := Z.log2_up (Z.of_nat (length CsrTable)).
-Definition ScrIdxSz := Z.log2_up (Z.of_nat (length ScrTable)).
+Definition ScrIdxSz := Z.log2_up (Z.of_nat (length (ScrTable 0))).
 
 Definition ScrCsrIdx := [
   ("Scr"%string, Bit ScrIdxSz) ;
@@ -745,28 +766,28 @@ Section Decoders.
   Variable ty : Kind -> Type.
 
   (* Decodes 12-bit architectural CSR address to Option (Bit CsrIdxSz) *)
-  Definition csrAddrDecoder (csrAddr : ty (Bit CsrAddrSz)) : Expr ty (Option (Bit CsrIdxSz)) :=
+  Definition csrAddrDecoder (addr : ty (Bit CsrAddrSz)) : Expr ty (Option (Bit CsrIdxSz)) :=
     caseDefault (k := Option (Bit CsrIdxSz))
-      (map (fun '((_, addr, _, _), idx) =>
-        (Eq #csrAddr $addr, mkSome (k := Bit CsrIdxSz) $idx)
+      (map (fun '(e, idx) =>
+        (Eq #addr $(e.(csrAddr)), mkSome (k := Bit CsrIdxSz) $idx)
       ) (enumerate CsrTable))
       (mkNone ty).
 
   (* Decodes 5-bit architectural SCR address to Option (Bit ScrIdxSz) *)
-  Definition scrAddrDecoder (scrAddr : ty (Bit ScrAddrSz)) : Expr ty (Option (Bit ScrIdxSz)) :=
+  Definition scrAddrDecoder (addr : ty (Bit ScrAddrSz)) : Expr ty (Option (Bit ScrIdxSz)) :=
     caseDefault (k := Option (Bit ScrIdxSz))
-      (map (fun '((_, addr), idx) =>
-        (Eq #scrAddr $addr, mkSome (k := Bit ScrIdxSz) $idx)
-      ) (enumerate ScrTable))
+      (map (fun '(e, idx) =>
+        (Eq #addr $(e.(scrAddr)), mkSome (k := Bit ScrIdxSz) $idx)
+      ) (enumerate (ScrTable 0)))
       (mkNone ty).
 
-  Definition csrAllowReadNoAsrDecoder (csrAddr : ty (Bit CsrAddrSz)) : Expr ty Bool :=
-    Or (map (fun '(_, addr, _, _) => Eq #csrAddr $addr)
-            (filter (fun '(_, _, r, _) => r) CsrTable)).
+  Definition csrAllowReadNoAsrDecoder (addr : ty (Bit CsrAddrSz)) : Expr ty Bool :=
+    Or (map (fun e => Eq #addr $(e.(csrAddr)))
+            (filter (fun e => e.(csrReadNoAsr)) CsrTable)).
 
-  Definition csrAllowWriteNoAsrDecoder (csrAddr : ty (Bit CsrAddrSz)) : Expr ty Bool :=
-    Or (map (fun '(_, addr, _, _) => Eq #csrAddr $addr)
-            (filter (fun '(_, _, _, w) => w) CsrTable)).
+  Definition csrAllowWriteNoAsrDecoder (addr : ty (Bit CsrAddrSz)) : Expr ty Bool :=
+    Or (map (fun e => Eq #addr $(e.(csrAddr)))
+            (filter (fun e => e.(csrWriteNoAsr)) CsrTable)).
 End Decoders.
 
 Definition isSealed ty (ecap: ty ECap) : Expr ty Bool := isNotZero (##ecap`"oType").
@@ -1075,13 +1096,13 @@ Section RfTree.
     ) (enumerate (repeat tt (Z.to_nat NumRegs))).
 
   Definition scrLeaves : list (Tree DomainElem) :=
-    map (fun '(name, _) =>
-      Leaf name (dom, EReg (Build_Reg FullECapWithTag (Some (getDefault _)) false))
-    ) ScrTable.
+    map (fun e =>
+      Leaf e.(scrName) (dom, EReg (Build_Reg FullECapWithTag (Some e.(scrInit)) false))
+    ) (ScrTable pcAddrInit).
 
   Definition csrLeaves : list (Tree DomainElem) :=
-    map (fun '(name, _, _, _) =>
-      Leaf name (dom, EReg (Build_Reg (Bit Xlen) (Some (getDefault _)) false))
+    map (fun e =>
+      Leaf e.(csrName) (dom, EReg (Build_Reg (Bit Xlen) (Some (Zmod.of_Z _ e.(csrInit))) false))
     ) CsrTable.
 
   Definition rfTree : Tree DomainElem :=
