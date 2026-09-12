@@ -57,6 +57,7 @@ Section SpecDom.
     Local Notation specExecuteDeferred := (specExecuteDeferred core pcAddrInit).
     Local Notation regRead := (regRead core pcAddrInit).
     Local Notation executeNonDeferred := (executeNonDeferred core pcAddrInit).
+    Local Notation rfTree := (rfTree core pcAddrInit).
 
     Section Ty.
       Variable ty : Kind -> Type.
@@ -107,34 +108,25 @@ Section SpecDom.
       Definition specPlicClaimStep : Action ty sysTree (Bit 0) :=
         liftAction np_mem (plicClaimStep plic ty).
 
-      Definition updateMipBit (bitIdx : Expr ty (Bit LgXlen)) (bitVal : Expr ty Bool) : Action ty sysTree (Bit 0) :=
-        liftAction np_rf (
-          LetA currMip : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz)) ;
-          Let currArr : Array (Z.to_nat Xlen) Bool <- FromBit (Array (Z.to_nat Xlen) Bool) #currMip ;
-          Let updArr  : Array (Z.to_nat Xlen) Bool <- UpdateArray #currArr bitIdx bitVal ;
-          Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mip") : Expr _ (Bit CsrIdxSz)) (ToBit #updArr)) ;
-          Retv
-        ).
-
-      (* Rule: Reads PLIC MEIP and updates mip.meip *)
-      Definition specExternalInterruptRule : Action ty sysTree (Bit 0) :=
-        LetA meipVal : Bool <- liftAction np_mem (plicMeipSystem plic ty) ;
-        updateMipBit $MEIP_Bit #meipVal.
-
-      (* Rule: Reads mtimecmp CSR and mtime MMIO register to update mip.mtip *)
+      (* Rule: Reads mtimecmp CSR and mtime MMIO register to raise the mtip interrupt source.
+         Sticky: only a write to mtimecmp/mtimecmph clears it. *)
       Definition specTimerInterruptRule : Action ty sysTree (Bit 0) :=
-        LetA lo : Bit Xlen <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrIdx "mtimecmp") : Expr _ (Bit CsrIdxSz))) ;
-        LetA hi : Bit Xlen <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrIdx "mtimecmph") : Expr _ (Bit CsrIdxSz))) ;
+        LetA lo : Bit Xlen <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mtimecmp") : Expr _ (Bit CsrIdxSz))) ;
+        LetA hi : Bit Xlen <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mtimecmph") : Expr _ (Bit CsrIdxSz))) ;
         Let mtimecmpDXlen : Bit DXlen <- {< #hi, #lo >} ;
         LetA mtimeDXlen   : Bit DXlen <- liftAction np_mem (readClintMtimeAction clint ty) ;
         Let mtipVal       : Bool      <- Sge #mtimeDXlen #mtimecmpDXlen ;
-        updateMipBit $MTIP_Bit #mtipVal.
+        If #mtipVal Then (liftAction np_rf (RegWrite "rf.mtip" in rfTree <- Const ty Bool true ; Retv)) ;
+        Retv.
 
       (* ===========================================================================
        * Atomic Core Pipeline Step (specStep)
        * =========================================================================== *)
 
       Definition specStep : Action ty sysTree (Bit 0) :=
+        (* MEIP is a pure function of PLIC state; sample it here, where both domains are reachable. *)
+        LetA meip : Bool <- liftAction np_mem (plicMeipSystem plic ty) ;
+
         (* 1. Fetch *)
         LetA fetchOut : FetchOut <- liftAction np_core (specFetch regions ty) ;
 
@@ -142,7 +134,7 @@ Section SpecDom.
         LetL regReadIn : RegReadIn <- wrappedDecode fetchOut ;
 
         (* 3. Register Read (GPRs, SCRs, CSRs, mstatus) *)
-        LetA aluInInstGroup : AluInInstGroup <- liftAction np_rf (regRead regReadIn) ;
+        LetA aluInInstGroup : AluInInstGroup <- liftAction np_rf (regRead #meip regReadIn) ;
 
         (* 4. Alu Control, Routing, and Execution *)
         Let  instGroup : InstGroup <- ##aluInInstGroup`"instGroup" ;
@@ -163,7 +155,7 @@ Section SpecDom.
         LetL aluOut     : AluOutUnion <- Alu routingOut ;
 
         (* 5. Commit Non-Deferred (GPRs, SCRs, CSRs, PCC, Traps) *)
-        LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred aluOut) ;
+        LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred #meip aluOut) ;
 
         (* 6. Commit Deferred (Memory Loads, Stores, Fences) *)
         Let  reqOpt  : Option DeferredReq <- ##execOut`"deferredReq" ;
@@ -188,7 +180,6 @@ Section SpecDom.
         (peripheral, specUartTxStep ty) ;
         (peripheral, specUartRxStep ty) ;
         (core, specPlicClaimStep ty) ;
-        (core, specExternalInterruptRule ty) ;
         (core, specTimerInterruptRule ty)
       ] ++ map (fun a => (core, a)) (specPlicPendingsSteps ty))%list.
 

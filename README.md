@@ -1,9 +1,9 @@
 # Cheriot
 CHERIoT ISA specification, formal verification, and implementation in [Guru](https://github.com/Cherified/Guru).
 
-The Makefile expects [CHERIoT RTOS](https://github.com/CHERIoT-Platform/cheriot-rtos) installed in ${CHERIOT_ROOT}/cheriot-rtos and [CHERIoT LLVM](https://github.com/CHERIoT-Platform/llvm-project) in ${CHERIOT_ROOT}/cheriot-llvm.
+The Makefile expects ${BINARY} to point to the binary to run and ${COMPILE_BINARY} to be the command to generate the binary.
+It also needs [CHERIoT LLVM](https://github.com/CHERIoT-Platform/llvm-project) in ${LLVM_DIR} so that ${LLVM_DIR}/bin/{llvm-objdump,llvm-objcopy} exist.
 Use this [link](https://github.com/CHERIoT-Platform/cheriot-rtos/blob/main/docs/GettingStarted.md#building-cheriot-llvm) to build LLVM.
-The object that is being initialized in the Binary file is some executable binary compiled for CHERIoT
 
 ## Architectural & Specification Differences (`cheriot-sail` vs. Our Specification)
 
@@ -14,7 +14,7 @@ While `cheriot-sail` is the defacto standard specification, our ISA specificatio
    - In our ISA specification, `CJALR`, `CJAL`, and branches do **not** synchronously fault on invalid targets/sentries. Instead, they clear `PCC.tag` (marking `PCC` invalid). The exception is deferred until the subsequent **Instruction Fetch (IF)** stage.
    - The architectural register **`MePrevPcc`** records the `PCC` of every committed instruction, allowing the OS trap handler to accurately attribute the fetch exception back to the source jump instruction.
    - `MePrevPcc` is deliberately **not** updated when an instruction traps. This is what makes the attribution work: on a deferred jump fault, `MePcc` holds the `PCC` of the faulting *fetch* while `MePrevPcc` still holds the `PCC` of the *jump* that produced it.
-   - `MePrevPcc` is effectively **read-only** to software. Hardware overwrites it on every non-trapping commit, so a `CSpecialRW` write to it is superseded by the very instruction performing the write.
+   - `MePrevPcc` is architecturally **read-only**: hardware overwrites it on every non-trapping commit, so a `CSpecialRW` write to it would be superseded by the very instruction performing the write. Rather than let that happen silently, the Decoder marks such a write illegal (see §8).
 
 2. **5-bit `cE` Capability Encoding**:
    - In standard CHERIoT, capability bounds use a compressed exponent E.
@@ -23,7 +23,7 @@ While `cheriot-sail` is the defacto standard specification, our ISA specificatio
 
 3. **`ScrSanitizer` Tag Sanitization**:
    - Tag validation on SCR writes only checks LSB = 0 for `MePcc` and `Mtcc`. Writing an invalid target clears the tag rather than raising an immediate fault or modifying the capability metadata.
-   - `MePrevPcc` is deliberately excluded from this check: it is read-only in practice (see §1), so any value software attempts to write is discarded before it can be observed.
+   - `MePrevPcc` is deliberately excluded from this check: it is architecturally read-only (see §1 and §8), so no value ever reaches the sanitizer.
 
 4. **Unified `MTVAL` Encoding for All Exceptions**:
    - In our ISA specification, all exceptions, including standard RISC-V exceptions, set `MTVAL` in the same structured format (`{S, RegIdx, Cause}`) that CHERI exceptions use, regardless of whether `MCAUSE` is a CHERI or standard RISC-V cause code.
@@ -33,15 +33,26 @@ While `cheriot-sail` is the defacto standard specification, our ISA specificatio
 
 5. **MMIO Register Decoding & Peripheral Interrupt Semantics**:
    - **Word-Aligned Register Decoding**: For peripherals (`SpecRevoker.v`, `Clint.v`, `Plic.v`, `UartController.v`), register offset decoding ignores the low 2 bits (`LgNumBytesXlen`), treating accesses within a 4-byte boundary as addressing the corresponding 32-bit register.
-   - **Revoker W1C Semantics**: In `SpecRevoker.v`, the `interruptStatus` register implements true Write-1-to-Clear (W1C) semantics: writing a word with bit 0 set clears the interrupt, while bit 0 = 0 leaves the status untouched. Writes to unrelated registers do not disturb `interruptStatus`.
-   - **CLINT Sticky Interrupt Latch**: In `Clint.v`, standard RISC-V timer comparisons (`mtime >= mtimecmp`) are unsigned (`Sge`). To prevent dropped interrupts when `mtimecmp = 2^64 - 1` and `mtime` rolls over to 0, an internal sticky latch (`interruptPending`) captures the match and holds the interrupt asserted across rollover. The latch is cleared only when software reprograms `mtimecmp` (or writes `mtime`) such that the comparator threshold is in the future (`mtime < mtimecmp`).
+   - **Revoker W1C Semantics**: `SpecRevoker.v` implements Write-1-to-Clear (W1C) semantics: writing a word with bit 0 set clears the interrupt, while bit 0 = 0 leaves the status untouched. Writes to unrelated registers do not disturb `interruptStatus`.
+   - **Sticky Timer Interrupt**: Timer comparisons (`mtime >= mtimecmp`) are unsigned. To prevent dropped interrupts when `mtimecmp` is close to `2^64 - 1` and `mtime` rolls over to 0, the match is latched. The latch is **not** in the `Clint.v`, which is stateless apart from `mtime`; it is a core-side register, cleared only by a write to `mtimecmp`/`mtimecmph` (see §7).
 
 6. **Timer Compare (`mtimecmp`) Exposed as CSRs**:
-   - In `cheriot-sail` (and in standard RISC-V / ACLINT), `mtimecmp` is a **memory-mapped** CLINT register at CLINT offset `0x4000` (`sail-riscv/model/riscv_platform.sail`).
+   - In `cheriot-sail`, `mtimecmp` is a **memory-mapped** CLINT register at CLINT offset `0x4000`
    - In our ISA specification, the timer compare is instead exposed as **CSRs**, reusing the `Sstc` encoding: `mtimecmp` (`0x14D`) and `mtimecmph` (`0x15D`) in `CsrTable` (`SpecDefines.v`). Both require `ASR` permission for read and for write.
    - We reuse the `Sstc` addresses rather than allocating machine-mode ones because CHERIoT has no privilege hierarchy: isolation derives from capabilities and the `ASR` permission, not from privilege rings, so the privilege level encoded in CSR address bits [9:8] carries no meaning here. The trade-off is that a stock RISC-V toolchain will disassemble these as `stimecmp`/`stimecmph`.
    - Consequently `Clint.v` models only `mtime` (offset `0x00`) and `mtimeh` (offset `0x04`), giving an 8-byte CLINT region. There is no memory-mapped `mtimecmp` and no `msip`.
-   - The timer interrupt is raised by `specTimerInterruptRule` (`Spec.v`), which reads the `mtimecmp`/`mtimecmph` CSRs together with the `mtime` MMIO register and sets `mip.MTIP` on an unsigned `mtime >= mtimecmp`.
+   - The timer interrupt is raised by reading `mtimecmp`/`mtimecmph` CSRs and the `mtime` MMIO register, checking `mtime >= mtimecmp` and setting the sticky `mtip` bit (see §5 and §7).
+
+7. **`mip` is a Virtual CSR**:
+   - The value of `mip` is composed on the fly.
+   - `MEIP` is read combinationally from the PLIC; there is no `meip` state.
+   - `MTIP` is the one bit that needs state. It is cleared exclusively by a write to the `mtimecmp` or `mtimecmph` CSR. It conforms to the rollover stickiness described in §5.
+
+8. **Writes to Read-Only Registers Raise `IllegalInst`**:
+   - `MePrevPcc` SCR is read-only
+   - A read from register `c0` to `MePrevPcc` is read-only and hence legal. A write to `MePrevPcc` is illegal.
+   - `mip` CSR is read-only because there's no backing register
+   - A `CSRRS[I]`/`CSRRC[I]` from register `c0` or immediate value 0 to `mip` is read-only and hence legal. Any CSR instruction that writes `mip` is illegal.
 
 ---
 

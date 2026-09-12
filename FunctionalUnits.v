@@ -259,6 +259,8 @@ Csr
 * CSRRSI rd, csr, zimm5
 * CSRRCI rd, csr, zimm5
     Note: Decode can cause exceptions for accessing certain CSRs if no ASR
+    Note: CSRRS/RC[I] with a zero rs1/zimm5 field only read; ScrCsr_Write gates the write
+    Note: Decode raises IllegalInst on a write to a virtual CSR (mip), which has no register
     Functional Units:
       a) ScrCsr (creates ScrCsrPayload with CSR write info)
 
@@ -268,6 +270,8 @@ Scr
     Note: Decoder will cause exceptions if no ASR
     Note: ScrSanitizer will untag invalid capability, but not overwrite ecap
     Note: ScrSanitizer only checks for LSB = 1'b0 for MePcc and Mtcc (MePrevPcc needs no sanitizing)
+    Note: cs1 = c0 makes this a pure read; ScrCsr_Write gates the write
+    Note: Decode raises IllegalInst on a write to a read-only SCR (MePrevPcc)
     Functional Units:
       a) ScrSanitizer (check if the last LSB bit is 0 for certain SCR writes)
       b) ScrCsr (creates ScrCsrPayload with SCR write info using ScrSanitizer tag)
@@ -565,11 +569,15 @@ ControlFlow (Mux):
   pccTag: pcc.tag (Branch, Cjal, Cjalr, Mret)
 
 ScrCsr (Mux):
-  Outputs: isScrCsr, SpecialDest, SpecialValue
+  - Set   : Csr_Set
+  - Clear : Csr_Clear
+  - Write : ScrCsr_Write
+  Outputs: isScrCsr, SpecialDest, SpecialValue, isWrite
   cs2Idx: cs2Idx (Csr, Scr)
   newTag: ScrSanitizerOut (Scr)
   cs1Ecap: cs1.ecap (Scr)
-  cs1Addr: cs1.addr (Csr, Scr)
+  operand: zimm5 (Csr & isImm), cs1.addr (Csr & !isImm, Scr)
+  oldVal: cs2.addr (Csr)
 
 Exception
 Deferred
@@ -578,10 +586,6 @@ ScrCsr
 FenceI
 
 NewInterruptStatus: CjalrUnit.interruptStatus (Cjalr), currInterruptStatus (others)
-
-NewSpecial.tag: ScrSanitizer (Scr)
-NewSpecial.ecap: cs1.ecap (Scr)
-NewSpecial.addr: cs1.addr (Scr)
 
 Reg.tag: 0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGetTag, CGetAddr, CGetHigh,
             CGetTop, CGetLen, Cram, Crrl, CSetEqual, CTestSubset, Csr, CSetHigh, CClearTag, Load, Store),
@@ -605,8 +609,8 @@ Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, 
           ComparatorGeneral.cond (Slt), Shifter (Shift), Logical (Logical),
           AdderToOutput (Cjal, Cjalr, AddSub),
           cs1.perms (CGetPerm), cs1.otype (CGetType), cs1.tag (CGetTag),
-          cs1.addr (CGetAddr), EncodeCap (CGetHigh), zimm5 (Csr & isImm),
-          cs2.addr (CSetAddr, Csr & !isImm, Scr), cs1.addr (CAndPerm, CClearTag, Seal, Unseal, CMove, CSetHigh),
+          cs1.addr (CGetAddr), EncodeCap (CGetHigh),
+          cs2.addr (CSetAddr, Csr, Scr), cs1.addr (CAndPerm, CClearTag, Seal, Unseal, CMove, CSetHigh),
           Bounds.base (CSetBounds), Bounds.cram (Cram), Bounds.crrl (Crrl),
           CapSubset (CTestSubset), CapEq (CSetEqual),
           Saturater (CGetBase, CGetLen, CGetTop)
@@ -693,8 +697,7 @@ Section DecodeInstGroup.
         Or [ ##group`"Cjal"; ##group`"Cjalr"; ##group`"AddSub" ] ;
       "Reg_addr_Saturater" ::=
         Or [ ##group`"CGetBase"; ##group`"CGetLen"; ##group`"CGetTop" ] ;
-      "Reg_addr_cs2Addr" ::= Or [ ##group`"CSetAddr"; ##group`"Scr"; And [ ##group`"Csr"; Not ##group`"isImm" ] ] ;
-      "Reg_addr_zimm5" ::= And [ ##group`"Csr"; ##group`"isImm" ] ;
+      "Reg_addr_cs2Addr" ::= Or [ ##group`"CSetAddr"; ##group`"Scr"; ##group`"Csr" ] ;
       "Reg_addr_cs1Addr" ::=
         Or [ ##group`"CClearTag"; ##group`"CMove"; ##group`"CSetHigh" ] ;
       "ECall" ::= ##group`"ECall" ;
@@ -713,6 +716,10 @@ Section DecodeInstGroup.
       "Mret" ::= ##group`"Mret" ;
       "Cjalr" ::= ##group`"Cjalr" ;
       "Scr" ::= ##group`"Scr" ;
+      "ScrCsr_Write" ::= ##group`"ScrCsr_Write" ;
+      "ScrCsr_operand_isImm" ::= And [ ##group`"Csr"; ##group`"isImm" ] ;
+      "Csr_Set" ::= ##group`"Csr_Set" ;
+      "Csr_Clear" ::= ##group`"Csr_Clear" ;
       "CAndPerm" ::= ##group`"CAndPerm" ;
       "isUnsigned" ::= ##group`"isUnsigned" ;
       "Lui" ::= ##group`"Lui" ;
@@ -1467,14 +1474,22 @@ Section FunctionalUnits.
   Definition ScrCsr (cs2Idx : ty (TaggedUnion Cs2Source))
                     (newTag : ty Bool)
                     (cs1Ecap : ty ECap)
-                    (cs1Addr : ty Addr) : LetExpr ty (Option ScrCsrPayload) :=
+                    (operand : ty Addr)
+                    (oldVal : ty Addr)
+                    (isSet isClear isWrite : ty Bool) : LetExpr ty (Option ScrCsrPayload) :=
     LetE isScrCsr : Bool <- #cs2Idx `? "ScrCsr" ;
     LetE scrCsrIdx : (TaggedUnion ScrCsrIdx) <- #cs2Idx `! "ScrCsr" ;
+    (* isSet and isClear are false for Scr and for CSRRW[I], leaving newAddr = operand *)
+    LetE newAddr : Addr <- caseDefault
+                             [ (#isSet  , Or  [ #oldVal ; #operand ]) ;
+                               (#isClear, And [ #oldVal ; Not #operand ]) ]
+                             #operand ;
     LetE NewSpecialVal : FullECapWithTag <-
-      STRUCT { "tag" ::= #newTag; "ecap" ::= #cs1Ecap; "addr" ::= #cs1Addr } ;
+      STRUCT { "tag" ::= #newTag; "ecap" ::= #cs1Ecap; "addr" ::= #newAddr } ;
     LetE scrCsrPayload : ScrCsrPayload <- STRUCT {
       "SpecialDest" ::= #scrCsrIdx ;
-      "SpecialValue" ::= #NewSpecialVal
+      "SpecialValue" ::= #NewSpecialVal ;
+      "isWrite" ::= #isWrite
     } ;
     LetE scrCsr : Option ScrCsrPayload <- ITE0 #isScrCsr (mkSome #scrCsrPayload) ;
     RetE #scrCsr.

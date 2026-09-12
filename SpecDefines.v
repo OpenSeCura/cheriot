@@ -137,6 +137,9 @@ Definition InstGroup := STRUCT_TYPE {
   "CAndPerm"                    :: Bool ;
   "Csr"                         :: Bool ;
   "Scr"                         :: Bool ;
+  "ScrCsr_Write"                :: Bool ; (* Set only for Csr/Scr ops that actually write *)
+  "Csr_Set"                     :: Bool ; (* CSRRS / CSRRSI *)
+  "Csr_Clear"                   :: Bool ; (* CSRRC / CSRRCI *)
   "Lui"                         :: Bool ;
   "CGetPerm"                    :: Bool ;
   "CGetType"                    :: Bool ;
@@ -542,7 +545,7 @@ Record CsrEntry := {
   csrInit       : Z
 }.
 
-Definition CsrTable := [
+Definition PhysicalCsrTable := [
   {| csrName := "mcycle"    ; csrAddr := 0xc00 ; csrReadNoAsr := true  ; csrWriteNoAsr := false ; csrInit := 0 |} ;
   {| csrName := "mcycleh"   ; csrAddr := 0xc80 ; csrReadNoAsr := true  ; csrWriteNoAsr := false ; csrInit := 0 |} ;
   {| csrName := "minstret"  ; csrAddr := 0xc02 ; csrReadNoAsr := true  ; csrWriteNoAsr := false ; csrInit := 0 |} ;
@@ -551,12 +554,20 @@ Definition CsrTable := [
   {| csrName := "mtimecmph" ; csrAddr := 0x15D ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 2^Xlen-1 |} ;
   {| csrName := "mstatus"   ; csrAddr := 0x300 ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 0 |} ;
   {| csrName := "mie"       ; csrAddr := 0x304 ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 0 |} ;
-  {| csrName := "mip"       ; csrAddr := 0x344 ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 0 |} ;
   {| csrName := "mcause"    ; csrAddr := 0x342 ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 0 |} ;
   {| csrName := "mtval"     ; csrAddr := 0x343 ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 0 |} ;
   {| csrName := "mshwm"     ; csrAddr := 0xbc1 ; csrReadNoAsr := true  ; csrWriteNoAsr := true  ; csrInit := 0 |} ;
   {| csrName := "mshwmb"    ; csrAddr := 0xbc2 ; csrReadNoAsr := true  ; csrWriteNoAsr := true  ; csrInit := 0 |}
 ].
+
+(* Virtual CSRs have no backing register: reads are synthesised and writes are dropped.
+   They are appended last, so a physical CSR has the same index in both tables and an
+   index taken from VirtualCsrTable is out of range for the physical register list. *)
+Definition VirtualCsrTable := [
+  {| csrName := "mip"       ; csrAddr := 0x344 ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 0 |}
+].
+
+Definition CsrTable := PhysicalCsrTable ++ VirtualCsrTable.
 
 (* Lookup Functions by Name for CsrTable *)
 Fixpoint getCsrEntryFromList (s : string) (table : list (CsrEntry * Z)) : option (CsrEntry * Z) :=
@@ -598,19 +609,30 @@ Definition getCsrIdx (s : string) := forceOption (getCsrIdxByName s).
 Definition getCsrAllowReadNoAsr (s : string) := forceOption (getCsrAllowReadNoAsrByName s).
 Definition getCsrAllowWriteNoAsr (s : string) := forceOption (getCsrAllowWriteNoAsrByName s).
 
+(* Index into the physical register list. Undefined (unit, hence a type error at every
+   use site) for a virtual CSR, which by construction has no backing register. *)
+Definition getCsrPhysicalIdxByName (s : string) : option Z :=
+  match getCsrEntryFromList s (enumerate PhysicalCsrTable) with
+  | Some (_, idx) => Some idx
+  | None => None
+  end.
+
+Definition getCsrPhysicalIdx (s : string) := forceOption (getCsrPhysicalIdxByName s).
+
 Record ScrEntry := {
-  scrName : string ;
-  scrAddr : Z ;
-  scrInit : type FullECapWithTag
+  scrName     : string ;
+  scrAddr     : Z ;
+  scrReadOnly : bool ;
+  scrInit     : type FullECapWithTag
 }.
 
 (* Only scrInit depends on pcAddrInit; name, address and length do not. *)
 Definition ScrTable (pcAddrInit : Z) := [
-  {| scrName := "MePrevPcc" ; scrAddr := 27 ; scrInit := getDefault _        |} ;
-  {| scrName := "Mtcc"      ; scrAddr := 28 ; scrInit := ExecRoot pcAddrInit |} ;
-  {| scrName := "Mtdc"      ; scrAddr := 29 ; scrInit := MemRoot 0           |} ;
-  {| scrName := "Mscratchc" ; scrAddr := 30 ; scrInit := SealRoot 0          |} ;
-  {| scrName := "MePcc"     ; scrAddr := 31 ; scrInit := ExecRoot pcAddrInit |}
+  {| scrName := "MePrevPcc" ; scrAddr := 27 ; scrReadOnly := true  ; scrInit := getDefault _        |} ;
+  {| scrName := "Mtcc"      ; scrAddr := 28 ; scrReadOnly := false ; scrInit := ExecRoot pcAddrInit |} ;
+  {| scrName := "Mtdc"      ; scrAddr := 29 ; scrReadOnly := false ; scrInit := MemRoot 0           |} ;
+  {| scrName := "Mscratchc" ; scrAddr := 30 ; scrReadOnly := false ; scrInit := SealRoot 0          |} ;
+  {| scrName := "MePcc"     ; scrAddr := 31 ; scrReadOnly := false ; scrInit := ExecRoot pcAddrInit |}
 ].
 
 (* Structural derivations below (indices, addresses, width) use (ScrTable 0).
@@ -619,6 +641,7 @@ Section ScrTableStructural.
   Variable pc : Z.
   Definition ScrTableNamesIndep : map scrName (ScrTable pc) = map scrName (ScrTable 0) := eq_refl.
   Definition ScrTableAddrsIndep : map scrAddr (ScrTable pc) = map scrAddr (ScrTable 0) := eq_refl.
+  Definition ScrTableRoIndep : map scrReadOnly (ScrTable pc) = map scrReadOnly (ScrTable 0) := eq_refl.
 End ScrTableStructural.
 
 (* Lookup Functions by Name for ScrTable *)
@@ -644,8 +667,15 @@ Definition getScrIdxByName (s : string) : option Z :=
   | None => None
   end.
 
+Definition getScrReadOnlyByName (s : string) : option bool :=
+  match getScrEntryByName s with
+  | Some (e, _) => Some e.(scrReadOnly)
+  | None => None
+  end.
+
 Definition getScrAddr (s : string) := forceOption (getScrAddrByName s).
 Definition getScrIdx (s : string) := forceOption (getScrIdxByName s).
+Definition getScrReadOnly (s : string) := forceOption (getScrReadOnlyByName s).
 
 Definition CsrIdxSz := Z.log2_up (Z.of_nat (length CsrTable)).
 Definition ScrIdxSz := Z.log2_up (Z.of_nat (length (ScrTable 0))).
@@ -760,6 +790,13 @@ Section CsrHelpers.
 
   Definition encodeMcause (mcause : Expr ty (Bit 5)) : Expr ty (Bit Xlen) :=
     ZeroExtendTo Xlen mcause.
+
+  Definition createMip (meip mtip : Expr ty Bool) : Expr ty (Bit Xlen) :=
+    {< Const ty (Bit (Xlen - MEIP_Bit - 1)) Zmod.zero ,
+       ToBit meip ,
+       Const ty (Bit (MEIP_Bit - MTIP_Bit - 1)) Zmod.zero ,
+       ToBit mtip ,
+       Const ty (Bit MTIP_Bit) Zmod.zero >}.
 End CsrHelpers.
 
 Section Decoders.
@@ -788,6 +825,14 @@ Section Decoders.
   Definition csrAllowWriteNoAsrDecoder (addr : ty (Bit CsrAddrSz)) : Expr ty Bool :=
     Or (map (fun e => Eq #addr $(e.(csrAddr)))
             (filter (fun e => e.(csrWriteNoAsr)) CsrTable)).
+
+  (* Software may not write a virtual CSR: there is no register behind it. *)
+  Definition csrIsVirtualDecoder (addr : ty (Bit CsrAddrSz)) : Expr ty Bool :=
+    Or (map (fun e => Eq #addr $(e.(csrAddr))) VirtualCsrTable).
+
+  Definition scrIsReadOnlyDecoder (addr : ty (Bit ScrAddrSz)) : Expr ty Bool :=
+    Or (map (fun e => Eq #addr $(e.(scrAddr)))
+            (filter (fun e => e.(scrReadOnly)) (ScrTable 0))).
 End Decoders.
 
 Definition isSealed ty (ecap: ty ECap) : Expr ty Bool := isNotZero (##ecap`"oType").
@@ -933,7 +978,6 @@ Definition AluControl := STRUCT_TYPE {
   (* Reg_addr_CGetAddr = CGetAddr *)
   (* Reg_addr_CGetHigh = CGetHigh *)
   "Reg_addr_cs2Addr" :: Bool ;
-  "Reg_addr_zimm5" :: Bool ;
   "Reg_addr_cs1Addr" :: Bool ;
   (* Reg_addr_CAndPerm = CAndPerm *)
   (* Reg_addr_SealerUnsealer = SealOrUnseal *)
@@ -958,6 +1002,10 @@ Definition AluControl := STRUCT_TYPE {
   "Mret" :: Bool ;
   "Cjalr" :: Bool ;
   "Scr" :: Bool ;
+  "ScrCsr_Write" :: Bool ;
+  "ScrCsr_operand_isImm" :: Bool ;
+  "Csr_Set" :: Bool ;
+  "Csr_Clear" :: Bool ;
   "CAndPerm" :: Bool ;
   "isUnsigned" :: Bool ;
   "Lui" :: Bool ;
@@ -1032,7 +1080,8 @@ Definition CfPayload := STRUCT_TYPE {
 
 Definition ScrCsrPayload := STRUCT_TYPE {
   "SpecialDest"  :: TaggedUnion ScrCsrIdx ;
-  "SpecialValue" :: FullECapWithTag
+  "SpecialValue" :: FullECapWithTag ;
+  "isWrite"      :: Bool
 }.
 
 Definition AluOut := STRUCT_TYPE {
@@ -1103,13 +1152,14 @@ Section RfTree.
   Definition csrLeaves : list (Tree DomainElem) :=
     map (fun e =>
       Leaf e.(csrName) (dom, EReg (Build_Reg (Bit Xlen) (Some (Zmod.of_Z _ e.(csrInit))) false))
-    ) CsrTable.
+    ) PhysicalCsrTable.
 
   Definition rfTree : Tree DomainElem :=
     Node "rf" [
       Node "gprs" gprLeaves ;
       Node "scrs" scrLeaves ;
-      Node "csrs" csrLeaves
+      Node "csrs" csrLeaves ;
+      Leaf "mtip" (dom, EReg (Build_Reg Bool (Some false) false))
     ].
 
   Definition gprPaths : list (RegPath rfTree) :=
@@ -1137,11 +1187,11 @@ Section RfTree.
         (getTreeRegsOfKind (Bit Xlen) (getNode (getNodePath rfTree "rf.csrs"))).
 
   Notation incrementDXlenCsr lowCsr highCsr :=
-    (LetA currLow  : Bit Xlen  <- readRegsList csrPathsWithKind ($(getCsrIdx lowCsr) : Expr _ (Bit CsrIdxSz)) ;
-     LetA currHigh : Bit Xlen  <- readRegsList csrPathsWithKind ($(getCsrIdx highCsr) : Expr _ (Bit CsrIdxSz)) ;
+    (LetA currLow  : Bit Xlen  <- readRegsList csrPathsWithKind ($(getCsrPhysicalIdx lowCsr) : Expr _ (Bit CsrIdxSz)) ;
+     LetA currHigh : Bit Xlen  <- readRegsList csrPathsWithKind ($(getCsrPhysicalIdx highCsr) : Expr _ (Bit CsrIdxSz)) ;
      Let  newVal   : Bit DXlen <- Add [ {< #currHigh, #currLow >} ; $1 ] ;
-     Act (writeRegsList csrPathsWithKind ($(getCsrIdx lowCsr) : Expr _ (Bit CsrIdxSz)) (TruncLsb Xlen Xlen #newVal)) ;
-     writeRegsList csrPathsWithKind ($(getCsrIdx highCsr) : Expr _ (Bit CsrIdxSz)) (TruncMsb Xlen Xlen #newVal)).
+     Act (writeRegsList csrPathsWithKind ($(getCsrPhysicalIdx lowCsr) : Expr _ (Bit CsrIdxSz)) (TruncLsb Xlen Xlen #newVal)) ;
+     writeRegsList csrPathsWithKind ($(getCsrPhysicalIdx highCsr) : Expr _ (Bit CsrIdxSz)) (TruncMsb Xlen Xlen #newVal)).
 
   Section CsrHelpers.
     Variable ty : Kind -> Type.
@@ -1153,13 +1203,13 @@ Section RfTree.
       incrementDXlenCsr "mcycle" "mcycleh".
 
     Definition updateMshwmOnStore (stAddr : Expr ty Addr) : Action ty rfTree (Bit 0) :=
-      LetA mshwm        : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrIdx "mshwm") : Expr _ (Bit CsrIdxSz)) ;
-      LetA mshwmb       : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrIdx "mshwmb") : Expr _ (Bit CsrIdxSz)) ;
+      LetA mshwm        : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mshwm") : Expr _ (Bit CsrIdxSz)) ;
+      LetA mshwmb       : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mshwmb") : Expr _ (Bit CsrIdxSz)) ;
       Let  shouldUpdate : Bool     <- And [ Sge stAddr #mshwmb ; Slt stAddr #mshwm ] ;
       If #shouldUpdate Then (
         Let alignedAddr : Bit Xlen <- {< TruncMsb (AddrSz - LgMshwmAlign) LgMshwmAlign stAddr,
                                          Const ty (Bit LgMshwmAlign) (bits.of_Z LgMshwmAlign 0) >} ;
-        Act (writeRegsList csrPathsWithKind ($(getCsrIdx "mshwm") : Expr _ (Bit CsrIdxSz)) #alignedAddr) ;
+        Act (writeRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mshwm") : Expr _ (Bit CsrIdxSz)) #alignedAddr) ;
         Retv
       ) ;
       Retv.

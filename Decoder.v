@@ -115,6 +115,8 @@ Section DecodeUncompressed.
 
     LetE isCsr  : Bool <- And [ #isCsrOp; #isValidCsr ] ;
     LetE isCsrImm: Bool <- And [ #isCsr; FromBit Bool (#funct3`[2:2]) ] ;
+    LetE isCsrSet   : Bool <- Eq (#funct3`[1:0]) $2 ;
+    LetE isCsrClear : Bool <- Eq (#funct3`[1:0]) $3 ;
 
     LetE isSysZero: Bool <- And [ #isSystem; isZero #funct3 ] ;
     LetE isMret   : Bool <- And [ #isSysZero; Eq #csrAddr $0x302 ] ;
@@ -145,6 +147,7 @@ Section DecodeUncompressed.
     (* Three-argument and Special instructions (opcode in funct7) *)
     LetE isScrOp              : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x01 ] ;
     LetE isScr                : Bool <- And [ #isScrOp; #isValidScr ] ;
+    LetE isScrWrite           : Bool <- And [ #isScr; isNotZero #rs1 ] ;
     LetE isCSetBoundsReg      : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x08 ] ;
     LetE isCSetBoundsExact    : Bool <- And [ #isCheriFunct0; Eq #funct7 $0x09 ] ;
     LetE isCSetBoundsRoundDown: Bool <- And [ #isCheriFunct0; Eq #funct7 $0x0a ] ;
@@ -178,7 +181,11 @@ Section DecodeUncompressed.
       #isCGetTop; #isCSetHigh; #isCClearTag; #isCMove; #isMret; #isECall; #isEBreak; #isFence
     ] ;
 
-    LetE isIllegalInst : Bool <- Not #isValidInst ;
+    LetE csrWriteVirtual   : Bool <- And [ #isCsr; #isCsrWrite; csrIsVirtualDecoder csrAddr ] ;
+    LetE scrWriteReadOnly  : Bool <- And [ #isScrWrite; scrIsReadOnlyDecoder rs2 ] ;
+    LetE readOnlyViolation : Bool <- Or [ #csrWriteVirtual; #scrWriteReadOnly ] ;
+
+    LetE isIllegalInst : Bool <- Or [ Not #isValidInst; #readOnlyViolation ] ;
     LetE asrViolation  : Bool <- Or [ And [ #isCsr; Not #csrPermitted ]; And [ #isScr; Not #hasAsr ] ] ;
 
     (* Direct Bit Slicing for Branch / Comparator Controls *)
@@ -224,6 +231,9 @@ Section DecodeUncompressed.
       "CAndPerm"                    ::= #isCAndPerm ;
       "Csr"                         ::= #isCsr ;
       "Scr"                         ::= #isScr ;
+      "ScrCsr_Write"                ::= Or [ And [ #isCsr; #isCsrWrite ] ; #isScrWrite ] ;
+      "Csr_Set"                     ::= #isCsrSet ;
+      "Csr_Clear"                   ::= #isCsrClear ;
       "Lui"                         ::= #isLui ;
       "CGetPerm"                    ::= #isCGetPerm ;
       "CGetType"                    ::= #isCGetType ;
