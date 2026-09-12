@@ -190,14 +190,16 @@ Definition FunctionalUnits := STRUCT_TYPE {
  * CSR & SCR Definitions, Tables, Mappings, and Decoders
  * =========================================================================== *)
 
-Fixpoint enumerate_aux {A : Type} (i : Z) (l : list A) : list (A * Z) :=
-  match l with
-  | [] => []
-  | x :: xs => (x, i) :: enumerate_aux (i + 1) xs
-  end.
+Section Enumerate.
+  Variable A: Type.
+  Fixpoint enumerate_aux (i : Z) (l : list A) : list (A * Z) :=
+    match l with
+    | [] => []
+    | x :: xs => (x, i) :: enumerate_aux (i + 1) xs
+    end.
 
-Definition enumerate {A : Type} (l : list A) : list (A * Z) :=
-  enumerate_aux 0 l.
+  Definition enumerate := enumerate_aux 0.
+End Enumerate.
 
 Definition getStrIndexOption (s : string) (ls : list string) : option nat :=
   (fix loop (l : list string) (idx : nat) : option nat :=
