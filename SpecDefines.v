@@ -327,7 +327,7 @@ Section CapEncoding.
                      `{ "LG" <- ConstTBool false })))))).
 
     Definition decodePerms (rawPerms: ty (Array CapPermSz Bool)) : LetExpr ty CapPerms :=
-      ( LetE initPerms : CapPerms <- (ConstTDefK CapPerms) `{ "GL" <- #rawPerms $[5] };
+      ( LetE initPerms : CapPerms <- (ConstTDefK CapPerms) `{ "GL" <- ##rawPerms $[5] };
         RetE (ITE (##rawPerms $[4])
                 (ITE (##rawPerms $[3])
                    (##initPerms

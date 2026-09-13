@@ -376,8 +376,8 @@ Section Alu.
 
     LetE normalFenceIUnion : NormalFenceIUnion <-
       ITE #isFenceI
-          (UNION (NormalFenceIType, "FenceI" ::= ConstDef))
-          (UNION (NormalFenceIType, "Normal" ::= ConstDef)) ;
+          (UNION (NormalFenceIType, "FenceI" ::= Const ty (Bit 0) Zmod.zero))
+          (UNION (NormalFenceIType, "Normal" ::= Const ty (Bit 0) Zmod.zero)) ;
 
     LetE notDeferredUnion : NotDeferredUnion <-
       ITE (Or [ #isCf ; #isScrCsr ])

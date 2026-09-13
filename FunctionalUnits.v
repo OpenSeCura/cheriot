@@ -901,7 +901,7 @@ Section FunctionalUnits.
 
     LetE nextPccTag : Bool <-
       And [ #cs1Tag; #cs1PermEx; #nextPccLegal; Or [ #notCs1Sealed; #immZero ] ] ;
-    LetE nextPccECap : ECap <- ##cs1ECap `{ "oType" <- $0 } ;
+    LetE nextPccECap : ECap <- ##cs1ECap `{ "oType" <- Const ty (Bit CapOTypeSz) Zmod.zero } ;
 
     LetE nextIntStatus : Bool <- ITE (And [#nextPccTag; isSealed cs1ECap; Not (isSentryIh cs1OType)])
                                    (isSentryIe cs1OType)
@@ -1466,10 +1466,10 @@ Section FunctionalUnits.
       ITE (Or [#isBranch; #isCjal])
         (UNION (CfOpType, "ControlFlowAddrOnly" ::= ITE #isBranch
                                                    (UNION (ControlFlowAddrOnlyOpType, "Branch" ::= #isCond))
-                                                   (UNION (ControlFlowAddrOnlyOpType, "Cjal" ::= ConstDef))))
+                                                   (UNION (ControlFlowAddrOnlyOpType, "Cjal" ::= Const ty (Bit 0) Zmod.zero))))
         (UNION (CfOpType, "ControlFlowAddrECap" ::= ITE #isCjalr
                                                    (UNION (ControlFlowAddrECapOpType, "Cjalr" ::= #cjalrIntStatus))
-                                                   (UNION (ControlFlowAddrECapOpType, "Mret" ::= ConstDef)))) ;
+                                                   (UNION (ControlFlowAddrECapOpType, "Mret" ::= Const ty (Bit 0) Zmod.zero)))) ;
 
     LetE newPcc : FullECapWithTag <- STRUCT {
       "tag"  ::= #pccTagOut ;
