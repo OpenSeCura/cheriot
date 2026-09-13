@@ -150,10 +150,19 @@ Definition specModInst : Mod specSysTreeInst :=
         concreteUart
         concretePlic.
 
-(*
 From Guru Require Import Extraction Simulator.
 Set Extraction Output Directory ".".
 
+Extract Constant io_send => "(\name k val ->
+  if (Prelude.||) (name Prelude.== ""txData"") (Data.List.isSuffixOf "".txData"" name)
+  then let byte = Prelude.fromIntegral (unsafeCoerce val :: Prelude.Integer)
+       in Prelude.putChar (Data.Char.chr byte)
+  else Prelude.return ())".
+
+Extract Constant io_recv => "(\name k ->
+  if (Prelude.||) (name Prelude.== ""txRdy"") (Data.List.isSuffixOf "".txRdy"" name)
+  then Prelude.return (unsafeCoerce Prelude.True)
+  else Prelude.return (unsafeCoerce (getDefault k)))".
+
 Definition main : IO unit := evalModCyclesIO specSysTreeInst (Z.to_nat 20000) specModInst.
-Extraction "Simulate" main.
-*)
+(* Extraction "Simulate" main. *)
