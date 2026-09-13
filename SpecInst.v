@@ -164,5 +164,5 @@ Extract Constant io_recv => "(\name k ->
   then Prelude.return (unsafeCoerce Prelude.True)
   else Prelude.return (unsafeCoerce (getDefault k)))".
 
-Definition main : IO unit := evalModCyclesIO specSysTreeInst (Z.to_nat 20000) specModInst.
+Definition main : IO unit := evalModCyclesIO specSysTreeInst (Z.to_nat 100) specModInst.
 Extraction "Simulate" main.
