@@ -164,5 +164,9 @@ Extract Constant io_recv => "(\name k ->
   then Prelude.return (unsafeCoerce Prelude.True)
   else Prelude.return (unsafeCoerce (getDefault k)))".
 
+Extract Constant io_stepCycle => "(\c ->
+  Prelude.putStrLn (""[Cycle "" Prelude.++ Prelude.show (c :: Prelude.Integer) Prelude.++ ""]"") Prelude.>>
+  System.IO.hFlush System.IO.stdout)".
+
 Definition main : IO unit := evalModCyclesIO specSysTreeInst (Z.to_nat 100) specModInst.
 Extraction "Simulate" main.

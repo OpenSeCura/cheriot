@@ -78,7 +78,13 @@ clean:: Makefile.coq.all
 	find . -type f -name '*.hi' -exec rm {} \;
 	find . -type f -name '*.o' -exec rm {} \;
 	find . -type f -name '*.aux' -exec rm {} \;
+	find . -type f -name '*.ho' -exec rm {} \;
 	find . -type f -name 'Compile.hs' -exec rm {} \;
+	find . -type f -name 'Simulate.hs' -exec rm {} \;
+	find . -type f -name 'Simulate.hi' -exec rm {} \;
+	find . -type f -name 'Simulate.ho' -exec rm {} \;
+	find . -type f -name 'Simulate.o' -exec rm {} \;
+	find . -type f -name 'Simulate' -exec rm {} \;
 	find . -type f -name 'Main' -exec rm {} \;
 	find . -type f -name 'Main.sv' -exec rm {} \;
 	rm -f Makefile.coq.all Makefile.coq.all.conf .Makefile.coq.all.d
