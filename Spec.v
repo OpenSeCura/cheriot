@@ -138,8 +138,8 @@ Section SpecDom.
 
         (* 4. Alu Control, Routing, and Execution *)
         Let  instGroup : InstGroup <- ##aluInInstGroup`"instGroup" ;
-        (* BAD: LetL aluCtrl   : AluControl <- decodeInstGroup instGroup ; *)
-        Let aluCtrl : AluControl <- Const ty AluControl (getDefault AluControl) ;
+        (* Let aluCtrl : AluControl <- Const ty AluControl (getDefault AluControl) ; *)
+        LetL aluCtrl   : AluControl <- decodeInstGroup instGroup ;
         Let  aluIn     : AluIn <- STRUCT {
           "cs2Idx"              ::= ##aluInInstGroup`"cs2Idx" ;
           "writesCd"            ::= ##aluInInstGroup`"writesCd" ;
@@ -152,8 +152,8 @@ Section SpecDom.
           "currInterruptStatus" ::= ##aluInInstGroup`"currInterruptStatus" ;
           "aluControl"          ::= #aluCtrl
         } ;
-        (* BAD: LetL routingOut : AluOut      <- AluRouting aluIn ; *)
-        Let routingOut : AluOut <- Const ty AluOut (getDefault AluOut) ;
+        (* BAD Let routingOut : AluOut <- Const ty AluOut (getDefault AluOut) ; *)
+        LetL routingOut : AluOut      <- AluRouting aluIn ;
         LetL aluOut     : AluOutUnion <- Alu routingOut ;
 
         (* 5. Commit Non-Deferred (GPRs, SCRs, CSRs, PCC, Traps) *)
