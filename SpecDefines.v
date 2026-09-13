@@ -1206,29 +1206,33 @@ Section RfTree.
       Leaf "mtip" (dom, EReg (Build_Reg Bool (Some false) false))
     ].
 
+  Definition np_gprs : NodePath rfTree := Eval cbn in (getNodePath rfTree "rf.gprs").
+  Definition np_scrs : NodePath rfTree := Eval cbn in (getNodePath rfTree "rf.scrs").
+  Definition np_csrs : NodePath rfTree := Eval cbn in (getNodePath rfTree "rf.csrs").
+
   Definition gprPaths : list (RegPath rfTree) :=
-    map (embedRegPath (getNodePath rfTree "rf.gprs"))
-        (getTreeRegPaths (getNode (getNodePath rfTree "rf.gprs"))).
+    Eval cbn in (map (embedRegPath np_gprs)
+                     (getTreeRegPaths (getNode np_gprs))).
 
   Definition scrPaths : list (RegPath rfTree) :=
-    map (embedRegPath (getNodePath rfTree "rf.scrs"))
-        (getTreeRegPaths (getNode (getNodePath rfTree "rf.scrs"))).
+    Eval cbn in (map (embedRegPath np_scrs)
+                     (getTreeRegPaths (getNode np_scrs))).
 
   Definition csrPaths : list (RegPath rfTree) :=
-    map (embedRegPath (getNodePath rfTree "rf.csrs"))
-        (getTreeRegPaths (getNode (getNodePath rfTree "rf.csrs"))).
+    Eval cbn in (map (embedRegPath np_csrs)
+                     (getTreeRegPaths (getNode np_csrs))).
 
   Definition gprPathsWithKind : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
-    map (embedRegOfKind (getNodePath rfTree "rf.gprs"))
-        (getTreeRegsOfKind FullECapWithTag (getNode (getNodePath rfTree "rf.gprs"))).
+    Eval cbn in (map (embedRegOfKind np_gprs)
+                     (getTreeRegsOfKind FullECapWithTag (getNode np_gprs))).
 
   Definition scrPathsWithKind : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
-    map (embedRegOfKind (getNodePath rfTree "rf.scrs"))
-        (getTreeRegsOfKind FullECapWithTag (getNode (getNodePath rfTree "rf.scrs"))).
+    Eval cbn in (map (embedRegOfKind np_scrs)
+                     (getTreeRegsOfKind FullECapWithTag (getNode np_scrs))).
 
   Definition csrPathsWithKind : list (RegOfKind (t:=rfTree) (Bit Xlen)) :=
-    map (embedRegOfKind (getNodePath rfTree "rf.csrs"))
-        (getTreeRegsOfKind (Bit Xlen) (getNode (getNodePath rfTree "rf.csrs"))).
+    Eval cbn in (map (embedRegOfKind np_csrs)
+                     (getTreeRegsOfKind (Bit Xlen) (getNode np_csrs))).
 
   Notation incrementDXlenCsr lowCsr highCsr :=
     (LetA currLow  : Bit Xlen  <- readRegsList csrPathsWithKind ($(getCsrPhysicalIdx lowCsr) : Expr _ (Bit CsrIdxSz)) ;

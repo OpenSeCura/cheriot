@@ -286,10 +286,10 @@ Section SpecCoreTree.
     Local Notation coreTree := (specCoreTree regions).
 
     Definition np_rf : NodePath coreTree :=
-      getNodePath coreTree "core.rf".
+      Eval cbn in (getNodePath coreTree "core.rf").
 
     Definition np_mem : NodePath coreTree :=
-      getNodePath coreTree "core.mem".
+      Eval cbn in (getNodePath coreTree "core.mem").
 
     Local Notation computeRevBitAddr := (computeRevBitAddr config).
 

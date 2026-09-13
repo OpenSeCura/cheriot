@@ -63,13 +63,13 @@ Section SpecDom.
       Variable ty : Kind -> Type.
 
       Definition np_core : NodePath sysTree :=
-        getNodePath sysTree "sys.core".
+        Eval cbn in (getNodePath sysTree "sys.core").
 
       Definition np_rf : NodePath sysTree :=
-        getNodePath sysTree "sys.core.rf".
+        Eval cbn in (getNodePath sysTree "sys.core.rf").
 
       Definition np_mem : NodePath sysTree :=
-        getNodePath sysTree "sys.core.mem".
+        Eval cbn in (getNodePath sysTree "sys.core.mem").
 
       (* ===========================================================================
        * Peripheral Background Rules & Interrupt Polling
