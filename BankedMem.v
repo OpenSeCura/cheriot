@@ -72,7 +72,7 @@ Section BankedMem.
     exact I.
   Qed.
 
-  Definition initTagRegPath : RegPath bankedMemIfc := getRegPathTree cl ".initTagReg".
+  Definition initTagRegPath : RegPath bankedMemIfc := Eval cbn in (getRegPathTree cl ".initTagReg").
 
   Definition memBankPath (i: FinType NumBanks) : MemPath bankedMemIfc.
   Proof.
