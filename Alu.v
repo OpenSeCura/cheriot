@@ -69,6 +69,7 @@ Section Alu.
     LetE cs2Perms : CapPerms <- ##cs2ECap`"perms" ;
 
     LetE simm12 : Bit Xlen <- SignExtendTo Xlen (##inst`[31:20]) ;
+    LetE store_imm : Bit Xlen <- SignExtendTo Xlen ({< ##inst`[31:25], ##inst`[11:7] >}) ;
     LetE zimm12 : Bit Xlen <- ZeroExtendTo Xlen (##inst`[31:20]) ;
     LetE uimm20 : Bit Xlen <- ({< ##inst`[31:12], Const ty (Bit 12) Zmod.zero >}) ;
     LetE uimm20_11 : Bit Xlen <-
@@ -100,7 +101,8 @@ Section Alu.
           (##aluControl`"Cjal", #jimm20) ;
           (##aluControl`"AdderBeforeBoundsCheck_offset_uimm20_11", #uimm20_11) ;
           (##aluControl`"AdderBeforeBoundsCheck_offset_cs2Addr", #cs2Addr) ;
-          (##aluControl`"Bounds_isImm", #zimm12) ]
+          (##aluControl`"Bounds_isImm", #zimm12) ;
+          (##aluControl`"Store", #store_imm) ]
         #simm12 ;
     LETE AdderBeforeBoundsCheckOut : Addr <-
       AdderBeforeBoundsCheck AdderBeforeBoundsCheck_base AdderBeforeBoundsCheck_offset ;

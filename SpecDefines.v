@@ -900,6 +900,7 @@ Definition AluControl := STRUCT_TYPE {
   "AdderBeforeBoundsCheck_offset_uimm20_11" :: Bool ;
   "AdderBeforeBoundsCheck_offset_cs2Addr" :: Bool ;
   (* AdderBeforeBoundsCheck_offset_zimm12 = Bounds_isImm *)
+  (* AdderBeforeBoundsCheck_offset_store_imm = Store *)
   (* "AdderBeforeBoundsCheck_offset_simm12" :: Bool ; (* default option *) *)
 
   (* AdderToOutput *)

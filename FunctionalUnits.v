@@ -18,7 +18,8 @@
 1. INSTRUCTION GROUPS
 -------------------------------------------------------------------------------
 Immediate Formats:
-  * simm12          : 12-bit sign-extended immediate (arithmetic, loads/stores & CJALR offsets)
+  * simm12          : 12-bit sign-extended immediate (arithmetic, loads & CJALR offsets)
+  * store_imm       : 12-bit sign-extended immediate (stores)
   * zimm12          : 12-bit zero-extended immediate (CSetBoundsImm)
   * uimm20          : 20-bit sign-extended upper immediate shifted left 12 bits (LUI)
   * uimm20_11       : 20-bit sign-extended upper immediate shifted left 11 bits
@@ -164,13 +165,13 @@ Load
       f) Exception (outputs exception if bounds/tag/permission/alignment violation)
 
 Store
-* SB rs2, simm12(cs1)
-* SH rs2, simm12(cs1)
-* SW rs2, simm12(cs1)
-* SC cs2, simm12(cs1)
+* SB rs2, store_imm(cs1)
+* SH rs2, store_imm(cs1)
+* SW rs2, store_imm(cs1)
+* SC cs2, store_imm(cs1)
     Can cause exceptions
     Functional Units:
-      a) AdderBeforeBoundsCheck (memory address cs1.addr + simm12 -> routed to dstValue.addr)
+      a) AdderBeforeBoundsCheck (memory address cs1.addr + store_imm -> routed to dstValue.addr)
       b) ComparatorTopOrRep (checking top AdderBeforeBoundsCheck < cs1.top)
       c) ComparatorBase (checking base AdderBeforeBoundsCheck >= cs1.base)
       d) AddrBoundsCheck (ands the two comparator outputs correctly)
@@ -362,7 +363,8 @@ AdderBeforeBoundsCheck:
   offset: bimm12 (Branch), jimm20 (Cjal), uimm20_11 (AuiPcc, AuiCgp),
         cs2.addr (CIncAddr & !isImm, CSetBounds & !isImm),
         zimm12 (CSetBounds & isImm),
-        simm12 (Cjalr, Load, Store, CIncAddr & isImm)
+        store_imm (Store),
+        simm12 (Cjalr, Load, CIncAddr & isImm)
 
 AdderToOutput:
   - ADD : Cjal, Cjalr, AddSub (when ADD/ADDI)
@@ -621,8 +623,9 @@ Section DecodeInstGroup.
       "AdderBeforeBoundsCheck_offset_cs2Addr" ::=
         Or [ And [ ##group`"CIncAddr"; Not ##group`"isImm" ];
              And [ ##group`"CSetBounds"; Not ##group`"isImm" ] ] ;
+      (* "AdderBeforeBoundsCheck_offset_store_imm" ::= ##group`"Store" ; *)
       (* "AdderBeforeBoundsCheck_offset_simm12" ::=
-        Or [ ##group`"Cjalr"; ##group`"Load"; ##group`"Store";
+        Or [ ##group`"Cjalr"; ##group`"Load";
              And [ ##group`"CIncAddr"; ##group`"isImm" ] ] ; *)
 
       "AdderToOutput_isSub" ::= Or [ And [ ##group`"AddSub"; ##group`"AddSub_isSub" ]; ##group`"CGetLen" ] ;
