@@ -528,7 +528,8 @@ Deferred (Mux):
   - Load   : Load
   - Store  : Store
   - Fence  : Fence
-  cs1Perms: cs1.perms (Load)
+  cs1Perms: cs1.perms (Load, Store)
+  cs2Perms: cs2.perms (Store)
   inst: inst (Load, Store, Fence)
   storeTag: cs2.tag (Store)
   storeCap: EncodeCap (Store)
@@ -1224,7 +1225,7 @@ Section FunctionalUnits.
     LetE keepTag : Bool <- Or [ Not #isSpecialPcc; #lsbZero ] ;
     @RetE _ Bool (And [ #tag; #keepTag ]).
 
-  Definition LoadStore (cs1Perms : ty CapPerms)
+  Definition LoadStore (cs1Perms cs2Perms : ty CapPerms)
                        (memSize : ty (Bit LgLgNumBytesFullCapSz))
                        (isUnsigned isLoad isStore : ty Bool)
                        (addr : ty Addr)
@@ -1240,8 +1241,10 @@ Section FunctionalUnits.
       "isLM"       ::= #isLM ;
       "isLG"       ::= #isLG
     } ;
+    LetE canStoreTag : Bool <- Or [ ##cs1Perms`"SL" ; ##cs2Perms`"GL" ] ;
+    LetE finalStoreTag : Bool <- And [ #storeTag ; #canStoreTag ] ;
     LetE storeCapVal : FullCapWithTag <- STRUCT {
-      "tag"  ::= #storeTag ;
+      "tag"  ::= #finalStoreTag ;
       "cap"  ::= #storeCap ;
       "addr" ::= #storeData
     } ;
@@ -1293,7 +1296,7 @@ Section FunctionalUnits.
                           "base" ::= #base_top`"base" })).
 
   Definition Deferred (isLoad isStore isFence : ty Bool)
-                      (cs1Perms : ty CapPerms)
+                      (cs1Perms cs2Perms : ty CapPerms)
                       (inst : ty (Bit Xlen))
                       (addr : ty Addr)
                       (storeTag : ty Bool)
@@ -1318,7 +1321,7 @@ Section FunctionalUnits.
       "WR"       ::= #wr ;
       "WW"       ::= #ww
     } ;
-    LETE memOpOpt : Option DeferredUnion <- LoadStore cs1Perms memSize isUnsigned isLoad isStore addr storeTag storeCap storeData ;
+    LETE memOpOpt : Option DeferredUnion <- LoadStore cs1Perms cs2Perms memSize isUnsigned isLoad isStore addr storeTag storeCap storeData ;
     RetE (Or [ ITE0 (And [ #isFence ; Not #isFenceI ]) (mkSome (UNION (DeferredUnionType, "Fence" ::= #fenceVal))) ;
                #memOpOpt ]).
 

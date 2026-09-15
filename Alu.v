@@ -313,7 +313,7 @@ Section Alu.
     LetE storeTag : Bool <- #cs2Tag ;
     LetE storeData : Addr <- #cs2Addr ;
     LETE DeferredOpRes : Option DeferredUnion <-
-      Deferred isLoad isStore isFence cs1Perms inst AdderBeforeBoundsCheckOut storeTag encodedCap storeData ;
+      Deferred isLoad isStore isFence cs1Perms cs2Perms inst AdderBeforeBoundsCheckOut storeTag encodedCap storeData ;
 
     LETE isFenceIOut : Bool <- FenceI isFence inst ;
 
