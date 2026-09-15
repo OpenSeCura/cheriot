@@ -400,7 +400,7 @@ Section MemRegionActions.
                              (ZeroExtend (lgLineBytesZ + 1 - LgLgNumBytesFullCapSz)%Z memSize) ;
     Let endOffset : Bit (lgLineBytesZ + 1)%Z <-
       Add [ ZeroExtend 1 (lineOffset addr) ; #numBytesActive ] ;
-    Let crossesLine : Bool <- FromBit Bool (TruncMsb 1 lgLineBytesZ #endOffset) ;
+    Let crossesLine : Bool <- FromBit Bool (TruncMsb 1 lgLineBytesZ (Sub #endOffset $1)) ;
     LetA rp1 : LineReadRp r.(regionLineCfg) <- memRegionLineRead r (lineAddr addr) ;
     LetIf lineDataMerged : Array lBytes (Bit 8) <-
       If #crossesLine Then (
@@ -453,13 +453,13 @@ Section MemRegionActions.
                                (ZeroExtend (lgLineBytesZ + 1 - LgLgNumBytesFullCapSz)%Z memSize) ;
       Let endOffset : Bit (lgLineBytesZ + 1)%Z <-
         Add [ ZeroExtend 1 (lineOffset addr) ; #numBytesActive ] ;
-      Let crossesLine : Bool <- FromBit Bool (TruncMsb 1 lgLineBytesZ #endOffset) ;
+      Let crossesLine : Bool <- FromBit Bool (TruncMsb 1 lgLineBytesZ (Sub #endOffset $1)) ;
       Let numBytesActiveDXlen : Bit (LgNumBytesFullCapSz + 1)%Z <-
                              Sll $1
                                (ZeroExtend (LgNumBytesFullCapSz + 1 - LgLgNumBytesFullCapSz)%Z memSize) ;
       Let endOffsetDXlen : Bit (LgNumBytesFullCapSz + 1)%Z <-
         Add [ ZeroExtend 1 #capOffset ; #numBytesActiveDXlen ] ;
-      Let crossesDXlen : Bool <- FromBit Bool (TruncMsb 1 LgNumBytesFullCapSz #endOffsetDXlen) ;
+      Let crossesDXlen : Bool <- FromBit Bool (TruncMsb 1 LgNumBytesFullCapSz (Sub #endOffsetDXlen $1)) ;
       Let isWrites : Array lBytes Bool <-
         FromBit (Array lBytes Bool)
           (rotateLeft (Not (Sll (ConstBit (InvDefault _)) #numBytesActive)) (lineOffset addr)) ;
@@ -477,9 +477,9 @@ Section MemRegionActions.
       Let tagMask1 : Array nTags Bool <-
         if hasTags r then (
           UpdateArray
-            (UpdateArray ConstDef (tagSlot addr) (ConstBool true))
-            #nextTagSlot
-            #crossWithinLine
+            (UpdateArray ConstDef #nextTagSlot #crossWithinLine)
+            (tagSlot addr)
+            (ConstBool true)
         ) else (
           ConstDef
         ) ;

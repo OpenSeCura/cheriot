@@ -1262,8 +1262,8 @@ Section FunctionalUnits.
         LetE cE <- #ecap`"cE";
         LetE E <- get_E_from_cE cE;
         LetE ECorrected <- get_ECorrected_from_E E;
-        LetE B <- TruncLsb (AddrSz + 1 - CapBSz) CapBSz (Sll (#ecap`"base") #ECorrected);
-        LetE T <- TruncLsb (AddrSz + 2 - CapBSz) CapBSz (Sll (#ecap`"top") #ECorrected);
+        LetE B <- TruncLsb (AddrSz + 1 - CapBSz) CapBSz (Srl (#ecap`"base") #ECorrected);
+        LetE T <- TruncLsb (AddrSz + 2 - CapBSz) CapBSz (Srl (#ecap`"top") #ECorrected);
         LETE cE <- get_cE_from_E_T_B E T B;
         LetE cT <- get_cT_from_T T;
         @RetE _ Cap (STRUCT {
