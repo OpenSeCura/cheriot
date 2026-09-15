@@ -1426,13 +1426,13 @@ Section FunctionalUnits.
 
     (* 3. Strict Priority Cascade *)
     RetE (
-      ITE (Not #fetchTag)
+      ITE #fetchTag
         (mkSome (mkExceptionInfo $EXC_CHERI #mtvalFetchTag))
         (ITE #fetchSeal
           (mkSome (mkExceptionInfo $EXC_CHERI #mtvalFetchSeal))
-          (ITE (Not #fetchExecPerm)
+          (ITE #fetchExecPerm
             (mkSome (mkExceptionInfo $EXC_CHERI #mtvalFetchExec))
-            (ITE (Not #fetchBounds)
+            (ITE #fetchBounds
               (mkSome (mkExceptionInfo $EXC_CHERI #mtvalFetchBnds))
               (ITE #illegalInst
                 (mkSome (mkExceptionInfo $EXC_IllegalInst #mtvalZero))
