@@ -412,7 +412,7 @@ Section MemRegionActions.
       ) Else (
         Return (##rp1`"data")
       ) ;
-    Let rotData : Array lBytes (Bit 8) <- ArrayRotr 8 #lineDataMerged (lineOffset addr) ;
+    Let rotData : Array lBytes (Bit 8) <- ArrayRotr #lineDataMerged (lineOffset addr) ;
     Let dataBytes : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <-
       slice #rotData (Const ty (Bit 0) Zmod.zero) (Z.to_nat NumBytesFullCapSz) ;
     Let rawData : Bit FullCapSz <- ToBit #dataBytes ;
@@ -447,7 +447,7 @@ Section MemRegionActions.
       Let capBytes : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <-
         FromBit (Array (Z.to_nat NumBytesFullCapSz) (Bit 8)) #rawData ;
       Let baseData : Array lBytes (Bit 8) <- embedCapBytes lBytes #capBytes ;
-      Let rotData : Array lBytes (Bit 8) <- ArrayRotl 8 #baseData (lineOffset addr) ;
+      Let rotData : Array lBytes (Bit 8) <- ArrayRotl #baseData (lineOffset addr) ;
       Let numBytesActive : Bit (lgLineBytesZ + 1)%Z <-
                              Sll $1
                                (ZeroExtend (lgLineBytesZ + 1 - LgLgNumBytesFullCapSz)%Z memSize) ;

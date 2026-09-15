@@ -187,7 +187,7 @@ Section BankedMem.
         (rotateLeft (Not (Sll (ConstBit (InvDefault _)) memSz)) shamt).
 
     Local Definition rotWriteVals: Expr ty (Array NumBanks (Bit 8)) :=
-      ArrayRotl 8 writeVals shamt.
+      ArrayRotl writeVals shamt.
 
     Local Definition doLoadRpNoRot : Action ty cl (Array NumBanks (Bit 8)) :=
       fold_right (fun memIdx acc =>
@@ -227,7 +227,7 @@ Section BankedMem.
 
     Definition doLoadRp : Action ty cl (Array NumBanks (Bit 8)) :=
       (LetA noRotLoadRp : Array NumBanks (Bit 8) <- doLoadRpNoRot;
-       Return (ArrayRotr 8 #noRotLoadRp shamt)).
+       Return (ArrayRotr #noRotLoadRp shamt)).
 
     Definition doLoadRqTag : Action ty cl (Bit 0) :=
       fold_right (fun tagIdx acc =>

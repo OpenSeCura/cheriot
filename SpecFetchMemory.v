@@ -92,7 +92,7 @@ Section CombinationalDeferred.
     LetE stBytesInt : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
       FromBit (Array (Z.to_nat NumBytesXlen) (Bit 8)) #data ;
     LetE stBytesRot : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
-      if needsRotation then ArrayRotl 8 #stBytesInt #byteOffset else #stBytesInt ;
+      if needsRotation then ArrayRotl #stBytesInt #byteOffset else #stBytesInt ;
     LetE stAddr     : Addr           <- ITE #isCap #data (ToBit #stBytesRot) ;
     LetE stTag      : Bool           <- And [ #isCap ; #tag ] ;
     @RetE _ FullCapWithTag (STRUCT {
@@ -128,7 +128,7 @@ Section CombinationalDeferred.
     LetE rawBytes   : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
       FromBit (Array (Z.to_nat NumBytesXlen) (Bit 8)) #rawDataLsb ;
     LetE rotBytes   : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
-      if needsRotation then ArrayRotr 8 #rawBytes #byteOffset else #rawBytes ;
+      if needsRotation then ArrayRotr #rawBytes #byteOffset else #rawBytes ;
     LetE memSzBytes : Bit (LgNumBytesFullCapSz + 1) <- Sll $1 #memSize ;
     @RetE _ (Bit Xlen) (ToBit (
       ITE #isUnsigned
