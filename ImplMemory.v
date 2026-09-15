@@ -177,13 +177,15 @@ Section MemoryModel.
       Let is_valid : Bool <- isMemAddr addr ;
       If #is_valid Then (
         Let offset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) addr ;
+        Let capOffset : Bit LgNumBytesFullCapSz <- TruncLsb TagAddrWidth LgNumBytesFullCapSz addr ;
+        Let isCapAligned : Bool <- isZero #capOffset ;
         Let tagAddr : Bit TagAddrWidth <- TruncMsb TagAddrWidth LgNumBytesFullCapSz addr ;
         Let tagOffset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) #tagAddr ;
         RegRead memVal  <- "mem.mainMem" in memoryTree ;
         RegRead tagsVal <- "mem.tags"    in memoryTree ;
         Let dataBytes : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <- slice #memVal #offset (Z.to_nat NumBytesFullCapSz) ;
         RegWrite "mem.bytesRpReg" in memoryTree <- mkSome (ToBit #dataBytes) ;
-        RegWrite "mem.tagRpReg"   in memoryTree <- mkSome (ReadArray #tagsVal #tagOffset) ;
+        RegWrite "mem.tagRpReg"   in memoryTree <- mkSome (And [ #isCapAligned ; ReadArray #tagsVal #tagOffset ]) ;
         Retv
       ) Else (
         RegWrite "mem.bytesRpReg" in memoryTree <- mkSome ConstDef ;
@@ -241,19 +243,30 @@ Section MemoryModel.
       Let is_valid : Bool <- isMemAddr addr ;
       If #is_valid Then (
         Let offset <- getMemOffset config.(mainMemStartAddr) (Z.of_nat config.(mainMemSize)) addr ;
+        Let capOffset : Bit LgNumBytesFullCapSz <- TruncLsb TagAddrWidth LgNumBytesFullCapSz addr ;
+        Let isCapAligned : Bool <- isZero #capOffset ;
+        Let isCap : Bool <- And [ Eq memSize $LgNumBytesFullCapSz ; #isCapAligned ] ;
         Let tagAddr : Bit TagAddrWidth <- TruncMsb TagAddrWidth LgNumBytesFullCapSz addr ;
         Let tagOffset <- getMemOffset tagsStartAddr (Z.of_nat tagsSize) #tagAddr ;
         Let num_bytes : Bit (LgNumBytesFullCapSz + 1) <- Sll $1 memSize ;
+        Let endOffsetDXlen : Bit (LgNumBytesFullCapSz + 1) <- Add [ ZeroExtend 1 #capOffset ; #num_bytes ] ;
+        Let crossesDXlen : Bool <- FromBit Bool (TruncMsb 1 LgNumBytesFullCapSz (Sub #endOffsetDXlen $1)) ;
         Let cap       : Cap                           <- val`"cap" ;
         Let data      : Addr                          <- val`"addr" ;
-        Let tag       : Bool                          <- val`"tag" ;
+        Let finalTag  : Bool                          <- And [ #isCap ; val`"tag" ] ;
         Let rawData   : Bit FullCapSz                 <- {< ToBit #cap, #data >} ;
         RegRead memVal  <- "mem.mainMem" in memoryTree ;
         RegRead tagsVal <- "mem.tags"    in memoryTree ;
         LetL updatedMem : Array config.(mainMemSize) (Bit 8) <-
           updSlice #memVal #offset (FromBit (Array (Z.to_nat NumBytesFullCapSz) (Bit 8)) #rawData) #num_bytes ;
+        Let tagsVal1 : Array tagsSize Bool <- UpdateArray #tagsVal #tagOffset #finalTag ;
+        Let nextTagOffset <- Add [ #tagOffset ; $1 ] ;
+        Let updatedTags : Array tagsSize Bool <-
+          ITE #crossesDXlen
+              (UpdateArray #tagsVal1 #nextTagOffset (ConstBool false))
+              #tagsVal1 ;
         RegWrite "mem.mainMem" in memoryTree <- #updatedMem ;
-        RegWrite "mem.tags"    in memoryTree <- UpdateArray #tagsVal #tagOffset #tag ;
+        RegWrite "mem.tags"    in memoryTree <- #updatedTags ;
         Retv
       ) ;
       Retv.

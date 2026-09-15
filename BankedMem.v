@@ -198,18 +198,28 @@ Section BankedMem.
         (Return ConstDef) (genFinType NumBanks).
 
     Local Definition shamtTag := TruncMsb LgNum8Banks LgNumBytesFullCapSz shamt.
+    Local Definition lastByte := Add [shamt; Sub memSz $1].
+    Local Definition lastShamtTag := TruncMsb LgNum8Banks LgNumBytesFullCapSz lastByte.
+
+    Local Definition add1Tag: Expr ty (Array Num8Banks Bool) :=
+      FromBit (Array Num8Banks Bool) (Not (Sll (ConstBit (InvDefault _)) shamtTag)).
 
     Local Definition castLineIdxTag (tagIdx: FinType Num8Banks):
       Expr ty (Bit (Z.log2_up (Z.of_nat EachSize))) :=
-      castBits LgEachSizeRoundTrip lineIdx.
-
-    Local Definition tagBankCap: Expr ty (Array Num8Banks Bool) :=
-      FromBit (Array Num8Banks Bool)
-        (Sll (ITE0 isCap (ConstT (Bit (NatZ_mul Num8Banks 1)) Zmod.one)) shamtTag).
+      (Add [castBits LgEachSizeRoundTrip lineIdx;
+            ITE0 (ReadArrayConst add1Tag tagIdx)
+              (ConstT (Bit (Z.log2_up (Z.of_nat EachSize))) (Zmod.of_Z _ 1))]).
 
     Local Definition tagBank: Expr ty (Array Num8Banks Bool) :=
       FromBit (Array Num8Banks Bool)
         (Sll (ConstT (Bit (NatZ_mul Num8Banks 1)) Zmod.one) shamtTag).
+
+    Local Definition lastTagBank: Expr ty (Array Num8Banks Bool) :=
+      FromBit (Array Num8Banks Bool)
+        (Sll (ConstT (Bit (NatZ_mul Num8Banks 1)) Zmod.one) lastShamtTag).
+
+    Local Definition writeTagVal: Expr ty Bool :=
+      And [isCap; tagVal].
 
     Definition doLoadRq : Action ty cl (Bit 0) :=
       fold_right (fun memIdx acc =>
@@ -236,9 +246,9 @@ Section BankedMem.
 
     Definition doWriteTag : Action ty cl (Bit 0) :=
       fold_right (fun tagIdx acc =>
-                    (If (ReadArrayConst tagBankCap tagIdx) Then (
+                    (If (Or [ReadArrayConst tagBank tagIdx; ReadArrayConst lastTagBank tagIdx]) Then (
                          WriteMem (tagBankPath tagIdx) (tagSizeCast tagIdx (castLineIdxTag tagIdx))
-                           (tagKindCast tagIdx tagVal)
+                           (tagKindCast tagIdx writeTagVal)
                            (Return (ConstDefK (Bit 0))));
                      acc))
         (Return ConstDef) (genFinType Num8Banks).
