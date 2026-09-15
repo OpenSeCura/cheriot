@@ -414,7 +414,7 @@ Section MemRegionActions.
       ) ;
     Let rotData : Array lBytes (Bit 8) <- ArrayRotr #lineDataMerged (lineOffset addr) ;
     Let dataBytes : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <-
-      slice #rotData (Const ty (Bit 0) Zmod.zero) (Z.to_nat NumBytesFullCapSz) ;
+      slice #rotData (Const ty (Bit lgLineBytesZ) Zmod.zero) (Z.to_nat NumBytesFullCapSz) ;
     Let rawData : Bit FullCapSz <- ToBit #dataBytes ;
     LetA rawTag : Bool <-
       if hasTags r then (
