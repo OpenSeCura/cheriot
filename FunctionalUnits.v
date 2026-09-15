@@ -46,14 +46,12 @@ Branch
     Functional Units:
       a) AdderBeforeBoundsCheck (computing branch target address PC + bimm12)
       b) ComparatorGeneral (evaluating branch condition)
-      c) AddCapBSz (computing representable limit exponent)
-      d) Shifter (computing representable limit shift mask 1 << AddCapBSz)
-      e) AdderBeforeRepCheck (computing representable upper limit address pcc.base + Shifter)
-      f) ComparatorTopOrRep (checking representable upper limit
+      c) AdderBeforeRepCheck (computing representable upper limit address pcc.base + {1 << pcc.exp, 9'b0})
+      d) ComparatorTopOrRep (checking representable upper limit
                              AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
-      g) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
-      h) AddrBoundsCheck (ands the two comparator outputs correctly)
-      i) ControlFlow (creates CfPayload from AddrBoundsCheck, AdderBeforeBoundsCheck and ComparatorGeneral.cond)
+      e) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
+      f) AddrBoundsCheck (ands the two comparator outputs correctly)
+      g) ControlFlow (creates CfPayload from AddrBoundsCheck, AdderBeforeBoundsCheck and ComparatorGeneral.cond)
 
 Cjal
 * CJAL cd, jimm20
@@ -62,14 +60,12 @@ Cjal
     Functional Units:
       a) AdderBeforeBoundsCheck (computing jump target address PC + jimm20)
       b) AdderToOutput (computing return link address PC + 2 / PC + 4)
-      c) AddCapBSz (computing representable limit exponent)
-      d) Shifter (computing representable limit shift mask 1 << AddCapBSz)
-      e) AdderBeforeRepCheck (computing representable upper limit address pcc.base + Shifter)
-      f) ComparatorTopOrRep (checking representable upper limit
+      c) AdderBeforeRepCheck (computing representable upper limit address pcc.base + {1 << pcc.exp, 9'b0})
+      d) ComparatorTopOrRep (checking representable upper limit
                              AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
-      g) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
-      h) AddrBoundsCheck (ands the two comparator outputs correctly)
-      i) ControlFlow (creates CfPayload from AddrBoundsCheck and AdderBeforeBoundsCheck)
+      e) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
+      f) AddrBoundsCheck (ands the two comparator outputs correctly)
+      g) ControlFlow (creates CfPayload from AddrBoundsCheck and AdderBeforeBoundsCheck)
 
 AuiCgp/AuiPcc
 * AUICGP cd, uimm20_11
@@ -78,36 +74,30 @@ AuiCgp/AuiPcc
     Implicit Read : pcc
     Functional Units:
       a) AdderBeforeBoundsCheck (address calculation pcc.addr / cs1.addr + uimm20_11)
-      b) AddCapBSz (computing representable limit exponent)
-      c) Shifter (computing representable limit shift mask 1 << AddCapBSz)
-      d) AdderBeforeRepCheck (computing representable upper limit address base + Shifter)
-      e) ComparatorTopOrRep (checking representable upper limit
+      b) AdderBeforeRepCheck (computing representable upper limit address base + {1 << exp, 9'b0})
+      c) ComparatorTopOrRep (checking representable upper limit
                              AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
-      f) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= base)
-      g) AddrBoundsCheck (ands the two comparator outputs correctly)
+      d) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= base)
+      e) AddrBoundsCheck (ands the two comparator outputs correctly)
 
 CIncAddr
 * CIncAddr cd, cs1, rs2
 * CIncAddrImm cd, cs1, simm12
     Functional Units:
       a) AdderBeforeBoundsCheck (address calculation cs1.addr + rs2 / simm12)
-      b) AddCapBSz (computing representable limit exponent)
-      c) Shifter (computing representable limit shift mask 1 << AddCapBSz)
-      d) AdderBeforeRepCheck (computing representable upper limit address cs1.base + Shifter)
-      e) ComparatorTopOrRep (checking representable upper limit
+      b) AdderBeforeRepCheck (computing representable upper limit address cs1.base + {1 << cs1.exp, 9'b0})
+      c) ComparatorTopOrRep (checking representable upper limit
                              AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
-      f) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= cs1.base)
-      g) AddrBoundsCheck (ands the two comparator outputs correctly)
+      d) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= cs1.base)
+      e) AddrBoundsCheck (ands the two comparator outputs correctly)
 
 CSetAddr
 * CSetAddr cd, cs1, rs2
     Functional Units:
-      a) AddCapBSz (computing representable limit exponent)
-      b) Shifter (computing representable limit shift mask 1 << AddCapBSz)
-      c) AdderBeforeRepCheck (computing representable upper limit address cs1.base + Shifter)
-      d) ComparatorTopOrRep (checking representable upper limit cs2.addr <= AdderBeforeRepCheck)
-      e) ComparatorBase (checking representable lower limit cs2.addr >= cs1.base)
-      f) AddrBoundsCheck (ands the two comparator outputs correctly)
+      a) AdderBeforeRepCheck (computing representable upper limit address cs1.base + {1 << cs1.exp, 9'b0})
+      b) ComparatorTopOrRep (checking representable upper limit cs2.addr <= AdderBeforeRepCheck)
+      c) ComparatorBase (checking representable lower limit cs2.addr >= cs1.base)
+      d) AddrBoundsCheck (ands the two comparator outputs correctly)
 
 Cjalr
 * CJALR cd, cs1, simm12
@@ -382,10 +372,6 @@ AdderToOutput:
   offset: 2 (Cjal, Cjalr) IF Compressed, 4 (Cjal, Cjalr) IF !Compressed,
         cs2.addr (AddSub & !isImm), simm12 (AddSub & isImm), cs1.base (CGetLen)
 
-AddCapBSz:
-  - ADD_CapBSz : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
-  baseExp: pcc.exp (Branch, Cjal, AuiPcc), cs1.exp (AuiCgp, CIncAddr, CSetAddr)
-
 ComparatorGeneral:
   Outputs: cond, eq
   - EQ         : Branch (when BEQ/BNE), CSetEqual
@@ -448,17 +434,16 @@ Saturater (Mux):
   sub: AdderToOutput (CGetLen)
 
 Shifter:
-  - ShiftLeftLogical     : Shift (when SLL/SLLI), Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
+  - ShiftLeftLogical     : Shift (when SLL/SLLI)
   - ShiftRightLogical    : Shift (when SRL/SRLI)
   - ShiftRightArithmetic : Shift (when SRA/SRAI)
-  data: cs1.addr (Shift), 1 (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
-  shamt: cs2.addr (Shift & !isImm), shamt (Shift & isImm),
-        AddCapBSz (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
+  data: cs1.addr (Shift)
+  shamt: cs2.addr (Shift & !isImm), shamt (Shift & isImm)
 
 AdderBeforeRepCheck:
   - ADD : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr
   base: pcc.base (Branch, Cjal, AuiPcc), cs1.base (AuiCgp, CIncAddr, CSetAddr)
-  shifter: Shifter (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr)
+  exp: pcc.exp (Branch, Cjal, AuiPcc), cs1.exp (AuiCgp, CIncAddr, CSetAddr)
 
 ComparatorTopOrRep:
   Outputs: lt, eq
@@ -675,8 +660,7 @@ Section DecodeInstGroup.
 
       "Shifter_isRight" ::= ##group`"Shift_isRight" ;
       "Shifter_isArith" ::= ##group`"Shift_isArith" ;
-      "Shifter_shamt_cs2Addr" ::= And [ ##group`"Shift"; Not ##group`"isImm" ] ;
-      (* "Shifter_shamt_shamt" ::= And [ ##group`"Shift"; ##group`"isImm" ] ; *)
+      "Shifter_shamt_isCs2AddrNotShamt" ::= And [ ##group`"Shift"; Not ##group`"isImm" ] ;
 
       "ComparatorTopOrRep_checkLte" ::= Or [ ##group`"CTestSubset"; ##group`"CSetBounds" ] ;
       "ComparatorTopOrRep_addr_AdderBeforeBoundsCheck" ::=
@@ -793,9 +777,6 @@ Section GetFunctionalUnits.
              ##group`"CIncAddr"; ##group`"Cjalr"; ##group`"CSetBounds";
              ##group`"Load"; ##group`"Store" ] ;
       "AdderToOutput" ::= Or [ ##group`"Cjal"; ##group`"Cjalr"; ##group`"AddSub"; ##group`"CGetLen" ] ;
-      "AddCapBSz" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
-             ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
       "ComparatorGeneral" ::= Or [ ##group`"Branch"; ##group`"Slt"; ##group`"CSetEqual" ] ;
       "CjalrUnit" ::= ##group`"Cjalr" ;
       "Logical" ::= ##group`"Logical" ;
@@ -804,9 +785,7 @@ Section GetFunctionalUnits.
       "Bounds" ::= Or [ ##group`"CSetBounds"; ##group`"Cram"; ##group`"Crrl" ] ;
       "BoundsExact" ::= ##group`"CSetBounds_isExact" ;
       "Saturater" ::= Or [ ##group`"CGetBase"; ##group`"CGetLen"; ##group`"CGetTop" ] ;
-      "Shifter" ::=
-        Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
-             ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"Shift" ] ;
+      "Shifter" ::= ##group`"Shift" ;
       "AdderBeforeRepCheck" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
              ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
@@ -848,10 +827,6 @@ Section FunctionalUnits.
     LetE op2 : Bit Xlen <- ITE #isSub (Not #offset) #offset;
     LetE cin : Bit Xlen <- ZeroExtendTo Xlen (ToBit #isSub);
     LetE sum : Bit Xlen <- Add [ #base; #op2; #cin ];
-    RetE #sum.
-
-  Definition AddCapBSz (baseExp : ty (Bit ExpSz)) : LetExpr ty (Bit ExpSz) :=
-    LetE sum : Bit ExpSz <- Add [ #baseExp; $CapBSz ];
     RetE #sum.
 
   Definition ComparatorGeneralRes := STRUCT_TYPE {
@@ -1199,8 +1174,10 @@ Section FunctionalUnits.
       @RetE _ (Bit Xlen) (ITE #isRight #shiftedXlen (rev #shiftedXlen))
     ).
 
-  Definition AdderBeforeRepCheck (base shifter : ty (Bit (AddrSz + 1))) : LetExpr ty (Bit (AddrSz + 1)) :=
-    LetE repLimit : Bit (AddrSz + 1) <- Add [ #base; #shifter ];
+  Definition AdderBeforeRepCheck (base : ty (Bit (AddrSz + 1))) (exp : ty (Bit ExpSz)) : LetExpr ty (Bit (AddrSz + 2)) :=
+    LetE shifted : Bit (AddrSz + 2 - CapBSz) <- Sll $1 #exp ;
+    LetE shifter : Bit (AddrSz + 2) <- {< #shifted, Const ty (Bit CapBSz) Zmod.zero >} ;
+    LetE repLimit : Bit (AddrSz + 2) <- Add [ (ZeroExtend 1 #base): Expr ty (Bit (AddrSz + 2)); #shifter ];
     RetE #repLimit.
 
   Definition ComparatorOut := STRUCT_TYPE {

@@ -163,7 +163,6 @@ Definition InstGroup := STRUCT_TYPE {
 Definition FunctionalUnits := STRUCT_TYPE {
   "AdderBeforeBoundsCheck" :: Bool ;
   "AdderToOutput" :: Bool ;
-  "AddCapBSz" :: Bool ;
   "ComparatorGeneral" :: Bool ;
   "CjalrUnit" :: Bool ;
   "Logical" :: Bool ;
@@ -914,9 +913,6 @@ Definition AluControl := STRUCT_TYPE {
   "AdderToOutput_offset_simm12" :: Bool ;
   (* AdderToOutput_offset_cs1Base = CGetLen *)
 
-  (* AddCapBSz *)
-  (* AddCapBSz_baseExp_isPccExpNotCs1Exp = BranchOrCjalOrAuiPcc *)
-
   (* ComparatorGeneral *)
   "ComparatorGeneral_isUnsigned" :: Bool ;
   "ComparatorGeneral_checkLt" :: Bool ;
@@ -949,13 +945,11 @@ Definition AluControl := STRUCT_TYPE {
   (* Shifter *)
   "Shifter_isRight" :: Bool ;
   "Shifter_isArith" :: Bool ;
-  (* Shifter_data_isCs1AddrNotConst1 = Shift *)
-  "Shifter_shamt_cs2Addr" :: Bool ;
-  (* "Shifter_shamt_shamt" :: Bool ; (* default option *) *)
-  (* Shifter_shamt_AddCapBSz = BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr *)
+  "Shifter_shamt_isCs2AddrNotShamt" :: Bool ;
 
   (* AdderBeforeRepCheck *)
   (* AdderBeforeRepCheck_base_isPccBaseNotCs1Base = BranchOrCjalOrAuiPcc *)
+  (* AdderBeforeRepCheck_exp_isPccExpNotCs1Exp = BranchOrCjalOrAuiPcc *)
 
   (* ComparatorTopOrRep *)
   "ComparatorTopOrRep_checkLte" :: Bool ;

@@ -121,18 +121,11 @@ Section Alu.
     LETE AdderToOutputOut : Bit Xlen <-
       AdderToOutput AdderToOutput_isSub AdderToOutput_base AdderToOutput_offset ;
 
-    LetE AddCapBSz_baseExp : Bit ExpSz <-
-      ITE (#BranchOrCjalOrAuiPcc) #pccExp #cs1Exp ;
-    LETE AddCapBSzOut : Bit ExpSz <- AddCapBSz AddCapBSz_baseExp ;
-
-    LetE Shifter_data : Bit Xlen <-
-      ITE (##aluControl`"Shift")
-          #cs1Addr $1 ;
+    LetE Shifter_data : Bit Xlen <- #cs1Addr ;
     LetE Shifter_shamt : Bit RegIdxSz <-
-      caseDefault (k := Bit RegIdxSz) [
-          (##aluControl`"Shifter_shamt_cs2Addr", TruncLsb (AddrSz - RegIdxSz) RegIdxSz #cs2Addr) ;
-          (#BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr, #AddCapBSzOut) ]
-        #shamt ;
+      ITE (##aluControl`"Shifter_shamt_isCs2AddrNotShamt")
+          (TruncLsb (AddrSz - RegIdxSz) RegIdxSz #cs2Addr)
+          #shamt ;
     LetE Shifter_isRight : Bool <- ##aluControl`"Shifter_isRight" ;
     LetE Shifter_isArith : Bool <- ##aluControl`"Shifter_isArith" ;
     LETE ShifterOut : Bit Xlen <-
@@ -140,9 +133,10 @@ Section Alu.
 
     LetE AdderBeforeRepCheck_base : Bit (AddrSz + 1) <-
       ITE (#BranchOrCjalOrAuiPcc) #pccBase #cs1Base ;
-    LetE AdderBeforeRepCheck_shifter : Bit (AddrSz + 1) <- ZeroExtendTo (AddrSz + 1) #ShifterOut ;
-    LETE AdderBeforeRepCheckOut : Bit (AddrSz + 1) <-
-      AdderBeforeRepCheck AdderBeforeRepCheck_base AdderBeforeRepCheck_shifter ;
+    LetE AdderBeforeRepCheck_exp : Bit ExpSz <-
+      ITE (#BranchOrCjalOrAuiPcc) #pccExp #cs1Exp ;
+    LETE AdderBeforeRepCheckOut : Bit (AddrSz + 2) <-
+      AdderBeforeRepCheck AdderBeforeRepCheck_base AdderBeforeRepCheck_exp ;
 
     LetE ComparatorTopOrRep_addr : Bit (AddrSz + 2) <-
       caseDefault (k := Bit (AddrSz + 2)) [
@@ -154,7 +148,7 @@ Section Alu.
         (ZeroExtendTo (AddrSz + 2) #cs1Addr) ;
     LetE ComparatorTopOrRep_topRep : Bit (AddrSz + 2) <-
       caseDefault (k := Bit (AddrSz + 2)) [
-          (#BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr, ZeroExtendTo (AddrSz + 2) #AdderBeforeRepCheckOut) ;
+          (#BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr, #AdderBeforeRepCheckOut) ;
           (##aluControl`"SealOrUnsealOrSubset", #cs2Top) ]
         #cs1Top ;
     LetE ComparatorTopOrRep_checkLte : Bool <- ##aluControl`"ComparatorTopOrRep_checkLte" ;
