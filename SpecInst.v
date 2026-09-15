@@ -143,6 +143,7 @@ Definition specModInst : Mod specSysTreeInst :=
   @spec "core"
         "peripheral"
         PcAddrInit
+        tohostAddr
         concreteRevConfig
         concreteRegions
         concreteClint

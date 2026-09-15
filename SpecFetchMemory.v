@@ -270,6 +270,7 @@ End CombinationalDeferred.
 Section SpecCoreTree.
   Variable dom : string.
   Variable pcAddrInit : Z.
+  Variable tohostAddr : Z.
 
   Definition specCoreTree (regions : list MemRegion) : Tree DomainElem :=
     Node "core" [
@@ -345,6 +346,16 @@ Section SpecCoreTree.
           Act (liftAction np_mem (specMemWrite regions #addr #stVal #memSize)) ;
           Act (liftAction np_rf (updateMshwmOnStore dom pcAddrInit #addr)) ;
           Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
+          If (Eq #addr ($ tohostAddr)) Then (
+            Let tohostVal : Addr <- ##stVal`"addr" ;
+            If (Eq #tohostVal $1) Then (
+              Sys [ DispString ty "TEST PASSED!\n" ; Finish ty ] ; Retv
+            ) ;
+            If (Not (Eq #tohostVal $1)) Then (
+              Sys [ DispString ty "TEST FAILED at test case: " ; DispDecimal #tohostVal ; DispString ty "\n" ; Finish ty ] ; Retv
+            ) ;
+            Retv
+          ) ;
           Retv
         ) Else (
           Let ld        : LoadCmd           <- ##memAct `! "Load" ;

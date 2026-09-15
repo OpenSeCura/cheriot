@@ -34,6 +34,7 @@ Section SpecDom.
   Variable core : string.
   Variable peripheral : string.
   Variable pcAddrInit : Z.
+  Variable tohostAddr : Z.
 
   Definition specSysTree (regions : list MemRegion) : Tree DomainElem :=
     Node "sys" [
@@ -54,7 +55,7 @@ Section SpecDom.
     Local Notation incrementMcycle := (incrementMcycle core pcAddrInit).
     Local Notation incrementMinstret := (incrementMinstret core pcAddrInit).
     Local Notation specFetch := (specFetch core pcAddrInit).
-    Local Notation specExecuteDeferred := (specExecuteDeferred core pcAddrInit).
+    Local Notation specExecuteDeferred := (specExecuteDeferred core pcAddrInit tohostAddr).
     Local Notation regRead := (regRead core pcAddrInit).
     Local Notation executeNonDeferred := (executeNonDeferred core pcAddrInit).
     Local Notation rfTree := (rfTree core pcAddrInit).
@@ -129,6 +130,7 @@ Section SpecDom.
 
         (* 1. Fetch *)
         LetA fetchOut : FetchOut <- liftAction np_core (specFetch regions ty) ;
+        Sys [ DispString ty "PC=" ; DispHex (##fetchOut`"pcc"`"addr") ; DispString ty " inst=" ; DispHex (##fetchOut`"inst") ; DispString ty "\n" ] ;
 
         (* 2. Decode *)
         LetL regReadIn : RegReadIn <- wrappedDecode fetchOut ;
