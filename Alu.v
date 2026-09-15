@@ -598,13 +598,15 @@ Section AluRF.
     Let  cs1Idx     : Bit RegIdxSzReal      <- ##decodeOut`"cs1Idx" ;
     Let  cs2Source  : TaggedUnion Cs2Source <- ##decodeOut`"cs2Idx" ;
 
-    LetA cs1        : FullECapWithTag       <- readRegsList gprPathsWithKind #cs1Idx ;
+    LetA cs1Raw     : FullECapWithTag       <- readRegsList gprPathsWithKind #cs1Idx ;
+    Let  cs1        : FullECapWithTag       <- ITE (isNotZero #cs1Idx) #cs1Raw (Const ty FullECapWithTag (getDefault _)) ;
 
     LetIf cs2 : FullECapWithTag <-
       If (#cs2Source `? "Reg") Then
         (
           Let  cs2Idx : Bit RegIdxSzReal <- #cs2Source `! "Reg" ;
-          readRegsList gprPathsWithKind #cs2Idx
+          LetA cs2Raw : FullECapWithTag  <- readRegsList gprPathsWithKind #cs2Idx ;
+          Return (ITE (isNotZero #cs2Idx) #cs2Raw (Const ty FullECapWithTag (getDefault _)))
         )
       Else
         (
