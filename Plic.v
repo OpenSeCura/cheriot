@@ -124,11 +124,11 @@ Section Plic.
    * =========================================================================== *)
 
   Record PlicState (ty : Kind -> Type) (n : nat) := {
-    st_thresh : Expr ty (Bit Xlen) ;
-    st_prios  : Expr ty (Array n (Bit Xlen)) ;
-    st_pends  : Expr ty (Array n Bool) ;
-    st_ens    : Expr ty (Array n Bool) ;
-    st_insvs  : Expr ty (Array n Bool)
+    st_thresh : ty (Bit Xlen) ;
+    st_prios  : ty (Array n (Bit Xlen)) ;
+    st_pends  : ty (Array n Bool) ;
+    st_ens    : ty (Array n Bool) ;
+    st_insvs  : ty (Array n Bool)
   }.
   Arguments st_thresh {ty n} p.
   Arguments st_prios {ty n} p.
@@ -159,14 +159,14 @@ Section Plic.
     Variable ty : Kind -> Type.
 
     Definition listToExprArray {k : Kind} {n : nat}
-      (ls : list (Expr ty k)) (def : Expr ty k) : Expr ty (Array n k) :=
-      ArrayBuilder (fun (i : FinType n) => nth (finNum i) ls def).
+      (ls : list (ty k)) (def : Expr ty k) : Expr ty (Array n k) :=
+      ArrayBuilder (fun (i : FinType n) => nth (finNum i) (map (Var _ _) ls) def).
 
     Fixpoint readRegs
              {k : Kind}
              (paths : list (RegOfKind (t:=tPlic) k))
              {ans : Kind}
-             (k_cont : list (Expr ty k) -> Action ty tPlic ans)
+             (k_cont : list (ty k) -> Action ty tPlic ans)
              : Action ty tPlic ans :=
       match paths with
       | nil => k_cont nil
@@ -174,7 +174,7 @@ Section Plic.
           ReadReg "" rk.(rk_path) (fun val =>
             let pf := Kind_eqb_eq _ _ rk.(rk_pf) in
             let c_val := eq_rect (regKind (getRegFromPath rk.(rk_path))) (fun K => ty K) val _ pf in
-            readRegs rest (fun vals => k_cont (Var _ _ c_val :: vals))
+            readRegs rest (fun vals => k_cont (c_val :: vals))
           )
       end.
 
@@ -183,9 +183,9 @@ Section Plic.
              (pends : list (RegOfKind (t:=tPlic) Bool))
              (insvs : list (RegOfKind (t:=tPlic) Bool))
              {ans : Kind}
-             (k : list (Expr ty (Bit Xlen)) ->
-                  list (Expr ty Bool) ->
-                  list (Expr ty Bool) ->
+             (k : list (ty (Bit Xlen)) ->
+                  list (ty Bool) ->
+                  list (ty Bool) ->
                   Action ty tPlic ans)
              : Action ty tPlic ans :=
       match prios, pends, insvs with
@@ -200,9 +200,9 @@ Section Plic.
             let c_pend := eq_rect (regKind (getRegFromPath rPend.(rk_path))) (fun K => ty K) val_pend _ pf_pend in
             let c_insv := eq_rect (regKind (getRegFromPath rInsv.(rk_path))) (fun K => ty K) val_insv _ pf_insv in
             readAllSources rPrios' rPends' rInsvs' (fun pList dList iList =>
-              k (Var _ _ c_prio :: pList)
-                (Var _ _ c_pend :: dList)
-                (Var _ _ c_insv :: iList)
+              k (c_prio :: pList)
+                (c_pend :: dList)
+                (c_insv :: iList)
             )
           )))
       | _, _, _ => k nil nil nil
@@ -216,16 +216,16 @@ Section Plic.
                        (pendingPathsWithKind n)
                        (inServicePathsWithKind n)
                        (fun prioList pendList insvList =>
-          let prios := listToExprArray prioList ($0 : Expr ty (Bit Xlen)) in
-          let pends := listToExprArray pendList (ConstBool false) in
-          let insvs := listToExprArray insvList (ConstBool false) in
-          let ens : Expr ty (Array n Bool) :=
+          Let prios : Array n (Bit Xlen) <- listToExprArray prioList ($0 : Expr ty (Bit Xlen)) ;
+          Let pends : Array n Bool       <- listToExprArray pendList (ConstBool false) ;
+          Let insvs : Array n Bool       <- listToExprArray insvList (ConstBool false) ;
+          Let ens   : Array n Bool       <-
             ArrayBuilder (fun (i : FinType n) =>
-              let wordExpr := nth (finNum i / Z.to_nat Xlen)%nat enList ($0 : Expr ty (Bit Xlen)) in
+              let wordExpr := nth (finNum i / Z.to_nat Xlen)%nat (map (Var _ _) enList) ($0 : Expr ty (Bit Xlen)) in
               let wordBits := FromBit (Array (Z.to_nat Xlen) Bool) wordExpr in
               readNatToFinType (ConstBool false) (ReadArrayConst wordBits) (finNum i mod Z.to_nat Xlen)%nat
-            ) in
-          k {| st_thresh := #thresh ;
+            ) ;
+          k {| st_thresh := thresh ;
                st_prios  := prios ;
                st_pends  := pends ;
                st_ens    := ens ;
@@ -234,31 +234,31 @@ Section Plic.
       ).
 
     Definition makeClaimLeaf
-               (thresh : Expr ty (Bit Xlen))
-               (prios : Expr ty (Array n (Bit Xlen)))
-               (pends : Expr ty (Array n Bool))
-               (ens : Expr ty (Array n Bool))
-               (insvs : Expr ty (Array n Bool))
+               (thresh : ty (Bit Xlen))
+               (prios : ty (Array n (Bit Xlen)))
+               (pends : ty (Array n Bool))
+               (ens : ty (Array n Bool))
+               (insvs : ty (Array n Bool))
                (i : nat) : LetExpr ty PlicResType :=
       match i with
       | 0%nat => RetE plicResEmpty
       | S _ =>
           let idx := ($(Z.of_nat i) : Expr ty (Bit Xlen)) in
-          LetE pend : Bool       <- pends @[ idx ] ;
-          LetE en : Bool         <- ens @[ idx ] ;
-          LetE insv : Bool       <- insvs @[ idx ] ;
-          LetE prio : Bit Xlen   <- prios @[ idx ] ;
-          LetE active : Bool     <- And [ #pend ; #en ; Not #insv ; Ugt #prio thresh ] ;
+          LetE pend : Bool       <- #pends @[ idx ] ;
+          LetE en : Bool         <- #ens @[ idx ] ;
+          LetE insv : Bool       <- #insvs @[ idx ] ;
+          LetE prio : Bit Xlen   <- #prios @[ idx ] ;
+          LetE active : Bool     <- And [ #pend ; #en ; Not #insv ; Ugt #prio #thresh ] ;
           RetE (ITE #active (mkPlicRes idx #prio) plicResEmpty)
       end.
 
     (* Combinational claim search using merge_fold_list tournament tree *)
     Definition findMaxActive
-               (thresh : Expr ty (Bit Xlen))
-               (prios : Expr ty (Array n (Bit Xlen)))
-               (pends : Expr ty (Array n Bool))
-               (ens : Expr ty (Array n Bool))
-               (insvs : Expr ty (Array n Bool))
+               (thresh : ty (Bit Xlen))
+               (prios : ty (Array n (Bit Xlen)))
+               (pends : ty (Array n Bool))
+               (ens : ty (Array n Bool))
+               (insvs : ty (Array n Bool))
                : LetExpr ty PlicResType :=
       let leaves := map (makeClaimLeaf thresh prios pends ens insvs) (seq 0 n) in
       merge_fold_list (liftLet plicResComb) (RetE plicResEmpty) leaves.
@@ -288,9 +288,9 @@ Section Plic.
         Return claimedId
       ).
 
-    Definition plicComplete (completedId : Expr ty (Bit Xlen)) : Action ty tPlic (Bit 0) :=
-      If (isNotZero completedId) Then (
-        Act (writeRegsList (inServicePathsWithKind n) completedId (ConstBool false)) ;
+    Definition plicComplete (completedId : ty (Bit Xlen)) : Action ty tPlic (Bit 0) :=
+      If (isNotZero #completedId) Then (
+        Act (writeRegsList (inServicePathsWithKind n) #completedId (ConstBool false)) ;
         Retv
       ) ;
       Retv.
@@ -298,7 +298,7 @@ Section Plic.
     Definition updatePendingLeaf
                (pendRk : RegOfKind (t:=tPlic) Bool)
                (insvRk : RegOfKind (t:=tPlic) Bool)
-               (irqVal : Expr ty Bool)
+               (irqVal : ty Bool)
                : Action ty tPlic (Bit 0) :=
       let pf_pend := Kind_eqb_eq _ _ pendRk.(rk_pf) in
       let pf_insv := Kind_eqb_eq _ _ insvRk.(rk_pf) in
@@ -306,7 +306,7 @@ Section Plic.
       ReadReg "" insvRk.(rk_path) (fun val_insv =>
         let c_pend := eq_rect (regKind (getRegFromPath pendRk.(rk_path))) (fun K => ty K) val_pend _ pf_pend in
         let c_insv := eq_rect (regKind (getRegFromPath insvRk.(rk_path))) (fun K => ty K) val_insv _ pf_insv in
-        let newPend := Or [ Var _ _ c_pend ; And [ irqVal ; Not (Var _ _ c_insv) ] ] in
+        let newPend := Or [ Var _ _ c_pend ; And [ #irqVal ; Not (Var _ _ c_insv) ] ] in
         let c_newPend := eq_rect Bool (fun K => Expr ty K) newPend _ (eq_sym pf_pend) in
         Act (WriteReg pendRk.(rk_path) c_newPend Retv) ;
         Retv
@@ -334,20 +334,23 @@ Section Plic.
                                       (ToBit arr))).
 
     Definition plicLineReadAction
-               (addr : Expr ty Addr)
+               (addr : ty Addr)
                : Action ty tPlic (LineReadRp PlicLineConfig) :=
-      Let offset <- getMemOffset base PlicSizeBytes addr ;
+      Let offset <- getMemOffset base PlicSizeBytes #addr ;
       Let isClaim     : Bool <- Eq #offset $(PLIC_CLAIM_OFFSET) ;
       Let isThreshold : Bool <- Eq #offset $(PLIC_THRESHOLD_OFFSET) ;
       Let isEnable    : Bool <- Uge #offset $(PLIC_ENABLE_OFFSET) ;
       Let isPending   : Bool <- Uge #offset $(PLIC_PENDING_OFFSET) ;
       readPlicState (fun st =>
+        let thresh := st.(st_thresh) in
+        let prios  := st.(st_prios) in
+        let pends  := st.(st_pends) in
         Let prioOffset <- Sub #offset $(PLIC_PRIORITY_BASE) ;
         Let prioIdx : Bit Xlen <- ZeroExtendTo Xlen (TruncMsb (PlicOffsetSz - LgNumBytesXlen) LgNumBytesXlen #prioOffset) ;
-        Let prioVal : Bit Xlen <- st.(st_prios) @[ #prioIdx ] ;
+        Let prioVal : Bit Xlen <- #prios @[ #prioIdx ] ;
         Let pendOffset <- Sub #offset $(PLIC_PENDING_OFFSET) ;
         Let pendSlice : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
-          Syntax.slice (boolArrayToByteArray st.(st_pends)) #pendOffset (Z.to_nat NumBytesXlen) ;
+          Syntax.slice (boolArrayToByteArray #pends) #pendOffset (Z.to_nat NumBytesXlen) ;
         Let pendVal : Bit Xlen <- ToBit #pendSlice ;
         Let enOffset <- Sub #offset $(PLIC_ENABLE_OFFSET) ;
         Let enWordIdx : Bit Xlen <- ZeroExtendTo Xlen (TruncMsb (PlicOffsetSz - LgNumBytesXlen) LgNumBytesXlen #enOffset) ;
@@ -357,7 +360,7 @@ Section Plic.
           Or [ #prioVal ;
                ITE0 #isPending #pendVal ;
                ITE0 #isEnable #enVal ;
-               ITE0 #isThreshold st.(st_thresh) ;
+               ITE0 #isThreshold #thresh ;
                #claimedId ] ;
         Let dataArr : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
           FromBit (Array (Z.to_nat NumBytesXlen) (Bit 8)) #rVal ;
@@ -368,17 +371,17 @@ Section Plic.
       ).
 
     Definition plicLineWriteAction
-               (rq : Expr ty (LineWriteRq PlicLineConfig))
+               (rq : ty (LineWriteRq PlicLineConfig))
                : Action ty tPlic (Bit 0) :=
-      Let offset <- getMemOffset base PlicSizeBytes (rq`"addr") ;
-      Let writeWord : Bit Xlen <- ToBit (rq`"data") ;
+      Let offset <- getMemOffset base PlicSizeBytes (##rq`"addr") ;
+      Let writeWord : Bit Xlen <- ToBit (##rq`"data") ;
       (* Only the lowerbound checks are done; upper bound automatically falls off *)
       Let isComplete  : Bool <- Eq #offset $(PLIC_CLAIM_OFFSET) ;
       Let isThreshold : Bool <- Eq #offset $(PLIC_THRESHOLD_OFFSET) ;
       Let isEnable    : Bool <- Uge #offset $(PLIC_ENABLE_OFFSET) ;
       Let isPrio      : Bool <- ConstBool true ;
       If #isComplete Then (
-        @plicComplete n ty #writeWord
+        @plicComplete n ty writeWord
       ) ;
       If #isThreshold Then (
         Act (WriteReg (plicThresholdPath n) #writeWord Retv) ;
@@ -476,7 +479,7 @@ Section Plic.
       match acts, pends, insvs with
       | act :: restActs, pendRk :: restPends, insvRk :: restInsvs =>
           (LetA irqVal : Bool <- act ty ;
-           plicAction (@updatePendingLeaf n ty pendRk insvRk #irqVal))
+           plicAction (@updatePendingLeaf n ty pendRk insvRk irqVal))
           :: plicPendingStepsHelper restActs restPends restInsvs
       | _, _, _ => []
       end.

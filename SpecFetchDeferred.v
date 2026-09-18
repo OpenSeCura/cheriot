@@ -325,8 +325,10 @@ Section SpecCoreTree.
      * specFetch (Atomic Combinational Fetch)
      * =========================================================================== *)
     Definition specFetch : Action ty coreTree FetchOut :=
-      LetA pcc : FullECapWithTag <- liftAction np_rf (readRegsList (gprPathsWithKind dom pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal))) ;
-      LetA rawFull : FullCapWithTag <- liftAction np_mem (specMemRead regions (##pcc`"addr") $LgNumBytesInstSz) ;
+      LetA pcc     : FullECapWithTag            <- liftAction np_rf (readRegsList (gprPathsWithKind dom pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal))) ;
+      Let  pccAddr : Addr                       <- ##pcc`"addr" ;
+      Let  instSz  : Bit LgLgNumBytesFullCapSz  <- $LgNumBytesInstSz ;
+      LetA rawFull : FullCapWithTag             <- liftAction np_mem (specMemRead regions pccAddr instSz) ;
       Let rawInst : Inst <- ##rawFull`"addr" ;
 
       (* Fetch Exception Checks *)
@@ -371,8 +373,8 @@ Section SpecCoreTree.
             Let stVal     : FullCapWithTag            <- ##st`"stVal" ;
             Let memSize   : Bit LgLgNumBytesFullCapSz <- ##st`"memSize" ;
 
-            Act (liftAction np_mem (specMemWrite regions #addr #stVal #memSize)) ;
-            Act (liftAction np_rf (updateMshwmOnStore dom pcAddrInit #addr)) ;
+            Act (liftAction np_mem (specMemWrite regions addr stVal memSize)) ;
+            Act (liftAction np_rf (updateMshwmOnStore dom pcAddrInit addr)) ;
             Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
             If (And [ Eq #addr ($ tohostAddr) ; isNotZero (##stVal`"addr") ]) Then (
               Let tohostVal : Addr <- ##stVal`"addr" ;
@@ -386,18 +388,20 @@ Section SpecCoreTree.
             ) ;
             Retv
           ) Else (
-            Let ld        : LoadCmd           <- ##memAct `! "Load" ;
-            Let addr      : Addr              <- ##ld`"addr" ;
-            Let pending   : PendingLoad       <- ##ld`"pending" ;
+            Let ld        : LoadCmd                   <- ##memAct `! "Load" ;
+            Let addr      : Addr                      <- ##ld`"addr" ;
+            Let pending   : PendingLoad               <- ##ld`"pending" ;
+            Let memSize   : Bit LgLgNumBytesFullCapSz <- ##pending`"memSize" ;
 
-            LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions #addr (##pending`"memSize")) ;
+            LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions addr memSize) ;
             LetL outcome  : LoadOutcome       <- dispatchLoadResponse pending memVal false ;
 
             If (#outcome `? "RevLookup") Then (
-              Let  revInfo : RevCmd        <- #outcome `! "RevLookup" ;
-              Let  pr      : PendingRev    <- ##revInfo`"pendingRev" ;
-              LetA revBit  : Bool          <- liftAction np_mem (readRevBit (##revInfo`"base")) ;
-              LetL wbInfo  : WbCmd         <- dispatchRevResponse pr revBit ;
+              Let  revInfo : RevCmd           <- #outcome `! "RevLookup" ;
+              Let  revBase : Bit (AddrSz + 1) <- ##revInfo`"base" ;
+              Let  pr      : PendingRev       <- ##revInfo`"pendingRev" ;
+              LetA revBit  : Bool             <- liftAction np_mem (readRevBit revBase) ;
+              LetL wbInfo  : WbCmd            <- dispatchRevResponse pr revBit ;
               If (isNotZero (##wbInfo`"dstIdx")) Then (
                 liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
               ) ;

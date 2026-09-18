@@ -1278,12 +1278,12 @@ Section RfTree.
     Definition incrementMcycle : Action ty rfTree (Bit 0) :=
       incrementDXlenCsr "mcycle" "mcycleh".
 
-    Definition updateMshwmOnStore (stAddr : Expr ty Addr) : Action ty rfTree (Bit 0) :=
+    Definition updateMshwmOnStore (stAddr : ty Addr) : Action ty rfTree (Bit 0) :=
       LetA mshwm        : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mshwm") : Expr _ (Bit CsrIdxSz)) ;
       LetA mshwmb       : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mshwmb") : Expr _ (Bit CsrIdxSz)) ;
-      Let  shouldUpdate : Bool     <- And [ Uge stAddr #mshwmb ; Ult stAddr #mshwm ] ;
+      Let  shouldUpdate : Bool     <- And [ Uge #stAddr #mshwmb ; Ult #stAddr #mshwm ] ;
       If #shouldUpdate Then (
-        Let alignedAddr : Bit Xlen <- {< TruncMsb (AddrSz - LgMshwmAlign) LgMshwmAlign stAddr,
+        Let alignedAddr : Bit Xlen <- {< TruncMsb (AddrSz - LgMshwmAlign) LgMshwmAlign #stAddr,
                                          Const ty (Bit LgMshwmAlign) (bits.of_Z LgMshwmAlign 0) >} ;
         Act (writeRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mshwm") : Expr _ (Bit CsrIdxSz)) #alignedAddr) ;
         Retv
@@ -1357,11 +1357,11 @@ Section RevBits.
   Variable config : RevConfig.
   Variable ty : Kind -> Type.
 
-  Definition computeRevBitAddr (base : Expr ty (Bit (AddrSz + 1))) : LetExpr ty RevBitLookup.
+  Definition computeRevBitAddr (base : ty (Bit (AddrSz + 1))) : LetExpr ty RevBitLookup.
     refine (
-      LetE is_revokable : Bool <- isRevokableAddr config base ;
+      LetE is_revokable : Bool <- isRevokableAddr config #base ;
       LetE heapOffset : Bit (AddrSz + 1) <-
-        Sub base (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;
+        Sub #base (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;
       LetE castHeapOffset <- castBits _ #heapOffset ;
       LetE totalBitIdx : Bit ((AddrSz + 1) - config.(lgRevGranularity)) <-
         TruncMsb ((AddrSz + 1) - config.(lgRevGranularity)) config.(lgRevGranularity) #castHeapOffset ;

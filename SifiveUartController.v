@@ -269,9 +269,9 @@ Section SifiveUart.
   Definition sifiveUartLineReadAction
              (base : Z)
              (ty : Kind -> Type)
-             (addr : Expr ty Addr)
+             (addr : ty Addr)
              : Action ty sifiveUartTree (LineReadRp SifiveUartLineConfig) :=
-    Let offset <- getMemOffset base SifiveUartSizeBytes addr ;
+    Let offset <- getMemOffset base SifiveUartSizeBytes #addr ;
     Let regIdx : Bit SifiveUartRegIdxWidth <- TruncMsb SifiveUartRegIdxWidth LgNumBytesXlen #offset ;
     Let isTxData : Bool <- Eq #regIdx (sifiveUartRegIdxBit "txdata") ;
     Let isRxData : Bool <- Eq #regIdx (sifiveUartRegIdxBit "rxdata") ;
@@ -330,11 +330,11 @@ Section SifiveUart.
   Definition sifiveUartLineWriteAction
              (base : Z)
              (ty : Kind -> Type)
-             (rq : Expr ty (LineWriteRq SifiveUartLineConfig))
+             (rq : ty (LineWriteRq SifiveUartLineConfig))
              : Action ty sifiveUartTree (Bit 0) :=
-    Let offset <- getMemOffset base SifiveUartSizeBytes (rq`"addr") ;
+    Let offset <- getMemOffset base SifiveUartSizeBytes (##rq`"addr") ;
     Let regIdx : Bit SifiveUartRegIdxWidth <- TruncMsb SifiveUartRegIdxWidth LgNumBytesXlen #offset ;
-    Let writeWord : Bit Xlen <- ToBit (rq`"data") ;
+    Let writeWord : Bit Xlen <- ToBit (##rq`"data") ;
     Let writeBits : Array (Z.to_nat Xlen) Bool <-
       FromBit (Array (Z.to_nat Xlen) Bool) #writeWord ;
     Let dataByte : Bit 8 <- TruncLsb (Xlen - 8) 8 #writeWord ;

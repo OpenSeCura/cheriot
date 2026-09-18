@@ -64,8 +64,9 @@ Section FetchStages.
 
     (* This condition is always true in a spec *)
     If #canFetch Then (
-      LetA pcc : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
-      Act (liftAction np_mem ((memIfc ty).(mem_readInstRq) ##pcc`"addr")) ;
+      LetA pcc     : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
+      Let  pccAddr : Addr            <- ##pcc`"addr" ;
+      Act (liftAction np_mem ((memIfc ty).(mem_readInstRq) pccAddr)) ;
       liftAction np_fetchFifo (@enq dom capacity FullECapWithTag ty pcc)
     ) ;
     Retv.

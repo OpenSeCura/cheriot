@@ -82,11 +82,14 @@ Section DeferredStages.
 
           If (##memAct `? "Store") Then (
             (* --- STORE ACTION: requires canStoreMemRq --- *)
-            Let st        : StoreCmd       <- ##memAct `! "Store" ;
-            LetA canStore : Bool           <- liftAction np_mem ((memIfc ty).(mem_canStoreMemRq)) ;
+            Let st        : StoreCmd                  <- ##memAct `! "Store" ;
+            Let stAddr    : Addr                      <- ##st`"addr" ;
+            Let stVal     : FullCapWithTag            <- ##st`"stVal" ;
+            Let memSize   : Bit LgLgNumBytesFullCapSz <- ##st`"memSize" ;
+            LetA canStore : Bool                      <- liftAction np_mem ((memIfc ty).(mem_canStoreMemRq)) ;
             If #canStore Then (
-              Act (liftAction np_mem ((memIfc ty).(mem_writeMem) (##st`"addr") (##st`"stVal") (##st`"memSize"))) ;
-              Act (liftAction np_rf (updateMshwmOnStore (##st`"addr"))) ;
+              Act (liftAction np_mem ((memIfc ty).(mem_writeMem) stAddr stVal memSize)) ;
+              Act (liftAction np_rf (updateMshwmOnStore stAddr)) ;
               Act (liftAction np_rf incrementMinstret) ;
               liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
             ) ;
@@ -94,10 +97,11 @@ Section DeferredStages.
           ) Else (
             (* --- LOAD ACTION: requires canLoadMemRq AND loadFifo is NOT full --- *)
             Let ld      : LoadCmd     <- ##memAct `! "Load" ;
+            Let ldAddr  : Addr        <- ##ld`"addr" ;
             Let pending : PendingLoad <- ##ld`"pending" ;
             LetA canLoad : Bool       <- liftAction np_mem ((memIfc ty).(mem_canLoadMemRq)) ;
             If (And [ #canLoad ; Not #outputBuffer_isFull ]) Then (
-              Act (liftAction np_mem ((memIfc ty).(mem_readMemRq) (##ld`"addr"))) ;
+              Act (liftAction np_mem ((memIfc ty).(mem_readMemRq) ldAddr)) ;
               Act (liftAction np_loadFifo (@enq dom capacity PendingLoad ty pending)) ;
               liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
             ) ;
@@ -107,12 +111,13 @@ Section DeferredStages.
         ) Else (
           (* --- FENCE ACTION: requires canFenceMemRq AND drained queues if needsEmpty --- *)
           Let fn        : FenceCmd <- ##mfAct `! "Fence" ;
+          Let fenceOp   : FenceOp  <- ##fn`"fenceOp" ;
           LetA canFence : Bool     <- liftAction np_mem ((memIfc ty).(mem_canFenceMemRq)) ;
           If #canFence Then (
             LetA outputBuffer_isEmpty : Bool <- liftAction np_loadFifo (@isEmpty dom capacity PendingLoad ty) ;
             LetA rev_isEmpty          : Bool <- liftAction np_revFifo (@isEmpty dom capacity PendingRev ty) ;
             If (Or [ Not (##fn`"needsEmpty") ; And [ #outputBuffer_isEmpty ; #rev_isEmpty ] ]) Then (
-              Act (liftAction np_mem ((memIfc ty).(mem_fence_req) (##fn`"fenceOp"))) ;
+              Act (liftAction np_mem ((memIfc ty).(mem_fence_req) fenceOp)) ;
               Act (liftAction np_rf incrementMinstret) ;
               liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
             ) ;
@@ -167,12 +172,13 @@ Section DeferredStages.
 
         If (#outcome `? "RevLookup") Then (
           (* 1A. Tagged Memory Capability -> Revocation Lookup *)
-          Let revInfo     : RevCmd     <- #outcome `! "RevLookup" ;
-          Let pendingRev  : PendingRev <- ##revInfo`"pendingRev" ;
-          LetA canReadRev : Bool       <- liftAction np_mem ((memIfc ty).(mem_canReadRevBitRq)) ;
+          Let revInfo     : RevCmd          <- #outcome `! "RevLookup" ;
+          Let revBase     : Bit (AddrSz + 1)<- ##revInfo`"base" ;
+          Let pendingRev  : PendingRev      <- ##revInfo`"pendingRev" ;
+          LetA canReadRev : Bool            <- liftAction np_mem ((memIfc ty).(mem_canReadRevBitRq)) ;
 
           If (And [ #canReadRev ; Not #outputBuffer_isFull ]) Then (
-            Act (liftAction np_mem ((memIfc ty).(mem_readRevBitRq) (##revInfo`"base"))) ;
+            Act (liftAction np_mem ((memIfc ty).(mem_readRevBitRq) revBase)) ;
             Act (liftAction np_revFifo (@enq dom capacity PendingRev ty pendingRev)) ;
             liftAction np_loadFifo (@deq dom capacity PendingLoad ty)
           ) ;

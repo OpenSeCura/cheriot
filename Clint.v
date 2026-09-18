@@ -95,9 +95,9 @@ Section Clint.
   Definition clintLineReadAction
              (base : Z)
              (ty : Kind -> Type)
-             (addr : Expr ty Addr)
+             (addr : ty Addr)
              : Action ty tClint (LineReadRp ClintLineConfig) :=
-    Let offset <- getMemOffset base ClintSizeBytes addr ;
+    Let offset <- getMemOffset base ClintSizeBytes #addr ;
     ReadReg "mtime" clintMtimePath (fun mtimeVal =>
     ReadReg "mtimeh" clintMtimehPath (fun mtimehVal =>
     ReadReg "mtimecmp" clintMtimecmpPath (fun mtimecmpVal =>
@@ -117,10 +117,10 @@ Section Clint.
   Definition clintLineWriteAction
              (base : Z)
              (ty : Kind -> Type)
-             (rq : Expr ty (LineWriteRq ClintLineConfig))
+             (rq : ty (LineWriteRq ClintLineConfig))
              : Action ty tClint (Bit 0) :=
-    Let offset <- getMemOffset base ClintSizeBytes (rq`"addr") ;
-    Let writeWord : Bit Xlen <- ToBit (rq`"data") ;
+    Let offset <- getMemOffset base ClintSizeBytes (##rq`"addr") ;
+    Let writeWord : Bit Xlen <- ToBit (##rq`"data") ;
     If (Eq #offset $(CLINT_MTIME_OFFSET)) Then (
       WriteReg clintMtimePath #writeWord Retv
     ) ;

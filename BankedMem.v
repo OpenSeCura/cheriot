@@ -162,16 +162,16 @@ Section BankedMem.
 
   Section Ty.
     Variable ty: Kind -> Type.
-    Variable addr: Expr ty (Bit MemAddrSz).
-    Variable memSz: Expr ty (Bit LgNumBanks).
-    Variable writeVals: Expr ty (Array NumBanks (Bit 8)).
-    Variable isCap: Expr ty Bool.
-    Variable tagVal: Expr ty Bool.
+    Variable addr: ty (Bit MemAddrSz).
+    Variable memSz: ty (Bit LgNumBanks).
+    Variable writeVals: ty (Array NumBanks (Bit 8)).
+    Variable isCap: ty Bool.
+    Variable tagVal: ty Bool.
 
     Local Open Scope guru.
 
-    Local Definition shamt := TruncLsb LgEachSize LgNumBanks addr.
-    Local Definition lineIdx := TruncMsb LgEachSize LgNumBanks addr.
+    Local Definition shamt := TruncLsb LgEachSize LgNumBanks #addr.
+    Local Definition lineIdx := TruncMsb LgEachSize LgNumBanks #addr.
 
     Local Definition add1: Expr ty (Array NumBanks Bool) :=
       FromBit (Array NumBanks Bool) (Not (Sll (ConstBit (InvDefault _)) shamt)).
@@ -184,10 +184,10 @@ Section BankedMem.
 
     Local Definition isWrites: Expr ty (Array NumBanks Bool) :=
       FromBit (Array NumBanks Bool)
-        (rotateLeft (Not (Sll (ConstBit (InvDefault _)) memSz)) shamt).
+        (rotateLeft (Not (Sll (ConstBit (InvDefault _)) #memSz)) shamt).
 
     Local Definition rotWriteVals: Expr ty (Array NumBanks (Bit 8)) :=
-      ArrayRotl writeVals shamt.
+      ArrayRotl #writeVals shamt.
 
     Local Definition doLoadRpNoRot : Action ty cl (Array NumBanks (Bit 8)) :=
       fold_right (fun memIdx acc =>
@@ -198,7 +198,7 @@ Section BankedMem.
         (Return ConstDef) (genFinType NumBanks).
 
     Local Definition shamtTag := TruncMsb LgNum8Banks LgNumBytesFullCapSz shamt.
-    Local Definition lastByte := Add [shamt; Sub memSz $1].
+    Local Definition lastByte := Add [shamt; Sub #memSz $1].
     Local Definition lastShamtTag := TruncMsb LgNum8Banks LgNumBytesFullCapSz lastByte.
 
     Local Definition add1Tag: Expr ty (Array Num8Banks Bool) :=
@@ -219,7 +219,7 @@ Section BankedMem.
         (Sll (ConstT (Bit (NatZ_mul Num8Banks 1)) Zmod.one) lastShamtTag).
 
     Local Definition writeTagVal: Expr ty Bool :=
-      And [isCap; tagVal].
+      And [#isCap; #tagVal].
 
     Definition doLoadRq : Action ty cl (Bit 0) :=
       fold_right (fun memIdx acc =>
