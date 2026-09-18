@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith.
 From Guru Require Import Syntax Notations Semantics Library Composition.
-From Cheriot Require Import SpecDefines FunctionalUnits ImplDefines ImplMemory Alu Fifo SpecFetchMemory.
+From Cheriot Require Import SpecDefines FunctionalUnits ImplDefines ImplMemory Alu Fifo SpecFetchDeferred SpecMulDiv.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -74,48 +74,70 @@ Section DeferredStages.
       Let req     : DeferredReq    <- #inputHead `! "Some" ;
       LetL action : DeferredAction <- dispatchDeferredReq req (memIfc ty).(mem_needsRotation) ;
 
-      If (##action `? "Mem") Then (
-        Let memAct : MemAction <- ##action `! "Mem" ;
+      If (##action `? "MemFence") Then (
+        Let mfAct : MemFenceAction <- ##action `! "MemFence" ;
 
-        If (##memAct `? "Store") Then (
-          (* --- STORE ACTION: requires canStoreMemRq --- *)
-          Let st        : StoreCmd       <- ##memAct `! "Store" ;
-          LetA canStore : Bool           <- liftAction np_mem ((memIfc ty).(mem_canStoreMemRq)) ;
-          If #canStore Then (
-            Act (liftAction np_mem ((memIfc ty).(mem_writeMem) (##st`"addr") (##st`"stVal") (##st`"memSize"))) ;
-            Act (liftAction np_rf (updateMshwmOnStore (##st`"addr"))) ;
-            Act (liftAction np_rf incrementMinstret) ;
-            liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
+        If (##mfAct `? "Mem") Then (
+          Let memAct : MemAction <- ##mfAct `! "Mem" ;
+
+          If (##memAct `? "Store") Then (
+            (* --- STORE ACTION: requires canStoreMemRq --- *)
+            Let st        : StoreCmd       <- ##memAct `! "Store" ;
+            LetA canStore : Bool           <- liftAction np_mem ((memIfc ty).(mem_canStoreMemRq)) ;
+            If #canStore Then (
+              Act (liftAction np_mem ((memIfc ty).(mem_writeMem) (##st`"addr") (##st`"stVal") (##st`"memSize"))) ;
+              Act (liftAction np_rf (updateMshwmOnStore (##st`"addr"))) ;
+              Act (liftAction np_rf incrementMinstret) ;
+              liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
+            ) ;
+            Retv
+          ) Else (
+            (* --- LOAD ACTION: requires canLoadMemRq AND loadFifo is NOT full --- *)
+            Let ld      : LoadCmd     <- ##memAct `! "Load" ;
+            Let pending : PendingLoad <- ##ld`"pending" ;
+            LetA canLoad : Bool       <- liftAction np_mem ((memIfc ty).(mem_canLoadMemRq)) ;
+            If (And [ #canLoad ; Not #outputBuffer_isFull ]) Then (
+              Act (liftAction np_mem ((memIfc ty).(mem_readMemRq) (##ld`"addr"))) ;
+              Act (liftAction np_loadFifo (@enq dom capacity PendingLoad ty pending)) ;
+              liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
+            ) ;
+            Retv
           ) ;
           Retv
         ) Else (
-          (* --- LOAD ACTION: requires canLoadMemRq AND loadFifo is NOT full --- *)
-          Let ld      : LoadCmd     <- ##memAct `! "Load" ;
-          Let pending : PendingLoad <- ##ld`"pending" ;
-          LetA canLoad : Bool       <- liftAction np_mem ((memIfc ty).(mem_canLoadMemRq)) ;
-          If (And [ #canLoad ; Not #outputBuffer_isFull ]) Then (
-            Act (liftAction np_mem ((memIfc ty).(mem_readMemRq) (##ld`"addr"))) ;
-            Act (liftAction np_loadFifo (@enq dom capacity PendingLoad ty pending)) ;
-            liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
+          (* --- FENCE ACTION: requires canFenceMemRq AND drained queues if needsEmpty --- *)
+          Let fn        : FenceCmd <- ##mfAct `! "Fence" ;
+          LetA canFence : Bool     <- liftAction np_mem ((memIfc ty).(mem_canFenceMemRq)) ;
+          If #canFence Then (
+            LetA outputBuffer_isEmpty : Bool <- liftAction np_loadFifo (@isEmpty dom capacity PendingLoad ty) ;
+            LetA rev_isEmpty          : Bool <- liftAction np_revFifo (@isEmpty dom capacity PendingRev ty) ;
+            If (Or [ Not (##fn`"needsEmpty") ; And [ #outputBuffer_isEmpty ; #rev_isEmpty ] ]) Then (
+              Act (liftAction np_mem ((memIfc ty).(mem_fence_req) (##fn`"fenceOp"))) ;
+              Act (liftAction np_rf incrementMinstret) ;
+              liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
+            ) ;
+            Retv
           ) ;
           Retv
         ) ;
         Retv
       ) Else (
-        (* --- FENCE ACTION: requires canFenceMemRq AND drained queues if needsEmpty --- *)
-        Let fn        : FenceCmd <- ##action `! "Fence" ;
-        LetA canFence : Bool     <- liftAction np_mem ((memIfc ty).(mem_canFenceMemRq)) ;
-        If #canFence Then (
-          LetA outputBuffer_isEmpty : Bool <- liftAction np_loadFifo (@isEmpty dom capacity PendingLoad ty) ;
-          LetA rev_isEmpty          : Bool <- liftAction np_revFifo (@isEmpty dom capacity PendingRev ty) ;
-          If (Or [ Not (##fn`"needsEmpty") ; And [ #outputBuffer_isEmpty ; #rev_isEmpty ] ]) Then (
-            Act (liftAction np_mem ((memIfc ty).(mem_fence_req) (##fn`"fenceOp"))) ;
-            Act (liftAction np_rf incrementMinstret) ;
-            liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
-          ) ;
+        (* --- MULDIV ACTION --- *)
+        Let md       : MulDivCmd   <- ##action `! "MulDiv" ;
+        Let op1      : Addr        <- ##md`"op1" ;
+        Let mulDivOp : MulDivUnion <- ##md`"mulDivOp" ;
+        LetL resAddr : Addr <- MulDiv op1 mulDivOp ;
+        Let wbVal : FullECapWithTag <- STRUCT {
+          "tag"  ::= Const ty Bool false ;
+          "ecap" ::= Const ty ECap (getDefault _) ;
+          "addr" ::= #resAddr
+        } ;
+        If (isNotZero (##md`"dstIdx")) Then (
+          Act (liftAction np_rf (writeRegsList gprPathsWithKind (##md`"dstIdx") #wbVal)) ;
           Retv
         ) ;
-        Retv
+        Act (liftAction np_rf incrementMinstret) ;
+        liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
       ) ;
       Retv
     ) ;

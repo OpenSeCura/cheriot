@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Psatz Bool.
 From Guru Require Import Syntax Notations Semantics Library Composition.
-From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecDevice.
+From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecDevice SpecMulDiv.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -53,9 +53,21 @@ Definition FenceCmd := STRUCT_TYPE {
   "needsEmpty" :: Bool
 }.
 
-Definition DeferredActionType := [
+Definition MemFenceActionType := [
   ("Mem"%string,   MemAction) ;
   ("Fence"%string, FenceCmd)
+].
+Definition MemFenceAction := TaggedUnion MemFenceActionType.
+
+Definition MulDivCmd := STRUCT_TYPE {
+  "dstIdx"   :: Bit RegIdxSz ;
+  "op1"      :: Addr ;
+  "mulDivOp" :: MulDivUnion
+}.
+
+Definition DeferredActionType := [
+  ("MemFence"%string, MemFenceAction) ;
+  ("MulDiv"%string,   MulDivCmd)
 ].
 Definition DeferredAction := TaggedUnion DeferredActionType.
 
@@ -108,12 +120,12 @@ Section CombinationalDeferred.
     LetE rawPerms    : CapPerms <- ##ldECapRaw`"perms" ;
     LetE newPerms    : CapPerms <- ITE #rawTag (attenuatePerms rawPerms isCapSealed isLM isLG) #rawPerms ;
     @RetE _ ECap (STRUCT {
-      "R"     ::= ##ldECapRaw`"R" ;
-      "perms" ::= #newPerms ;
-      "oType" ::= ##ldECapRaw`"oType" ;
-      "cE"    ::= ##ldECapRaw`"cE" ;
-      "top"   ::= ##ldECapRaw`"top" ;
-      "base"  ::= ##ldECapRaw`"base"
+      "R"      ::= ##ldECapRaw`"R" ;
+      "perms"  ::= #newPerms ;
+      "cOType" ::= ##ldECapRaw`"cOType" ;
+      "cE"     ::= ##ldECapRaw`"cE" ;
+      "top"    ::= ##ldECapRaw`"top" ;
+      "base"   ::= ##ldECapRaw`"base"
     }).
 
   Definition needsRevocationCheck (ecap : ty ECap) (rawTag : ty Bool) : LetExpr ty Bool :=
@@ -142,46 +154,59 @@ Section CombinationalDeferred.
     LetE byteOffset : Bit LgNumBytesFullCapSz  <- TruncLsb TagAddrWidth LgNumBytesFullCapSz #addr ;
     LetE op         : DeferredUnion            <- ##req`"op" ;
     LetIfE action : DeferredAction <-
-      IfE (##op `? "Mem") ThenE (
-        LetE memPayload : MemPayload                <- ##op `! "Mem" ;
-        LetE memSize    : Bit LgLgNumBytesFullCapSz <- ##memPayload`"memSize" ;
-        LetE memOp      : LoadOrStoreKind           <- ##memPayload`"memOp" ;
-        LetE isCap      : Bool                      <- Eq #memSize $LgNumBytesFullCapSz ;
-        LetIfE memAct : MemAction <-
-          IfE (##memOp `? "Store") ThenE (
-            LetE stCapVal : FullCapWithTag <- ##memOp `! "Store" ;
-            LETE stVal    : FullCapWithTag <- formatStorePayload stCapVal byteOffset isCap needsRotation ;
-            LetE stCmd    : StoreCmd       <- STRUCT {
-              "addr"    ::= #addr ;
-              "stVal"   ::= #stVal ;
-              "memSize" ::= #memSize
-            } ;
-            @RetE _ MemAction (UNION (MemActionType, "Store" ::= #stCmd))
+      IfE (##op `? "MemFence") ThenE (
+        LetE memFence   : MemFenceUnion <- ##op `! "MemFence" ;
+        LetIfE mfAct : MemFenceAction <-
+          IfE (##memFence `? "Mem") ThenE (
+            LetE memPayload : MemPayload                <- ##memFence `! "Mem" ;
+            LetE memSize    : Bit LgLgNumBytesFullCapSz <- ##memPayload`"memSize" ;
+            LetE memOp      : LoadOrStoreKind           <- ##memPayload`"memOp" ;
+            LetE isCap      : Bool                      <- Eq #memSize $LgNumBytesFullCapSz ;
+            LetIfE memAct : MemAction <-
+              IfE (##memOp `? "Store") ThenE (
+                LetE stCapVal : FullCapWithTag <- ##memOp `! "Store" ;
+                LETE stVal    : FullCapWithTag <- formatStorePayload stCapVal byteOffset isCap needsRotation ;
+                LetE stCmd    : StoreCmd       <- STRUCT {
+                  "addr"    ::= #addr ;
+                  "stVal"   ::= #stVal ;
+                  "memSize" ::= #memSize
+                } ;
+                @RetE _ MemAction (UNION (MemActionType, "Store" ::= #stCmd))
+              ) ElseE (
+                LetE ldOpVal : LoadOp <- ##memOp `! "Load" ;
+                LetE pending : PendingLoad <- STRUCT {
+                  "dstIdx"     ::= #dstIdx ;
+                  "byteOffset" ::= #byteOffset ;
+                  "memSize"    ::= #memSize ;
+                  "isUnsigned" ::= ##ldOpVal`"isUnsigned" ;
+                  "isLM"       ::= ##ldOpVal`"isLM" ;
+                  "isLG"       ::= ##ldOpVal`"isLG"
+                } ;
+                LetE ldCmd : LoadCmd <- STRUCT {
+                  "addr"    ::= #addr ;
+                  "pending" ::= #pending
+                } ;
+                @RetE _ MemAction (UNION (MemActionType, "Load" ::= #ldCmd))
+              ) ;
+            @RetE _ MemFenceAction (UNION (MemFenceActionType, "Mem" ::= #memAct))
           ) ElseE (
-            LetE ldOpVal : LoadOp <- ##memOp `! "Load" ;
-            LetE pending : PendingLoad <- STRUCT {
-              "dstIdx"     ::= #dstIdx ;
-              "byteOffset" ::= #byteOffset ;
-              "memSize"    ::= #memSize ;
-              "isUnsigned" ::= ##ldOpVal`"isUnsigned" ;
-              "isLM"       ::= ##ldOpVal`"isLM" ;
-              "isLG"       ::= ##ldOpVal`"isLG"
+            LetE fenceVal        : FenceOp  <- ##memFence `! "Fence" ;
+            LetE fenceNeedsEmpty : Bool     <- Or [ ##fenceVal`"RW" ; ##fenceVal`"WW" ] ;
+            LetE fenceCmd        : FenceCmd <- STRUCT {
+              "fenceOp"    ::= #fenceVal ;
+              "needsEmpty" ::= #fenceNeedsEmpty
             } ;
-            LetE ldCmd : LoadCmd <- STRUCT {
-              "addr"    ::= #addr ;
-              "pending" ::= #pending
-            } ;
-            @RetE _ MemAction (UNION (MemActionType, "Load" ::= #ldCmd))
+            @RetE _ MemFenceAction (UNION (MemFenceActionType, "Fence" ::= #fenceCmd))
           ) ;
-        @RetE _ DeferredAction (UNION (DeferredActionType, "Mem" ::= #memAct))
+        @RetE _ DeferredAction (UNION (DeferredActionType, "MemFence" ::= #mfAct))
       ) ElseE (
-        LetE fenceVal        : FenceOp  <- ##op `! "Fence" ;
-        LetE fenceNeedsEmpty : Bool     <- Or [ ##fenceVal`"RW" ; ##fenceVal`"WW" ] ;
-        LetE fenceCmd        : FenceCmd <- STRUCT {
-          "fenceOp"    ::= #fenceVal ;
-          "needsEmpty" ::= #fenceNeedsEmpty
+        LetE mulDivOp : MulDivUnion <- ##op `! "MulDiv" ;
+        LetE mdCmd    : MulDivCmd   <- STRUCT {
+          "dstIdx"   ::= #dstIdx ;
+          "op1"      ::= #addr ;
+          "mulDivOp" ::= #mulDivOp
         } ;
-        @RetE _ DeferredAction (UNION (DeferredActionType, "Fence" ::= #fenceCmd))
+        @RetE _ DeferredAction (UNION (DeferredActionType, "MulDiv" ::= #mdCmd))
       ) ;
     @RetE _ DeferredAction #action.
 
@@ -278,7 +303,7 @@ Section SpecCoreTree.
       specMemTree regions
     ].
 
-  Section SpecFetchMemory.
+  Section SpecFetchDeferred.
     Variable config : RevConfig.
     Variable regions : list MemRegion.
     Variable ty : Kind -> Type.
@@ -334,59 +359,79 @@ Section SpecCoreTree.
     Definition specExecuteDeferredReq (req : ty DeferredReq) : Action ty coreTree (Bit 0) :=
       LetL action : DeferredAction <- dispatchDeferredReq req false ;
 
-      If (##action `? "Mem") Then (
-        Let memAct : MemAction <- ##action `! "Mem" ;
+      If (##action `? "MemFence") Then (
+        Let mfAct : MemFenceAction <- ##action `! "MemFence" ;
 
-        If (##memAct `? "Store") Then (
-          Let st        : StoreCmd                  <- ##memAct `! "Store" ;
-          Let addr      : Addr                      <- ##st`"addr" ;
-          Let stVal     : FullCapWithTag            <- ##st`"stVal" ;
-          Let memSize   : Bit LgLgNumBytesFullCapSz <- ##st`"memSize" ;
+        If (##mfAct `? "Mem") Then (
+          Let memAct : MemAction <- ##mfAct `! "Mem" ;
 
-          Act (liftAction np_mem (specMemWrite regions #addr #stVal #memSize)) ;
-          Act (liftAction np_rf (updateMshwmOnStore dom pcAddrInit #addr)) ;
-          Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
-          If (Eq #addr ($ tohostAddr)) Then (
-            Let tohostVal : Addr <- ##stVal`"addr" ;
-            If (Eq #tohostVal $1) Then (
-              Sys [ DispString ty "TEST PASSED!\n" ; Finish ty ] ; Retv
+          If (##memAct `? "Store") Then (
+            Let st        : StoreCmd                  <- ##memAct `! "Store" ;
+            Let addr      : Addr                      <- ##st`"addr" ;
+            Let stVal     : FullCapWithTag            <- ##st`"stVal" ;
+            Let memSize   : Bit LgLgNumBytesFullCapSz <- ##st`"memSize" ;
+
+            Act (liftAction np_mem (specMemWrite regions #addr #stVal #memSize)) ;
+            Act (liftAction np_rf (updateMshwmOnStore dom pcAddrInit #addr)) ;
+            Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
+            If (And [ Eq #addr ($ tohostAddr) ; isNotZero (##stVal`"addr") ]) Then (
+              Let tohostVal : Addr <- ##stVal`"addr" ;
+              If (Eq #tohostVal $1) Then (
+                Sys [ DispString ty "TEST PASSED!\n" ; Finish ty ] ; Retv
+              ) ;
+              If (Not (Eq #tohostVal $1)) Then (
+                Sys [ DispString ty "TEST FAILED at test case: " ; DispDecimal #tohostVal ; DispString ty "\n" ; Finish ty ] ; Retv
+              ) ;
+              Retv
             ) ;
-            If (Not (Eq #tohostVal $1)) Then (
-              Sys [ DispString ty "TEST FAILED at test case: " ; DispDecimal #tohostVal ; DispString ty "\n" ; Finish ty ] ; Retv
+            Retv
+          ) Else (
+            Let ld        : LoadCmd           <- ##memAct `! "Load" ;
+            Let addr      : Addr              <- ##ld`"addr" ;
+            Let pending   : PendingLoad       <- ##ld`"pending" ;
+
+            LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions #addr (##pending`"memSize")) ;
+            LetL outcome  : LoadOutcome       <- dispatchLoadResponse pending memVal false ;
+
+            If (#outcome `? "RevLookup") Then (
+              Let  revInfo : RevCmd        <- #outcome `! "RevLookup" ;
+              Let  pr      : PendingRev    <- ##revInfo`"pendingRev" ;
+              LetA revBit  : Bool          <- liftAction np_mem (readRevBit (##revInfo`"base")) ;
+              LetL wbInfo  : WbCmd         <- dispatchRevResponse pr revBit ;
+              If (isNotZero (##wbInfo`"dstIdx")) Then (
+                liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
+              ) ;
+              Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
+              Retv
+            ) Else (
+              Let wbInfo : WbCmd <- #outcome `! "Writeback" ;
+              If (isNotZero (##wbInfo`"dstIdx")) Then (
+                liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
+              ) ;
+              Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
+              Retv
             ) ;
             Retv
           ) ;
           Retv
         ) Else (
-          Let ld        : LoadCmd           <- ##memAct `! "Load" ;
-          Let addr      : Addr              <- ##ld`"addr" ;
-          Let pending   : PendingLoad       <- ##ld`"pending" ;
-
-          LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions #addr (##pending`"memSize")) ;
-          LetL outcome  : LoadOutcome       <- dispatchLoadResponse pending memVal false ;
-
-          If (#outcome `? "RevLookup") Then (
-            Let  revInfo : RevCmd        <- #outcome `! "RevLookup" ;
-            Let  pr      : PendingRev    <- ##revInfo`"pendingRev" ;
-            LetA revBit  : Bool          <- liftAction np_mem (readRevBit (##revInfo`"base")) ;
-            LetL wbInfo  : WbCmd         <- dispatchRevResponse pr revBit ;
-            If (isNotZero (##wbInfo`"dstIdx")) Then (
-              liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
-            ) ;
-            Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
-            Retv
-          ) Else (
-            Let wbInfo : WbCmd <- #outcome `! "Writeback" ;
-            If (isNotZero (##wbInfo`"dstIdx")) Then (
-              liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
-            ) ;
-            Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
-            Retv
-          ) ;
+          Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
           Retv
         ) ;
         Retv
       ) Else (
+        Let md       : MulDivCmd   <- ##action `! "MulDiv" ;
+        Let op1      : Addr        <- ##md`"op1" ;
+        Let mulDivOp : MulDivUnion <- ##md`"mulDivOp" ;
+        LetL resAddr : Addr        <- MulDiv op1 mulDivOp ;
+        Let wbVal : FullECapWithTag <- STRUCT {
+          "tag"  ::= Const ty Bool false ;
+          "ecap" ::= Const ty ECap (getDefault _) ;
+          "addr" ::= #resAddr
+        } ;
+        If (isNotZero (##md`"dstIdx")) Then (
+          liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##md`"dstIdx") #wbVal)
+        ) ;
         Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
         Retv
       ) ;
@@ -402,6 +447,6 @@ Section SpecCoreTree.
       ) ;
       Retv.
 
-  End SpecFetchMemory.
+  End SpecFetchDeferred.
 
 End SpecCoreTree.

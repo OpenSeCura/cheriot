@@ -65,7 +65,7 @@ Section DecodeUncompressed.
     LetE isCjal   : Bool <- Eq #opcode $(Z.shiftr 0x6f 2) ;
     LetE isCjalr  : Bool <- And [Eq #opcode $(Z.shiftr 0x67 2); isZero #funct3 ] ;
     LetE isBranch : Bool <- And [ Eq #opcode $(Z.shiftr 0x63 2); Not (Eq (#funct3`[2:1]) $1) ] ;
-    LetE isLoad   : Bool <- And [ Eq #opcode $(Z.shiftr 0x03 2); Not (Eq (#funct3`[2:1]) $3) ] ;
+    LetE isLoad   : Bool <- And [ isNotZero #inst; Eq #opcode $(Z.shiftr 0x03 2); Not (Eq (#funct3`[2:1]) $3) ] ;
     LetE isStore  : Bool <- And [ Eq #opcode $(Z.shiftr 0x23 2); Not (FromBit Bool (#funct3`[2:2])) ] ;
     LetE isOpImm  : Bool <- Eq #opcode $(Z.shiftr 0x13 2) ;
     LetE isOp     : Bool <- Eq #opcode $(Z.shiftr 0x33 2) ;
@@ -89,11 +89,12 @@ Section DecodeUncompressed.
     LetE isLogical: Bool <- And [ Or [ Eq #funct3 $4; Eq #funct3 $6; Eq #funct3 $7 ];
                                   Or [And [#isOp; isZero #funct7]; #isOpImm] ] ;
 
+    LetE isMulDiv : Bool <- And [ #isOp; Eq #funct7 $1 ] ;
+
     (* Unsignedness Bit Analysis *)
     LetE isBranchUnsigned : Bool <- And [ #isBranch; FromBit Bool (#funct3`[1:1]) ] ;
     LetE isSltUnsigned    : Bool <- And [ #isSlt; FromBit Bool (#funct3`[0:0]) ] ;
-    LetE isLoadUnsigned   : Bool <- And [ #isLoad; FromBit Bool (#funct3`[2:2]) ] ;
-    LetE isUnsignedOp     : Bool <- Or [ #isBranchUnsigned; #isSltUnsigned; #isLoadUnsigned ] ;
+    LetE isCompUnsigned   : Bool <- Or [ #isBranchUnsigned; #isSltUnsigned ] ;
 
     (* PCC Permissions Extraction *)
     LetE pccEcap  : ECap     <- ##pcc`"ecap" ;
@@ -175,7 +176,7 @@ Section DecodeUncompressed.
 
     LetE isValidInst : Bool <- Or [
       #isBranch; #isCjal; #isAuiPcc; #isAuiCgp; #isCIncAddr; #isCSetAddr; #isCjalr; #isCTestSubset;
-      #isCSetBounds; #isSeal; #isUnseal; #isLoad; #isStore; #isAddSub; #isCGetLen;
+      #isCSetBounds; #isSeal; #isUnseal; #isLoad; #isStore; #isMulDiv; #isAddSub; #isCGetLen;
       #isSlt; #isCSetEqual; #isShift; #isLogical; #isCram; #isCrrl; #isCAndPerm; #isCsr; #isScr;
       #isLui; #isCGetPerm; #isCGetType; #isCGetBase; #isCGetTag; #isCGetAddr; #isCGetHigh;
       #isCGetTop; #isCSetHigh; #isCClearTag; #isCMove; #isMret; #isECall; #isEBreak; #isFence
@@ -201,7 +202,6 @@ Section DecodeUncompressed.
     LetE groupVal : InstGroup <- STRUCT {
       "isCompressed"                ::= #isComp ;
       "isImm"                       ::= #isImm ;
-      "isUnsigned"                  ::= #isUnsignedOp ;
       "Branch"                      ::= #isBranch ;
       "Cjal"                        ::= #isCjal ;
       "AuiPcc"                      ::= #isAuiPcc ;
@@ -217,6 +217,7 @@ Section DecodeUncompressed.
       "Unseal"                      ::= #isUnseal ;
       "Load"                        ::= #isLoad ;
       "Store"                       ::= #isStore ;
+      "MulDiv"                      ::= #isMulDiv ;
       "AddSub"                      ::= #isAddSub ;
       "AddSub_isSub"                ::= #isSub ;
       "CGetLen"                     ::= #isCGetLen ;
@@ -249,6 +250,7 @@ Section DecodeUncompressed.
       "EBreak"                      ::= #isEBreak ;
       "Mret"                        ::= #isMret ;
       "Fence"                       ::= #isFence ;
+      "ComparatorGeneral_isUnsigned" ::= #isCompUnsigned ;
       "ComparatorGeneral_checkLt"   ::= #checkLt ;
       "ComparatorGeneral_checkEq"   ::= #checkEq ;
       "ComparatorGeneral_invertRes" ::= #invertRes
@@ -317,7 +319,7 @@ Section DecodeCompressed.
     LetE pseudoSW : Bit 30 <- {< #lwOff`[11:5], #cd5, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 2), #lwOff`[4:0], Const _ (Bit 5) (Zmod.of_Z _ 8) >} ;
     LetE pseudoSC : Bit 30 <- {< #lcOff`[11:5], #cd5, #cs15, Const _ (Bit 3) (Zmod.of_Z _ 3), #lcOff`[4:0], Const _ (Bit 5) (Zmod.of_Z _ 8) >} ;
 
-    LetE rawInst : Bit 30 <- Or [ITE0 (Eq #f3 $0) #pseudoADDI4SPN;
+    LetE rawInst : Bit 30 <- Or [ITE0 (And [Eq #f3 $0; isNotZero #addi4spnImm]) #pseudoADDI4SPN;
                                  ITE0 (Eq #f3 $2) #pseudoLW;
                                  ITE0 (Eq #f3 $3) #pseudoLC;
                                  ITE0 (Eq #f3 $6) #pseudoSW;

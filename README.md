@@ -54,6 +54,11 @@ While `cheriot-sail` is the defacto standard specification, our ISA specificatio
    - `mip` CSR is read-only because there's no backing register
    - A `CSRRS[I]`/`CSRRC[I]` from register `c0` or immediate value 0 to `mip` is read-only and hence legal. Any CSR instruction that writes `mip` is illegal.
 
+9. **`WFI` Decoded as an Alias for `ECALL`**:
+   - In `Decoder.v`, `WFI` (`SYSTEM` opcode with `funct3 = 0` and `csrAddr = 0x105`) is decoded as part of `isECall`, raising `EXC_ECallM` (`mcause = 11`).
+   - In CHERIoT RTOS, `ECALL` (`mcause = 11`) simply invokes the scheduler (`scheduler::exception_entry`) to expire any elapsed timers (`Timer::expiretimers()`) and switch to the next runnable thread (`Thread::schedule()`), advancing `mepcc` by 4 on return.
+   - Since `WFI` is executed in the idle thread loop (`wfi; j .Lidle_loop` in `boot.S`) when all user threads are sleeping, treating `WFI` as `ECALL` causes the idle thread to immediately yield into the scheduler, poll `mtime` to wake up any threads whose timeout has elapsed, and switch threads without requiring dedicated `WFI` stall state.
+
 ---
 
 ## Multi-Core Memory Consistency & Pipeline Refinement Specification

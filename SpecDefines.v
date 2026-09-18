@@ -57,7 +57,8 @@ Definition Cra            := 1.
 Definition Csp            := 2.
 Definition Cgp            := 3.
 Definition RegIdxSzReal   := 4.
-Definition CapOTypeSz     := 3.
+Definition CapcOTypeSz    := 3.
+Definition CapOTypeSz     := Eval compute in (CapcOTypeSz + 1).
 Definition CapPermSz      := (6 : nat).
 Definition CapcTSz        := 8.
 
@@ -78,7 +79,7 @@ Definition CapBSz         := Eval compute in (CapcTSz + 1).
 Definition Cap : Kind := STRUCT_TYPE {
                              "R" :: Bool;
                              "p" :: Array CapPermSz Bool;
-                             "oType" :: Bit CapOTypeSz;
+                             "cOType" :: Bit CapcOTypeSz;
                              "cE" :: Bit ExpSz;
                              "cT" :: Bit CapcTSz;
                              "B" :: Bit CapBSz }.
@@ -107,7 +108,6 @@ Definition RetSentryIe  := 5.
 Definition InstGroup := STRUCT_TYPE {
   "isCompressed"                :: Bool ;
   "isImm"                       :: Bool ;
-  "isUnsigned"                  :: Bool ; (* Should be set only for Branch, Slt and Load *)
   "Branch"                      :: Bool ;
   "Cjal"                        :: Bool ;
   "AuiPcc"                      :: Bool ;
@@ -123,6 +123,7 @@ Definition InstGroup := STRUCT_TYPE {
   "Unseal"                      :: Bool ;
   "Load"                        :: Bool ;
   "Store"                       :: Bool ;
+  "MulDiv"                      :: Bool ;
   "AddSub"                      :: Bool ;
   "AddSub_isSub"                :: Bool ; (* This also captures AddSub *)
   "CGetLen"                     :: Bool ;
@@ -155,6 +156,7 @@ Definition InstGroup := STRUCT_TYPE {
   "EBreak"                      :: Bool ;
   "Mret"                        :: Bool ;
   "Fence"                       :: Bool ;
+  "ComparatorGeneral_isUnsigned" :: Bool ; (* Should be set only for Branch and Slt *)
   "ComparatorGeneral_checkLt"   :: Bool ; (* Should be set only for Branch and Slt *)
   "ComparatorGeneral_checkEq"   :: Bool ; (* Should be set only for Branch and CSetEqual *)
   "ComparatorGeneral_invertRes" :: Bool   (* Should be set only for Branch *)
@@ -181,6 +183,7 @@ Definition FunctionalUnits := STRUCT_TYPE {
   "ScrSanitizer" :: Bool ;
   "EncodeCap" :: Bool ;
   "DecodeCap" :: Bool ;
+  "PccEcap" :: Bool ;
   "Exception" :: Bool ;
   "Deferred" :: Bool ;
   "FenceI" :: Bool ;
@@ -203,7 +206,7 @@ Definition CapPerms := STRUCT_TYPE { "U0" :: Bool ;
 
 Definition ECap := STRUCT_TYPE { "R"     :: Bool;
                                  "perms" :: CapPerms;
-                                 "oType" :: Bit CapOTypeSz;
+                                 "cOType" :: Bit CapcOTypeSz;
                                  "cE"    :: Bit ExpSz;
                                  "top"   :: Bit (AddrSz + 2);
                                  "base"  :: Bit (AddrSz + 1) }.
@@ -217,7 +220,7 @@ Definition FullECapWithTag := STRUCT_TYPE { "tag"  :: Bool;
                                             "addr" :: Addr }.
 
 (* ===========================================================================
- * Deferred Operations (MemPayload, FenceOp)
+ * Deferred Operations (MemFence, MulDiv)
  * =========================================================================== *)
 
 Definition LoadOp := STRUCT_TYPE {
@@ -245,9 +248,36 @@ Definition FenceOp := STRUCT_TYPE {
   "WW" :: Bool
 }.
 
-Definition DeferredUnionType := [
+Definition MemFenceType := [
   ("Mem"%string,   MemPayload) ;
   ("Fence"%string, FenceOp)
+].
+
+Definition MemFenceUnion := TaggedUnion MemFenceType.
+
+Definition MulOp := STRUCT_TYPE {
+  "op2"       :: Addr ;
+  "isHigh"    :: Bool ;
+  "op1Signed" :: Bool ;
+  "op2Signed" :: Bool
+}.
+
+Definition DivOp := STRUCT_TYPE {
+  "op2"        :: Addr ;
+  "isUnsigned" :: Bool ;
+  "isRem"      :: Bool
+}.
+
+Definition MulDivType := [
+  ("Mul"%string, MulOp) ;
+  ("Div"%string, DivOp)
+].
+
+Definition MulDivUnion := TaggedUnion MulDivType.
+
+Definition DeferredUnionType := [
+  ("MemFence"%string, MemFenceUnion) ;
+  ("MulDiv"%string,   MulDivUnion)
 ].
 
 Definition DeferredUnion := TaggedUnion DeferredUnionType.
@@ -262,7 +292,8 @@ Section DeferredConstructors.
       "WR" ::= #wr ;
       "WW" ::= #ww
     } ;
-    RetE (UNION (DeferredUnionType, "Fence" ::= #fenceVal)).
+    LetE memFenceVal : MemFenceUnion <- UNION (MemFenceType, "Fence" ::= #fenceVal) ;
+    RetE (UNION (DeferredUnionType, "MemFence" ::= #memFenceVal)).
 End DeferredConstructors.
 
 Section CapEncoding.
@@ -364,20 +395,20 @@ Section CapEncoding.
 
     Definition encodePerms (perms: ty CapPerms) : Expr ty (Array CapPermSz Bool) :=
       (ITE (And [##perms`"EX"; ##perms`"LD"; ##perms`"MC"])
-         (ARRAY [##perms`"GL"; ConstBool false; ConstBool true; ##perms`"SR"; ##perms`"LM"; ##perms`"LG"])
+         (ARRAY [##perms`"LG"; ##perms`"LM"; ##perms`"SR"; ConstBool true; ConstBool false; ##perms`"GL"])
          (ITE (And [##perms`"LD"; ##perms`"MC"; ##perms`"SD"])
-            (ARRAY [##perms`"GL"; ConstBool true; ConstBool true; ##perms`"SL"; ##perms`"LM"; ##perms`"LG"])
+            (ARRAY [##perms`"LG"; ##perms`"LM"; ##perms`"SL"; ConstBool true; ConstBool true; ##perms`"GL"])
             (ITE (And [##perms`"LD"; ##perms`"MC"])
-               (ARRAY [##perms`"GL"; ConstBool true; ConstBool false; ConstBool true; ##perms`"LM";
-                       ##perms`"LG"])
+               (ARRAY [##perms`"LG"; ##perms`"LM"; ConstBool true; ConstBool false; ConstBool true;
+                       ##perms`"GL"])
                (ITE (And [##perms`"SD"; ##perms`"MC"])
-                  (ARRAY [##perms`"GL"; ConstBool true; ConstBool false; ConstBool false; ConstBool false;
-                          ConstBool false])
+                  (ARRAY [ConstBool false; ConstBool false; ConstBool false; ConstBool false; ConstBool true;
+                          ##perms`"GL"])
                   (ITE (Or [##perms`"LD"; ##perms`"SD"])
-                     (ARRAY [##perms`"GL"; ConstBool true; ConstBool false; ConstBool false; ##perms`"LD";
-                             ##perms`"SD"])
-                     (ARRAY [##perms`"GL"; ConstBool false; ConstBool false; ##perms`"U0"; ##perms`"SE";
-                             ##perms`"US"])))))).
+                     (ARRAY [##perms`"SD"; ##perms`"LD"; ConstBool false; ConstBool false; ConstBool true;
+                             ##perms`"GL"])
+                     (ARRAY [##perms`"US"; ##perms`"SE"; ##perms`"U0"; ConstBool false; ConstBool false;
+                             ##perms`"GL"])))))).
 
   End CapPerms.
 
@@ -497,7 +528,7 @@ Section Roots.
       (STRUCT_CONST {
            "R" ::= false ;
            "perms" ::= perms ;
-           "oType" ::= getDefault (Bit _) ;
+           "cOType" ::= getDefault (Bit _) ;
            "cE" ::= Zmod.of_Z _ Emax ;
            "top" ::= Zmod.app (Zmod.zero: bits AddrSz) Zmod.one ;
            "base" ::= Zmod.zero }).
@@ -545,12 +576,10 @@ Record CsrEntry := {
 }.
 
 Definition PhysicalCsrTable := [
-  {| csrName := "mcycle"    ; csrAddr := 0xc00 ; csrReadNoAsr := true  ; csrWriteNoAsr := false ; csrInit := 0 |} ;
-  {| csrName := "mcycleh"   ; csrAddr := 0xc80 ; csrReadNoAsr := true  ; csrWriteNoAsr := false ; csrInit := 0 |} ;
-  {| csrName := "minstret"  ; csrAddr := 0xc02 ; csrReadNoAsr := true  ; csrWriteNoAsr := false ; csrInit := 0 |} ;
-  {| csrName := "minstreth" ; csrAddr := 0xc82 ; csrReadNoAsr := true  ; csrWriteNoAsr := false ; csrInit := 0 |} ;
-  {| csrName := "mtimecmp"  ; csrAddr := 0x14D ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 2^Xlen-1 |} ;
-  {| csrName := "mtimecmph" ; csrAddr := 0x15D ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 2^Xlen-1 |} ;
+  {| csrName := "mcycle"    ; csrAddr := 0xb00 ; csrReadNoAsr := true  ; csrWriteNoAsr := false ; csrInit := 0 |} ;
+  {| csrName := "mcycleh"   ; csrAddr := 0xb80 ; csrReadNoAsr := true  ; csrWriteNoAsr := false ; csrInit := 0 |} ;
+  {| csrName := "minstret"  ; csrAddr := 0xb02 ; csrReadNoAsr := true  ; csrWriteNoAsr := false ; csrInit := 0 |} ;
+  {| csrName := "minstreth" ; csrAddr := 0xb82 ; csrReadNoAsr := true  ; csrWriteNoAsr := false ; csrInit := 0 |} ;
   {| csrName := "mstatus"   ; csrAddr := 0x300 ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 0 |} ;
   {| csrName := "mie"       ; csrAddr := 0x304 ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 0 |} ;
   {| csrName := "mcause"    ; csrAddr := 0x342 ; csrReadNoAsr := false ; csrWriteNoAsr := false ; csrInit := 0 |} ;
@@ -834,7 +863,13 @@ Section Decoders.
             (filter (fun e => e.(scrReadOnly)) (ScrTable 0))).
 End Decoders.
 
-Definition isSealed ty (ecap: ty ECap) : Expr ty Bool := isNotZero (##ecap`"oType").
+Definition isSealed ty (ecap: ty ECap) : Expr ty Bool := isNotZero (##ecap`"cOType").
+Definition getFullOType ty (ecap: ty ECap) : Expr ty (Bit CapOTypeSz) :=
+  let cotype := ##ecap`"cOType" in
+  let isEx   := ##ecap`"perms"`"EX" in
+  let isZero := isZero cotype in
+  let msb    := ToBit (And [ Not isEx; Not isZero ]) in
+  {< msb, cotype >}.
 Definition isSealingCap ty (ecap : ty ECap) : Expr ty Bool :=
   Or [ ##ecap`"perms"`"SE" ;
        ##ecap`"perms"`"US" ;
@@ -905,9 +940,9 @@ Definition AluControl := STRUCT_TYPE {
 
   (* AdderToOutput *)
   "AdderToOutput_isSub" :: Bool ;
-  "AdderToOutput_base_pccAddr" :: Bool ;
+  (* AdderToOutput_base_pccAddr = CjalOrCjalr *)
   (* AdderToOutput_base_cs1Top = CGetLen *)
-  (* AdderToOutput_base_cs1Addr = AddSub (* default option *) *)
+  (* "AdderToOutput_base_cs1Addr" :: Bool ; (* default option *) *)
   "AdderToOutput_offset_const2" :: Bool ;
   (* "AdderToOutput_offset_const4" :: Bool ; (* default option *) *)
   "AdderToOutput_offset_cs2Addr" :: Bool ;
@@ -960,7 +995,7 @@ Definition AluControl := STRUCT_TYPE {
   (* ComparatorTopOrRep_addr_cs1OType = Unseal *)
   (* ComparatorTopOrRep_addr_cs1Top = CTestSubset *)
   (* "ComparatorTopOrRep_topRep_cs1Top" :: Bool ; (* default option *) *)
-  (* ComparatorTopOrRep_topRep_AdderBeforeRepCheck = BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr *)
+  "ComparatorTopOrRep_topRep_AdderBeforeRepCheck" :: Bool ;
   (* ComparatorTopOrRep_topRep_cs2Top = SealOrUnsealOrSubset *)
 
   (* ComparatorBase *)
@@ -979,6 +1014,9 @@ Definition AluControl := STRUCT_TYPE {
   (* EncodeCap *)
   (* EncodeCap_ecap_isCs2EcapNotCs1Ecap = Store *)
 
+  (* PccEcap *)
+  (* PccEcap_cOType_isLinkCOTypeNotZero = CjalOrCjalr *)
+
   (* Exception *)
   "Exception_isECall" :: Bool ;
   "Exception_isEBreak" :: Bool ;
@@ -989,6 +1027,7 @@ Definition AluControl := STRUCT_TYPE {
   (* Deferred_isLoad = Load *)
   (* Deferred_isStore = Store *)
   (* Deferred_isFence = Fence *)
+  "Deferred_isMulDiv" :: Bool ;
 
   (* FenceI *)
   (* FenceI_isFence = Fence *)
@@ -1016,7 +1055,7 @@ Definition AluControl := STRUCT_TYPE {
   (* "Reg_tag_zero" :: Bool ; (* default option *) *)
 
   (* Reg_ecap *)
-  "Reg_ecap_pccEcap" :: Bool ;
+  "Reg_ecap_PccEcap" :: Bool ;
   "Reg_ecap_cs1Ecap" :: Bool ;
   (* Reg_ecap_cs2Ecap = Scr *)
   "Reg_ecap_decodedECap" :: Bool ;
@@ -1028,41 +1067,36 @@ Definition AluControl := STRUCT_TYPE {
   (* Reg_addr *)
   "Reg_addr_AdderBeforeBoundsCheck" :: Bool ;
   "Reg_addr_ComparatorGeneralLt" :: Bool ;
-  (* Reg_addr_Shifter = Shift *)
+  "Reg_addr_Shifter" :: Bool ;
   "Reg_addr_Logical" :: Bool ;
   "Reg_addr_AdderToOutput" :: Bool ;
   "Reg_addr_CGetPerm" :: Bool ;
   "Reg_addr_CGetType" :: Bool ;
   "Reg_addr_CGetTag" :: Bool ;
-  "Reg_addr_CGetAddr" :: Bool ;
   "Reg_addr_CGetHigh" :: Bool ;
   "Reg_addr_Saturater" :: Bool ;
   "Reg_addr_cs2Addr" :: Bool ;
   "Reg_addr_cs1Addr" :: Bool ;
-  (* Reg_addr_CAndPerm = CAndPerm *)
-  (* Reg_addr_SealerUnsealer = SealOrUnseal *)
-  (* Reg_addr_BoundsBase = CSetBounds *)
   "Reg_addr_BoundsCram" :: Bool ;
   "Reg_addr_BoundsCrrl" :: Bool ;
   (* Reg_addr_CapSubset = CTestSubset *)
   "Reg_addr_CapEq" :: Bool ;
-  (* Reg_addr_uimm20 = Lui (* default option *) *)
+  (* "Reg_addr_uimm20" :: Bool ; (* default option *) *)
 
   (* Common Expressions *)
   "Branch" :: Bool ;
   "Cjal" :: Bool ;
+  "CjalOrCjalr" :: Bool ;
   "Load" :: Bool ;
   "Store" :: Bool ;
   "Fence" :: Bool ;
   "Unseal" :: Bool ;
   "CSetBounds" :: Bool ;
   "CGetLen" :: Bool ;
-  "Shift" :: Bool ;
   "CTestSubset" :: Bool ;
   "Scr" :: Bool ;
   "CAndPerm" :: Bool ;
   "BranchOrCjalOrAuiPcc" :: Bool ;
-  "BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr" :: Bool ;
   "SealOrSetAddr" :: Bool ;
   "SealOrUnsealOrSubset" :: Bool ;
   "SealOrUnseal" :: Bool
@@ -1197,8 +1231,7 @@ Section RfTree.
     Node "rf" [
       Node "gprs" gprLeaves ;
       Node "scrs" scrLeaves ;
-      Node "csrs" csrLeaves ;
-      Leaf "mtip" (dom, EReg (Build_Reg Bool (Some false) false))
+      Node "csrs" csrLeaves
     ].
 
   Definition np_gprs : NodePath rfTree := Eval cbn in (getNodePath rfTree "rf.gprs").

@@ -35,14 +35,14 @@ Definition RamBase        : Z := MemStartAddr.
 Definition RamSize        : Z := 256 * 1024. (* 256 KB *)
 Definition RamLineConfig  : LineConfig := @TaggedLine (Z.to_nat LgNumBytesFullCapSz) I.
 
-Definition RevTableBase       : Z := 0x00001000.
+Definition RevTableBase       : Z := 0x83000000.
 Definition RevTableSize       : Z := 4 * 1024. (* 4 KB bitmap *)
 Definition RevTableLineConfig : LineConfig := RawLine (Z.to_nat LgNumBytesXlen).
 
 Definition ClintBaseAddr   : Z := 0x02000000.
 Definition RevokerBaseAddr : Z := 0x03000000.
 Definition PlicBaseAddr    : Z := 0x04000000.
-Definition UartBaseAddr    : Z := 0x05000000.
+Definition UartBaseAddr    : Z := 0x10000000.
 
 (* ===========================================================================
  * Revoker Configuration
@@ -157,7 +157,7 @@ Set Extraction Output Directory ".".
 Extract Constant io_send => "(\name k val ->
   if (Prelude.||) (name Prelude.== ""txData"") (Data.List.isSuffixOf "".txData"" name)
   then let byte = Prelude.fromIntegral (unsafeCoerce val :: Prelude.Integer)
-       in Prelude.putChar (Data.Char.chr byte)
+       in Prelude.putChar (Data.Char.chr byte) Prelude.>> System.IO.hFlush System.IO.stdout
   else Prelude.return ())".
 
 Extract Constant io_recv => "(\name k ->
@@ -166,8 +166,10 @@ Extract Constant io_recv => "(\name k ->
   else Prelude.return (unsafeCoerce (getDefault k)))".
 
 Extract Constant io_stepCycle => "(\c ->
-  Prelude.putStrLn (""[Cycle "" Prelude.++ Prelude.show (c :: Prelude.Integer) Prelude.++ ""]"") Prelude.>>
-  System.IO.hFlush System.IO.stdout)".
+  if Prelude.rem (c :: Prelude.Integer) 250000 Prelude.== 0
+  then Prelude.putStrLn (""[Cycle "" Prelude.++ Prelude.show (c :: Prelude.Integer) Prelude.++ ""]"") Prelude.>>
+       System.IO.hFlush System.IO.stdout
+  else Prelude.return ())".
 
-Definition main : IO unit := evalModCyclesIO specSysTreeInst (Z.to_nat 4000) specModInst.
+Definition main : IO unit := evalModCyclesIO specSysTreeInst (Z.to_nat 50000000) specModInst.
 Extraction "Simulate" main.

@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Psatz Bool.
 From Guru Require Import Syntax Notations Semantics Library Composition.
-From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchMemory SpecDevice Clint SpecRevoker Plic SifiveUartController.
+From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchDeferred SpecDevice Clint SpecRevoker Plic SifiveUartController.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -109,34 +109,23 @@ Section SpecDom.
       Definition specPlicClaimStep : Action ty sysTree (Bit 0) :=
         liftAction np_mem (plicClaimStep plic ty).
 
-      (* Rule: Reads mtimecmp CSR and mtime MMIO register to raise the mtip interrupt source.
-         Sticky: only a write to mtimecmp/mtimecmph clears it. *)
-      Definition specTimerInterruptRule : Action ty sysTree (Bit 0) :=
-        LetA lo : Bit Xlen <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mtimecmp") : Expr _ (Bit CsrIdxSz))) ;
-        LetA hi : Bit Xlen <- liftAction np_rf (readRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mtimecmph") : Expr _ (Bit CsrIdxSz))) ;
-        Let mtimecmpDXlen : Bit DXlen <- {< #hi, #lo >} ;
-        LetA mtimeDXlen   : Bit DXlen <- liftAction np_mem (readClintMtimeAction clint ty) ;
-        Let mtipVal       : Bool      <- Uge #mtimeDXlen #mtimecmpDXlen ;
-        If #mtipVal Then (liftAction np_rf (RegWrite "rf.mtip" in rfTree <- Const ty Bool true ; Retv)) ;
-        Retv.
-
       (* ===========================================================================
        * Atomic Core Pipeline Step (specStep)
        * =========================================================================== *)
 
       Definition specStep : Action ty sysTree (Bit 0) :=
-        (* MEIP is a pure function of PLIC state; sample it here, where both domains are reachable. *)
+        (* MEIP and MTIP are sampled from PLIC and CLINT here, where both domains are reachable. *)
         LetA meip : Bool <- liftAction np_mem (plicMeipSystem plic ty) ;
+        LetA mtip : Bool <- liftAction np_mem (readClintMtipAction clint ty) ;
 
         (* 1. Fetch *)
         LetA fetchOut : FetchOut <- liftAction np_core (specFetch regions ty) ;
-        Sys [ DispString ty "PC=" ; DispHex (##fetchOut`"pcc"`"addr") ; DispString ty " inst=" ; DispHex (##fetchOut`"inst") ; DispString ty "\n" ] ;
 
         (* 2. Decode *)
         LetL regReadIn : RegReadIn <- wrappedDecode fetchOut ;
 
         (* 3. Register Read (GPRs, SCRs, CSRs, mstatus) *)
-        LetA aluInInstGroup : AluInInstGroup <- liftAction np_rf (regRead #meip regReadIn) ;
+        LetA aluInInstGroup : AluInInstGroup <- liftAction np_rf (regRead meip mtip regReadIn) ;
 
         (* 4. Alu Control, Routing, and Execution *)
         Let  instGroup : InstGroup <- ##aluInInstGroup`"instGroup" ;
@@ -157,7 +146,7 @@ Section SpecDom.
         LetL aluOut     : AluOutUnion <- Alu routingOut ;
 
         (* 5. Commit Non-Deferred (GPRs, SCRs, CSRs, PCC, Traps) *)
-        LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred #meip aluOut) ;
+        LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred meip mtip aluOut) ;
 
         (* 6. Commit Deferred (Memory Loads, Stores, Fences) *)
         Let  reqOpt  : Option DeferredReq <- ##execOut`"deferredReq" ;
@@ -181,8 +170,7 @@ Section SpecDom.
         (peripheral, specUartDivStep ty) ;
         (peripheral, specUartTxStep ty) ;
         (peripheral, specUartRxStep ty) ;
-        (core, specPlicClaimStep ty) ;
-        (core, specTimerInterruptRule ty)
+        (core, specPlicClaimStep ty)
       ] ++ map (fun a => (core, a)) (specPlicPendingsSteps ty))%list.
 
   End Spec.

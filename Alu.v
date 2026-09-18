@@ -47,8 +47,9 @@ Section Alu.
     LetE isComp  : Bool     <- isCompressed inst ;
     LetE pccAddr : Addr <- ##aluIn`"pcc"`"addr" ;
     LetE pccTag : Bool <- ##aluIn`"pcc"`"tag" ;
-    LetE pccBase : Bit (AddrSz + 1) <- ##aluIn`"pcc"`"ecap"`"base" ;
-    LetE pcc_cE : Bit ExpSz <- ##aluIn`"pcc"`"ecap"`"cE" ;
+    LetE pccECap : ECap <- ##aluIn`"pcc"`"ecap" ;
+    LetE pccBase : Bit (AddrSz + 1) <- ##pccECap`"base" ;
+    LetE pcc_cE : Bit ExpSz <- ##pccECap`"cE" ;
     LetE pccExp : Bit ExpSz <- get_E_from_cE pcc_cE ;
 
     LetE cs1Addr : Addr <- ##cs1`"addr" ;
@@ -59,7 +60,7 @@ Section Alu.
     LetE cs1_cE : Bit ExpSz <- ##cs1ECap`"cE" ;
     LetE cs1Exp : Bit ExpSz <- get_E_from_cE cs1_cE ;
     LetE cs1Perms : CapPerms <- ##cs1ECap`"perms" ;
-    LetE cs1OType : Bit CapOTypeSz <- ##cs1ECap`"oType" ;
+    LetE cs1OType : Bit CapOTypeSz <- getFullOType cs1ECap ;
 
     LetE cs2Addr : Addr <- ##cs2`"addr" ;
     LetE cs2Tag : Bool <- ##cs2`"tag" ;
@@ -90,8 +91,6 @@ Section Alu.
     LetE memSize : Bit LgLgNumBytesFullCapSz <- getMemSize inst ;
 
     LetE BranchOrCjalOrAuiPcc : Bool <- ##aluControl`"BranchOrCjalOrAuiPcc" ;
-    LetE BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr : Bool <-
-      ##aluControl`"BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr" ;
 
     LetE AdderBeforeBoundsCheck_base : Addr <-
       ITE (#BranchOrCjalOrAuiPcc) #pccAddr #cs1Addr ;
@@ -109,7 +108,7 @@ Section Alu.
 
     LetE AdderToOutput_base : Bit Xlen <-
       caseDefault (k := Bit Xlen) [
-          (##aluControl`"AdderToOutput_base_pccAddr", #pccAddr) ;
+          (##aluControl`"CjalOrCjalr", #pccAddr) ;
           (##aluControl`"CGetLen", TruncLsb 2 AddrSz #cs1Top) ]
         #cs1Addr ;
     LetE AdderToOutput_offset : Bit Xlen <-
@@ -150,7 +149,7 @@ Section Alu.
         (ZeroExtendTo (AddrSz + 2) #cs1Addr) ;
     LetE ComparatorTopOrRep_topRep : Bit (AddrSz + 2) <-
       caseDefault (k := Bit (AddrSz + 2)) [
-          (#BranchOrCjalOrAuiPccOrAuiCgpOrIncAddrOrSetAddr, #AdderBeforeRepCheckOut) ;
+          (##aluControl`"ComparatorTopOrRep_topRep_AdderBeforeRepCheck", #AdderBeforeRepCheckOut) ;
           (##aluControl`"SealOrUnsealOrSubset", #cs2Top) ]
         #cs1Top ;
     LetE ComparatorTopOrRep_checkLte : Bool <- ##aluControl`"ComparatorTopOrRep_checkLte" ;
@@ -240,9 +239,13 @@ Section Alu.
     LetE cjalrTag : Bool <- ##CjalrUnitOut`"tag" ;
     LetE cjalrEcap : ECap <- ##CjalrUnitOut`"ecap" ;
     LetE cjalrIntStatus : Bool <- ##CjalrUnitOut`"interruptStatus" ;
-    LETE ControlFlowOut : Option CfPayload <-
+    LETE ControlFlowResOut : ControlFlowRes <-
       ControlFlow isMret isCjal isCjalr isBranch isCond cs2 AdderBeforeBoundsCheckOut
-             AddrBoundsCheckOut cjalrTag cjalrEcap cjalrIntStatus pccTag ;
+             AddrBoundsCheckOut cjalrTag cjalrEcap cjalrIntStatus pccTag inst currInterruptStatus ;
+    LetE ControlFlowOut : Option CfPayload <- ##ControlFlowResOut`"cfOut" ;
+
+    LetE PccEcap_cOType : Bit CapcOTypeSz <- ITE0 (##aluControl`"CjalOrCjalr") (##ControlFlowResOut`"linkCOType") ;
+    LETE PccEcapOut : ECap <- PccEcap pccECap PccEcap_cOType ;
 
     LetE Reg_tag : Bool <-
       Or [ And [ ##aluControl`"Cjal"                  ; #pccTag ] ;
@@ -257,15 +260,15 @@ Section Alu.
     LETE encodedCap : Cap <- EncodeCap capToEncode ;
     LetE cs2AddrAsCap : Cap <- FromBit Cap #cs2Addr ;
     LETE decodedECap : ECap <- DecodeCap cs2AddrAsCap cs1Addr ;
-    LetE Bounds_outECap : ECap <- STRUCT { "R"     ::= ##cs1ECap`"R" ;
-                                           "perms" ::= ##cs1ECap`"perms" ;
-                                           "oType" ::= ##cs1ECap`"oType" ;
-                                           "cE"    ::= ##BoundsOut`"cE" ;
-                                           "top"   ::= ##BoundsOut`"top" ;
-                                           "base"  ::= ##BoundsOut`"base" };
+    LetE Bounds_outECap : ECap <- STRUCT { "R"      ::= ##cs1ECap`"R" ;
+                                           "perms"  ::= ##cs1ECap`"perms" ;
+                                           "cOType" ::= ##cs1ECap`"cOType" ;
+                                           "cE"     ::= ##BoundsOut`"cE" ;
+                                           "top"    ::= ##BoundsOut`"top" ;
+                                           "base"   ::= ##BoundsOut`"base" };
 
     LetE Reg_ecap : ECap <-
-      caseDefault (k := ECap) [ (##aluControl`"Reg_ecap_pccEcap", ##aluIn`"pcc"`"ecap") ;
+      caseDefault (k := ECap) [ (##aluControl`"Reg_ecap_PccEcap", #PccEcapOut) ;
                                  (##aluControl`"Reg_ecap_cs1Ecap", ##cs1`"ecap") ;
                                  (##aluControl`"Scr", #cs2ECap) ;
                                  (##aluControl`"Reg_ecap_decodedECap", #decodedECap) ;
@@ -279,20 +282,16 @@ Section Alu.
           (##aluControl`"Reg_addr_AdderBeforeBoundsCheck", #AdderBeforeBoundsCheckOut) ;
           (##aluControl`"Reg_addr_ComparatorGeneralLt",
            ZeroExtendTo Xlen (ToBit (##ComparatorGeneralOut`"cond"))) ;
-          (##aluControl`"Shift", #ShifterOut) ;
+          (##aluControl`"Reg_addr_Shifter", #ShifterOut) ;
           (##aluControl`"Reg_addr_Logical", #LogicalOut) ;
           (##aluControl`"Reg_addr_AdderToOutput", #AdderToOutputOut) ;
           (##aluControl`"Reg_addr_CGetPerm", ZeroExtendTo Xlen (ToBit (##cs1ECap`"perms"))) ;
           (##aluControl`"Reg_addr_CGetType", ZeroExtendTo Xlen #cs1OType) ;
           (##aluControl`"Reg_addr_CGetTag",  ZeroExtendTo Xlen (ToBit #cs1Tag)) ;
-          (##aluControl`"Reg_addr_CGetAddr", #cs1Addr) ;
           (##aluControl`"Reg_addr_CGetHigh", ZeroExtendTo Xlen (ToBit #encodedCap)) ;
           (##aluControl`"Reg_addr_Saturater", #SaturaterOut) ;
           (##aluControl`"Reg_addr_cs2Addr", #cs2Addr) ;
           (##aluControl`"Reg_addr_cs1Addr", #cs1Addr) ;
-          (##aluControl`"CAndPerm", #cs1Addr) ;
-          (##aluControl`"SealOrUnseal", #cs1Addr) ;
-          (##aluControl`"CSetBounds", TruncLsb 1 AddrSz (##BoundsOut`"base")) ;
           (##aluControl`"Reg_addr_BoundsCram", TruncLsb 1 AddrSz (##BoundsOut`"cram")) ;
           (##aluControl`"Reg_addr_BoundsCrrl", TruncLsb 1 AddrSz (##BoundsOut`"length")) ;
           (##aluControl`"CTestSubset", ZeroExtendTo Xlen (ToBit #CapSubsetOut)) ;
@@ -310,10 +309,11 @@ Section Alu.
                     cs1Tag cs1ECap AddrBoundsCheckOut AdderBeforeBoundsCheckOut ;
 
     LetE isFence : Bool <- ##aluControl`"Fence" ;
+    LetE isMulDiv : Bool <- ##aluControl`"Deferred_isMulDiv" ;
     LetE storeTag : Bool <- #cs2Tag ;
     LetE storeData : Addr <- #cs2Addr ;
     LETE DeferredOpRes : Option DeferredUnion <-
-      Deferred isLoad isStore isFence cs1Perms cs2Perms inst AdderBeforeBoundsCheckOut storeTag encodedCap storeData ;
+      Deferred isLoad isStore isFence isMulDiv cs1Perms cs2Perms inst storeTag encodedCap storeData ;
 
     LETE isFenceIOut : Bool <- FenceI isFence inst ;
 
@@ -410,7 +410,7 @@ Section AluRF.
   Local Notation incrementMcycle := (incrementMcycle dom pcAddrInit).
   Local Notation updateMshwmOnStore := (updateMshwmOnStore dom pcAddrInit).
 
-  Definition executeNonDeferred (meip : Expr ty Bool) (aluOut : ty AluOutUnion)
+  Definition executeNonDeferred (meip mtip : ty Bool) (aluOut : ty AluOutUnion)
     : Action ty rfTree ExecuteOut :=
     Let  isComp         : Bool                       <- ##aluOut`"isComp" ;
     Let  dstIdx         : Bit RegIdxSz               <- ##aluOut`"dstIdx" ;
@@ -426,8 +426,7 @@ Section AluRF.
 
     LetA mstatus        : Bit Xlen                   <- readRegsList csrPathsWithKind
                                                           ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-    RegRead mtip <- "rf.mtip" in rfTree ;
-    Let  mip            : Bit Xlen                   <- createMip meip #mtip ;
+    Let  mip            : Bit Xlen                   <- createMip #meip #mtip ;
     LetA mie            : Bit Xlen                   <- readRegsList csrPathsWithKind
                                                           ($(getCsrPhysicalIdx "mie") : Expr ty (Bit CsrIdxSz)) ;
     Let  pending        : Bit Xlen                   <- And [ #mip ; #mie ] ;
@@ -515,12 +514,7 @@ Section AluRF.
                       Else
                         (
                           Let csrIdx : Bit CsrIdxSz <- #sDest `! "Csr" ;
-                          Act (writeRegsList csrPathsWithKind #csrIdx ##sVal`"addr") ;
-                          (* Writing either half of mtimecmp retires the pending timer interrupt. *)
-                          If (Or [ Eq #csrIdx $(getCsrIdx "mtimecmp") ;
-                                   Eq #csrIdx $(getCsrIdx "mtimecmph") ]) Then
-                            ( RegWrite "rf.mtip" in rfTree <- Const ty Bool false ; Retv ) ;
-                          Retv
+                          writeRegsList csrPathsWithKind #csrIdx ##sVal`"addr"
                         ) ;
                       Retv
                     ) ;
@@ -591,7 +585,7 @@ Section AluRF.
     } ;
     Return #execOut.
 
-  Definition regRead (meip : Expr ty Bool) (regReadIn : ty RegReadIn) : Action ty rfTree AluInInstGroup :=
+  Definition regRead (meip mtip : ty Bool) (regReadIn : ty RegReadIn) : Action ty rfTree AluInInstGroup :=
     Let  pcc        : FullECapWithTag       <- ##regReadIn`"pcc" ;
     Let  decodeOut  : DecodeOut             <- ##regReadIn`"decodeOut" ;
     Let  fetchExc   : FetchException        <- ##regReadIn`"fetchExc" ;
@@ -622,10 +616,9 @@ Section AluRF.
                 Let  csrIdx  : Bit CsrIdxSz    <- #scrCsr `! "Csr" ;
                 (* Physical read yields 0 for a virtual CSR: its index is past the register list. *)
                 LetA csrPhys : Bit Xlen        <- readRegsList csrPathsWithKind #csrIdx ;
-                RegRead mtip <- "rf.mtip" in rfTree ;
                 Let  csrVal  : Bit Xlen        <- Or [ #csrPhys ;
                                                        ITE0 (Eq #csrIdx $(getCsrIdx "mip"))
-                                                            (createMip meip #mtip) ] ;
+                                                            (createMip #meip #mtip) ] ;
                 Let  csrCap : FullECapWithTag <- STRUCT {
                   "tag"  ::= Const ty Bool false ;
                   "ecap" ::= Const ty ECap (getDefault _) ;
