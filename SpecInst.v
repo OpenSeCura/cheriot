@@ -43,9 +43,10 @@ Definition ClintBaseAddr   : Z := 0x02000000.
 Definition RevokerBaseAddr : Z := 0x03000000.
 Definition PlicBaseAddr    : Z := 0x04000000.
 
-Definition ExtMemBase       : Z := 0x10000000.
-Definition ExtMemSize       : Z := 0x70000000.
-Definition ExtMemLineConfig : LineConfig := RawLine (Z.to_nat LgNumBytesXlen).
+Definition ExtMemBase        : Z := 0x10000000.
+Definition ExtMemSize        : Z := 0x70000000.
+Definition LgExtMemLineBytes : Z := 4.
+Definition ExtMemLineConfig  : LineConfig := @TaggedLine (Z.to_nat LgExtMemLineBytes) I.
 
 (* ===========================================================================
  * Revoker Configuration
@@ -172,22 +173,24 @@ Extract Constant io_send => "(\name k val ->
      else if name Prelude.== ""lineWriteRq""
      then let (addr, (dataVec, (maskVec, _))) =
                 unsafeCoerce val :: (Prelude.Integer, (Data.Vector.Vector Prelude.Integer, (Data.Vector.Vector Prelude.Bool, ())))
-              b0 = dataVec Data.Vector.! 0
-              m0 = maskVec Data.Vector.! 0
-          in if Prelude.not m0 then Prelude.return ()
-             else if addr Prelude.== 0x10000000 then do
+              b0  = dataVec Data.Vector.! 0
+              m0  = maskVec Data.Vector.! 0
+              b4  = dataVec Data.Vector.! 4
+              m4  = maskVec Data.Vector.! 4
+              b12 = dataVec Data.Vector.! 12
+              m12 = maskVec Data.Vector.! 12
+          in if addr Prelude.== 0x10000000 then do
+               if m12
+                 then Data.IORef.writeIORef dlabRef (Data.Bits.testBit b12 7)
+                 else Prelude.return ()
                dlab <- Data.IORef.readIORef dlabRef
-               if Prelude.not dlab
+               if m0 Prelude.&& Prelude.not dlab
                  then Prelude.putChar (Data.Char.chr (Prelude.fromIntegral (b0 Data.Bits..&. 0xff))) Prelude.>>
                       System.IO.hFlush System.IO.stdout
                  else Prelude.return ()
-             else if addr Prelude.== 0x10000004 then do
-               dlab <- Data.IORef.readIORef dlabRef
-               if Prelude.not dlab
-                 then Data.IORef.writeIORef ieRef (b0 Data.Bits..&. 0xff)
+               if m4 Prelude.&& Prelude.not dlab
+                 then Data.IORef.writeIORef ieRef (b4 Data.Bits..&. 0xff)
                  else Prelude.return ()
-             else if addr Prelude.== 0x1000000c then
-               Data.IORef.writeIORef dlabRef (Data.Bits.testBit b0 7)
              else Prelude.return ()
      else Prelude.return ())
 
@@ -215,22 +218,20 @@ Extract Constant io_recv => "(\name k ->
             else Prelude.return Prelude.False
   in if name Prelude.== ""lineReadRp"" then do
        addr <- Data.IORef.readIORef readAddrRef
-       w <- if addr Prelude.== 0x10000000 then do
-              _ <- pollRx
-              cur <- Data.IORef.readIORef rxBufRef
-              case cur of
-                Prelude.Just b -> Data.IORef.writeIORef rxBufRef Prelude.Nothing Prelude.>> Prelude.return b
-                Prelude.Nothing -> Prelude.return 0
-            else if addr Prelude.== 0x10000014 then do
-              hasRx <- pollRx
-              Prelude.return (if hasRx then 0x21 else 0x20)
-            else Prelude.return 0
-       let (_, restTuple) = unsafeCoerce (getDefault k) :: (Data.Vector.Vector Prelude.Integer, ())
-           bytes = Data.Vector.fromList [ w Data.Bits..&. 0xff
-                                        , Data.Bits.shiftR w 8 Data.Bits..&. 0xff
-                                        , Data.Bits.shiftR w 16 Data.Bits..&. 0xff
-                                        , Data.Bits.shiftR w 24 Data.Bits..&. 0xff ]
-       Prelude.return (unsafeCoerce (bytes, restTuple))
+       bytes <- if addr Prelude.== 0x10000000 then do
+                  _ <- pollRx
+                  cur <- Data.IORef.readIORef rxBufRef
+                  b0 <- case cur of
+                    Prelude.Just b -> Data.IORef.writeIORef rxBufRef Prelude.Nothing Prelude.>> Prelude.return b
+                    Prelude.Nothing -> Prelude.return 0
+                  Prelude.return (Data.Vector.fromList [b0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+                else if addr Prelude.== 0x10000010 then do
+                  hasRx <- pollRx
+                  let b4 = if hasRx then 0x21 else 0x20
+                  Prelude.return (Data.Vector.fromList [0, 0, 0, 0, b4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+                else Prelude.return (Data.Vector.replicate 16 0)
+       let tags = Data.Vector.replicate 2 Prelude.False
+       Prelude.return (unsafeCoerce (bytes, (tags, ())))
      else if name Prelude.== ""UartIrq"" then do
        ie <- Data.IORef.readIORef ieRef
        if Data.Bits.testBit ie 0 then do
