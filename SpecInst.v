@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Bool Psatz Nat Arith.
 From Guru Require Import Library Syntax Notations.
-From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic SifiveUartController Spec Binary.
+From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic Spec Binary.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -42,7 +42,10 @@ Definition RevTableLineConfig : LineConfig := RawLine (Z.to_nat LgNumBytesXlen).
 Definition ClintBaseAddr   : Z := 0x02000000.
 Definition RevokerBaseAddr : Z := 0x03000000.
 Definition PlicBaseAddr    : Z := 0x04000000.
-Definition UartBaseAddr    : Z := 0x10000000.
+
+Definition ExtMemBase       : Z := 0x10000000.
+Definition ExtMemSize       : Z := 0x70000000.
+Definition ExtMemLineConfig : LineConfig := RawLine (Z.to_nat LgNumBytesXlen).
 
 (* ===========================================================================
  * Revoker Configuration
@@ -109,13 +112,26 @@ Definition revTableRegion : MemRegion := {|
   regionSizeAligned := I
 |}.
 
+Definition extMemRegion : MemRegion := {|
+  regionName        := "extMem" ;
+  regionDom         := "core" ;
+  regionBase        := ExtMemBase ;
+  regionSize        := ExtMemSize ;
+  regionLineCfg     := ExtMemLineConfig ;
+  isReadOnly        := false ;
+  regionKind        := ExternalMem ;
+  regionInMemory    := I ;
+  regionBaseAligned := I ;
+  regionSizeAligned := I
+|}.
+
 Definition concreteRegions : list MemRegion := [
   ramRegion ;
   revTableRegion ;
   @clintMemRegion "core" ClintBaseAddr I I ;
   @revokerMemRegion "core" RevokerBaseAddr I I ;
   @plicMemRegion "core" 3 PlicBaseAddr I I ;
-  @sifiveUartMemRegion "peripheral" UartBaseAddr I I
+  extMemRegion
 ].
 
 Definition concreteRegionsDisjoint : Is_true (pairwiseDisjoint concreteRegions) := I.
@@ -129,9 +145,6 @@ Definition concreteRevoker : @RevokerInstance "core" concreteRegions :=
 Definition concretePlic : @PlicInstance "core" 3%nat concreteRegions :=
   @Build_PlicInstance "core" 3%nat concreteRegions 4%nat PlicBaseAddr I I I eq_refl.
 
-Definition concreteUart : @SifiveUartInstance "peripheral" concreteRegions :=
-  @Build_SifiveUartInstance "peripheral" concreteRegions 5%nat UartBaseAddr I I eq_refl.
-
 (* ===========================================================================
  * Fully Instantiated System Tree and Specification Mod
  * =========================================================================== *)
@@ -141,29 +154,91 @@ Definition specSysTreeInst : Tree DomainElem :=
 
 Definition specModInst : Mod specSysTreeInst :=
   @spec "core"
-        "peripheral"
         PcAddrInit
         tohostAddr
         concreteRevConfig
         concreteRegions
         concreteClint
         concreteRevoker
-        concreteUart
         concretePlic.
 
 From Guru Require Import Extraction Simulator.
 Set Extraction Output Directory ".".
 
 Extract Constant io_send => "(\name k val ->
-  if (Prelude.||) (name Prelude.== ""txData"") (Data.List.isSuffixOf "".txData"" name)
-  then let byte = Prelude.fromIntegral (unsafeCoerce val :: Prelude.Integer)
-       in Prelude.putChar (Data.Char.chr byte) Prelude.>> System.IO.hFlush System.IO.stdout
-  else Prelude.return ())".
+  let (readAddrRef, dlabRef, ieRef, _) = simUartRefs
+  in if name Prelude.== ""lineReadRq""
+     then Data.IORef.writeIORef readAddrRef (unsafeCoerce val :: Prelude.Integer)
+     else if name Prelude.== ""lineWriteRq""
+     then let (addr, (dataVec, (maskVec, _))) =
+                unsafeCoerce val :: (Prelude.Integer, (Data.Vector.Vector Prelude.Integer, (Data.Vector.Vector Prelude.Bool, ())))
+              b0 = dataVec Data.Vector.! 0
+              m0 = maskVec Data.Vector.! 0
+          in if Prelude.not m0 then Prelude.return ()
+             else if addr Prelude.== 0x10000000 then do
+               dlab <- Data.IORef.readIORef dlabRef
+               if Prelude.not dlab
+                 then Prelude.putChar (Data.Char.chr (Prelude.fromIntegral (b0 Data.Bits..&. 0xff))) Prelude.>>
+                      System.IO.hFlush System.IO.stdout
+                 else Prelude.return ()
+             else if addr Prelude.== 0x10000004 then do
+               dlab <- Data.IORef.readIORef dlabRef
+               if Prelude.not dlab
+                 then Data.IORef.writeIORef ieRef (b0 Data.Bits..&. 0xff)
+                 else Prelude.return ()
+             else if addr Prelude.== 0x1000000c then
+               Data.IORef.writeIORef dlabRef (Data.Bits.testBit b0 7)
+             else Prelude.return ()
+     else Prelude.return ())
+
+{-# NOINLINE simUartRefs #-}
+simUartRefs :: (Data.IORef.IORef Prelude.Integer, Data.IORef.IORef Prelude.Bool, Data.IORef.IORef Prelude.Integer, Data.IORef.IORef (Prelude.Maybe Prelude.Integer))
+simUartRefs = System.IO.Unsafe.unsafePerformIO (do
+  r1 <- Data.IORef.newIORef 0
+  r2 <- Data.IORef.newIORef Prelude.False
+  r3 <- Data.IORef.newIORef 0
+  r4 <- Data.IORef.newIORef Prelude.Nothing
+  Prelude.return (r1, r2, r3, r4))".
 
 Extract Constant io_recv => "(\name k ->
-  if (Prelude.||) (name Prelude.== ""txRdy"") (Data.List.isSuffixOf "".txRdy"" name)
-  then Prelude.return (unsafeCoerce Prelude.True)
-  else Prelude.return (unsafeCoerce (getDefault k)))".
+  let (readAddrRef, _, ieRef, rxBufRef) = simUartRefs
+      pollRx = do
+        cur <- Data.IORef.readIORef rxBufRef
+        case cur of
+          Prelude.Just _ -> Prelude.return Prelude.True
+          Prelude.Nothing -> do
+            rdy <- System.IO.hReady System.IO.stdin
+            if rdy then do
+              c <- System.IO.getChar
+              Data.IORef.writeIORef rxBufRef (Prelude.Just (Prelude.toInteger (Data.Char.ord c Data.Bits..&. 0xff)))
+              Prelude.return Prelude.True
+            else Prelude.return Prelude.False
+  in if name Prelude.== ""lineReadRp"" then do
+       addr <- Data.IORef.readIORef readAddrRef
+       w <- if addr Prelude.== 0x10000000 then do
+              _ <- pollRx
+              cur <- Data.IORef.readIORef rxBufRef
+              case cur of
+                Prelude.Just b -> Data.IORef.writeIORef rxBufRef Prelude.Nothing Prelude.>> Prelude.return b
+                Prelude.Nothing -> Prelude.return 0
+            else if addr Prelude.== 0x10000014 then do
+              hasRx <- pollRx
+              Prelude.return (if hasRx then 0x21 else 0x20)
+            else Prelude.return 0
+       let (_, restTuple) = unsafeCoerce (getDefault k) :: (Data.Vector.Vector Prelude.Integer, ())
+           bytes = Data.Vector.fromList [ w Data.Bits..&. 0xff
+                                        , Data.Bits.shiftR w 8 Data.Bits..&. 0xff
+                                        , Data.Bits.shiftR w 16 Data.Bits..&. 0xff
+                                        , Data.Bits.shiftR w 24 Data.Bits..&. 0xff ]
+       Prelude.return (unsafeCoerce (bytes, restTuple))
+     else if name Prelude.== ""UartIrq"" then do
+       ie <- Data.IORef.readIORef ieRef
+       if Data.Bits.testBit ie 0 then do
+         hasRx <- pollRx
+         Prelude.return (unsafeCoerce (hasRx Prelude.|| Data.Bits.testBit ie 1))
+       else
+         Prelude.return (unsafeCoerce (Data.Bits.testBit ie 1))
+     else Prelude.return (unsafeCoerce (getDefault k)))".
 
 Extract Constant io_stepCycle => "(\c ->
   if Prelude.rem (c :: Prelude.Integer) 250000 Prelude.== 0

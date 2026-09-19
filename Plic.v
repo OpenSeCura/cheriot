@@ -80,7 +80,8 @@ Section Plic.
       Node "enables"    (enableLeaves n) ;
       Leaf "threshold"  (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false)) ;
       Leaf "claim"      (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false)) ;
-      Node "in_service" (inServiceLeaves n) ].
+      Node "in_service" (inServiceLeaves n) ;
+      Leaf "UartIrq"    (dom, ERecv Bool) ].
 
   Definition plicTree (n : nat) : Tree DomainElem :=
     Node "plic" (plicChildren n).
@@ -101,6 +102,8 @@ Section Plic.
       getChildRegPathTree tPlic "threshold".
     Definition plicClaimPath : RegPath tPlic :=
       getChildRegPathTree tPlic "claim".
+    Definition plicUartIrqPath : RecvPath tPlic :=
+      getChildRecvPathTree tPlic "UartIrq".
 
     Definition priorityPathsWithKind : list (RegOfKind (t:=tPlic) (Bit Xlen)) :=
       map (embedRegOfKind plicPrioritiesNodePath)
@@ -471,25 +474,31 @@ Section Plic.
     Definition plicMeipSystem : Action ty memTree Bool :=
       plicAction (@plicMeip n ty).
 
+    Definition plicUartIrqAction : Action ty memTree Bool :=
+      plicAction (Recv "uartIrq" (plicUartIrqPath n) (fun v => Return #v)).
+
     Fixpoint plicPendingStepsHelper
-             (acts : list (forall ty, Action ty memTree Bool))
+             (acts : list (Action ty memTree Bool))
              (pends : list (RegOfKind (t:=plicTree n) Bool))
              (insvs : list (RegOfKind (t:=plicTree n) Bool))
              : list (Action ty memTree (Bit 0)) :=
       match acts, pends, insvs with
       | act :: restActs, pendRk :: restPends, insvRk :: restInsvs =>
-          (LetA irqVal : Bool <- act ty ;
+          (LetA irqVal : Bool <- act ;
            plicAction (@updatePendingLeaf n ty pendRk insvRk irqVal))
           :: plicPendingStepsHelper restActs restPends restInsvs
       | _, _, _ => []
       end.
 
     Definition plicPendingsSteps
-               (pfCount : S (length (collectIrqActions regions)) = n)
+               (pfCount : S (S (length (collectIrqActions regions))) = n)
                : list (Action ty memTree (Bit 0)) :=
       match pendingPathsWithKind n, inServicePathsWithKind n with
       | _ :: devPends, _ :: devInsvs =>
-          plicPendingStepsHelper (collectIrqActions regions) devPends devInsvs
+          plicPendingStepsHelper
+            (map (fun f => f ty) (collectIrqActions regions) ++ [plicUartIrqAction])
+            devPends
+            devInsvs
       | _, _ => []
       end.
 

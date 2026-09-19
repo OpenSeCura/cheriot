@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Psatz Bool.
 From Guru Require Import Syntax Notations Semantics Library Composition.
-From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchDeferred SpecDevice Clint SpecRevoker Plic SifiveUartController.
+From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchDeferred SpecDevice Clint SpecRevoker Plic.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -32,7 +32,6 @@ Local Open Scope guru_scope.
 
 Section SpecDom.
   Variable core : string.
-  Variable peripheral : string.
   Variable pcAddrInit : Z.
   Variable tohostAddr : Z.
 
@@ -46,8 +45,7 @@ Section SpecDom.
     Variable regions : list MemRegion.
     Variable clint : @ClintInstance core regions.
     Variable rev : @RevokerInstance core regions.
-    Variable uart : @SifiveUartInstance peripheral regions.
-    Variable plic : @PlicInstance core (S (length (collectIrqActions regions))) regions.
+    Variable plic : @PlicInstance core (S (S (length (collectIrqActions regions)))) regions.
     Local Notation sysTree := (specSysTree regions).
     Local Notation gprPathsWithKind := (gprPathsWithKind core pcAddrInit).
     Local Notation scrPathsWithKind := (scrPathsWithKind core pcAddrInit).
@@ -85,22 +83,6 @@ Section SpecDom.
       (* Autonomous background revoker step *)
       Definition specRevokerStep : Action ty sysTree (Bit 0) :=
         liftAction np_mem (SpecRevoker.specRevokerStep rev config ty).
-
-      (* Autonomous background UART steps *)
-      Definition specUartIpStep : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (sifiveUartIpStepAction uart ty).
-
-      Definition specUartIrqStep : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (sifiveUartIrqStepAction uart ty).
-
-      Definition specUartDivStep : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (sifiveUartDivStepAction uart ty).
-
-      Definition specUartTxStep : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (sifiveUartTxStepAction uart ty).
-
-      Definition specUartRxStep : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (sifiveUartRxStepAction uart ty).
 
       (* Autonomous background PLIC steps *)
       Definition specPlicPendingsSteps : list (Action ty sysTree (Bit 0)) :=
@@ -169,11 +151,6 @@ Section SpecDom.
         (core, specTickCycle ty) ;
         (core, specTickTimer ty) ;
         (core, specRevokerStep ty) ;
-        (peripheral, specUartIpStep ty) ;
-        (peripheral, specUartIrqStep ty) ;
-        (peripheral, specUartDivStep ty) ;
-        (peripheral, specUartTxStep ty) ;
-        (peripheral, specUartRxStep ty) ;
         (core, specPlicClaimStep ty)
       ] ++ map (fun a => (core, a)) (specPlicPendingsSteps ty)
         ++ specInternalMemTargetPortSteps ty)%list.
