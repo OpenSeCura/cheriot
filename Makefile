@@ -85,8 +85,9 @@ clean:: Makefile.coq.all
 	find . -type f -name 'Simulate.ho' -exec rm {} \;
 	find . -type f -name 'Simulate.o' -exec rm {} \;
 	find . -type f -name 'Simulate' -exec rm {} \;
-	find . -type f -name 'Main' -exec rm {} \;
-	find . -type f -name 'Main.sv' -exec rm {} \;
+	find . -type f -name 'Rtl' -exec rm {} \;
+	find . -type f -name 'Rtl.sv' -exec rm {} \;
+	find . -type d -depth -name 'obj_dir' -exec rm -rf {} \;
 	rm -f Makefile.coq.all Makefile.coq.all.conf .Makefile.coq.all.d
 	rm -f .nia.cache .lia.cache
 	rm -f Binary.v
