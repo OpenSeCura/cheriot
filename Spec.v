@@ -109,6 +109,10 @@ Section SpecDom.
       Definition specPlicClaimStep : Action ty sysTree (Bit 0) :=
         liftAction np_mem (plicClaimStep plic ty).
 
+      (* Autonomous TargetPort steps for accessible InternalMem regions *)
+      Definition specInternalMemTargetPortSteps : list (string * Action ty sysTree (Bit 0)) :=
+        map (fun '(dom, act) => (dom, liftAction np_mem (act ty))) (collectTargetPortActions regions).
+
       (* ===========================================================================
        * Atomic Core Pipeline Step (specStep)
        * =========================================================================== *)
@@ -171,7 +175,8 @@ Section SpecDom.
         (peripheral, specUartTxStep ty) ;
         (peripheral, specUartRxStep ty) ;
         (core, specPlicClaimStep ty)
-      ] ++ map (fun a => (core, a)) (specPlicPendingsSteps ty))%list.
+      ] ++ map (fun a => (core, a)) (specPlicPendingsSteps ty)
+        ++ specInternalMemTargetPortSteps ty)%list.
 
   End Spec.
 

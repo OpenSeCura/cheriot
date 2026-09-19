@@ -78,7 +78,8 @@ Notation LineWriteRq cfg := (STRUCT_TYPE {
 }).
 
 Inductive RegionKind (regionName : string) (regionSize : Z) (cfg : LineConfig) :=
-| InternalMem (initData : option (option (type (Array (Z.to_nat regionSize) (Bit 8)))))
+| InternalMem (isAccessible : bool)
+              (initData : option (option (type (Array (Z.to_nat regionSize) (Bit 8)))))
               (initTags : option (option (type (Array (cfgRegionTagSize regionSize cfg) Bool))))
 | ExternalMem
 | CustomMem (children : list (Tree DomainElem))
@@ -88,7 +89,7 @@ Inductive RegionKind (regionName : string) (regionSize : Z) (cfg : LineConfig) :
                            Action ty (Node regionName children) (Bit 0))
             (irqAction : option (forall ty, Action ty (Node regionName children) Bool)).
 
-Arguments InternalMem {regionName regionSize cfg} initData initTags.
+Arguments InternalMem {regionName regionSize cfg} isAccessible initData initTags.
 Arguments ExternalMem {regionName regionSize cfg}.
 Arguments CustomMem {regionName regionSize cfg} children readAction writeAction irqAction.
 
@@ -152,20 +153,27 @@ Proof. lia. Qed.
  * Converting a MemRegion into a Tree
  * =========================================================================== *)
 
+Definition internalMemTargetPortChildren (r : MemRegion) : list (Tree DomainElem) :=
+  [ Leaf "lineReadRq" (r.(regionDom), ERecv (Option Addr)) ;
+    Leaf "lineReadRp" (r.(regionDom), ESend (LineReadRp r.(regionLineCfg))) ;
+    Leaf "lineWriteRq" (r.(regionDom), ERecv (Option (LineWriteRq r.(regionLineCfg))))
+  ].
+
 Definition internalMemRegionChildren
            (r : MemRegion)
+           (isAccessible : bool)
            (initData : option (option (type (Array (Z.to_nat r.(regionSize)) (Bit 8)))))
            (initTags : option (option (type (Array (regionTagSize r) Bool))))
            : list (Tree DomainElem) :=
-  [ Leaf "mainMem" (r.(regionDom), EMem {| memSize := Z.to_nat r.(regionSize);
-                            memKind := Bit 8;
-                            memPort := 1;
-                            memInit := initData |}) ;
-    Leaf "tags" (r.(regionDom), EMem {| memSize := regionTagSize r;
-                         memKind := Bool;
-                         memPort := 1;
-                         memInit := initTags |})
-  ].
+  ([ Leaf "mainMem" (r.(regionDom), EMem {| memSize := Z.to_nat r.(regionSize);
+                             memKind := Bit 8;
+                             memPort := 1;
+                             memInit := initData |}) ;
+     Leaf "tags" (r.(regionDom), EMem {| memSize := regionTagSize r;
+                          memKind := Bool;
+                          memPort := 1;
+                          memInit := initTags |})
+   ] ++ if isAccessible then internalMemTargetPortChildren r else [])%list.
 
 Definition externalMemRegionChildren (r : MemRegion) : list (Tree DomainElem) :=
   [ Leaf "lineReadRq" (r.(regionDom), ESend Addr) ;
@@ -173,15 +181,16 @@ Definition externalMemRegionChildren (r : MemRegion) : list (Tree DomainElem) :=
     Leaf "lineWriteRq" (r.(regionDom), ESend (LineWriteRq r.(regionLineCfg)))
   ].
 
-Arguments internalMemRegionChildren r initData initTags : clear implicits.
+Arguments internalMemRegionChildren r isAccessible initData initTags : clear implicits.
 Arguments externalMemRegionChildren r : clear implicits.
 
 Definition internalMemRegionTree
            (r : MemRegion)
+           (isAccessible : bool)
            (initData : option (option (type (Array (Z.to_nat r.(regionSize)) (Bit 8)))))
            (initTags : option (option (type (Array (regionTagSize r) Bool))))
            : Tree DomainElem :=
-  Node r.(regionName) (internalMemRegionChildren r initData initTags).
+  Node r.(regionName) (internalMemRegionChildren r isAccessible initData initTags).
 
 Definition externalMemRegionTree (r : MemRegion) : Tree DomainElem :=
   Node r.(regionName) (externalMemRegionChildren r).
@@ -189,13 +198,13 @@ Definition externalMemRegionTree (r : MemRegion) : Tree DomainElem :=
 Definition customMemRegionTree (r : MemRegion) (children : list (Tree DomainElem)) : Tree DomainElem :=
   Node r.(regionName) children.
 
-Arguments internalMemRegionTree r initData initTags : clear implicits.
+Arguments internalMemRegionTree r isAccessible initData initTags : clear implicits.
 Arguments externalMemRegionTree r : clear implicits.
 Arguments customMemRegionTree r children : clear implicits.
 
 Definition memRegionTree (r : MemRegion) : Tree DomainElem :=
   match r.(regionKind) with
-  | InternalMem initData initTags => internalMemRegionTree r initData initTags
+  | InternalMem isAccessible initData initTags => internalMemRegionTree r isAccessible initData initTags
   | ExternalMem => externalMemRegionTree r
   | CustomMem children _ _ _ => customMemRegionTree r children
   end.
@@ -206,11 +215,12 @@ Definition memRegionTree (r : MemRegion) : Tree DomainElem :=
 
 Section InternalMemRegionActions.
   Variable r : MemRegion.
+  Variable isAccessible : bool.
   Variable initData : option (option (type (Array (Z.to_nat r.(regionSize)) (Bit 8)))).
   Variable initTags : option (option (type (Array (regionTagSize r) Bool))).
   Variable ty : Kind -> Type.
 
-  Local Definition tInt := internalMemRegionTree r initData initTags.
+  Local Definition tInt := internalMemRegionTree r isAccessible initData initTags.
   Local Definition mainMemPath : MemPath tInt := getChildMemPathTree tInt "mainMem".
   Local Definition tagsPath : MemPath tInt := getChildMemPathTree tInt "tags".
 
@@ -252,8 +262,42 @@ Section InternalMemRegionActions.
 
 End InternalMemRegionActions.
 
-Arguments internalMemRegionLineRead r initData initTags [ty] addr.
-Arguments internalMemRegionLineWrite r initData initTags [ty] rq.
+Arguments internalMemRegionLineRead r isAccessible initData initTags [ty] addr.
+Arguments internalMemRegionLineWrite r isAccessible initData initTags [ty] rq.
+
+Section InternalMemTargetPortActions.
+  Variable r : MemRegion.
+  Variable initData : option (option (type (Array (Z.to_nat r.(regionSize)) (Bit 8)))).
+  Variable initTags : option (option (type (Array (regionTagSize r) Bool))).
+  Variable ty : Kind -> Type.
+
+  Local Definition tIntTargetPort := internalMemRegionTree r true initData initTags.
+  Local Definition pTargetPortLineReadRq : RecvPath tIntTargetPort := getChildRecvPathTree tIntTargetPort "lineReadRq".
+  Local Definition pTargetPortLineReadRp : SendPath tIntTargetPort := getChildSendPathTree tIntTargetPort "lineReadRp".
+  Local Definition pTargetPortLineWriteRq : RecvPath tIntTargetPort := getChildRecvPathTree tIntTargetPort "lineWriteRq".
+
+  Definition internalMemRegionTargetPortRead : Action ty tIntTargetPort (Bit 0) :=
+    Recv "rqOpt" pTargetPortLineReadRq (fun rqOpt =>
+    If (##rqOpt `? "Some") Then (
+      Let addr : Addr <- ##rqOpt `! "Some" ;
+      LetA rp : LineReadRp r.(regionLineCfg) <-
+        internalMemRegionLineRead r true initData initTags addr ;
+      Send pTargetPortLineReadRp #rp Retv
+    ) ;
+    Retv).
+
+  Definition internalMemRegionTargetPortWrite : Action ty tIntTargetPort (Bit 0) :=
+    Recv "rqOpt" pTargetPortLineWriteRq (fun rqOpt =>
+    If (##rqOpt `? "Some") Then (
+      Let rq : LineWriteRq r.(regionLineCfg) <- ##rqOpt `! "Some" ;
+      internalMemRegionLineWrite r true initData initTags rq
+    ) ;
+    Retv).
+
+End InternalMemTargetPortActions.
+
+Arguments internalMemRegionTargetPortRead r initData initTags {ty}.
+Arguments internalMemRegionTargetPortWrite r initData initTags {ty}.
 
 Section ExternalMemRegionActions.
   Variable r : MemRegion.
@@ -320,11 +364,11 @@ Definition memRegionLineRead
            (addr : ty Addr)
            : Action ty (memRegionTree r) (LineReadRp r.(regionLineCfg)) :=
   match r.(regionKind) as k return Action ty (match k with
-                                              | InternalMem initData initTags => internalMemRegionTree r initData initTags
+                                              | InternalMem isAccessible initData initTags => internalMemRegionTree r isAccessible initData initTags
                                               | ExternalMem => externalMemRegionTree r
                                               | CustomMem children _ _ _ => customMemRegionTree r children
                                               end) (LineReadRp r.(regionLineCfg)) with
-  | InternalMem initData initTags => internalMemRegionLineRead r initData initTags addr
+  | InternalMem isAccessible initData initTags => internalMemRegionLineRead r isAccessible initData initTags addr
   | ExternalMem => externalMemRegionLineRead r addr
   | CustomMem children readAct writeAct _ => customMemRegionLineRead r children readAct addr
   end.
@@ -335,11 +379,11 @@ Definition memRegionLineWrite
            (rq : ty (LineWriteRq r.(regionLineCfg)))
            : Action ty (memRegionTree r) (Bit 0) :=
   match r.(regionKind) as k return Action ty (match k with
-                                              | InternalMem initData initTags => internalMemRegionTree r initData initTags
+                                              | InternalMem isAccessible initData initTags => internalMemRegionTree r isAccessible initData initTags
                                               | ExternalMem => externalMemRegionTree r
                                               | CustomMem children _ _ _ => customMemRegionTree r children
                                               end) (Bit 0) with
-  | InternalMem initData initTags => internalMemRegionLineWrite r initData initTags rq
+  | InternalMem isAccessible initData initTags => internalMemRegionLineWrite r isAccessible initData initTags rq
   | ExternalMem => externalMemRegionLineWrite r rq
   | CustomMem children readAct writeAct _ => customMemRegionLineWrite r children writeAct rq
   end.
@@ -650,7 +694,7 @@ Definition memRegionIrqAction
            (r : MemRegion)
            : option (forall ty, Action ty (memRegionTree r) Bool) :=
   match r.(regionKind) as k return option (forall ty, Action ty (match k with
-                                                                | InternalMem initData initTags => internalMemRegionTree r initData initTags
+                                                                | InternalMem isAccessible initData initTags => internalMemRegionTree r isAccessible initData initTags
                                                                 | ExternalMem => externalMemRegionTree r
                                                                 | CustomMem children _ _ _ => customMemRegionTree r children
                                                                 end) Bool) with
@@ -674,3 +718,32 @@ Section IrqCollector.
         end
     end.
 End IrqCollector.
+
+Definition memRegionTargetPortActions
+           (r : MemRegion)
+           : list (string * (forall ty, Action ty (memRegionTree r) (Bit 0))) :=
+  match r.(regionKind) as k return list (string * (forall ty, Action ty (match k with
+                                                                         | InternalMem isAccessible initData initTags => internalMemRegionTree r isAccessible initData initTags
+                                                                         | ExternalMem => externalMemRegionTree r
+                                                                         | CustomMem children _ _ _ => customMemRegionTree r children
+                                                                         end) (Bit 0))) with
+  | InternalMem true initData initTags =>
+      [ (r.(regionDom), fun ty => @internalMemRegionTargetPortRead r initData initTags ty) ;
+        (r.(regionDom), fun ty => @internalMemRegionTargetPortWrite r initData initTags ty) ]
+  | _ => []
+  end.
+
+Section TargetPortCollector.
+  Fixpoint collectTargetPortActions
+           (regions : list MemRegion)
+           : list (string * (forall ty, Action ty (specMemTree regions) (Bit 0))) :=
+    match regions return list (string * (forall ty, Action ty (specMemTree regions) (Bit 0))) with
+    | [] => []
+    | r :: rs =>
+        let curr := map (fun '(dom, act) => (dom, fun ty => liftAction child0Path (act ty)))
+                        (memRegionTargetPortActions r) in
+        let rest := map (fun '(dom, act) => (dom, fun ty => liftAction child1Path (act ty)))
+                        (collectTargetPortActions rs) in
+        (curr ++ rest)%list
+    end.
+End TargetPortCollector.
