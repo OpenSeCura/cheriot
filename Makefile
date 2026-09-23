@@ -53,7 +53,7 @@ coq: Makefile.coq.all
 	$(MAKE) -f Makefile.coq.all
 
 all: coq
-	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Clut/"
+	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/ $(CURR_DIR)/Clut/"
 
 rtl: coq
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" rtl
@@ -62,7 +62,7 @@ rtlsim: coq
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" rtlsim
 
 sim: coq
-	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/" sim
+	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/" sim
 
 force:
 

@@ -31,38 +31,77 @@ Local Open Scope guru_scope.
  * MemRegion Definition & Disjointness Checking
  * =========================================================================== *)
 
-Inductive LineConfig :=
-| TaggedLine (lgLineBytes : nat) (pf : Is_true (Z.to_nat LgNumBytesFullCapSz <=? lgLineBytes)%nat)
-| RawLine    (lgLineBytes : nat).
+Record LineConfig := {
+  cfgLgLineBytes : nat ;
+  cfgHasTags     : bool ;
+  cfgTaggedPf    : if cfgHasTags
+                   then Is_true (Z.to_nat LgNumBytesFullCapSz <=? cfgLgLineBytes)%nat
+                   else True
+}.
 
-Definition cfgHasTags (cfg : LineConfig) : bool :=
-  match cfg with
-  | TaggedLine _ _ => true
-  | RawLine _ => false
-  end.
+Definition TaggedLine (lgLineBytes : nat) (pf : Is_true (Z.to_nat LgNumBytesFullCapSz <=? lgLineBytes)%nat) : LineConfig :=
+  {| cfgLgLineBytes := lgLineBytes ; cfgHasTags := true ; cfgTaggedPf := pf |}.
 
-Definition cfgLgLineBytes (cfg : LineConfig) : nat :=
-  match cfg with
-  | TaggedLine lgBytes _ => lgBytes
-  | RawLine lgBytes => lgBytes
-  end.
+Definition RawLine (lgLineBytes : nat) : LineConfig :=
+  {| cfgLgLineBytes := lgLineBytes ; cfgHasTags := false ; cfgTaggedPf := I |}.
 
 Definition cfgLineBytes (cfg : LineConfig) : nat :=
   Nat.pow 2 (cfgLgLineBytes cfg).
 
 Definition cfgNumLineTags (cfg : LineConfig) : nat :=
-  match cfg with
-  | TaggedLine lgBytes _ => Nat.pow 2 (lgBytes - Z.to_nat LgNumBytesFullCapSz)
-  | RawLine _ => 0%nat
-  end.
+  if cfgHasTags cfg
+  then Nat.pow 2 (cfgLgLineBytes cfg - Z.to_nat LgNumBytesFullCapSz)
+  else 0%nat.
 
-Definition cfgRegionTagSize (regionSize : Z) (cfg : LineConfig) : nat :=
-  if cfgHasTags cfg then Z.to_nat (regionSize / NumBytesFullCapSz) else 0%nat.
+Definition cfgNumLines (regionSize : Z) (cfg : LineConfig) : nat :=
+  Z.to_nat (regionSize / Z.of_nat (cfgLineBytes cfg)).
+
+Definition cfgTagNumLines (regionSize : Z) (cfg : LineConfig) : nat :=
+  if cfgHasTags cfg then cfgNumLines regionSize cfg else 0%nat.
 
 Definition defaultTagsInit (regionSize : Z) (cfg : LineConfig)
-  : option (option (type (Array (cfgRegionTagSize regionSize cfg) Bool))) :=
-  Some (Some (Build_SameTuple (tupleElems := List.repeat false (cfgRegionTagSize regionSize cfg))
-                              (Is_true_Nat_eq_implies (repeat_length _ _)))).
+  : option (option (type (Array (cfgTagNumLines regionSize cfg) (Array (cfgNumLineTags cfg) Bool)))) :=
+  Some (Some (getDefault _)).
+
+Fixpoint takeChunk {A} (k : nat) (def : A) (ls : list A) : list A :=
+  match k with
+  | 0%nat => []
+  | S k' =>
+      match ls with
+      | [] => def :: takeChunk k' def []
+      | x :: xs => x :: takeChunk k' def xs
+      end
+  end.
+
+Lemma takeChunk_length {A} (k : nat) (def : A) (ls : list A) :
+  List.length (takeChunk k def ls) = k.
+Proof.
+  revert ls; induction k as [| k' IH]; intros ls; simpl; auto.
+  destruct ls; simpl; f_equal; apply IH.
+Qed.
+
+Fixpoint chunkLines (lineSz numLines : nat) (bytes : list (bits 8))
+  : list (type (Array lineSz (Bit 8))) :=
+  match numLines with
+  | 0%nat => []
+  | S n' =>
+      Build_SameTuple (tupleElems := takeChunk lineSz Zmod.zero bytes)
+                      (transparent_Is_true _ (Is_true_Nat_eq_implies (takeChunk_length lineSz Zmod.zero bytes)))
+      :: chunkLines lineSz n' (skipn lineSz bytes)
+  end.
+
+Lemma chunkLines_length (lineSz numLines : nat) (bytes : list (bits 8)) :
+  List.length (chunkLines lineSz numLines bytes) = numLines.
+Proof.
+  revert bytes; induction numLines as [| n' IH]; intros bytes; simpl; auto.
+Qed.
+
+Definition bytesToLinesInit (regionSize : Z) (cfg : LineConfig) (bytes : list (bits 8))
+  : option (option (type (Array (cfgNumLines regionSize cfg) (Array (cfgLineBytes cfg) (Bit 8))))) :=
+  let lineSz := cfgLineBytes cfg in
+  let nLines := cfgNumLines regionSize cfg in
+  Some (Some (Build_SameTuple (tupleElems := chunkLines lineSz nLines bytes)
+                              (transparent_Is_true _ (Is_true_Nat_eq_implies (chunkLines_length lineSz nLines bytes))))).
 
 Notation LineReadRp cfg := (STRUCT_TYPE {
   "data" :: Array (cfgLineBytes cfg) (Bit 8) ;
@@ -79,8 +118,8 @@ Notation LineWriteRq cfg := (STRUCT_TYPE {
 
 Inductive RegionKind (regionName : string) (regionSize : Z) (cfg : LineConfig) :=
 | InternalMem (isAccessible : bool)
-              (initData : option (option (type (Array (Z.to_nat regionSize) (Bit 8)))))
-              (initTags : option (option (type (Array (cfgRegionTagSize regionSize cfg) Bool))))
+              (initData : option (option (type (Array (cfgNumLines regionSize cfg) (Array (cfgLineBytes cfg) (Bit 8))))))
+              (initTags : option (option (type (Array (cfgTagNumLines regionSize cfg) (Array (cfgNumLineTags cfg) Bool)))))
 | ExternalMem
 | CustomMem (children : list (Tree DomainElem))
             (readAction : forall ty, ty Addr ->
@@ -131,8 +170,11 @@ Fixpoint pairwiseDisjoint (l : list MemRegion) : bool :=
 Definition isRegionAddr {ty : Kind -> Type} (r : MemRegion) (addr : Expr ty Addr) : Expr ty Bool :=
   And [ Uge addr $(r.(regionBase)) ; Ult addr $(r.(regionBase) + r.(regionSize)) ].
 
+Definition regionNumLines (r : MemRegion) : nat :=
+  cfgNumLines r.(regionSize) r.(regionLineCfg).
+
 Definition regionTagSize (r : MemRegion) : nat :=
-  cfgRegionTagSize r.(regionSize) r.(regionLineCfg).
+  cfgTagNumLines r.(regionSize) r.(regionLineCfg).
 
 (* ===========================================================================
  * Payload Utilities
@@ -162,15 +204,15 @@ Definition internalMemTargetPortChildren (r : MemRegion) : list (Tree DomainElem
 Definition internalMemRegionChildren
            (r : MemRegion)
            (isAccessible : bool)
-           (initData : option (option (type (Array (Z.to_nat r.(regionSize)) (Bit 8)))))
-           (initTags : option (option (type (Array (regionTagSize r) Bool))))
+           (initData : option (option (type (Array (regionNumLines r) (Array (lineBytes r) (Bit 8))))))
+           (initTags : option (option (type (Array (regionTagSize r) (Array (numLineTags r) Bool)))))
            : list (Tree DomainElem) :=
-  ([ Leaf "mainMem" (r.(regionDom), EMem {| memSize := Z.to_nat r.(regionSize);
-                             memKind := Bit 8;
+  ([ Leaf "mainMem" (r.(regionDom), EMem {| memSize := regionNumLines r;
+                             memKind := Array (lineBytes r) (Bit 8);
                              memPort := 1;
                              memInit := initData |}) ;
      Leaf "tags" (r.(regionDom), EMem {| memSize := regionTagSize r;
-                          memKind := Bool;
+                          memKind := Array (numLineTags r) Bool;
                           memPort := 1;
                           memInit := initTags |})
    ] ++ if isAccessible then internalMemTargetPortChildren r else [])%list.
@@ -187,8 +229,8 @@ Arguments externalMemRegionChildren r : clear implicits.
 Definition internalMemRegionTree
            (r : MemRegion)
            (isAccessible : bool)
-           (initData : option (option (type (Array (Z.to_nat r.(regionSize)) (Bit 8)))))
-           (initTags : option (option (type (Array (regionTagSize r) Bool))))
+           (initData : option (option (type (Array (regionNumLines r) (Array (lineBytes r) (Bit 8))))))
+           (initTags : option (option (type (Array (regionTagSize r) (Array (numLineTags r) Bool)))))
            : Tree DomainElem :=
   Node r.(regionName) (internalMemRegionChildren r isAccessible initData initTags).
 
@@ -216,31 +258,50 @@ Definition memRegionTree (r : MemRegion) : Tree DomainElem :=
 Section InternalMemRegionActions.
   Variable r : MemRegion.
   Variable isAccessible : bool.
-  Variable initData : option (option (type (Array (Z.to_nat r.(regionSize)) (Bit 8)))).
-  Variable initTags : option (option (type (Array (regionTagSize r) Bool))).
+  Variable initData : option (option (type (Array (regionNumLines r) (Array (lineBytes r) (Bit 8))))).
+  Variable initTags : option (option (type (Array (regionTagSize r) (Array (numLineTags r) Bool)))).
   Variable ty : Kind -> Type.
 
-  Local Definition tInt := internalMemRegionTree r isAccessible initData initTags.
-  Local Definition mainMemPath : MemPath tInt := getChildMemPathTree tInt "mainMem".
-  Local Definition tagsPath : MemPath tInt := getChildMemPathTree tInt "tags".
+  Let tInt := internalMemRegionTree r isAccessible initData initTags.
+  Let mainMemPath : MemPath tInt := getChildMemPathTree tInt "mainMem".
+  Let tagsPath : MemPath tInt := getChildMemPathTree tInt "tags".
+  Let numLines := regionNumLines r.
+  Let numTagLines := regionTagSize r.
+  Let lBytes := lineBytes r.
+  Let nTags := numLineTags r.
+  Let lgLineBytesZ := Z.of_nat (lgLineBytes r).
+  Let port0 : FinType 1%nat := @Build_FinType 1%nat 0%nat I.
+
+  Let castAddr (addr : Expr ty Addr) : Expr ty (Bit ((lgLineBytesZ + (AddrSz - lgLineBytesZ))%Z)) :=
+    castBits (eq_sym (add_sub_cancel AddrSz lgLineBytesZ)) addr.
+
+  Let lineIndex (addr : Expr ty Addr) : Expr ty (Bit (AddrSz - lgLineBytesZ)%Z) :=
+    TruncMsb (AddrSz - lgLineBytesZ)%Z lgLineBytesZ (castAddr addr).
+
+  Let getLineOffsetIdx (addr : Expr ty Addr) : Expr ty (Bit (Z.log2_up (Z.of_nat numLines))) :=
+    getMemOffset (Z.shiftr r.(regionBase) lgLineBytesZ) (Z.of_nat numLines) (lineIndex addr).
+
+  Let getTagLineOffsetIdx (addr : Expr ty Addr) : Expr ty (Bit (Z.log2_up (Z.of_nat numTagLines))) :=
+    getMemOffset (Z.shiftr r.(regionBase) lgLineBytesZ) (Z.of_nat numTagLines) (lineIndex addr).
 
   Definition internalMemRegionLineRead (addr : ty Addr)
              : Action ty tInt (LineReadRp r.(regionLineCfg)) :=
-    Let offset <- getMemOffset r.(regionBase) (Z.of_nat (Z.to_nat r.(regionSize))) #addr ;
-    LetA dataBytes : Array (lineBytes r) (Bit 8) <-
-      sliceMem mainMemPath I (lineBytes r) #offset ;
-    LetA tagArr : Array (numLineTags r) Bool <-
+    Let lineIdx : Bit (Z.log2_up (Z.of_nat numLines)) <- getLineOffsetIdx #addr ;
+    ReadRqMem mainMemPath #lineIdx port0 (
+    ReadRpMem "dataBytes" mainMemPath port0 (fun dataBytes =>
+    LetA tagArr : Array nTags Bool <-
       if hasTags r then (
-        Let tagAddr : Bit TagAddrWidth <- TruncMsb TagAddrWidth LgNumBytesFullCapSz #addr ;
-        Let tagOffset <- getMemOffset (Z.shiftr r.(regionBase) LgNumBytesFullCapSz) (Z.of_nat (regionTagSize r)) #tagAddr ;
-        sliceMem tagsPath I (numLineTags r) #tagOffset
+        Let tagLineIdx : Bit (Z.log2_up (Z.of_nat numTagLines)) <- getTagLineOffsetIdx #addr ;
+        ReadRqMem tagsPath #tagLineIdx port0 (
+        ReadRpMem "tagBits" tagsPath port0 (fun tagBits =>
+        Return #tagBits))
       ) else (
         Return ConstDef
       ) ;
     @Return ty tInt (LineReadRp r.(regionLineCfg)) (STRUCT {
       "data" ::= #dataBytes ;
       "tag"  ::= #tagArr
-    }).
+    }))).
 
   Definition internalMemRegionLineWrite
              (rq : ty (LineWriteRq r.(regionLineCfg)))
@@ -248,16 +309,28 @@ Section InternalMemRegionActions.
     if r.(isReadOnly) then (
       Retv
     ) else (
-      Let offset <- getMemOffset r.(regionBase) (Z.of_nat (Z.to_nat r.(regionSize))) (##rq`"addr") ;
-      Act (updSliceMem mainMemPath (lineBytes r) #offset (##rq`"data") (##rq`"dataMask")) ;
+      Let lineIdx : Bit (Z.log2_up (Z.of_nat numLines)) <- getLineOffsetIdx (##rq`"addr") ;
+      ReadRqMem mainMemPath #lineIdx port0 (
+      ReadRpMem "oldData" mainMemPath port0 (fun oldData =>
+      Let newData : Array lBytes (Bit 8) <-
+        ArrayBuilder (fun (i : FinType lBytes) =>
+          ITE (ReadArrayConst (##rq`"dataMask") i)
+              (ReadArrayConst (##rq`"data") i)
+              (ReadArrayConst #oldData i)) ;
+      WriteMem mainMemPath #lineIdx #newData (
       if hasTags r then (
-        Let tagAddr : Bit TagAddrWidth <- TruncMsb TagAddrWidth LgNumBytesFullCapSz (##rq`"addr") ;
-        Let tagOffset <- getMemOffset (Z.shiftr r.(regionBase) LgNumBytesFullCapSz) (Z.of_nat (regionTagSize r)) #tagAddr ;
-        Act (updSliceMem tagsPath (numLineTags r) #tagOffset (##rq`"tag") (##rq`"tagMask")) ;
-        Retv
+        Let tagLineIdx : Bit (Z.log2_up (Z.of_nat numTagLines)) <- getTagLineOffsetIdx (##rq`"addr") ;
+        ReadRqMem tagsPath #tagLineIdx port0 (
+        ReadRpMem "oldTags" tagsPath port0 (fun oldTags =>
+        Let newTags : Array nTags Bool <-
+          ArrayBuilder (fun (i : FinType nTags) =>
+            ITE (ReadArrayConst (##rq`"tagMask") i)
+                (ReadArrayConst (##rq`"tag") i)
+                (ReadArrayConst #oldTags i)) ;
+        WriteMem tagsPath #tagLineIdx #newTags Retv))
       ) else (
         Retv
-      )
+      ))))
     ).
 
 End InternalMemRegionActions.
@@ -267,8 +340,8 @@ Arguments internalMemRegionLineWrite r isAccessible initData initTags [ty] rq.
 
 Section InternalMemTargetPortActions.
   Variable r : MemRegion.
-  Variable initData : option (option (type (Array (Z.to_nat r.(regionSize)) (Bit 8)))).
-  Variable initTags : option (option (type (Array (regionTagSize r) Bool))).
+  Variable initData : option (option (type (Array (regionNumLines r) (Array (lineBytes r) (Bit 8))))).
+  Variable initTags : option (option (type (Array (regionTagSize r) (Array (numLineTags r) Bool)))).
   Variable ty : Kind -> Type.
 
   Local Definition tIntTargetPort := internalMemRegionTree r true initData initTags.

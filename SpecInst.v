@@ -65,27 +65,9 @@ Definition concreteRevConfig : RevConfig := {|
 
 Definition fixedBinary : list (bits 8) := map (fun v => bits.of_Z 8 v) binary.
 
-Definition binary_le_RamSize : Is_true (List.length binary <=? Z.to_nat RamSize)%nat := I.
-
-Definition paddedBinary : list (bits 8) :=
-  (fixedBinary ++ List.repeat (bits.of_Z 8 0) (Z.to_nat RamSize - List.length binary))%list.
-
-Lemma paddedBinary_length :
-  List.length paddedBinary = Z.to_nat RamSize.
-Proof.
-  unfold paddedBinary, fixedBinary.
-  rewrite length_app.
-  rewrite repeat_length.
-  rewrite length_map.
-  pose proof binary_le_RamSize as H.
-  apply Is_true_eq_true in H.
-  rewrite Nat.leb_le in H.
-  lia.
-Qed.
-
-Definition ramInitData : option (option (type (Array (Z.to_nat RamSize) (Bit 8)))) :=
-  Some (Some (Build_SameTuple (tupleElems := paddedBinary)
-                              (Is_true_Nat_eq_implies paddedBinary_length))).
+Definition ramInitData
+  : option (option (type (Array (cfgNumLines RamSize RamLineConfig) (Array (cfgLineBytes RamLineConfig) (Bit 8))))) :=
+  bytesToLinesInit RamSize RamLineConfig fixedBinary.
 
 Definition ramRegion : MemRegion := {|
   regionName        := "ram" ;
