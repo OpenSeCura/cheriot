@@ -66,8 +66,8 @@ Definition concreteRevConfig : RevConfig := {|
 Definition fixedBinary : list (bits 8) := map (fun v => bits.of_Z 8 v) binary.
 
 Definition ramInitData
-  : option (option (type (Array (cfgNumLines RamSize RamLineConfig) (Array (cfgLineBytes RamLineConfig) (Bit 8))))) :=
-  bytesToLinesInit RamSize RamLineConfig fixedBinary.
+  : option (option (type (Array (Z.to_nat RamSize) (Bit 8)))) :=
+  bytesToMemInit RamSize fixedBinary.
 
 Definition ramRegion : MemRegion := {|
   regionName        := "ram" ;
