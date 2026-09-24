@@ -150,9 +150,6 @@ Definition implModInst : Mod implSysTreeInst :=
         concreteRevoker
         concretePlic.
 
-Definition wrapLineReadRpSome (rp : type (LineReadRp ExtMemLineConfig)) : type (Option (LineReadRp ExtMemLineConfig)) :=
-  evalExpr (@mkSome type (LineReadRp ExtMemLineConfig) (Const type (LineReadRp ExtMemLineConfig) rp)).
-
 From Guru Require Import Extraction Simulator.
 Set Extraction Output Directory "./Impl".
 
@@ -223,7 +220,7 @@ Extract Constant io_recv => "(\name k ->
                   Prelude.return (Data.Vector.fromList [0, 0, 0, 0, b4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
                 else Prelude.return (Data.Vector.replicate 16 0)
        let tags = Data.Vector.replicate 2 Prelude.False
-       Prelude.return (unsafeCoerce (wrapLineReadRpSome (unsafeCoerce (bytes, (tags, ())))))
+       Prelude.return (unsafeCoerce (Prelude.True, ((bytes, (tags, ())), ())))
      else if name Prelude.== ""UartIrq"" then do
        ie <- Data.IORef.readIORef ieRef
        if Data.Bits.testBit ie 0 then do
@@ -240,4 +237,4 @@ Extract Constant io_stepCycle => "(\c ->
   else Prelude.return ())".
 
 Definition main : IO unit := evalModCyclesIO implSysTreeInst (Z.to_nat 50000000) implModInst.
-Extraction "Simulate" wrapLineReadRpSome main.
+Extraction "Simulate" main.

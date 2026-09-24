@@ -198,7 +198,9 @@ Extract Constant io_recv => "(\name k ->
               Data.IORef.writeIORef rxBufRef (Prelude.Just (Prelude.toInteger (Data.Char.ord c Data.Bits..&. 0xff)))
               Prelude.return Prelude.True
             else Prelude.return Prelude.False
-  in if name Prelude.== ""lineReadRp"" then do
+  in if name Prelude.== ""lineReadRqReady"" Prelude.|| name Prelude.== ""lineWriteRqReady"" then
+       Prelude.return (unsafeCoerce Prelude.True)
+     else if name Prelude.== ""lineReadRp"" then do
        addr <- Data.IORef.readIORef readAddrRef
        bytes <- if addr Prelude.== 0x10000000 then do
                   _ <- pollRx
@@ -213,7 +215,7 @@ Extract Constant io_recv => "(\name k ->
                   Prelude.return (Data.Vector.fromList [0, 0, 0, 0, b4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
                 else Prelude.return (Data.Vector.replicate 16 0)
        let tags = Data.Vector.replicate 2 Prelude.False
-       Prelude.return (unsafeCoerce (bytes, (tags, ())))
+       Prelude.return (unsafeCoerce (Prelude.True, ((bytes, (tags, ())), ())))
      else if name Prelude.== ""UartIrq"" then do
        ie <- Data.IORef.readIORef ieRef
        if Data.Bits.testBit ie 0 then do

@@ -59,26 +59,17 @@ Record MemIfc {ty : Kind -> Type} := {
  * Split-Phase Line-Level MemRegion Trees
  * =========================================================================== *)
 
-Definition implInternalMemRegionChildren (r : MemRegion) : list (Tree DomainElem) :=
-  [ Node "memBanks" (map (memBankLeaf r) (seq 0 (lineBytes r))) ;
-    Node "tagBanks" (map (tagBankLeaf r) (seq 0 (numLineTags r))) ;
-    Leaf "rpValid"  (r.(regionDom), EReg (Build_Reg Bool (Some false) false))
-  ].
-
 Definition implInternalMemRegionTree (r : MemRegion) : Tree DomainElem :=
-  Node r.(regionName) (implInternalMemRegionChildren r).
+  Node r.(regionName) [
+    internalMemRegionTree r false ;
+    Leaf "rpValid" (r.(regionDom), EReg (Build_Reg Bool (Some false) false))
+  ].
 
 Definition implExternalMemRegionChildren (r : MemRegion) : list (Tree DomainElem) :=
-  [ Leaf "lineReadRq"       (r.(regionDom), ESend Addr) ;
-    Leaf "lineReadRqReady"  (r.(regionDom), ERecv Bool) ;
-    Leaf "lineWriteRq"      (r.(regionDom), ESend (LineWriteRq r.(regionLineCfg))) ;
-    Leaf "lineWriteRqReady" (r.(regionDom), ERecv Bool) ;
-    Leaf "lineReadRp"       (r.(regionDom), ERecv (Option (LineReadRp r.(regionLineCfg)))) ;
-    Leaf "lineReadRpReady"  (r.(regionDom), ESend Bool)
-  ].
+  externalMemRegionChildren r.
 
 Definition implExternalMemRegionTree (r : MemRegion) : Tree DomainElem :=
-  Node r.(regionName) (implExternalMemRegionChildren r).
+  externalMemRegionTree r.
 
 Definition implCustomMemRegionTree (r : MemRegion) (children : list (Tree DomainElem)) : Tree DomainElem :=
   Node r.(regionName) [
@@ -86,7 +77,6 @@ Definition implCustomMemRegionTree (r : MemRegion) (children : list (Tree Domain
     Leaf "rpReg" (r.(regionDom), EReg (Build_Reg (Option (LineReadRp r.(regionLineCfg))) (Some (getDefault _)) false))
   ].
 
-Arguments implInternalMemRegionChildren r : clear implicits.
 Arguments implInternalMemRegionTree r : clear implicits.
 Arguments implExternalMemRegionChildren r : clear implicits.
 Arguments implExternalMemRegionTree r : clear implicits.
@@ -108,203 +98,26 @@ Section ImplInternalMemRegionActions.
   Variable ty : Kind -> Type.
 
   Local Definition tInt := implInternalMemRegionTree r.
-  Local Definition numLines := regionNumLines r.
-  Local Definition lBytes := lineBytes r.
-  Local Definition nTags := numLineTags r.
-  Local Definition lgLineBytesZ := Z.of_nat (lgLineBytes r).
-  Local Definition port0 : FinType 1%nat := @Build_FinType 1%nat 0%nat I.
-
-  Local Definition leaf_list_path_mem (n : nat) (p : FinType n) :=
-    leaf_list_path_seq (memBankLeaf r) (fun _ => tt) 0 p.
-
-  Local Definition leaf_list_path_tag (n : nat) (p : FinType n) :=
-    leaf_list_path_seq (tagBankLeaf r) (fun _ => tt) 0 p.
-
-  Local Lemma leaf_list_path_mem_is_mem n (i : FinType n) :
-    Is_true (isMemElem (@getLeafElem (Node "memBanks" (map (memBankLeaf r) (seq 0 n))) (leaf_list_path_mem i))).
-  Proof.
-    unfold leaf_list_path_mem, getLeafElem.
-    rewrite getLeaf_seq.
-    simpl.
-    exact I.
-  Qed.
-
-  Local Lemma leaf_list_path_tag_is_mem n (i : FinType n) :
-    Is_true (isMemElem (@getLeafElem (Node "tagBanks" (map (tagBankLeaf r) (seq 0 n))) (leaf_list_path_tag i))).
-  Proof.
-    unfold leaf_list_path_tag, getLeafElem.
-    rewrite getLeaf_seq.
-    simpl.
-    exact I.
-  Qed.
-
-  Local Definition memBankPath (i : FinType lBytes) : MemPath tInt.
-  Proof.
-    refine (Build_MemPath tInt (inl (leaf_list_path_mem i)) _).
-    exact (leaf_list_path_mem_is_mem i).
-  Defined.
-
-  Local Definition tagBankPath (i : FinType nTags) : MemPath tInt.
-  Proof.
-    refine (Build_MemPath tInt (inr (inl (leaf_list_path_tag i))) _).
-    exact (leaf_list_path_tag_is_mem i).
-  Defined.
-
-  Local Lemma memBankEq n (i : FinType n) :
-    @getMemFromPathUnsafe (Node "memBanks" (map (memBankLeaf r) (seq 0 n))) (leaf_list_path_mem i) =
-    {| memSize := numLines; memKind := Bit 8; memPort := 1; memInit := extractBankDataInit r (0 + i.(finNum)) |}.
-  Proof.
-    unfold leaf_list_path_mem, getMemFromPathUnsafe, getLeafElem.
-    rewrite getLeaf_seq.
-    reflexivity.
-  Qed.
-
-  Local Lemma tagBankEq n (i : FinType n) :
-    @getMemFromPathUnsafe (Node "tagBanks" (map (tagBankLeaf r) (seq 0 n))) (leaf_list_path_tag i) =
-    {| memSize := numLines; memKind := Bool; memPort := 1; memInit := extractBankTagInit r (0 + i.(finNum)) |}.
-  Proof.
-    unfold leaf_list_path_tag, getMemFromPathUnsafe, getLeafElem.
-    rewrite getLeaf_seq.
-    reflexivity.
-  Qed.
-
-  Local Definition memPortCast (i : FinType lBytes) (p : FinType 1%nat) : FinType (memPort (getMemFromPath (memBankPath i))) :=
-    match eq_sym (f_equal memPort (memBankEq i)) in _ = Y return FinType Y with
-    | eq_refl => p
-    end.
-
-  Local Definition tagPortCast (i : FinType nTags) (p : FinType 1%nat) : FinType (memPort (getMemFromPath (tagBankPath i))) :=
-    match eq_sym (f_equal memPort (tagBankEq i)) in _ = Y return FinType Y with
-    | eq_refl => p
-    end.
-
-  Local Definition memSizeCast (i : FinType lBytes) (e : Expr ty (Bit (Z.log2_up (Z.of_nat numLines)))) :
-    Expr ty (Bit (Z.log2_up (Z.of_nat (memSize (getMemFromPath (memBankPath i)))))) :=
-    match eq_sym (f_equal memSize (memBankEq i)) in _ = Y return Expr ty (Bit (Z.log2_up (Z.of_nat Y))) with
-    | eq_refl => e
-    end.
-
-  Local Definition tagSizeCast (i : FinType nTags) (e : Expr ty (Bit (Z.log2_up (Z.of_nat numLines)))) :
-    Expr ty (Bit (Z.log2_up (Z.of_nat (memSize (getMemFromPath (tagBankPath i)))))) :=
-    match eq_sym (f_equal memSize (tagBankEq i)) in _ = Y return Expr ty (Bit (Z.log2_up (Z.of_nat Y))) with
-    | eq_refl => e
-    end.
-
-  Local Definition memKindCast (i : FinType lBytes) (e : Expr ty (Bit 8)) :
-    Expr ty (memKind (getMemFromPath (memBankPath i))) :=
-    match eq_sym (f_equal memKind (memBankEq i)) in _ = Y return Expr ty Y with
-    | eq_refl => e
-    end.
-
-  Local Definition memKindCastInv (i : FinType lBytes) (e : Expr ty (memKind (getMemFromPath (memBankPath i)))) :
-    Expr ty (Bit 8) :=
-    match f_equal memKind (memBankEq i) in _ = Y return Expr ty Y with
-    | eq_refl => e
-    end.
-
-  Local Definition tagKindCast (i : FinType nTags) (e : Expr ty Bool) :
-    Expr ty (memKind (getMemFromPath (tagBankPath i))) :=
-    match eq_sym (f_equal memKind (tagBankEq i)) in _ = Y return Expr ty Y with
-    | eq_refl => e
-    end.
-
-  Local Definition tagKindCastInv (i : FinType nTags) (e : Expr ty (memKind (getMemFromPath (tagBankPath i)))) :
-    Expr ty Bool :=
-    match f_equal memKind (tagBankEq i) in _ = Y return Expr ty Y with
-    | eq_refl => e
-    end.
-
-  Local Definition pRpValid : RegPath tInt := Build_RegPath tInt (inr (inr (inl tt))) I.
-
-  Local Definition castAddr (addr : Expr ty Addr) : Expr ty (Bit ((lgLineBytesZ + (AddrSz - lgLineBytesZ))%Z)) :=
-    castBits (eq_sym (add_sub_cancel AddrSz lgLineBytesZ)) addr.
-
-  Local Definition lineIndex (addr : Expr ty Addr) : Expr ty (Bit (AddrSz - lgLineBytesZ)%Z) :=
-    TruncMsb (AddrSz - lgLineBytesZ)%Z lgLineBytesZ (castAddr addr).
-
-  Local Definition getLineOffsetIdx (addr : Expr ty Addr) : Expr ty (Bit (Z.log2_up (Z.of_nat numLines))) :=
-    getMemOffset (Z.shiftr r.(regionBase) lgLineBytesZ) (Z.of_nat numLines) (lineIndex addr).
-
-  Local Definition internalMemIssueReadRq (addr : ty Addr) : Action ty tInt (Bit 0) :=
-    Let lineIdx : Bit (Z.log2_up (Z.of_nat numLines)) <- getLineOffsetIdx #addr ;
-    Act (fold_right (fun memIdx acc =>
-                       ReadRqMem (memBankPath memIdx) (memSizeCast memIdx #lineIdx) (memPortCast memIdx port0) acc)
-                    Retv (genFinType lBytes)) ;
-    if hasTags r then (
-      fold_right (fun tagIdx acc =>
-                    ReadRqMem (tagBankPath tagIdx) (tagSizeCast tagIdx #lineIdx) (tagPortCast tagIdx port0) acc)
-                 Retv (genFinType nTags)
-    ) else (
-      Retv
-    ).
-
-  Local Definition internalMemGetReadRp : Action ty tInt (LineReadRp r.(regionLineCfg)) :=
-    LetA dataBytes : Array lBytes (Bit 8) <-
-      fold_right (fun memIdx acc =>
-                    ReadRpMem "readByteRp" (memBankPath memIdx) (memPortCast memIdx port0)
-                      (fun val =>
-                         LetA rest : Array lBytes (Bit 8) <- acc ;
-                         Return (UpdateArrayConst #rest memIdx (memKindCastInv #val))))
-                 (Return ConstDef) (genFinType lBytes) ;
-    LetA tagArr : Array nTags Bool <-
-      if hasTags r then (
-        fold_right (fun tagIdx acc =>
-                      ReadRpMem "readTagRp" (tagBankPath tagIdx) (tagPortCast tagIdx port0)
-                        (fun val =>
-                           LetA rest : Array nTags Bool <- acc ;
-                           Return (UpdateArrayConst #rest tagIdx (tagKindCastInv #val))))
-                   (Return ConstDef) (genFinType nTags)
-      ) else (
-        Return ConstDef
-      ) ;
-    @Return ty tInt (LineReadRp r.(regionLineCfg)) (STRUCT {
-      "data" ::= #dataBytes ;
-      "tag"  ::= #tagArr
-    }).
-
-  Definition implInternalMemLineWrite (rq : ty (LineWriteRq r.(regionLineCfg))) : Action ty tInt (Bit 0) :=
-    if r.(isReadOnly) then (
-      Retv
-    ) else (
-      Let lineIdx : Bit (Z.log2_up (Z.of_nat numLines)) <- getLineOffsetIdx (##rq`"addr") ;
-      Act (fold_right (fun memIdx acc =>
-                         If (ReadArrayConst (##rq`"dataMask") memIdx) Then (
-                           WriteMem (memBankPath memIdx) (memSizeCast memIdx #lineIdx)
-                             (memKindCast memIdx (ReadArrayConst (##rq`"data") memIdx)) Retv
-                         ) ;
-                         acc)
-                      Retv (genFinType lBytes)) ;
-      if hasTags r then (
-        fold_right (fun tagIdx acc =>
-                      If (ReadArrayConst (##rq`"tagMask") tagIdx) Then (
-                        WriteMem (tagBankPath tagIdx) (tagSizeCast tagIdx #lineIdx)
-                          (tagKindCast tagIdx (ReadArrayConst (##rq`"tag") tagIdx)) Retv
-                      ) ;
-                      acc)
-                   Retv (genFinType nTags)
-      ) else (
-        Retv
-      )
-    ).
+  Local Definition pRpValid : RegPath tInt := Build_RegPath tInt (inr (inl tt)) I.
 
   Definition internalMemLineReadRq (addr : ty Addr) : Action ty tInt Bool :=
     ReadReg "rpValidVal" pRpValid (fun rpValidVal =>
     Let isReady : Bool <- Not #rpValidVal ;
     If #isReady Then (
-      Act (internalMemIssueReadRq addr) ;
+      Act (liftAction child0Path (internalMemRegionLineReadRq r false addr)) ;
       WriteReg pRpValid (ConstBool true) Retv
     ) ;
     Return #isReady).
 
   Definition internalMemLineWriteRq (rq : ty (LineWriteRq r.(regionLineCfg))) : Action ty tInt Bool :=
-    Act (implInternalMemLineWrite rq) ;
+    Act (liftAction child0Path (internalMemRegionLineWrite r false rq)) ;
     Return (ConstBool true).
 
   Definition internalMemLineReadRp : Action ty tInt (Option (LineReadRp r.(regionLineCfg))) :=
     ReadReg "rpValidVal" pRpValid (fun rpValidVal =>
     LetIf rpOpt : Option (LineReadRp r.(regionLineCfg)) <-
       If #rpValidVal Then (
-        LetA rp : LineReadRp r.(regionLineCfg) <- internalMemGetReadRp ;
+        LetA rp : LineReadRp r.(regionLineCfg) <- liftAction child0Path (internalMemRegionLineReadRp r false) ;
         Act (WriteReg pRpValid (ConstBool false) Retv) ;
         Return (mkSome #rp)
       ) Else (
@@ -314,7 +127,6 @@ Section ImplInternalMemRegionActions.
 
 End ImplInternalMemRegionActions.
 
-Arguments implInternalMemLineWrite r [ty] rq.
 Arguments internalMemLineReadRq r [ty] addr.
 Arguments internalMemLineWriteRq r [ty] rq.
 Arguments internalMemLineReadRp r {ty}.
@@ -324,31 +136,15 @@ Section ImplExternalMemRegionActions.
   Variable ty : Kind -> Type.
 
   Local Definition tExt := implExternalMemRegionTree r.
-  Local Definition pLineReadRq       : SendPath tExt := Eval cbn in (getChildSendPathTree tExt "lineReadRq").
-  Local Definition pLineReadRqReady  : RecvPath tExt := Eval cbn in (getChildRecvPathTree tExt "lineReadRqReady").
-  Local Definition pLineWriteRq      : SendPath tExt := Eval cbn in (getChildSendPathTree tExt "lineWriteRq").
-  Local Definition pLineWriteRqReady : RecvPath tExt := Eval cbn in (getChildRecvPathTree tExt "lineWriteRqReady").
-  Local Definition pLineReadRp       : RecvPath tExt := Eval cbn in (getChildRecvPathTree tExt "lineReadRp").
-  Local Definition pLineReadRpReady  : SendPath tExt := Eval cbn in (getChildSendPathTree tExt "lineReadRpReady").
 
   Definition externalMemLineReadRq (addr : ty Addr) : Action ty tExt Bool :=
-    Send pLineReadRq #addr (
-    Recv "rdy" pLineReadRqReady (fun rdy =>
-    Return #rdy)).
+    externalMemRegionLineReadRq r addr.
 
   Definition externalMemLineWriteRq (rq : ty (LineWriteRq r.(regionLineCfg))) : Action ty tExt Bool :=
-    if r.(isReadOnly) then (
-      Return (ConstBool true)
-    ) else (
-      Send pLineWriteRq #rq (
-      Recv "rdy" pLineWriteRqReady (fun rdy =>
-      Return #rdy))
-    ).
+    externalMemRegionLineWrite r rq.
 
   Definition externalMemLineReadRp : Action ty tExt (Option (LineReadRp r.(regionLineCfg))) :=
-    Send pLineReadRpReady (ConstBool true) (
-    Recv "rpOpt" pLineReadRp (fun rpOpt =>
-    Return #rpOpt)).
+    externalMemRegionLineReadRp r.
 
 End ImplExternalMemRegionActions.
 
