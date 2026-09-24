@@ -148,46 +148,44 @@ Definition specModInst : Mod specSysTreeInst :=
 From Guru Require Import Extraction Simulator.
 Set Extraction Output Directory ".".
 
-Extract Constant io_send => "(\name k val ->
-  let (readAddrRef, dlabRef, ieRef, _) = simUartRefs
-  in if name Prelude.== ""lineReadRq""
-     then Data.IORef.writeIORef readAddrRef (unsafeCoerce val :: Prelude.Integer)
-     else if name Prelude.== ""lineWriteRq""
-     then let (addr, (dataVec, (maskVec, _))) =
-                unsafeCoerce val :: (Prelude.Integer, (Data.Vector.Vector Prelude.Integer, (Data.Vector.Vector Prelude.Bool, ())))
-              b0  = dataVec Data.Vector.! 0
-              m0  = maskVec Data.Vector.! 0
-              b4  = dataVec Data.Vector.! 4
-              m4  = maskVec Data.Vector.! 4
-              b12 = dataVec Data.Vector.! 12
-              m12 = maskVec Data.Vector.! 12
-          in if addr Prelude.== 0x10000000 then do
-               if m12
-                 then Data.IORef.writeIORef dlabRef (Data.Bits.testBit b12 7)
-                 else Prelude.return ()
-               dlab <- Data.IORef.readIORef dlabRef
-               if m0 Prelude.&& Prelude.not dlab
-                 then Prelude.putChar (Data.Char.chr (Prelude.fromIntegral (b0 Data.Bits..&. 0xff))) Prelude.>>
-                      System.IO.hFlush System.IO.stdout
-                 else Prelude.return ()
-               if m4 Prelude.&& Prelude.not dlab
-                 then Data.IORef.writeIORef ieRef (b4 Data.Bits..&. 0xff)
-                 else Prelude.return ()
-             else Prelude.return ()
-     else Prelude.return ())
+Extract Constant IoEnv => "(Data.IORef.IORef Prelude.Integer, Data.IORef.IORef Prelude.Bool, Data.IORef.IORef Prelude.Integer, Data.IORef.IORef (Prelude.Maybe Prelude.Integer))".
 
-{-# NOINLINE simUartRefs #-}
-simUartRefs :: (Data.IORef.IORef Prelude.Integer, Data.IORef.IORef Prelude.Bool, Data.IORef.IORef Prelude.Integer, Data.IORef.IORef (Prelude.Maybe Prelude.Integer))
-simUartRefs = System.IO.Unsafe.unsafePerformIO (do
+Extract Constant io_initEnv => "(do
   r1 <- Data.IORef.newIORef 0
   r2 <- Data.IORef.newIORef Prelude.False
   r3 <- Data.IORef.newIORef 0
   r4 <- Data.IORef.newIORef Prelude.Nothing
   Prelude.return (r1, r2, r3, r4))".
 
-Extract Constant io_recv => "(\name k ->
-  let (readAddrRef, _, ieRef, rxBufRef) = simUartRefs
-      pollRx = do
+Extract Constant io_send => "(\(readAddrRef, dlabRef, ieRef, _) name k val ->
+  if name Prelude.== ""lineReadRq""
+  then Data.IORef.writeIORef readAddrRef (unsafeCoerce val :: Prelude.Integer)
+  else if name Prelude.== ""lineWriteRq""
+  then let (addr, (dataVec, (maskVec, _))) =
+             unsafeCoerce val :: (Prelude.Integer, (Data.Vector.Vector Prelude.Integer, (Data.Vector.Vector Prelude.Bool, ())))
+           b0  = dataVec Data.Vector.! 0
+           m0  = maskVec Data.Vector.! 0
+           b4  = dataVec Data.Vector.! 4
+           m4  = maskVec Data.Vector.! 4
+           b12 = dataVec Data.Vector.! 12
+           m12 = maskVec Data.Vector.! 12
+       in if addr Prelude.== 0x10000000 then do
+            if m12
+              then Data.IORef.writeIORef dlabRef (Data.Bits.testBit b12 7)
+              else Prelude.return ()
+            dlab <- Data.IORef.readIORef dlabRef
+            if m0 Prelude.&& Prelude.not dlab
+              then Prelude.putChar (Data.Char.chr (Prelude.fromIntegral (b0 Data.Bits..&. 0xff))) Prelude.>>
+                   System.IO.hFlush System.IO.stdout
+              else Prelude.return ()
+            if m4 Prelude.&& Prelude.not dlab
+              then Data.IORef.writeIORef ieRef (b4 Data.Bits..&. 0xff)
+              else Prelude.return ()
+          else Prelude.return ()
+  else Prelude.return ())".
+
+Extract Constant io_recv => "(\(readAddrRef, _, ieRef, rxBufRef) name k ->
+  let pollRx = do
         cur <- Data.IORef.readIORef rxBufRef
         case cur of
           Prelude.Just _ -> Prelude.return Prelude.True
