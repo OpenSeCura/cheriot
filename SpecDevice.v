@@ -715,10 +715,8 @@ Definition memRegionLineWrite
                                               | ExternalMem => externalMemRegionTree r
                                               | CustomMem children _ _ _ => customMemRegionTree r children
                                               end) (Bit 0) with
-  | InternalMem isAccessible _ _ => internalMemRegionLineWrite r isAccessible rq
-  | ExternalMem =>
-      Act (externalMemRegionLineWrite r rq) ;
-      Retv
+  | InternalMem isAccessible _ _ => Act (internalMemRegionLineWrite r isAccessible rq) ; Retv
+  | ExternalMem => Act (externalMemRegionLineWrite r rq) ; Retv
   | CustomMem children readAct writeAct _ => customMemRegionLineWrite r children writeAct rq
   end.
 
