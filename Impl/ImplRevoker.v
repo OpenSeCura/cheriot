@@ -95,9 +95,8 @@ Section ImplRevoker.
   (* Split-Phase Autonomous Revoker Step *)
   Variable revConfig : RevConfig.
   Variable revAct    : forall {k : Kind}, Action ty (Node "revoker" (revokerChildren dom)) k -> Action ty memTree k.
-  Variable isCoreFree : Action ty memTree Bool.
-  Variable readRq    : ty Addr -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree Bool.
-  Variable readRp    : ty Addr -> Action ty memTree (Option FullCapWithTag).
+  Variable readRq    : ty Addr -> Action ty memTree Bool.
+  Variable readRp    : ty Addr -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree (Option FullCapWithTag).
   Variable writeMem  : ty Addr -> ty FullCapWithTag -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree Bool.
 
   Definition implRevokerPhase0 : Action ty memTree (Bit 0) :=
@@ -108,20 +107,15 @@ Section ImplRevoker.
       LetA topAddrMsb  : Bit TagAddrWidth <- revAct (ReadReg "top" (revokerTopPath dom) (fun v => Return #v)) ;
       Let scanAddr     : Addr             <- {< #scanAddrMsb, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
       Let isDone       : Bool             <- Uge #scanAddrMsb #topAddrMsb ;
-      Let capSz        : Bit LgLgNumBytesFullCapSz <- $LgNumBytesFullCapSz ;
       If (Not #isDone) Then (
         ReadReg "revPhase" pRevPhase (fun revPhaseRaw =>
         let revPhase := castPhaseOut revPhaseRaw in
         If (Eq #revPhase $0) Then (
-          LetA coreFree : Bool <- isCoreFree ;
-          If #coreFree Then (
-            LetA rdy : Bool <- readRq scanAddr capSz ;
-            If #rdy Then (
-              Act (WriteReg pRevScanAddrMsb (castScanAddrIn #scanAddrMsb) Retv) ;
-              Act (WriteReg pRevStoreSnoopHit (castSnoopIn (ConstBool false)) Retv) ;
-              WriteReg pRevPhase (castPhaseIn $1) Retv
-            ) ;
-            Retv
+          LetA rdy : Bool <- readRq scanAddr ;
+          If #rdy Then (
+            Act (WriteReg pRevScanAddrMsb (castScanAddrIn #scanAddrMsb) Retv) ;
+            Act (WriteReg pRevStoreSnoopHit (castSnoopIn (ConstBool false)) Retv) ;
+            WriteReg pRevPhase (castPhaseIn $1) Retv
           ) ;
           Retv
         ) ;
@@ -165,11 +159,12 @@ Section ImplRevoker.
     let revPhase := castPhaseOut revPhaseRaw in
     If (Eq #revPhase $1) Then (
       LetA scanAddrMsb : Bit TagAddrWidth <- revAct (ReadReg "scanAddr" (revokerScanAddrPath dom) (fun v => Return #v)) ;
-      Let scanAddr        : Addr             <- {< #scanAddrMsb, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
-      Let nextScanAddrMsb : Bit TagAddrWidth <- Add [ #scanAddrMsb ; $1 ] ;
+      Let scanAddr        : Addr                      <- {< #scanAddrMsb, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
+      Let nextScanAddrMsb : Bit TagAddrWidth          <- Add [ #scanAddrMsb ; $1 ] ;
+      Let capSz           : Bit LgLgNumBytesFullCapSz <- $LgNumBytesFullCapSz ;
       ReadReg "snoopHit" pRevStoreSnoopHit (fun snoopHitRaw =>
       let snoopHit := castSnoopOut snoopHitRaw in
-      LetA rpOpt : Option FullCapWithTag <- readRp scanAddr ;
+      LetA rpOpt : Option FullCapWithTag <- readRp scanAddr capSz ;
       If (##rpOpt `? "Some") Then (
         Let ldFullCap : FullCapWithTag <- ##rpOpt `! "Some" ;
         Let ldCap     : Cap            <- ##ldFullCap`"cap" ;
@@ -212,15 +207,10 @@ Section ImplRevoker.
         Let ldBase    : Bit (AddrSz + 1) <- ##ldECap`"base" ;
         LetL lookup   : RevBitLookup     <- computeRevBitAddr revConfig ldBase ;
         If (##lookup`"isRevokable") Then (
-          LetA coreFree : Bool <- isCoreFree ;
-          If #coreFree Then (
-            Let revByteAddr : Addr <- ##lookup`"revByteAddr" ;
-            Let sz0 : Bit LgLgNumBytesFullCapSz <- $0 ;
-            LetA rdy : Bool <- readRq revByteAddr sz0 ;
-            If #rdy Then (
-              WriteReg pRevPhase (castPhaseIn $3) Retv
-            ) ;
-            Retv
+          Let revByteAddr : Addr <- ##lookup`"revByteAddr" ;
+          LetA rdy : Bool <- readRq revByteAddr ;
+          If #rdy Then (
+            WriteReg pRevPhase (castPhaseIn $3) Retv
           ) ;
           Retv
         ) Else (
@@ -244,13 +234,14 @@ Section ImplRevoker.
       let snoopHit := castSnoopOut snoopHitRaw in
       ReadReg "savedCap" pRevScanCap (fun savedCapRaw =>
       let savedCap := castScanCapOut savedCapRaw in
-      Let ldCap     : Cap              <- ##savedCap`"cap" ;
-      Let ldAddr    : Addr             <- ##savedCap`"addr" ;
-      LetA ldECap   : ECap             <- toAction memTree (DecodeCap ldCap ldAddr) ;
-      Let ldBase    : Bit (AddrSz + 1) <- ##ldECap`"base" ;
-      LetL lookup   : RevBitLookup     <- computeRevBitAddr revConfig ldBase ;
-      Let revByteAddr : Addr           <- ##lookup`"revByteAddr" ;
-      LetA rpOpt : Option FullCapWithTag <- readRp revByteAddr ;
+      Let ldCap       : Cap                      <- ##savedCap`"cap" ;
+      Let ldAddr      : Addr                     <- ##savedCap`"addr" ;
+      LetA ldECap     : ECap                     <- toAction memTree (DecodeCap ldCap ldAddr) ;
+      Let ldBase      : Bit (AddrSz + 1)         <- ##ldECap`"base" ;
+      LetL lookup     : RevBitLookup             <- computeRevBitAddr revConfig ldBase ;
+      Let revByteAddr : Addr                     <- ##lookup`"revByteAddr" ;
+      Let sz0         : Bit LgLgNumBytesFullCapSz <- $0 ;
+      LetA rpOpt      : Option FullCapWithTag    <- readRp revByteAddr sz0 ;
       If (##rpOpt `? "Some") Then (
         Let revCap  : FullCapWithTag <- ##rpOpt `! "Some" ;
         Let revByte : Bit 8          <- TruncLsb (AddrSz - 8) 8 (##revCap`"addr") ;

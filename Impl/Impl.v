@@ -108,9 +108,6 @@ Section ImplDom.
       Definition implTickTimer : Action ty sysTree (Bit 0) :=
         liftAction np_mem (implClintAction (clintTick core ty)).
 
-      Definition implMemStepSecondLineSys : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (@implMemStepSecondLine core regions ty).
-
       Definition implRevokerStepsSys : list (Action ty sysTree (Bit 0)) :=
         map (fun act => liftAction np_mem act) (@implRevokerSteps core config regions ty rev).
 
@@ -151,9 +148,6 @@ Section ImplDom.
 
       Definition fetchRqStage : Action ty sysTree (Bit 0) :=
         liftAction np_core (@fetchRq core pcAddrInit fetchCapacity deferredCapacity memIfc ty).
-
-      Definition fetchCrossLineStage : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (@implMemStepSecondLine core regions ty).
 
       Definition fetchRpStage : Action ty sysTree (Bit 0) :=
         liftAction np_core (@fetchRp core pcAddrInit fetchCapacity deferredCapacity memIfc ty).
@@ -284,9 +278,6 @@ Section ImplDom.
       Definition loadRqOrStoreOrFenceStage : Action ty sysTree (Bit 0) :=
         liftAction np_core (@loadRqOrStoreOrFence core pcAddrInit tohostAddr fetchCapacity deferredCapacity memIfc ty).
 
-      Definition dataCrossLineStage : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (@implMemStepSecondLine core regions ty).
-
       Definition loadRpAndWritebackOrEnqueueRevRqStage : Action ty sysTree (Bit 0) :=
         liftAction np_core (@loadRpAndWritebackOrEnqueueRevRq core pcAddrInit fetchCapacity deferredCapacity memIfc ty).
 
@@ -317,13 +308,11 @@ Section ImplDom.
     Definition impl : Mod sysTree :=
       fun ty => ([
         (core, fetchRqStage ty) ;
-        (core, fetchCrossLineStage ty) ;
         (core, fetchRpStage ty) ;
         (core, decodeAndRegRead ty) ;
         (core, aluStage ty) ;
         (core, executeNonDeferredStage ty) ;
         (core, loadRqOrStoreOrFenceStage ty) ;
-        (core, dataCrossLineStage ty) ;
         (core, loadRpAndWritebackOrEnqueueRevRqStage ty) ;
         (core, revRqStage ty) ;
         (core, revRpAndWriteBackStage ty)

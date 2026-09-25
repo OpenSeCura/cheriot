@@ -91,9 +91,10 @@ Section FetchStages.
     LetA fetchOutBuf_isFull : Bool                   <- liftAction np_fetchOutFifo (@isFull dom capacity FetchOut ty) ;
 
     If (And [ ##inputHead `? "Some" ; Not #fetchOutBuf_isFull ]) Then (
-      LetA instOpt : Option Inst <- liftAction np_mem ((memIfc ty).(mem_getInstRp)) ;
+      Let  pcc     : FullECapWithTag <- ##inputHead `! "Some" ;
+      Let  pccAddr : Addr            <- ##pcc`"addr" ;
+      LetA instOpt : Option Inst     <- liftAction np_mem ((memIfc ty).(mem_getInstRp) pccAddr) ;
       If (##instOpt `? "Some") Then (
-        Let pcc     : FullECapWithTag <- ##inputHead `! "Some" ;
         Let rawInst : Inst            <- ##instOpt `! "Some" ;
         Act (liftAction np_fetchFifo (@deq dom capacity FullECapWithTag ty)) ;
 

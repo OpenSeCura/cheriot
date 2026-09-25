@@ -74,9 +74,9 @@ Section ImplDefines.
   Definition deferredTree (capacity : nat) : Tree DomainElem :=
     Node "deferred" [
       Node "inputBuf" [ fifoTree dom capacity DeferredReq ] ;
-      Node "loadBuf"  [ fifoTree dom capacity PendingLoad ] ;
+      Node "loadBuf"  [ fifoTree dom capacity LoadCmd ] ;
       Node "revRqBuf" [ fifoTree dom capacity RevCmd ] ;
-      Node "revBuf"   [ fifoTree dom capacity PendingRev ] ;
+      Node "revBuf"   [ fifoTree dom capacity RevCmd ] ;
       modeMulDivTree dom ImplInputWidth ImplMulStages ImplDivStages ImplMulDivMode
     ].
 

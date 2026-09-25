@@ -284,8 +284,7 @@ Definition internalMemTargetPortChildren (r : MemRegion) : list (Tree DomainElem
     Leaf "lineWriteRq"      (r.(regionDom), ERecv (Option (LineWriteRq r.(regionLineCfg)))) ;
     Leaf "lineWriteRqReady" (r.(regionDom), ESend (Bit 0)) ;
     Leaf "lineReadRp"       (r.(regionDom), ESend (LineReadRp r.(regionLineCfg))) ;
-    Leaf "lineReadRpReady"  (r.(regionDom), ERecv Bool) ;
-    Leaf "targetRpValid"    (r.(regionDom), EReg (Build_Reg Bool (Some false) false))
+    Leaf "lineReadRpReady"  (r.(regionDom), ERecv Bool)
   ].
 
 Definition internalMemRegionChildren
@@ -293,7 +292,8 @@ Definition internalMemRegionChildren
            (isAccessible : bool)
            : list (Tree DomainElem) :=
   ([ Node "memBanks" (map (memBankLeaf r) (seq 0 (lineBytes r))) ;
-     Node "tagBanks" (map (tagBankLeaf r) (seq 0 (numLineTags r)))
+     Node "tagBanks" (map (tagBankLeaf r) (seq 0 (numLineTags r))) ;
+     Leaf "rpValid"  (r.(regionDom), EReg (Build_Reg Bool (Some false) false))
    ] ++ if isAccessible then internalMemTargetPortChildren r else [])%list.
 
 Definition externalMemRegionChildren (r : MemRegion) : list (Tree DomainElem) :=
@@ -383,6 +383,9 @@ Section InternalMemRegionActions.
     exact (leaf_list_path_tag_is_mem i).
   Defined.
 
+  Local Definition pRpValid : RegPath tInt :=
+    Build_RegPath tInt (inr (inr (inl tt))) I.
+
   Local Lemma memBankEq n (i : FinType n) :
     @getMemFromPathUnsafe (Node "memBanks" (map (memBankLeaf r) (seq 0 n))) (leaf_list_path_mem i) =
     {| memSize := numLines; memKind := Bit 8; memPort := 1; memInit := extractBankDataInit r (0 + i.(finNum)) |}.
@@ -456,7 +459,7 @@ Section InternalMemRegionActions.
   Let getLineOffsetIdx (addr : Expr ty Addr) : Expr ty (Bit (Z.log2_up (Z.of_nat numLines))) :=
     getMemOffset (Z.shiftr r.(regionBase) lgLineBytesZ) (Z.of_nat numLines) (lineIndex addr).
 
-  Definition internalMemRegionLineReadRq (addr : ty Addr)
+  Definition internalMemRegionIssueReadRq (addr : ty Addr)
              : Action ty tInt (Bit 0) :=
     Let lineIdx : Bit (Z.log2_up (Z.of_nat numLines)) <- getLineOffsetIdx #addr ;
     Act (fold_right (fun memIdx acc =>
@@ -470,7 +473,17 @@ Section InternalMemRegionActions.
       Retv
     ).
 
-  Definition internalMemRegionLineReadRp
+  Definition internalMemRegionLineReadRq (addr : ty Addr)
+             : Action ty tInt Bool :=
+    ReadReg "rpValid" pRpValid (fun rpValid =>
+    Let isReady : Bool <- Not #rpValid ;
+    If #isReady Then (
+      Act (internalMemRegionIssueReadRq addr) ;
+      WriteReg pRpValid (ConstBool true) Retv
+    ) ;
+    Return #isReady).
+
+  Definition internalMemRegionGetReadRp
              : Action ty tInt (LineReadRp r.(regionLineCfg)) :=
     LetA dataBytes : Array lBytes (Bit 8) <-
       fold_right (fun memIdx acc =>
@@ -495,11 +508,24 @@ Section InternalMemRegionActions.
       "tag"  ::= #tagArr
     }).
 
+  Definition internalMemRegionLineReadRp
+             : Action ty tInt (Option (LineReadRp r.(regionLineCfg))) :=
+    ReadReg "rpValid" pRpValid (fun rpValid =>
+    LetIf rpOpt : Option (LineReadRp r.(regionLineCfg)) <-
+      If #rpValid Then (
+        LetA rp : LineReadRp r.(regionLineCfg) <- internalMemRegionGetReadRp ;
+        Act (WriteReg pRpValid (ConstBool false) Retv) ;
+        Return (mkSome #rp)
+      ) Else (
+        Return ConstDef
+      ) ;
+    Return #rpOpt).
+
   Definition internalMemRegionLineWrite
              (rq : ty (LineWriteRq r.(regionLineCfg)))
-             : Action ty tInt (Bit 0) :=
+             : Action ty tInt Bool :=
     if r.(isReadOnly) then (
-      Retv
+      Return (ConstBool true)
     ) else (
       Let lineIdx : Bit (Z.log2_up (Z.of_nat numLines)) <- getLineOffsetIdx (##rq`"addr") ;
       Act (fold_right (fun memIdx acc =>
@@ -509,7 +535,7 @@ Section InternalMemRegionActions.
                          ) ;
                          acc)
                       Retv (genFinType lBytes)) ;
-      if hasTags r then (
+      Act (if hasTags r then (
         fold_right (fun tagIdx acc =>
                       If (ReadArrayConst (##rq`"tagMask") tagIdx) Then (
                         WriteMem (tagBankPath tagIdx) (tagSizeCast tagIdx #lineIdx)
@@ -519,12 +545,15 @@ Section InternalMemRegionActions.
                    Retv (genFinType nTags)
       ) else (
         Retv
-      )
+      )) ;
+      Return (ConstBool true)
     ).
 
 End InternalMemRegionActions.
 
+Arguments internalMemRegionIssueReadRq r isAccessible [ty] addr.
 Arguments internalMemRegionLineReadRq r isAccessible [ty] addr.
+Arguments internalMemRegionGetReadRp r isAccessible {ty}.
 Arguments internalMemRegionLineReadRp r isAccessible {ty}.
 Arguments internalMemRegionLineWrite r isAccessible [ty] rq.
 
@@ -539,7 +568,7 @@ Section InternalMemTargetPortActions.
   Local Definition pTargetPortLineWriteRqReady : SendPath tIntTargetPort := getChildSendPathTree tIntTargetPort "lineWriteRqReady".
   Local Definition pTargetPortLineReadRp       : SendPath tIntTargetPort := getChildSendPathTree tIntTargetPort "lineReadRp".
   Local Definition pTargetPortLineReadRpReady  : RecvPath tIntTargetPort := getChildRecvPathTree tIntTargetPort "lineReadRpReady".
-  Local Definition pTargetPortRpValid          : RegPath  tIntTargetPort := getChildRegPathTree  tIntTargetPort "targetRpValid".
+  Local Definition pTargetPortRpValid          : RegPath  tIntTargetPort := getChildRegPathTree  tIntTargetPort "rpValid".
 
   Definition internalMemRegionTargetPortReadRq : Action ty tIntTargetPort (Bit 0) :=
     ReadReg "rpValid" pTargetPortRpValid (fun rpValid =>
@@ -548,8 +577,7 @@ Section InternalMemTargetPortActions.
       Recv "rqOpt" pTargetPortLineReadRq (fun rqOpt =>
       If (##rqOpt `? "Some") Then (
         Let addr : Addr <- ##rqOpt `! "Some" ;
-        Act (internalMemRegionLineReadRq r true addr) ;
-        WriteReg pTargetPortRpValid (ConstBool true) Retv
+        internalMemRegionLineReadRq r true addr
       ) ;
       Retv))
     ) ;
@@ -559,7 +587,7 @@ Section InternalMemTargetPortActions.
     ReadReg "rpValid" pTargetPortRpValid (fun rpValid =>
     If #rpValid Then (
       LetA rp : LineReadRp r.(regionLineCfg) <-
-        internalMemRegionLineReadRp r true ;
+        internalMemRegionGetReadRp r true ;
       Send pTargetPortLineReadRp #rp (
       Recv "rpReady" pTargetPortLineReadRpReady (fun rpReady =>
       If #rpReady Then (
@@ -666,8 +694,9 @@ Definition memRegionLineRead
                                               | CustomMem children _ _ _ => customMemRegionTree r children
                                               end) (LineReadRp r.(regionLineCfg)) with
   | InternalMem isAccessible _ _ =>
-      Act (internalMemRegionLineReadRq r isAccessible addr) ;
-      internalMemRegionLineReadRp r isAccessible
+      LetA _     : Bool                                  <- internalMemRegionLineReadRq r isAccessible addr ;
+      LetA rpOpt : Option (LineReadRp r.(regionLineCfg)) <- internalMemRegionLineReadRp r isAccessible ;
+      Return (##rpOpt `! "Some")
   | ExternalMem =>
       LetA _     : Bool                                  <- externalMemRegionLineReadRq r addr ;
       LetA rpOpt : Option (LineReadRp r.(regionLineCfg)) <- externalMemRegionLineReadRp r ;

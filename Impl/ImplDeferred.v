@@ -76,7 +76,7 @@ Section DeferredStages.
    * ========================================================================= *)
   Definition loadRqOrStoreOrFence : Action ty coreTree (Bit 0) :=
     LetA inputHead           : Option DeferredReq <- liftAction np_inputFifo (@first dom capacity DeferredReq ty) ;
-    LetA outputBuffer_isFull : Bool               <- liftAction np_loadFifo (@isFull dom capacity PendingLoad ty) ;
+    LetA outputBuffer_isFull : Bool               <- liftAction np_loadFifo (@isFull dom capacity LoadCmd ty) ;
     LetA revRq_isEmpty       : Bool               <- liftAction np_revRqFifo (@isEmpty dom capacity RevCmd ty) ;
 
     Let inputBuffer_isValid  : Bool               <- #inputHead `? "Some" ;
@@ -125,7 +125,7 @@ Section DeferredStages.
             If (And [ Not #outputBuffer_isFull ; #revRq_isEmpty ]) Then (
               LetA accepted : Bool <- liftAction np_mem ((memIfc ty).(mem_readMemRq) ldAddr memSize) ;
               If #accepted Then (
-                Act (liftAction np_loadFifo (@enq dom capacity PendingLoad ty pending)) ;
+                Act (liftAction np_loadFifo (@enq dom capacity LoadCmd ty ld)) ;
                 liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
               ) ;
               Retv
@@ -137,8 +137,8 @@ Section DeferredStages.
           (* --- FENCE ACTION --- *)
           Let fn                    : FenceCmd <- ##mfAct `! "Fence" ;
           Let fenceOp               : FenceOp  <- ##fn`"fenceOp" ;
-          LetA outputBuffer_isEmpty : Bool     <- liftAction np_loadFifo (@isEmpty dom capacity PendingLoad ty) ;
-          LetA rev_isEmpty          : Bool     <- liftAction np_revFifo (@isEmpty dom capacity PendingRev ty) ;
+          LetA outputBuffer_isEmpty : Bool     <- liftAction np_loadFifo (@isEmpty dom capacity LoadCmd ty) ;
+          LetA rev_isEmpty          : Bool     <- liftAction np_revFifo (@isEmpty dom capacity RevCmd ty) ;
           If (Or [ Not (##fn`"needsEmpty") ; And [ #outputBuffer_isEmpty ; #revRq_isEmpty ; #rev_isEmpty ] ]) Then (
             LetA accepted : Bool <- liftAction np_mem ((memIfc ty).(mem_fence_req) fenceOp) ;
             If #accepted Then (
@@ -175,27 +175,30 @@ Section DeferredStages.
   (* =========================================================================
    * STAGE 2A: loadRpAndWritebackOrEnqueueRevRq
    *
-   * - Dequeues PendingLoad from loadFifo when mem_getMemRp returns Some.
+   * - Dequeues LoadCmd from loadFifo when mem_getMemRp returns Some.
    * - Uses dispatchLoadResponse for pure combinational response handling.
    *     - RevLookup: enqueues RevCmd into revRqFifo (separate from mem_readRevBitRq).
    *     - Writeback: writes back directly to Register File and clears waitBits.
    * ========================================================================= *)
   Definition loadRpAndWritebackOrEnqueueRevRq : Action ty coreTree (Bit 0) :=
-    LetA inputHead       : Option PendingLoad <- liftAction np_loadFifo (@first dom capacity PendingLoad ty) ;
-    LetA revRqBuf_isFull : Bool               <- liftAction np_revRqFifo (@isFull dom capacity RevCmd ty) ;
+    LetA inputHead       : Option LoadCmd <- liftAction np_loadFifo (@first dom capacity LoadCmd ty) ;
+    LetA revRqBuf_isFull : Bool           <- liftAction np_revRqFifo (@isFull dom capacity RevCmd ty) ;
 
     If (And [ #inputHead `? "Some" ; Not #revRqBuf_isFull ]) Then (
-      LetA memValOpt : Option FullCapWithTag <- liftAction np_mem ((memIfc ty).(mem_getMemRp)) ;
+      Let  ld        : LoadCmd                   <- #inputHead `! "Some" ;
+      Let  ldAddr    : Addr                      <- ##ld`"addr" ;
+      Let  pl        : PendingLoad               <- ##ld`"pending" ;
+      Let  memSize   : Bit LgLgNumBytesFullCapSz <- ##pl`"memSize" ;
+      LetA memValOpt : Option FullCapWithTag     <- liftAction np_mem ((memIfc ty).(mem_getMemRp) ldAddr memSize) ;
 
       If (##memValOpt `? "Some") Then (
-        Let pl      : PendingLoad    <- #inputHead `! "Some" ;
-        Let memVal  : FullCapWithTag <- ##memValOpt `! "Some" ;
-        LetL outcome : LoadOutcome   <- dispatchLoadResponse pl memVal false ;
+        Let memVal   : FullCapWithTag <- ##memValOpt `! "Some" ;
+        LetL outcome : LoadOutcome    <- dispatchLoadResponse pl memVal false ;
 
         If (#outcome `? "RevLookup") Then (
           Let revInfo : RevCmd <- #outcome `! "RevLookup" ;
           Act (liftAction np_revRqFifo (@enq dom capacity RevCmd ty revInfo)) ;
-          liftAction np_loadFifo (@deq dom capacity PendingLoad ty)
+          liftAction np_loadFifo (@deq dom capacity LoadCmd ty)
         ) Else (
           Let wbInfo     : WbCmd            <- #outcome `! "Writeback" ;
           Let dstIdxReal : Bit RegIdxSzReal <- TruncLsb 1 RegIdxSzReal (##wbInfo`"dstIdx") ;
@@ -205,7 +208,7 @@ Section DeferredStages.
           ) ;
           Act (liftAction np_waitBits (@clearWaitBits2 dom ty ($0 : Expr ty (Bit RegIdxSzReal)) (ConstBool true) #dstIdxReal (isNotZero #dstIdxReal))) ;
           Act (liftAction np_rf incrementMinstret) ;
-          liftAction np_loadFifo (@deq dom capacity PendingLoad ty)
+          liftAction np_loadFifo (@deq dom capacity LoadCmd ty)
         ) ;
         Retv
       ) ;
@@ -217,20 +220,19 @@ Section DeferredStages.
    * STAGE 2B: revRq
    *
    * - Dequeues RevCmd from revRqFifo, issues mem_readRevBitRq, and enqueues
-   *   PendingRev into revFifo.
+   *   RevCmd into revFifo.
    * ========================================================================= *)
   Definition revRq : Action ty coreTree (Bit 0) :=
     LetA inputHead     : Option RevCmd <- liftAction np_revRqFifo (@first dom capacity RevCmd ty) ;
-    LetA revBuf_isFull : Bool          <- liftAction np_revFifo (@isFull dom capacity PendingRev ty) ;
+    LetA revBuf_isFull : Bool          <- liftAction np_revFifo (@isFull dom capacity RevCmd ty) ;
 
     If (And [ #inputHead `? "Some" ; Not #revBuf_isFull ]) Then (
-      Let revInfo    : RevCmd           <- #inputHead `! "Some" ;
-      Let revBase    : Bit (AddrSz + 1) <- ##revInfo`"base" ;
-      Let pendingRev : PendingRev       <- ##revInfo`"pendingRev" ;
-      LetA accepted  : Bool             <- liftAction np_mem ((memIfc ty).(mem_readRevBitRq) revBase) ;
+      Let revInfo   : RevCmd           <- #inputHead `! "Some" ;
+      Let revBase   : Bit (AddrSz + 1) <- ##revInfo`"base" ;
+      LetA accepted : Bool             <- liftAction np_mem ((memIfc ty).(mem_readRevBitRq) revBase) ;
 
       If #accepted Then (
-        Act (liftAction np_revFifo (@enq dom capacity PendingRev ty pendingRev)) ;
+        Act (liftAction np_revFifo (@enq dom capacity RevCmd ty revInfo)) ;
         liftAction np_revRqFifo (@deq dom capacity RevCmd ty)
       ) ;
       Retv
@@ -240,18 +242,20 @@ Section DeferredStages.
   (* =========================================================================
    * STAGE 3: revRpAndWriteBack
    *
-   * - Dequeues PendingRev from revFifo when mem_getRevBitRp returns Some.
+   * - Dequeues RevCmd from revFifo when mem_getRevBitRp returns Some.
    * - Uses dispatchRevResponse for pure combinational final writeback value.
    * - Writes back final capability to Register File and clears waitBits.
    * ========================================================================= *)
   Definition revRpAndWriteBack : Action ty coreTree (Bit 0) :=
-    LetA inputHead : Option PendingRev <- liftAction np_revFifo (@first dom capacity PendingRev ty) ;
+    LetA inputHead : Option RevCmd <- liftAction np_revFifo (@first dom capacity RevCmd ty) ;
 
     If (#inputHead `? "Some") Then (
-      LetA revBitOpt : Option Bool <- liftAction np_mem ((memIfc ty).(mem_getRevBitRp)) ;
+      Let  revInfo   : RevCmd           <- #inputHead `! "Some" ;
+      Let  revBase   : Bit (AddrSz + 1) <- ##revInfo`"base" ;
+      Let  pr        : PendingRev       <- ##revInfo`"pendingRev" ;
+      LetA revBitOpt : Option Bool      <- liftAction np_mem ((memIfc ty).(mem_getRevBitRp) revBase) ;
 
       If (##revBitOpt `? "Some") Then (
-        Let  pr         : PendingRev       <- #inputHead `! "Some" ;
         Let  revBit     : Bool             <- ##revBitOpt `! "Some" ;
         LetL wbInfo     : WbCmd            <- dispatchRevResponse pr revBit ;
         Let  dstIdxReal : Bit RegIdxSzReal <- TruncLsb 1 RegIdxSzReal (##wbInfo`"dstIdx") ;
@@ -261,7 +265,7 @@ Section DeferredStages.
         ) ;
         Act (liftAction np_waitBits (@clearWaitBits2 dom ty ($0 : Expr ty (Bit RegIdxSzReal)) (ConstBool true) #dstIdxReal (isNotZero #dstIdxReal))) ;
         Act (liftAction np_rf incrementMinstret) ;
-        liftAction np_revFifo (@deq dom capacity PendingRev ty)
+        liftAction np_revFifo (@deq dom capacity RevCmd ty)
       ) ;
       Retv
     ) ;
