@@ -235,22 +235,8 @@ Section ImplMemRegionActions.
   Let tR := implMemRegionTree r.
   Let lBytes := lineBytes r.
   Let nTags := numLineTags r.
-  Let lgLineBytesZ := Z.of_nat (lgLineBytes r).
-
-  Let castAddr (addr : Expr ty Addr) : Expr ty (Bit ((lgLineBytesZ + (AddrSz - lgLineBytesZ))%Z)) :=
-    castBits (eq_sym (add_sub_cancel AddrSz lgLineBytesZ)) addr.
-
-  Let lineOffset (addr : Expr ty Addr) : Expr ty (Bit lgLineBytesZ) :=
-    TruncLsb (AddrSz - lgLineBytesZ)%Z lgLineBytesZ (castAddr addr).
-
-  Let lgNumDXlenZ : Z := (lgLineBytesZ - LgNumBytesFullCapSz)%Z.
-
-  Let castLineOffsetForTag (offset : Expr ty (Bit lgLineBytesZ))
-    : Expr ty (Bit (LgNumBytesFullCapSz + lgNumDXlenZ)%Z) :=
-    castBits (eq_sym (add_sub_cancel lgLineBytesZ LgNumBytesFullCapSz)) offset.
-
-  Let tagSlot (addr : Expr ty Addr) : Expr ty (Bit lgNumDXlenZ) :=
-    TruncMsb lgNumDXlenZ LgNumBytesFullCapSz (castLineOffsetForTag (lineOffset addr)).
+  Let lgLineBytesZ := memLgLineBytesZ r.
+  Let lgNumDXlenZ := memLgNumDXlenZ r.
 
   Let extractReadCap
                    (addr : Expr ty Addr)
@@ -261,12 +247,12 @@ Section ImplMemRegionActions.
     let capOffset := TruncLsb TagAddrWidth LgNumBytesFullCapSz addr in
     let isCapAligned := isZero capOffset in
     let isCap := And [Eq memSize $LgNumBytesFullCapSz ; isCapAligned] in
-    let rotData := ArrayRotr lineData (lineOffset addr) in
+    let rotData := ArrayRotr lineData (memLineOffset r addr) in
     let dataBytes := slice rotData (Const ty (Bit lgLineBytesZ) Zmod.zero) (Z.to_nat NumBytesFullCapSz) in
     let rawData := ToBit dataBytes in
     let rawTag :=
       if hasTags r then
-        ReadArray tagArr (tagSlot addr)
+        ReadArray tagArr (memTagSlot r addr)
       else
         ConstBool false in
     STRUCT {
@@ -313,7 +299,7 @@ Section ImplMemRegionActions.
       Let capBytes : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <-
         FromBit (Array (Z.to_nat NumBytesFullCapSz) (Bit 8)) #rawData ;
       Let baseData : Array lBytes (Bit 8) <- embedCapBytes lBytes #capBytes ;
-      Let rotData  : Array lBytes (Bit 8) <- ArrayRotl #baseData (lineOffset #addr) ;
+      Let rotData  : Array lBytes (Bit 8) <- ArrayRotl #baseData (memLineOffset r #addr) ;
       Let numBytesActive : Bit (lgLineBytesZ + 1)%Z <-
         Sll $1 (ZeroExtend (lgLineBytesZ + 1 - LgLgNumBytesFullCapSz)%Z #memSize) ;
       Let numBytesActiveDXlen : Bit (LgNumBytesFullCapSz + 1)%Z <-
@@ -323,18 +309,18 @@ Section ImplMemRegionActions.
       Let crossesDXlen : Bool <- FromBit Bool (TruncMsb 1 LgNumBytesFullCapSz (Sub #endOffsetDXlen $1)) ;
       Let isWrites : Array lBytes Bool <-
         FromBit (Array lBytes Bool)
-          (rotateLeft (Not (Sll (ConstBit (InvDefault _)) #numBytesActive)) (lineOffset #addr)) ;
+          (rotateLeft (Not (Sll (ConstBit (InvDefault _)) #numBytesActive)) (memLineOffset r #addr)) ;
       Let tagData : Array nTags Bool <-
         if hasTags r then
-          UpdateArray ConstDef (tagSlot #addr) (And [ #isCap ; ##stVal`"tag" ])
+          UpdateArray ConstDef (memTagSlot r #addr) (And [ #isCap ; ##stVal`"tag" ])
         else
           ConstDef ;
-      Let nextTagSlot : Bit lgNumDXlenZ <- Add [ tagSlot #addr ; $1 ] ;
+      Let nextTagSlot : Bit lgNumDXlenZ <- Add [ memTagSlot r #addr ; $1 ] ;
       Let tagMask : Array nTags Bool <-
         if hasTags r then
           UpdateArray
             (UpdateArray ConstDef #nextTagSlot #crossesDXlen)
-            (tagSlot #addr)
+            (memTagSlot r #addr)
             (ConstBool true)
         else
           ConstDef ;
