@@ -150,18 +150,14 @@ Section ImplCustomMemRegionActions.
     ReadReg "rpRegVal" pRpReg (fun rpRegVal =>
     Let isReady : Bool <- Not (##rpRegVal `? "Some") ;
     If #isReady Then (
-      LetA rp : LineReadRp r.(regionLineCfg) <- liftAction child0Path (readAction addr) ;
+      LetA rp : LineReadRp r.(regionLineCfg) <- liftAction child0Path (customMemRegionLineRead r children readAction addr) ;
       WriteReg pRpReg (mkSome #rp) Retv
     ) ;
     Return #isReady).
 
   Definition customMemLineWriteRq (rq : ty (LineWriteRq r.(regionLineCfg))) : Action ty tCust Bool :=
-    if r.(isReadOnly) then (
-      Return (ConstBool true)
-    ) else (
-      LetA _ : Bit 0 <- liftAction child0Path (writeAction rq) ;
-      Return (ConstBool true)
-    ).
+    LetA _ : Bit 0 <- liftAction child0Path (customMemRegionLineWrite r children writeAction rq) ;
+    Return (ConstBool true).
 
   Definition customMemLineReadRp : Action ty tCust (Option (LineReadRp r.(regionLineCfg))) :=
     ReadReg "rpRegVal" pRpReg (fun rpRegVal =>

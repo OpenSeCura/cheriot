@@ -33,7 +33,7 @@ Local Open Scope guru_scope.
 
 Definition RamBase        : Z := MemStartAddr.
 Definition RamSize        : Z := 256 * 1024. (* 256 KB *)
-Definition RamLineConfig  : LineConfig := @TaggedLine (Z.to_nat LgNumBytesFullCapSz) I.
+Definition RamLineConfig  : LineConfig := @TaggedLine (S (Z.to_nat LgNumBytesFullCapSz)) I.
 
 Definition RevTableBase       : Z := 0x83000000.
 Definition RevTableSize       : Z := 4 * 1024. (* 4 KB bitmap *)
