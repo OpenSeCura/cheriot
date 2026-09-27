@@ -239,15 +239,6 @@ Section MemAddrHelpers.
   Definition memNextLineAddr (addr : Expr ty Addr) : Expr ty Addr :=
     Add [ memLineAddr addr ; $(Z.of_nat lBytes) ].
 
-  Definition memAlignLineWriteRq (rq : Expr ty (LineWriteRq r.(regionLineCfg))) : Expr ty (LineWriteRq r.(regionLineCfg)) :=
-    STRUCT {
-      "addr"     ::= memLineAddr (rq`"addr") ;
-      "data"     ::= rq`"data" ;
-      "dataMask" ::= rq`"dataMask" ;
-      "tag"      ::= rq`"tag" ;
-      "tagMask"  ::= rq`"tagMask"
-    }.
-
   Definition memAdd1 (addr : Expr ty Addr) : Expr ty (Array lBytes Bool) :=
     FromBit (Array lBytes Bool)
       (Not (Sll (ConstBit (InvDefault _)) (memLineOffset addr))).
@@ -394,7 +385,6 @@ Arguments memLineOffset r [ty] addr.
 Arguments memLineOffsetIdx r [ty] addr.
 Arguments memLineAddr r [ty] addr.
 Arguments memNextLineAddr r [ty] addr.
-Arguments memAlignLineWriteRq r [ty] rq.
 Arguments memAdd1 r [ty] addr.
 Arguments memCastLineOffsetForTag r [ty] offset.
 Arguments memTagSlot r [ty] addr.
@@ -713,15 +703,13 @@ Section InternalMemTargetPortActions.
 
   Definition internalMemRegionTargetPortRead : Action ty tIntTargetPort (Bit 0) :=
     Recv "addr" pTargetPortLineReadRq (fun addr =>
-    Let alignedAddr : Addr <- memLineAddr r #addr ;
     LetA rp : LineReadRp r.(regionLineCfg) <-
-      internalMemRegionLineRead r true alignedAddr ;
+      internalMemRegionLineRead r true addr ;
     Send pTargetPortLineReadRp #rp Retv).
 
   Definition internalMemRegionTargetPortWrite : Action ty tIntTargetPort (Bit 0) :=
     Recv "rq" pTargetPortLineWriteRq (fun rq =>
-    Let alignedRq : LineWriteRq r.(regionLineCfg) <- memAlignLineWriteRq r #rq ;
-    internalMemRegionLineWrite r true alignedRq).
+    internalMemRegionLineWrite r true rq).
 
 End InternalMemTargetPortActions.
 
@@ -739,8 +727,7 @@ Section ExternalMemRegionActions.
 
   Definition externalMemRegionLineRead (addr : ty Addr)
              : Action ty tExt (LineReadRp r.(regionLineCfg)) :=
-    Let alignedAddr : Addr <- memLineAddr r #addr ;
-    Send pLineReadRq #alignedAddr (
+    Send pLineReadRq #addr (
     Recv "rp" pLineReadRp (fun rp =>
     Return #rp)).
 
@@ -750,8 +737,7 @@ Section ExternalMemRegionActions.
     if r.(isReadOnly) then (
       Retv
     ) else (
-      Let alignedRq : LineWriteRq r.(regionLineCfg) <- memAlignLineWriteRq r #rq ;
-      Send pLineWriteRq #alignedRq Retv
+      Send pLineWriteRq #rq Retv
     ).
 
 End ExternalMemRegionActions.
@@ -773,8 +759,7 @@ Section CustomMemRegionActions.
 
   Definition customMemRegionLineRead (addr : ty Addr)
              : Action ty tCust (LineReadRp r.(regionLineCfg)) :=
-    Let alignedAddr : Addr <- memLineAddr r #addr ;
-    readAction alignedAddr.
+    readAction addr.
 
   Definition customMemRegionLineWrite
              (rq : ty (LineWriteRq r.(regionLineCfg)))
@@ -782,8 +767,7 @@ Section CustomMemRegionActions.
     if r.(isReadOnly) then (
       Retv
     ) else (
-      Let alignedRq : LineWriteRq r.(regionLineCfg) <- memAlignLineWriteRq r #rq ;
-      writeAction alignedRq
+      writeAction rq
     ).
 
 End CustomMemRegionActions.
