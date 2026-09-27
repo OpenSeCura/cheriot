@@ -48,25 +48,26 @@ Definition RevokerSizeBytes : Z := Eval compute in (Z.of_nat RevokerNumRegs * Nu
 
 Section Revoker.
   Variable dom : string.
+  Variable extraChildren : list (Tree DomainElem).
 
   Definition revokerChildren : list (Tree DomainElem) :=
-    [ Leaf "base" (dom, EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero) false)) ;
-      Leaf "top" (dom, EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero) false)) ;
-      Leaf "control" (dom, EReg (Build_Reg Bool (Some false) false)) ;
-      Leaf "epoch" (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false)) ;
-      Leaf "interruptStatus" (dom, EReg (Build_Reg Bool (Some false) false)) ;
-      Leaf "interruptRequested" (dom, EReg (Build_Reg Bool (Some false) false)) ;
-      Leaf "scanAddr" (dom, EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero) false)) ].
+    ([ Leaf "base" (dom, EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero) false)) ;
+       Leaf "top" (dom, EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero) false)) ;
+       Leaf "control" (dom, EReg (Build_Reg Bool (Some false) false)) ;
+       Leaf "epoch" (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false)) ;
+       Leaf "interruptStatus" (dom, EReg (Build_Reg Bool (Some false) false)) ;
+       Leaf "interruptRequested" (dom, EReg (Build_Reg Bool (Some false) false)) ;
+       Leaf "scanAddr" (dom, EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero) false)) ] ++ extraChildren)%list.
 
   Local Notation tRev := (Node "revoker" revokerChildren).
 
-  Definition revokerBasePath : RegPath tRev := getChildRegPathTree tRev "base".
-  Definition revokerTopPath : RegPath tRev := getChildRegPathTree tRev "top".
-  Definition revokerControlPath : RegPath tRev := getChildRegPathTree tRev "control".
-  Definition revokerEpochPath : RegPath tRev := getChildRegPathTree tRev "epoch".
-  Definition revokerInterruptStatusPath : RegPath tRev := getChildRegPathTree tRev "interruptStatus".
-  Definition revokerInterruptRequestedPath : RegPath tRev := getChildRegPathTree tRev "interruptRequested".
-  Definition revokerScanAddrPath : RegPath tRev := getChildRegPathTree tRev "scanAddr".
+  Definition revokerBasePath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "base").
+  Definition revokerTopPath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "top").
+  Definition revokerControlPath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "control").
+  Definition revokerEpochPath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "epoch").
+  Definition revokerInterruptStatusPath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "interruptStatus").
+  Definition revokerInterruptRequestedPath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "interruptRequested").
+  Definition revokerScanAddrPath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "scanAddr").
 
   Definition RevokerLineConfig : LineConfig := RawLine (Z.to_nat LgNumBytesXlen).
 

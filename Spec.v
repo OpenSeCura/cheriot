@@ -44,7 +44,7 @@ Section SpecDom.
     Variable config : RevConfig.
     Variable regions : list MemRegion.
     Variable clint : @ClintInstance core regions.
-    Variable rev : @RevokerInstance core regions.
+    Variable rev : @RevokerInstance core [] regions.
     Variable plic : @PlicInstance core (S (S (length (collectIrqActions regions)))) regions.
     Local Notation sysTree := (specSysTree regions).
     Local Notation gprPathsWithKind := (gprPathsWithKind core pcAddrInit).

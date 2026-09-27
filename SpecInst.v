@@ -112,7 +112,7 @@ Definition concreteRegions : list MemRegion := [
   ramRegion ;
   revTableRegion ;
   @clintMemRegion "core" ClintBaseAddr I I ;
-  @revokerMemRegion "core" RevokerBaseAddr I I ;
+  @revokerMemRegion "core" [] RevokerBaseAddr I I ;
   @plicMemRegion "core" 3 PlicBaseAddr I I ;
   extMemRegion
 ].
@@ -122,8 +122,8 @@ Definition concreteRegionsDisjoint : Is_true (pairwiseDisjoint concreteRegions) 
 Definition concreteClint : @ClintInstance "core" concreteRegions :=
   @Build_ClintInstance "core" concreteRegions 2%nat ClintBaseAddr I I eq_refl.
 
-Definition concreteRevoker : @RevokerInstance "core" concreteRegions :=
-  @Build_RevokerInstance "core" concreteRegions 3%nat RevokerBaseAddr I I eq_refl.
+Definition concreteRevoker : @RevokerInstance "core" [] concreteRegions :=
+  @Build_RevokerInstance "core" [] concreteRegions 3%nat RevokerBaseAddr I I eq_refl.
 
 Definition concretePlic : @PlicInstance "core" 3%nat concreteRegions :=
   @Build_PlicInstance "core" 3%nat concreteRegions 4%nat PlicBaseAddr I I I eq_refl.
