@@ -1134,9 +1134,15 @@ Definition ControlFlowAddrOnlyOpType := [
 ].
 Definition ControlFlowAddrOnlyOp := TaggedUnion ControlFlowAddrOnlyOpType.
 
+Definition MretTrapOpType := [
+  ("Mret"%string, Bit 0) ;
+  ("Trap"%string, Bit 0)
+].
+Definition MretTrapOp := TaggedUnion MretTrapOpType.
+
 Definition ControlFlowAddrECapOpType := [
-  ("Cjalr"%string,  Bool) ;
-  ("Mret"%string,   Bit 0)
+  ("Cjalr"%string,    Bool) ;
+  ("MretTrap"%string, MretTrapOp)
 ].
 Definition ControlFlowAddrECapOp := TaggedUnion ControlFlowAddrECapOpType.
 

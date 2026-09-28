@@ -93,11 +93,12 @@ Section ImplRevoker.
     (* Split-Phase Autonomous Revoker Steps *)
     Variable memTree      : Tree DomainElem.
     Variable revAct       : forall {k : Kind}, Action ty implRevokerTree k -> Action ty memTree k.
-    Variable readMemRq    : ty Addr -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree Bool.
-    Variable getMemRp     : ty Addr -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree (Option FullCapWithTag).
-    Variable readRevBitRq : ty (Bit (AddrSz + 1)) -> Action ty memTree Bool.
-    Variable getRevBitRp  : ty (Bit (AddrSz + 1)) -> Action ty memTree (Option Bool).
-    Variable writeMem     : ty Addr -> ty FullCapWithTag -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree Bool.
+    Variable readMemRq      : ty Addr -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree Bool.
+    Variable getMemRp       : ty Addr -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree (Option FullCapWithTag).
+    Variable deqMemRp       : ty Addr -> Action ty memTree (Bit 0).
+    Variable readRevBitRq   : ty (Bit (AddrSz + 1)) -> Action ty memTree Bool.
+    Variable getDeqRevBitRp : ty (Bit (AddrSz + 1)) -> Action ty memTree (Option Bool).
+    Variable writeMem       : ty Addr -> ty FullCapWithTag -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree Bool.
 
     Local Definition advanceScanAndReset (nextScanAddrMsb : ty (Bit TagAddrWidth)) : Action ty memTree (Bit 0) :=
       Act (revAct (WriteReg pScanAddr #nextScanAddrMsb Retv)) ;
@@ -163,6 +164,7 @@ Section ImplRevoker.
         Let capSz           : Bit LgLgNumBytesFullCapSz <- $LgNumBytesFullCapSz ;
         LetA rpOpt          : Option FullCapWithTag     <- getMemRp scanAddr capSz ;
         If (##rpOpt `? "Some") Then (
+          Act (deqMemRp scanAddr) ;
           Let ldFullCap   : FullCapWithTag <- ##rpOpt `! "Some" ;
           Let ldCap       : Cap            <- ##ldFullCap`"cap" ;
           Let ldAddr      : Addr           <- ##ldFullCap`"addr" ;
@@ -207,7 +209,7 @@ Section ImplRevoker.
         Let ldAddr          : Addr             <- ##savedCap`"addr" ;
         LetA ldECap         : ECap             <- toAction memTree (DecodeCap ldCap ldAddr) ;
         Let ldBase          : Bit (AddrSz + 1) <- ##ldECap`"base" ;
-        LetA revOpt         : Option Bool      <- getRevBitRp ldBase ;
+        LetA revOpt         : Option Bool      <- getDeqRevBitRp ldBase ;
         If (##revOpt `? "Some") Then (
           Let revBit : Bool <- ##revOpt `! "Some" ;
           If #revBit Then (

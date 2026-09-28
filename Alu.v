@@ -455,18 +455,25 @@ Section AluRF.
                                                               ##noExc `? "NotDeferred" ;
                                                               ##notDeferredVal `? "NormalFenceI" ;
                                                               ##normFence `? "FenceI" ] ;
+    LetA mtcc           : FullECapWithTag            <- readRegsList scrPathsWithKind ($(getScrIdx "Mtcc") : Expr ty (Bit ScrIdxSz)) ;
+    Let  trapCfVal      : CfPayload                  <- STRUCT {
+      "NewPcc" ::= #mtcc ;
+      "CfOp"   ::= UNION (CfOpType, "ControlFlowAddrECap" ::=
+                     UNION (ControlFlowAddrECapOpType, "MretTrap" ::=
+                       UNION (MretTrapOpType, "Trap" ::= Const ty (Bit 0) Zmod.zero)))
+    } ;
     Let  cfScrCsr       : CfScrCsrUnion              <- #notDeferredVal `! "CfScrCsr" ;
     Let  cfVal          : CfPayload                  <- #cfScrCsr `! "ControlFlow" ;
     Let  isCf           : Bool                       <- And [ Not #isTrap ;
                                                               ##noExc `? "NotDeferred" ;
                                                               ##notDeferredVal `? "CfScrCsr" ;
                                                               ##cfScrCsr `? "ControlFlow" ] ;
-    Let  cfOpt          : Option CfPayload           <- ITE0 #isCf (mkSome #cfVal) ;
+    Let  cfOpt          : Option CfPayload           <- Or [ ITE0 #isTrap (mkSome #trapCfVal) ;
+                                                             ITE0 #isCf (mkSome #cfVal) ] ;
 
     If #isTrap Then
       (
         Let  excVal     : ExceptionInfo   <- #aluOp `! "Exception" ;
-        LetA mtcc       : FullECapWithTag <- readRegsList scrPathsWithKind ($(getScrIdx "Mtcc") : Expr ty (Bit ScrIdxSz)) ;
         Let  mstatus1   : Bit Xlen        <- setMstatusMPIE #mstatus #currMIE ;
         Let  newMstatus : Bit Xlen        <- setMstatusMIE #mstatus1 (ConstBool false) ;
         Let  newMcause  : Bit Xlen        <- ITE #isInterrupt
