@@ -59,6 +59,23 @@ Record MemIfc {ty : Kind -> Type} := {
  * Implementation Region Trees (Wrapping Spec memRegionTree)
  * =========================================================================== *)
 
+Definition ExtRegionStateList (cfg : LineConfig) : list (string * Kind) :=
+  [ ("Idle",     Bit 0) ;
+    ("ReadWait", Bit 0) ;
+    ("ReadRp0",  LineReadRp cfg) ;
+    ("WriteRq1", LineWriteRq cfg) ].
+
+Definition ExtRegionState (cfg : LineConfig) : Kind :=
+  TaggedUnion (ExtRegionStateList cfg).
+
+Definition CustomRegionStateList (cfg : LineConfig) : list (string * Kind) :=
+  [ ("Idle",     Bit 0) ;
+    ("ReadRp0",  LineReadRp cfg) ;
+    ("WriteRq1", LineWriteRq cfg) ].
+
+Definition CustomRegionState (cfg : LineConfig) : Kind :=
+  TaggedUnion (CustomRegionStateList cfg).
+
 Definition implInternalMemRegionExtraChildren (r : MemRegion) : list (Tree DomainElem) :=
   [ Leaf "rpValid" (r.(regionDom), EReg (Build_Reg Bool (Some false) false)) ].
 
@@ -67,16 +84,12 @@ Definition implExternalMemRegionExtraChildren (r : MemRegion) : list (Tree Domai
     Leaf "lineWriteRqReady" (r.(regionDom), ERecv Bool) ;
     Leaf "lineReadRpValid"  (r.(regionDom), ERecv Bool) ;
     Leaf "lineReadRpReady"  (r.(regionDom), ESend (Bit 0)) ;
-    Leaf "readBusy"         (r.(regionDom), EReg (Build_Reg Bool (Some false) false)) ;
-    Leaf "nextLineAddr"     (r.(regionDom), EReg (Build_Reg (Option Addr) (Some (getDefault _)) false)) ;
-    Leaf "rpReg"            (r.(regionDom), EReg (Build_Reg (Option (LineReadRp r.(regionLineCfg))) (Some (getDefault _)) false)) ;
-    Leaf "pendingWrite"     (r.(regionDom), EReg (Build_Reg (Option (LineWriteRq r.(regionLineCfg))) (Some (getDefault _)) false))
+    Leaf "state"            (r.(regionDom), EReg (Build_Reg (ExtRegionState r.(regionLineCfg)) (Some (getDefault _)) false)) ;
+    Leaf "nextLineAddr"     (r.(regionDom), EReg (Build_Reg (Option Addr) (Some (getDefault _)) false))
   ].
 
 Definition implCustomMemRegionExtraChildren (r : MemRegion) : list (Tree DomainElem) :=
-  [ Leaf "rpReg"        (r.(regionDom), EReg (Build_Reg (Option (LineReadRp r.(regionLineCfg))) (Some (getDefault _)) false)) ;
-    Leaf "pendingWrite" (r.(regionDom), EReg (Build_Reg (Option (LineWriteRq r.(regionLineCfg))) (Some (getDefault _)) false))
-  ].
+  [ Leaf "state" (r.(regionDom), EReg (Build_Reg (CustomRegionState r.(regionLineCfg)) (Some (getDefault _)) false)) ].
 
 Definition implInternalMemRegionTree (r : MemRegion) (isAccessible : bool) : Tree DomainElem :=
   Node r.(regionName) (internalMemRegionTree r isAccessible :: implInternalMemRegionExtraChildren r).
@@ -239,10 +252,8 @@ Section ImplExternalMemRegionActions.
   Local Definition pLineWriteRqReady : RecvPath tImplExt := Eval cbn in (getChildRecvPathTree tImplExt "lineWriteRqReady").
   Local Definition pLineReadRpValid  : RecvPath tImplExt := Eval cbn in (getChildRecvPathTree tImplExt "lineReadRpValid").
   Local Definition pLineReadRpReady  : SendPath tImplExt := Eval cbn in (getChildSendPathTree tImplExt "lineReadRpReady").
-  Local Definition pExtReadBusy      : RegPath  tImplExt := Eval cbn in (getChildRegPathTree  tImplExt "readBusy").
+  Local Definition pExtState         : RegPath  tImplExt := Eval cbn in (getChildRegPathTree  tImplExt "state").
   Local Definition pExtNextLineAddr  : RegPath  tImplExt := Eval cbn in (getChildRegPathTree  tImplExt "nextLineAddr").
-  Local Definition pExtRpReg         : RegPath  tImplExt := Eval cbn in (getChildRegPathTree  tImplExt "rpReg").
-  Local Definition pExtPendingWrite  : RegPath  tImplExt := Eval cbn in (getChildRegPathTree  tImplExt "pendingWrite").
 
   Definition implExternalMemRegionLineReadRq (addr : ty Addr)
              : Action ty tImplExt Bool :=
@@ -281,15 +292,13 @@ Section ImplExternalMemRegionActions.
              (addr : ty Addr)
              (memSize : ty (Bit LgLgNumBytesFullCapSz))
              : Action ty tImplExt Bool :=
-    ReadReg "readBusy" pExtReadBusy (fun readBusy =>
-    ReadReg "pendingWrite" pExtPendingWrite (fun pendingWrite =>
-    Let isIdle : Bool <- And [ Not #readBusy ; Not (##pendingWrite `? "Some") ] ;
+    ReadReg "state" pExtState (fun state =>
     LetIf rdy : Bool <-
-      If #isIdle Then (
+      If (##state `? "Idle") Then (
         Let  addr0 : Addr <- memLineAddr r #addr ;
         LetA rdy0  : Bool <- implExternalMemRegionLineReadRq addr0 ;
         If #rdy0 Then (
-          Act (WriteReg pExtReadBusy (ConstBool true) Retv) ;
+          Act (WriteReg pExtState (UNION (ExtRegionStateList r.(regionLineCfg), "ReadWait" ::= ($0 : Expr ty (Bit 0)))) Retv) ;
           Let crosses : Bool <- memCrossesLine r #addr #memSize ;
           If #crosses Then (
             Let addr1 : Addr <- memNextLineAddr r #addr ;
@@ -299,27 +308,25 @@ Section ImplExternalMemRegionActions.
         ) ;
         Return #rdy0
       ) ;
-    Return #rdy)).
+    Return #rdy).
 
   Definition implExternalMemRegionReadRp0 : Action ty tImplExt (Bit 0) :=
-    ReadReg "readBusy" pExtReadBusy (fun readBusy =>
+    ReadReg "state" pExtState (fun state =>
     ReadReg "nextLineAddr" pExtNextLineAddr (fun nextLineAddr =>
-    ReadReg "rpReg" pExtRpReg (fun rpReg =>
-    If (And [ #readBusy ; ##nextLineAddr `? "Some" ; Not (##rpReg `? "Some") ]) Then (
+    If (And [ ##state `? "ReadWait" ; ##nextLineAddr `? "Some" ]) Then (
       LetA rp0Opt : Option (LineReadRp r.(regionLineCfg)) <- implExternalMemRegionLineReadRp ;
       If (##rp0Opt `? "Some") Then (
         Let rp0 : LineReadRp r.(regionLineCfg) <- ##rp0Opt `! "Some" ;
-        WriteReg pExtRpReg (mkSome #rp0) Retv
+        WriteReg pExtState (UNION (ExtRegionStateList r.(regionLineCfg), "ReadRp0" ::= #rp0)) Retv
       ) ;
       Retv
     ) ;
-    Retv))).
+    Retv)).
 
   Definition implExternalMemRegionReadRq1 : Action ty tImplExt (Bit 0) :=
-    ReadReg "readBusy" pExtReadBusy (fun readBusy =>
+    ReadReg "state" pExtState (fun state =>
     ReadReg "nextLineAddr" pExtNextLineAddr (fun nextLineAddr =>
-    ReadReg "rpReg" pExtRpReg (fun rpReg =>
-    If (And [ #readBusy ; ##nextLineAddr `? "Some" ; ##rpReg `? "Some" ]) Then (
+    If (And [ ##state `? "ReadRp0" ; ##nextLineAddr `? "Some" ]) Then (
       Let  addr1 : Addr <- ##nextLineAddr `! "Some" ;
       LetA rdy1  : Bool <- implExternalMemRegionLineReadRq addr1 ;
       If #rdy1 Then (
@@ -327,38 +334,33 @@ Section ImplExternalMemRegionActions.
       ) ;
       Retv
     ) ;
-    Retv))).
-
-  Definition implExternalMemRegionReadStep : Action ty tImplExt (Bit 0) :=
-    Act implExternalMemRegionReadRp0 ;
-    implExternalMemRegionReadRq1.
+    Retv)).
 
   Definition implExternalMemRegionReadRp
              (addr : ty Addr)
              (memSize : ty (Bit LgLgNumBytesFullCapSz))
              : Action ty tImplExt (Option FullCapWithTag) :=
-    ReadReg "readBusy" pExtReadBusy (fun readBusy =>
+    ReadReg "state" pExtState (fun state =>
     ReadReg "nextLineAddr" pExtNextLineAddr (fun nextLineAddr =>
-    ReadReg "rpReg" pExtRpReg (fun rpReg =>
     LetIf resOpt : Option FullCapWithTag <-
-      If (And [ #readBusy ; Not (##nextLineAddr `? "Some") ]) Then (
+      If (And [ Or [ ##state `? "ReadWait" ; ##state `? "ReadRp0" ] ;
+                Not (##nextLineAddr `? "Some") ]) Then (
         LetA lastRpOpt : Option (LineReadRp r.(regionLineCfg)) <- implExternalMemRegionLineReadRp ;
         LetIf rOpt : Option FullCapWithTag <-
           If (##lastRpOpt `? "Some") Then (
             Let lastRp : LineReadRp r.(regionLineCfg) <- ##lastRpOpt `! "Some" ;
             Let rp0    : LineReadRp r.(regionLineCfg) <-
-              ITE (##rpReg `? "Some") (##rpReg `! "Some") #lastRp ;
+              ITE (##state `? "ReadRp0") (##state `! "ReadRp0") #lastRp ;
             Let rp1    : LineReadRp r.(regionLineCfg) <-
-              ITE (##rpReg `? "Some") #lastRp ConstDef ;
+              ITE (##state `? "ReadRp0") #lastRp ConstDef ;
             Let rp     : LineReadRp r.(regionLineCfg) <- memMergeLineReadRp r #addr #rp0 #rp1 ;
             Let res    : FullCapWithTag               <- memExtractReadCap r #addr #memSize #rp ;
-            Act (WriteReg pExtReadBusy (ConstBool false) Retv) ;
-            Act (WriteReg pExtRpReg ConstDef Retv) ;
+            Act (WriteReg pExtState (UNION (ExtRegionStateList r.(regionLineCfg), "Idle" ::= ($0 : Expr ty (Bit 0)))) Retv) ;
             Return (mkSome #res)
           ) ;
         Return #rOpt
       ) ;
-    Return #resOpt))).
+    Return #resOpt)).
 
   Definition implExternalMemRegionWriteRq
              (addr : ty Addr)
@@ -368,11 +370,9 @@ Section ImplExternalMemRegionActions.
     if r.(isReadOnly) then (
       Return (ConstBool true)
     ) else (
-      ReadReg "readBusy" pExtReadBusy (fun readBusy =>
-      ReadReg "pendingWrite" pExtPendingWrite (fun pendingWrite =>
-      Let isIdle : Bool <- And [ Not #readBusy ; Not (##pendingWrite `? "Some") ] ;
+      ReadReg "state" pExtState (fun state =>
       LetIf rdy : Bool <-
-        If #isIdle Then (
+        If (##state `? "Idle") Then (
           Let  rq   : LineWriteRq r.(regionLineCfg) <- memBuildLineWriteRq r #addr #stVal #memSize ;
           Let  rq0  : LineWriteRq r.(regionLineCfg) <- memLineWriteRq0 r #rq ;
           LetA rdy0 : Bool                          <- implExternalMemRegionLineWriteRq rq0 ;
@@ -380,25 +380,25 @@ Section ImplExternalMemRegionActions.
             Let crosses : Bool <- memCrossesLine r #addr #memSize ;
             If #crosses Then (
               Let rq1 : LineWriteRq r.(regionLineCfg) <- memLineWriteRq1 r #rq ;
-              WriteReg pExtPendingWrite (mkSome #rq1) Retv
+              WriteReg pExtState (UNION (ExtRegionStateList r.(regionLineCfg), "WriteRq1" ::= #rq1)) Retv
             ) ;
             Retv
           ) ;
           Return #rdy0
         ) ;
-      Return #rdy))
+      Return #rdy)
     ).
 
   Definition implExternalMemRegionWriteStep : Action ty tImplExt (Bit 0) :=
     if r.(isReadOnly) then (
       Retv
     ) else (
-      ReadReg "pendingWrite" pExtPendingWrite (fun pendingWrite =>
-      If (##pendingWrite `? "Some") Then (
-        Let  rq1  : LineWriteRq r.(regionLineCfg) <- ##pendingWrite `! "Some" ;
+      ReadReg "state" pExtState (fun state =>
+      If (##state `? "WriteRq1") Then (
+        Let  rq1  : LineWriteRq r.(regionLineCfg) <- ##state `! "WriteRq1" ;
         LetA rdy1 : Bool                          <- implExternalMemRegionLineWriteRq rq1 ;
         If #rdy1 Then (
-          WriteReg pExtPendingWrite ConstDef Retv
+          WriteReg pExtState (UNION (ExtRegionStateList r.(regionLineCfg), "Idle" ::= ($0 : Expr ty (Bit 0)))) Retv
         ) ;
         Retv
       ) ;
@@ -413,7 +413,6 @@ Arguments implExternalMemRegionLineWriteRq r [ty] rq.
 Arguments implExternalMemRegionReadRq r [ty] addr memSize.
 Arguments implExternalMemRegionReadRp0 r {ty}.
 Arguments implExternalMemRegionReadRq1 r {ty}.
-Arguments implExternalMemRegionReadStep r {ty}.
 Arguments implExternalMemRegionReadRp r [ty] addr memSize.
 Arguments implExternalMemRegionWriteRq r [ty] addr stVal memSize.
 Arguments implExternalMemRegionWriteStep r {ty}.
@@ -433,29 +432,27 @@ Section ImplCustomMemRegionActions.
   Variable ty : Kind -> Type.
 
   Local Definition tImplCust := implCustomMemRegionTree r children.
-  Local Definition pCustRpReg        : RegPath tImplCust := Eval cbn in (getChildRegPathTree tImplCust "rpReg").
-  Local Definition pCustPendingWrite : RegPath tImplCust := Eval cbn in (getChildRegPathTree tImplCust "pendingWrite").
+  Local Definition pCustState : RegPath tImplCust := Eval cbn in (getChildRegPathTree tImplCust "state").
 
   Definition implCustomMemRegionReadRq (addr : ty Addr)
              : Action ty tImplCust Bool :=
-    ReadReg "rpReg" pCustRpReg (fun rpReg =>
-    ReadReg "pendingWrite" pCustPendingWrite (fun pendingWrite =>
-    Let isIdle : Bool <- And [ Not (##rpReg `? "Some") ; Not (##pendingWrite `? "Some") ] ;
+    ReadReg "state" pCustState (fun state =>
+    Let isIdle : Bool <- ##state `? "Idle" ;
     If #isIdle Then (
       Let  addr0 : Addr                         <- memLineAddr r #addr ;
       LetA rp0   : LineReadRp r.(regionLineCfg) <- liftAction child0Path (customMemRegionLineRead r children readAction addr0) ;
-      WriteReg pCustRpReg (mkSome #rp0) Retv
+      WriteReg pCustState (UNION (CustomRegionStateList r.(regionLineCfg), "ReadRp0" ::= #rp0)) Retv
     ) ;
-    Return #isIdle)).
+    Return #isIdle).
 
   Definition implCustomMemRegionReadRp
              (addr : ty Addr)
              (memSize : ty (Bit LgLgNumBytesFullCapSz))
              : Action ty tImplCust (Option FullCapWithTag) :=
-    ReadReg "rpReg" pCustRpReg (fun rpReg =>
+    ReadReg "state" pCustState (fun state =>
     LetIf resOpt : Option FullCapWithTag <-
-      If (##rpReg `? "Some") Then (
-        Let  rp0     : LineReadRp r.(regionLineCfg) <- ##rpReg `! "Some" ;
+      If (##state `? "ReadRp0") Then (
+        Let  rp0     : LineReadRp r.(regionLineCfg) <- ##state `! "ReadRp0" ;
         Let  crosses : Bool                         <- memCrossesLine r #addr #memSize ;
         LetIf rp1 : LineReadRp r.(regionLineCfg) <-
           If #crosses Then (
@@ -466,7 +463,7 @@ Section ImplCustomMemRegionActions.
           ) ;
         Let  rp      : LineReadRp r.(regionLineCfg) <- memMergeLineReadRp r #addr #rp0 #rp1 ;
         Let  res     : FullCapWithTag               <- memExtractReadCap r #addr #memSize #rp ;
-        Act (WriteReg pCustRpReg ConstDef Retv) ;
+        Act (WriteReg pCustState (UNION (CustomRegionStateList r.(regionLineCfg), "Idle" ::= ($0 : Expr ty (Bit 0)))) Retv) ;
         Return (mkSome #res)
       ) ;
     Return #resOpt).
@@ -479,9 +476,8 @@ Section ImplCustomMemRegionActions.
     if r.(isReadOnly) then (
       Return (ConstBool true)
     ) else (
-      ReadReg "rpReg" pCustRpReg (fun rpReg =>
-      ReadReg "pendingWrite" pCustPendingWrite (fun pendingWrite =>
-      Let isIdle : Bool <- And [ Not (##rpReg `? "Some") ; Not (##pendingWrite `? "Some") ] ;
+      ReadReg "state" pCustState (fun state =>
+      Let isIdle : Bool <- ##state `? "Idle" ;
       If #isIdle Then (
         Let rq      : LineWriteRq r.(regionLineCfg) <- memBuildLineWriteRq r #addr #stVal #memSize ;
         Let rq0     : LineWriteRq r.(regionLineCfg) <- memLineWriteRq0 r #rq ;
@@ -489,22 +485,22 @@ Section ImplCustomMemRegionActions.
         Let crosses : Bool                          <- memCrossesLine r #addr #memSize ;
         If #crosses Then (
           Let rq1 : LineWriteRq r.(regionLineCfg) <- memLineWriteRq1 r #rq ;
-          WriteReg pCustPendingWrite (mkSome #rq1) Retv
+          WriteReg pCustState (UNION (CustomRegionStateList r.(regionLineCfg), "WriteRq1" ::= #rq1)) Retv
         ) ;
         Retv
       ) ;
-      Return #isIdle))
+      Return #isIdle)
     ).
 
   Definition implCustomMemRegionWriteStep : Action ty tImplCust (Bit 0) :=
     if r.(isReadOnly) then (
       Retv
     ) else (
-      ReadReg "pendingWrite" pCustPendingWrite (fun pendingWrite =>
-      If (##pendingWrite `? "Some") Then (
-        Let rq1 : LineWriteRq r.(regionLineCfg) <- ##pendingWrite `! "Some" ;
+      ReadReg "state" pCustState (fun state =>
+      If (##state `? "WriteRq1") Then (
+        Let rq1 : LineWriteRq r.(regionLineCfg) <- ##state `! "WriteRq1" ;
         Act (liftAction child0Path (customMemRegionLineWrite r children writeAction rq1)) ;
-        WriteReg pCustPendingWrite ConstDef Retv
+        WriteReg pCustState (UNION (CustomRegionStateList r.(regionLineCfg), "Idle" ::= ($0 : Expr ty (Bit 0)))) Retv
       ) ;
       Retv)
     ).
@@ -583,7 +579,7 @@ Definition implMemRegionStepActions
                                                                          end) (Bit 0))) with
   | InternalMem _ _ _ => []
   | ExternalMem =>
-      [ (r.(regionDom), fun ty => @implExternalMemRegionReadStep r ty) ;
+      [ (r.(regionDom), fun ty => (Act (@implExternalMemRegionReadRp0 r ty) ; @implExternalMemRegionReadRq1 r ty)) ;
         (r.(regionDom), fun ty => @implExternalMemRegionWriteStep r ty) ]
   | CustomMem children _ writeAct _ =>
       [ (r.(regionDom), fun ty => @implCustomMemRegionWriteStep r children writeAct ty) ]
