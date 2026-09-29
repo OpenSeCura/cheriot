@@ -77,14 +77,8 @@ Section Alu.
       ({< ##inst`[31:31], ##inst`[31:12], Const ty (Bit 11) Zmod.zero >}) ;
     LetE shamt <- ##inst`[24:20] ;
     LetE zimm5 : Bit 5 <- ##inst`[19:15] ;
-    LetE bimm13 : Bit 13 <-
-      ({< ##inst`[31:31], ##inst`[7:7], ##inst`[30:25], ##inst`[11:8],
-          Const _ (Bit 1) Zmod.zero >}) ;
-    LetE bimm12 : Bit Xlen <- SignExtendTo Xlen #bimm13 ;
-    LetE jimm21 : Bit 21 <-
-      ({< ##inst`[31:31], ##inst`[19:12], ##inst`[20:20], ##inst`[30:21],
-          Const _ (Bit 1) Zmod.zero >}) ;
-    LetE jimm20 : Bit Xlen <- SignExtendTo Xlen #jimm21 ;
+    LetE bimm12 : Bit Xlen <- getBImm inst ;
+    LetE jimm20 : Bit Xlen <- getJImm inst ;
     LetE scrIdx : Bit ScrAddrSz <- getScr inst ;
     LetE cs1Idx : Bit RegIdxSz <- getCs1 inst ;
     LetE dstIdx : Bit RegIdxSz <- getCd inst ;

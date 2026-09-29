@@ -98,6 +98,14 @@ Definition getMemSize ty (inst: ty Inst) : Expr ty (Bit LgLgNumBytesFullCapSz) :
 Definition getCs1 ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[19:15].
 Definition getCs2 ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[24:20].
 Definition getScr ty (inst: ty Inst) : Expr ty (Bit ScrAddrSz) := #inst`[24:20].
+Definition getBImm ty (inst: ty Inst) : Expr ty Addr :=
+  SignExtendTo AddrSz
+    {< #inst`[31:31], #inst`[7:7], #inst`[30:25], #inst`[11:8],
+       Const ty (Bit 1) Zmod.zero >}.
+Definition getJImm ty (inst: ty Inst) : Expr ty Addr :=
+  SignExtendTo AddrSz
+    {< #inst`[31:31], #inst`[19:12], #inst`[20:20], #inst`[30:21],
+       Const ty (Bit 1) Zmod.zero >}.
 
 Definition CallSentryIh := 1.
 Definition CallSentryId := 2.
