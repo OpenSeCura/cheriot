@@ -34,7 +34,7 @@ Section Alu.
  * ALU Input Routing (AluRouting)
  * =========================================================================== *)
 
-  Definition AluRouting (aluIn : ty AluIn) : LetExpr ty AluOut :=
+  Definition AluRouting (pcc : ty FullECapWithTag) (aluIn : ty AluIn) : LetExpr ty AluOut :=
     LetE cs2Idx : TaggedUnion Cs2Source <- ##aluIn`"cs2Idx" ;
     LetE inst : Inst <- ##aluIn`"inst" ;
     LetE decodeExc : DecodeException <- ##aluIn`"decodeExc" ;
@@ -45,9 +45,9 @@ Section Alu.
     LetE aluControl : AluControl <- ##aluIn`"aluControl" ;
 
     LetE isComp  : Bool     <- isCompressed inst ;
-    LetE pccAddr : Addr <- ##aluIn`"pcc"`"addr" ;
-    LetE pccTag : Bool <- ##aluIn`"pcc"`"tag" ;
-    LetE pccECap : ECap <- ##aluIn`"pcc"`"ecap" ;
+    LetE pccAddr : Addr <- ##pcc`"addr" ;
+    LetE pccTag : Bool <- ##pcc`"tag" ;
+    LetE pccECap : ECap <- ##pcc`"ecap" ;
     LetE pccBase : Bit (AddrSz + 1) <- ##pccECap`"base" ;
     LetE pcc_cE : Bit ExpSz <- ##pccECap`"cE" ;
     LetE pccExp : Bit ExpSz <- get_E_from_cE pcc_cE ;
@@ -587,7 +587,6 @@ Section AluRF.
     Return #execOut.
 
   Definition regRead (meip mtip : ty Bool) (regReadIn : ty RegReadIn) : Action ty rfTree AluInInstGroup :=
-    Let  pcc        : FullECapWithTag       <- ##regReadIn`"pcc" ;
     Let  decodeOut  : DecodeOut             <- ##regReadIn`"decodeOut" ;
     Let  fetchExc   : FetchException        <- ##regReadIn`"fetchExc" ;
     Let  cs1Idx     : Bit RegIdxSzReal      <- ##decodeOut`"cs1Idx" ;
@@ -639,7 +638,6 @@ Section AluRF.
       "inst"                ::= ##decodeOut`"instBits" ;
       "decodeExc"           ::= ##decodeOut`"decodeExc" ;
       "fetchExc"            ::= #fetchExc ;
-      "pcc"                 ::= #pcc ;
       "cs1"                 ::= #cs1 ;
       "cs2"                 ::= #cs2 ;
       "currInterruptStatus" ::= #currMIE ;

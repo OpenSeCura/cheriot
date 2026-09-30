@@ -1116,7 +1116,6 @@ Definition AluIn := STRUCT_TYPE {
   "inst"                :: Inst ;
   "decodeExc"           :: DecodeException ;
   "fetchExc"            :: FetchException ;
-  "pcc"                 :: FullECapWithTag ;
   "cs1"                 :: FullECapWithTag ;
   "cs2"                 :: FullECapWithTag ;
   "currInterruptStatus" :: Bool ;
@@ -1129,7 +1128,6 @@ Definition AluInInstGroup := STRUCT_TYPE {
   "inst"                :: Inst ;
   "decodeExc"           :: DecodeException ;
   "fetchExc"            :: FetchException ;
-  "pcc"                 :: FullECapWithTag ;
   "cs1"                 :: FullECapWithTag ;
   "cs2"                 :: FullECapWithTag ;
   "currInterruptStatus" :: Bool ;

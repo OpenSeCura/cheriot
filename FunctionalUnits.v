@@ -863,7 +863,6 @@ Section ConstructAluIn.
       "inst"                ::= ##aluInGroup`"inst" ;
       "decodeExc"           ::= ##aluInGroup`"decodeExc" ;
       "fetchExc"            ::= ##aluInGroup`"fetchExc" ;
-      "pcc"                 ::= ##aluInGroup`"pcc" ;
       "cs1"                 ::= ##aluInGroup`"cs1" ;
       "cs2"                 ::= ##aluInGroup`"cs2" ;
       "currInterruptStatus" ::= ##aluInGroup`"currInterruptStatus" ;

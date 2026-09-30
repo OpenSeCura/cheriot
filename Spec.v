@@ -114,22 +114,10 @@ Section SpecDom.
         LetA aluInInstGroup : AluInInstGroup <- liftAction np_rf (regRead meip mtip regReadIn) ;
 
         (* 4. Alu Control, Routing, and Execution *)
-        Let  instGroup : InstGroup <- ##aluInInstGroup`"instGroup" ;
-        LetL aluCtrl   : AluControl <- decodeInstGroup instGroup ;
-        Let  aluIn     : AluIn <- STRUCT {
-          "cs2Idx"              ::= ##aluInInstGroup`"cs2Idx" ;
-          "writesCd"            ::= ##aluInInstGroup`"writesCd" ;
-          "inst"                ::= ##aluInInstGroup`"inst" ;
-          "decodeExc"           ::= ##aluInInstGroup`"decodeExc" ;
-          "fetchExc"            ::= ##aluInInstGroup`"fetchExc" ;
-          "pcc"                 ::= ##aluInInstGroup`"pcc" ;
-          "cs1"                 ::= ##aluInInstGroup`"cs1" ;
-          "cs2"                 ::= ##aluInInstGroup`"cs2" ;
-          "currInterruptStatus" ::= ##aluInInstGroup`"currInterruptStatus" ;
-          "aluControl"          ::= #aluCtrl
-        } ;
-        LetL routingOut : AluOut      <- AluRouting aluIn ;
-        LetL aluOut     : AluOutUnion <- Alu routingOut ;
+        Let  pcc        : FullECapWithTag <- ##fetchOut`"pcc" ;
+        LetL aluIn      : AluIn           <- constructAluIn aluInInstGroup ;
+        LetL routingOut : AluOut          <- AluRouting pcc aluIn ;
+        LetL aluOut     : AluOutUnion     <- Alu routingOut ;
 
         (* 5. Commit Non-Deferred (GPRs, SCRs, CSRs, PCC, Traps) *)
         LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred meip mtip aluOut) ;
