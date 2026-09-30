@@ -374,8 +374,6 @@ Section SpecCoreTree.
             Let memSize   : Bit LgLgNumBytesFullCapSz <- ##st`"memSize" ;
 
             Act (liftAction np_mem (specMemWrite regions addr stVal memSize)) ;
-            Act (liftAction np_rf (updateMshwmOnStore dom pcAddrInit addr)) ;
-            Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
             If (And [ Eq #addr ($ tohostAddr) ; isNotZero (##stVal`"addr") ]) Then (
               Let tohostVal : Addr <- ##stVal`"addr" ;
               If (Eq #tohostVal $1) Then (
@@ -405,21 +403,18 @@ Section SpecCoreTree.
               If (isNotZero (##wbInfo`"dstIdx")) Then (
                 liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
               ) ;
-              Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
               Retv
             ) Else (
               Let wbInfo : WbCmd <- #outcome `! "Writeback" ;
               If (isNotZero (##wbInfo`"dstIdx")) Then (
                 liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
               ) ;
-              Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
               Retv
             ) ;
             Retv
           ) ;
           Retv
         ) Else (
-          Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
           Retv
         ) ;
         Retv
@@ -436,7 +431,6 @@ Section SpecCoreTree.
         If (isNotZero (##md`"dstIdx")) Then (
           liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##md`"dstIdx") #wbVal)
         ) ;
-        Act (liftAction np_rf (incrementMinstret dom pcAddrInit)) ;
         Retv
       ) ;
       Retv.

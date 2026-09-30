@@ -483,13 +483,23 @@ Section AluRF.
       )
     Else
       (
+        Act incrementMinstret ;
         If (#noExc `? "Deferred") Then
           (
+            Let memFence   : MemFenceUnion   <- #deferredVal `! "MemFence" ;
+            Let memPayload : MemPayload      <- #memFence `! "Mem" ;
+            Let memOp      : LoadOrStoreKind <- ##memPayload`"memOp" ;
+            Let stAddr     : Addr            <- ##dstVal`"addr" ;
+            If (And [ #deferredVal `? "MemFence" ;
+                      #memFence `? "Mem" ;
+                      #memOp `? "Store" ]) Then
+              (
+                updateMshwmOnStore stAddr
+              ) ;
             writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #seqPcc
           )
         Else
           (
-            Act incrementMinstret ;
             If (isNotZero #dstIdx) Then
               (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
 
