@@ -439,8 +439,8 @@ Section SpecCoreTree.
      * specExecuteDeferred (Executing Option DeferredReq)
      * =========================================================================== *)
     Definition specExecuteDeferred (reqOpt : ty (Option DeferredReq)) : Action ty coreTree (Bit 0) :=
-      If (##reqOpt `? "Some") Then (
-        Let req : DeferredReq <- ##reqOpt `! "Some" ;
+      If (##reqOpt`"valid") Then (
+        Let req : DeferredReq <- ##reqOpt`"data" ;
         specExecuteDeferredReq req
       ) ;
       Retv.

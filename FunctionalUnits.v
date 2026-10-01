@@ -1427,8 +1427,8 @@ Section FunctionalUnits.
     LetE memFenceOpt : Option MemFenceUnion <-
       Or [ ITE0 (And [ #isFence ; Not #isFenceI ]) (mkSome (UNION (MemFenceType, "Fence" ::= #fenceVal))) ;
             #memOpOpt ] ;
-    LetE isMemFence : Bool <- #memFenceOpt `? "Some" ;
-    LetE memFenceVal : MemFenceUnion <- #memFenceOpt `! "Some" ;
+    LetE isMemFence : Bool <- #memFenceOpt`"valid" ;
+    LetE memFenceVal : MemFenceUnion <- #memFenceOpt`"data" ;
 
     LetE isDiv          : Bool <- FromBit Bool (#inst`[14:14]) ;
     LetE isMulHigh      : Bool <- isNotZero (#inst`[13:12]) ;

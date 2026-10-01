@@ -139,14 +139,14 @@ Section Clut.
         Let freeIndex: ClutIdx <- TruncLsb 1 LgClutSz #optFreeIndex;
         Let freeIndexValid: Bool <- Not (FromBit Bool (TruncMsb 1 LgClutSz #optFreeIndex));
 
-        Let rmIndex: ClutIdx <- TruncLsb (kindSize ClutEntry - LgClutSz) LgClutSz (ToBit ((#optCommand `! "Some")`"clutEntry"));
+        Let rmIndex: ClutIdx <- TruncLsb (kindSize ClutEntry - LgClutSz) LgClutSz (ToBit ((#optCommand`"data")`"clutEntry"));
 
-        LetIf dummy <- If (And [#optCommand `? "Some"; Not (#optResp `? "Some")]) Then (
+        LetIf dummy <- If (And [#optCommand`"valid"; Not (#optResp`"valid")]) Then (
             RegWrite ".procCommand1" in cl <- ConstDef;
-            LetIf dummy <- If ((#optCommand `! "Some")`"isInsert") Then (
+            LetIf dummy <- If ((#optCommand`"data")`"isInsert") Then (
                 RegWrite ".respToProc" in cl <- mkSome #optFreeIndex;
                 LetIf dummy <- If (#freeIndexValid) Then (
-                    RegWrite ".entries" in cl <- #entries@[ #freeIndex <- (##optCommand `! "Some")`"clutEntry"];
+                    RegWrite ".entries" in cl <- #entries@[ #freeIndex <- (##optCommand`"data")`"clutEntry"];
                     RegWrite ".valids" in cl <- #valids@[ #freeIndex <- ConstBool true ];
                     Return ConstDef );
                 Return #dummy )
@@ -170,21 +170,21 @@ Section Clut.
         RegRead respToProc <- ".respToProc" in cl;
         Let optCommand : Option Command <- FromBit (Option Command) {< #procCommand2, #procCommand1 >};
         Get config <- ".config" in cl;
-        Let configData <- #config `! "Some";
+        Let configData <- #config`"data";
         Let configOffset <- #configData`"offset";
         Let configValue <- #configData`"value";
-        LetIf dummy <- If (#config `? "Some") Then (
+        LetIf dummy <- If (#config`"valid") Then (
             LetIf dummy <- If (#configData`"isWrite") Then (
-                LetIf dummy <- If (And [Not (#optCommand `? "Some"); isZero #configOffset]) Then (
+                LetIf dummy <- If (And [Not (#optCommand`"valid"); isZero #configOffset]) Then (
                     RegWrite ".procCommand1" in cl <- #configValue;
                     Return ConstDef )
                   Else (
-                    LetIf dummy <- If (And [Not (#optCommand `? "Some"); Eq #configOffset $1]) Then (
+                    LetIf dummy <- If (And [Not (#optCommand`"valid"); Eq #configOffset $1]) Then (
                         RegWrite ".procCommand2"
                         in cl <- TruncLsb (Xlen - LeftOverCommandSize) LeftOverCommandSize #configValue;
                         Return ConstDef)
                       Else (
-                        LetIf dummy <- If (#respToProc `? "Some") Then (
+                        LetIf dummy <- If (#respToProc`"valid") Then (
                             RegWrite ".respToProc"
                             in cl <- FromBit (Option (Bit (LgClutSz + 1)))
                                  (TruncLsb (Xlen - RespToProcSize) RespToProcSize #configValue);
@@ -247,11 +247,11 @@ Section Clut.
       Definition finishRead: Action ty cl (Bit 0) :=
         ( Get readResults <- ".readMemResults" in cl;
           Let optReadResult : Option ClutIdx <- ReadArrayConst #readResults channelIdA;
-          Let readResult: ClutIdx <- #optReadResult `! "Some";
+          Let readResult: ClutIdx <- #optReadResult`"data";
           RegRead valids <- ".valids" in cl;
           RegRead busys <- ".busys" in cl;
 
-          LetIf dummy <- If (And [#optReadResult `? "Some"; #valids@[#readResult]]) Then (
+          LetIf dummy <- If (And [#optReadResult`"valid"; #valids@[#readResult]]) Then (
               RegWrite ".busys" in cl <- #busys@[#readResult <- ConstBool false];
               Return ConstDef
             );

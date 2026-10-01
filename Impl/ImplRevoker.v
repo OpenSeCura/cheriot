@@ -163,9 +163,9 @@ Section ImplRevoker.
         Let nextScanAddrMsb : Bit TagAddrWidth          <- Add [ #scanAddrMsb ; $1 ] ;
         Let capSz           : Bit LgLgNumBytesFullCapSz <- $LgNumBytesFullCapSz ;
         LetA rpOpt          : Option FullCapWithTag     <- getMemRp scanAddr capSz ;
-        If (##rpOpt `? "Some") Then (
+        If (##rpOpt`"valid") Then (
           Act (deqMemRp scanAddr) ;
-          Let ldFullCap   : FullCapWithTag <- ##rpOpt `! "Some" ;
+          Let ldFullCap   : FullCapWithTag <- ##rpOpt`"data" ;
           Let ldCap       : Cap            <- ##ldFullCap`"cap" ;
           Let ldAddr      : Addr           <- ##ldFullCap`"addr" ;
           LetA ldECap     : ECap           <- toAction memTree (DecodeCap ldCap ldAddr) ;
@@ -210,8 +210,8 @@ Section ImplRevoker.
         LetA ldECap         : ECap             <- toAction memTree (DecodeCap ldCap ldAddr) ;
         Let ldBase          : Bit (AddrSz + 1) <- ##ldECap`"base" ;
         LetA revOpt         : Option Bool      <- getDeqRevBitRp ldBase ;
-        If (##revOpt `? "Some") Then (
-          Let revBit : Bool <- ##revOpt `! "Some" ;
+        If (##revOpt`"valid") Then (
+          Let revBit : Bool <- ##revOpt`"data" ;
           If #revBit Then (
             revAct (WriteReg pRevPhase (mkRevPhase "WriteCap") Retv)
           ) Else (

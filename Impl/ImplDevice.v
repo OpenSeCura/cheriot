@@ -182,8 +182,8 @@ Section ImplInternalMemRegionActions.
              : Action ty tImplInt (Option FullCapWithTag) :=
     LetA rpOpt : Option (LineReadRp r.(regionLineCfg)) <- implInternalMemRegionLineReadRp ;
     LetIf resOpt : Option FullCapWithTag <-
-      If (##rpOpt `? "Some") Then (
-        Let rp : LineReadRp r.(regionLineCfg) <- ##rpOpt `! "Some" ;
+      If (##rpOpt`"valid") Then (
+        Let rp : LineReadRp r.(regionLineCfg) <- ##rpOpt`"data" ;
         Return (mkSome (memExtractReadCap r #addr #memSize #rp))
       )  ;
     Return #resOpt.
@@ -225,8 +225,8 @@ Section ImplInternalMemTargetPortActions.
 
   Definition implInternalMemRegionTargetPortReadRp : Action ty tImplIntTargetPort (Bit 0) :=
     LetA rpOpt : Option (LineReadRp r.(regionLineCfg)) <- @implInternalMemRegionLineReadRp r true ty ;
-    If (##rpOpt `? "Some") Then (
-      Let rp : LineReadRp r.(regionLineCfg) <- ##rpOpt `! "Some" ;
+    If (##rpOpt`"valid") Then (
+      Let rp : LineReadRp r.(regionLineCfg) <- ##rpOpt`"data" ;
       Act (@implInternalMemRegionLineDeqRp r true ty) ;
       liftAction child0Path (Send pTargetPortLineReadRp #rp Retv)
     ) ;
@@ -323,10 +323,10 @@ Section ImplExternalMemRegionActions.
   Definition implExternalMemRegionReadRp0 : Action ty tImplExt (Bit 0) :=
     ReadReg "state" pExtState (fun state =>
     ReadReg "nextLineAddr" pExtNextLineAddr (fun nextLineAddr =>
-    If (And [ ##state `? "ReadWait" ; ##nextLineAddr `? "Some" ]) Then (
+    If (And [ ##state `? "ReadWait" ; ##nextLineAddr`"valid" ]) Then (
       LetA rp0Opt : Option (LineReadRp r.(regionLineCfg)) <- implExternalMemRegionLineReadRp ;
-      If (##rp0Opt `? "Some") Then (
-        Let rp0 : LineReadRp r.(regionLineCfg) <- ##rp0Opt `! "Some" ;
+      If (##rp0Opt`"valid") Then (
+        Let rp0 : LineReadRp r.(regionLineCfg) <- ##rp0Opt`"data" ;
         Act implExternalMemRegionLineDeqRp ;
         WriteReg pExtState (UNION (ExtRegionStateList r.(regionLineCfg), "ReadRp0" ::= #rp0)) Retv
       ) ;
@@ -337,8 +337,8 @@ Section ImplExternalMemRegionActions.
   Definition implExternalMemRegionReadRq1 : Action ty tImplExt (Bit 0) :=
     ReadReg "state" pExtState (fun state =>
     ReadReg "nextLineAddr" pExtNextLineAddr (fun nextLineAddr =>
-    If (And [ ##state `? "ReadRp0" ; ##nextLineAddr `? "Some" ]) Then (
-      Let  addr1 : Addr <- ##nextLineAddr `! "Some" ;
+    If (And [ ##state `? "ReadRp0" ; ##nextLineAddr`"valid" ]) Then (
+      Let  addr1 : Addr <- ##nextLineAddr`"data" ;
       LetA rdy1  : Bool <- implExternalMemRegionLineReadRq addr1 ;
       If #rdy1 Then (
         WriteReg pExtNextLineAddr ConstDef Retv
@@ -355,11 +355,11 @@ Section ImplExternalMemRegionActions.
     ReadReg "nextLineAddr" pExtNextLineAddr (fun nextLineAddr =>
     LetIf resOpt : Option FullCapWithTag <-
       If (And [ Or [ ##state `? "ReadWait" ; ##state `? "ReadRp0" ] ;
-                Not (##nextLineAddr `? "Some") ]) Then (
+                Not (##nextLineAddr`"valid") ]) Then (
         LetA lastRpOpt : Option (LineReadRp r.(regionLineCfg)) <- implExternalMemRegionLineReadRp ;
         LetIf rOpt : Option FullCapWithTag <-
-          If (##lastRpOpt `? "Some") Then (
-            Let lastRp : LineReadRp r.(regionLineCfg) <- ##lastRpOpt `! "Some" ;
+          If (##lastRpOpt`"valid") Then (
+            Let lastRp : LineReadRp r.(regionLineCfg) <- ##lastRpOpt`"data" ;
             Let rp0    : LineReadRp r.(regionLineCfg) <-
               ITE (##state `? "ReadRp0") (##state `! "ReadRp0") #lastRp ;
             Let rp1    : LineReadRp r.(regionLineCfg) <-
@@ -846,8 +846,8 @@ Section ImplMemModel.
       Let instSz : Bit LgLgNumBytesFullCapSz <- $LgNumBytesInstSz ;
       LetA rpOpt : Option FullCapWithTag <- implRegionsReadRp regions addr instSz ;
       LetIf instOpt : Option Inst <-
-        If (##rpOpt `? "Some") Then (
-          Let fullVal : FullCapWithTag <- ##rpOpt `! "Some" ;
+        If (##rpOpt`"valid") Then (
+          Let fullVal : FullCapWithTag <- ##rpOpt`"data" ;
           Return (mkSome (##fullVal`"addr"))
         ) Else (
           Return ConstDef
@@ -888,9 +888,9 @@ Section ImplMemModel.
           Let  sz0         : Bit LgLgNumBytesFullCapSz <- $0 ;
           LetA rpOpt       : Option FullCapWithTag     <- implRegionsReadRp regions revByteAddr sz0 ;
           LetIf rOpt : Option Bool <-
-            If (##rpOpt `? "Some") Then (
+            If (##rpOpt`"valid") Then (
               Act (implRegionsDeqRp regions revByteAddr) ;
-              Let revCap  : FullCapWithTag <- ##rpOpt `! "Some" ;
+              Let revCap  : FullCapWithTag <- ##rpOpt`"data" ;
               Let revByte : Bit 8          <- TruncLsb (AddrSz - 8) 8 (##revCap`"addr") ;
               Let revBit  : Bool           <- extractRevBit lookup #revByte ;
               Return (mkSome #revBit)

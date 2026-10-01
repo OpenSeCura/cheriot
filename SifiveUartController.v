@@ -152,7 +152,7 @@ Section SifiveUart.
         If (Not #rxEmpty) Then (
           LetA rxHead : Option (Bit 8) <- liftAction np_rx_fifo (@first dom SifiveUartFifoCapacity (Bit 8) ty) ;
           Act (liftAction np_rx_fifo (@deq dom SifiveUartFifoCapacity (Bit 8) ty)) ;
-          Return (##rxHead `! "Some")
+          Return (##rxHead`"data")
         ) Else (
           Return $0
         ) ;
@@ -207,9 +207,9 @@ Section SifiveUart.
         LetA txEmpty : Bool <- liftAction np_tx_fifo (@isEmpty dom SifiveUartFifoCapacity (Bit 8) ty) ;
         If (Not #txEmpty) Then (
           LetA txHead : Option (Bit 8) <- liftAction np_tx_fifo (@first dom SifiveUartFifoCapacity (Bit 8) ty) ;
-          Let hasData : Bool <- ##txHead `? "Some" ;
+          Let hasData : Bool <- ##txHead`"valid" ;
           If #hasData Then (
-            Let txByte : Bit 8 <- ##txHead `! "Some" ;
+            Let txByte : Bit 8 <- ##txHead`"data" ;
             Act (Send sifiveUartTxDataPath #txByte Retv) ;
             Recv "txRdy" sifiveUartTxRdyPath (fun txRdy =>
               If #txRdy Then (
@@ -235,9 +235,9 @@ Section SifiveUart.
           Retv
         ) ;
         Recv "rxData" sifiveUartRxDataPath (fun rxOpt =>
-          Let hasData : Bool <- ##rxOpt `? "Some" ;
+          Let hasData : Bool <- ##rxOpt`"valid" ;
           If #hasData Then (
-            Let rxByte : Bit 8 <- ##rxOpt `! "Some" ;
+            Let rxByte : Bit 8 <- ##rxOpt`"data" ;
             If (Not #rxFull) Then (
               Act (liftAction np_rx_fifo (@enq dom SifiveUartFifoCapacity (Bit 8) ty rxByte)) ;
               Retv

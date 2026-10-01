@@ -327,7 +327,7 @@ Section Alu.
 
     @RetE _ AluOut (STRUCT {
       "isComp"      ::= #isComp ;
-      "dstIdx"      ::= ITE0 (And [##aluIn`"writesCd"; Not (#ExceptionRes `? "Some")]) #dstIdx ;
+      "dstIdx"      ::= ITE0 (And [##aluIn`"writesCd"; Not (#ExceptionRes`"valid")]) #dstIdx ;
       "dstValue"    ::= #RegVal ;
       "Exception"   ::= #ExceptionRes ;
       "Deferred"    ::= #DeferredOpRes ;
@@ -347,17 +347,17 @@ Section Alu.
     LetE scrCsrOpt   : Option ScrCsrPayload <- ##routingOut`"ScrCsr" ;
     LetE isFenceI    : Bool <- ##routingOut`"isFenceI" ;
 
-    LetE isExc : Bool <- #excOpt `? "Some" ;
-    LetE excVal : ExceptionInfo <- #excOpt `! "Some" ;
+    LetE isExc : Bool <- #excOpt`"valid" ;
+    LetE excVal : ExceptionInfo <- #excOpt`"data" ;
 
-    LetE isDeferred : Bool <- #deferredOpt `? "Some" ;
-    LetE deferredVal : DeferredUnion <- #deferredOpt `! "Some" ;
+    LetE isDeferred : Bool <- #deferredOpt`"valid" ;
+    LetE deferredVal : DeferredUnion <- #deferredOpt`"data" ;
 
-    LetE isCf : Bool <- #cfOpt `? "Some" ;
-    LetE cfVal : CfPayload <- #cfOpt `! "Some" ;
+    LetE isCf : Bool <- #cfOpt`"valid" ;
+    LetE cfVal : CfPayload <- #cfOpt`"data" ;
 
-    LetE isScrCsr : Bool <- #scrCsrOpt `? "Some" ;
-    LetE scrCsrVal : ScrCsrPayload <- #scrCsrOpt `! "Some" ;
+    LetE isScrCsr : Bool <- #scrCsrOpt`"valid" ;
+    LetE scrCsrVal : ScrCsrPayload <- #scrCsrOpt`"data" ;
 
     LetE cfScrCsrUnion : CfScrCsrUnion <-
       ITE #isCf
