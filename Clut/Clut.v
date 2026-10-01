@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Bool.
-From Guru Require Import Library Syntax Notations MergeFold.
+From Guru Require Import Primitives Library Syntax Combinators Notations MergeFold.
 
 Import ListNotations.
 

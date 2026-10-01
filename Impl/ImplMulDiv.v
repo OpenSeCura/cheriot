@@ -34,9 +34,8 @@
  *)
 
 From Stdlib Require Import String List ZArith Lia Bool Zmod.
-From Guru Require Import Syntax Notations Semantics Library Composition.
-From Cheriot Require Import SpecDefines FunctionalUnits Fifo SpecMulDiv.
-From Cheriot Require Export ImplStaged.
+From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition.
+From Cheriot Require Import SpecDefines FunctionalUnits Fifo SpecMulDiv ImplStaged.
 
 Set Implicit Arguments.
 Unset Strict Implicit.

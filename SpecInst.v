@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Zmod Bool Psatz Nat Arith.
-From Guru Require Import Library Syntax Notations.
+From Guru Require Import Primitives Library Syntax Combinators Notations.
 From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic Spec Binary.
 
 Set Implicit Arguments.

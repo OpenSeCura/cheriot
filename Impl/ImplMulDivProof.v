@@ -15,8 +15,8 @@
  *)
 
 From Stdlib Require Import String List ZArith Znumtheory Zmod Zmod.Bits Lia Bool.
-From Guru Require Import Library Syntax Notations Semantics Composition Theorems ActionSim.
-From Cheriot Require Import SpecDefines SpecMulDiv Fifo ImplMulDiv.
+From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems ActionSim.
+From Cheriot Require Import SpecDefines SpecMulDiv Fifo ImplStaged ImplMulDiv.
 
 Set Implicit Arguments.
 Unset Strict Implicit.

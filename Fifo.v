@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Lia.
-From Guru Require Import Library Syntax Notations Composition.
+From Guru Require Import Primitives Library Syntax Combinators Notations Composition.
 
 Set Implicit Arguments.
 Unset Strict Implicit.

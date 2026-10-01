@@ -17,7 +17,7 @@
 From Stdlib Require Import String List ZArith Zmod Bool Nat.
 Import ListNotations.
 Open Scope string_scope.
-From Guru Require Import Syntax Notations Semantics Library Composition MergeFold.
+From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition MergeFold.
 From Cheriot Require Import SpecDefines SpecDevice.
 
 Set Implicit Arguments.
@@ -353,7 +353,7 @@ Section Plic.
         Let prioVal : Bit Xlen <- #prios @[ #prioIdx ] ;
         Let pendOffset <- Sub #offset $(PLIC_PENDING_OFFSET) ;
         Let pendSlice : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
-          Syntax.slice (boolArrayToByteArray #pends) #pendOffset (Z.to_nat NumBytesXlen) ;
+          Combinators.slice (boolArrayToByteArray #pends) #pendOffset (Z.to_nat NumBytesXlen) ;
         Let pendVal : Bit Xlen <- ToBit #pendSlice ;
         Let enOffset <- Sub #offset $(PLIC_ENABLE_OFFSET) ;
         Let enWordIdx : Bit Xlen <- ZeroExtendTo Xlen (TruncMsb (PlicOffsetSz - LgNumBytesXlen) LgNumBytesXlen #enOffset) ;

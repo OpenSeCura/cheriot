@@ -32,7 +32,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Znumtheory Zmod Zmod.Bits Lia Bool Eqdep_dec.
-From Guru Require Import Library Syntax Notations Semantics Composition Theorems ActionSim.
+From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems ActionSim.
 From Cheriot Require Import Fifo.
 
 Unset Implicit Arguments.

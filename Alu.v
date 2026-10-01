@@ -15,9 +15,8 @@
  *)
 
 From Stdlib Require Import String List ZArith Zmod.
-From Guru Require Import Library Syntax Notations.
-From Cheriot Require Import SpecDefines.
-From Cheriot Require Export FunctionalUnits.
+From Guru Require Import Primitives Library Syntax Combinators Notations.
+From Cheriot Require Import SpecDefines FunctionalUnits.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
