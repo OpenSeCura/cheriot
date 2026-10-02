@@ -104,10 +104,6 @@ Section CombinationalDeferred.
       "base"   ::= ##ldECapRaw`"base"
     }).
 
-  Definition needsRevocationCheck (ecap : ty ECap) (rawTag : ty Bool) : LetExpr ty Bool :=
-    LetE isSealing : Bool <- isSealingCap ecap ;
-    @RetE _ Bool (And [ #rawTag ; Not #isSealing ]).
-
   Definition decodeSubwordData (rawDataLsb : ty Addr)
                                (memSize : ty (Bit LgLgNumBytesFullCapSz))
                                (isUnsigned : ty Bool) : LetExpr ty (Bit Xlen) :=
@@ -173,7 +169,7 @@ Section CombinationalDeferred.
       ) ;
     @RetE _ DeferredAction #action.
 
-  Definition dispatchLoadResponse (pl : ty PendingLoad) (memVal : ty FullCapWithTag) : LetExpr ty LoadOutcome :=
+  Definition dispatchLoadResponse (config : RevConfig) (pl : ty PendingLoad) (memVal : ty FullCapWithTag) : LetExpr ty LoadOutcome :=
     LetE dstIdx     : Bit RegIdxSz              <- ##pl`"dstIdx" ;
     LetE memSize    : Bit LgLgNumBytesFullCapSz <- ##pl`"memSize" ;
     LetE isUnsigned : Bool                      <- ##pl`"isUnsigned" ;
@@ -188,7 +184,7 @@ Section CombinationalDeferred.
     LetIfE outcome : LoadOutcome <-
       IfE #isCap ThenE (
         LETE ldECap        : ECap <- decodeAndAttenuateCap rawCap rawDataLsb rawTag isLM isLG ;
-        LETE needsRevCheck : Bool <- needsRevocationCheck ldECap rawTag ;
+        LetE needsRevCheck : Bool <- needsRevocationCheck config ldECap rawTag ;
         LetIfE outcomeCap : LoadOutcome <-
           IfE #needsRevCheck ThenE (
             LetE capVal : FullECapWithTag <- STRUCT {
@@ -352,7 +348,7 @@ Section SpecCoreTree.
             Let memSize   : Bit LgLgNumBytesFullCapSz <- ##pending`"memSize" ;
 
             LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions addr memSize) ;
-            LetL outcome  : LoadOutcome       <- dispatchLoadResponse pending memVal ;
+            LetL outcome  : LoadOutcome       <- dispatchLoadResponse config pending memVal ;
 
             If (#outcome `? "RevLookup") Then (
               Let  revInfo : RevCmd           <- #outcome `! "RevLookup" ;

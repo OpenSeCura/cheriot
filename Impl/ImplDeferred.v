@@ -1,0 +1,291 @@
+(*
+ * Copyright 2026 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *)
+
+From Stdlib Require Import String List ZArith.
+From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition.
+From Cheriot Require Import SpecDefines FunctionalUnits ImplCommon ImplDevice Fifo SpecFetchDeferred SpecMulDiv ImplStaged ImplMulDiv.
+
+Set Implicit Arguments.
+Unset Strict Implicit.
+Set Asymmetric Patterns.
+
+Import ListNotations.
+Local Open Scope string_scope.
+Local Open Scope guru_scope.
+
+Definition ImplMulStages  : nat := 1%nat.
+Definition ImplDivStages  : nat := 1%nat.
+Definition ImplMulDivMode : MulDivMode := IterMul_SharedIterDiv.
+
+Section DeferredStages.
+  Variable dom : string.
+  Variable capacity : nat.
+
+  Definition deferredTree : Tree DomainElem :=
+    Node "deferred" [
+      Node "inputBuf" [ fifoTree dom capacity DeferredReq ] ;
+      Node "loadBuf"  [ fifoTree dom capacity LoadCmd ] ;
+      Node "revBuf"   [ fifoTree dom capacity RevCmd ] ;
+      modeMulDivTree dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode
+    ].
+
+  Variable pcAddrInit : Z.
+  Variable tohostAddr : Z.
+  Variable bpTree fetchTree : Tree DomainElem.
+  Variable memIfc : forall ty, @MemIfc ty.
+  Variable ty : Kind -> Type.
+
+  Local Notation memTree := (memIfc ty).(memTree).
+  Local Notation coreTree := (coreTree dom pcAddrInit bpTree memTree fetchTree deferredTree).
+  Local Notation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
+
+  Definition np_rf : NodePath coreTree :=
+    Eval cbn in (getNodePath coreTree "core.rf").
+
+  Definition np_waitBits : NodePath coreTree :=
+    Eval cbn in (getNodePath coreTree "core.waitBits").
+
+  Definition np_mem : NodePath coreTree :=
+    Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.mem") singletonChildPath).
+
+  Definition np_inputFifo : NodePath coreTree :=
+    Eval cbn in (getNodePath coreTree "core.deferred.deferred.inputBuf.fifo").
+
+  Definition np_loadFifo : NodePath coreTree :=
+    Eval cbn in (getNodePath coreTree "core.deferred.deferred.loadBuf.fifo").
+
+  Definition np_revFifo : NodePath coreTree :=
+    Eval cbn in (getNodePath coreTree "core.deferred.deferred.revBuf.fifo").
+
+  Definition np_mulDiv : NodePath coreTree :=
+    Eval cbn in (getNodePath coreTree "core.deferred.deferred.mulDiv").
+
+  Local Definition commitWb (dstIdx : ty (Bit RegIdxSz)) (dstVal : ty FullECapWithTag) : Action ty coreTree (Bit 0) :=
+    Let dstIdxReal : Bit RegIdxSzReal <- TruncLsb 1 RegIdxSzReal #dstIdx ;
+    If (isNotZero #dstIdxReal) Then (
+      Act (liftAction np_rf (writeRegsList gprPathsWithKind #dstIdx #dstVal)) ;
+      liftAction np_waitBits (@writeWaitBit dom ty #dstIdxReal (ConstBool false))
+    ) ;
+    Retv.
+
+  (* =========================================================================
+   * STAGE 1: loadRqOrStoreOrFence
+   *
+   * - Dispatches head of inputFifo via dispatchDeferredReq:
+   *   - Store: issues mem_writeMem.
+   *   - Load:  when loadBuf is not full, issues mem_readMemRq and enqueues LoadCmd.
+   *   - Fence: waits for loadBuf and revBuf to drain if needed, issues mem_fence_req.
+   *   - MulDiv: enqueues into MulDiv subsystem when ready.
+   * ========================================================================= *)
+  Definition loadRqOrStoreOrFence : Action ty coreTree (Bit 0) :=
+    LetA inputHead : Option DeferredReq <- liftAction np_inputFifo (@first dom capacity DeferredReq ty) ;
+
+    If (#inputHead`"valid") Then (
+      Let  req    : DeferredReq    <- #inputHead`"data" ;
+      LetL action : DeferredAction <- dispatchDeferredReq req ;
+
+      If (##action `? "MemFence") Then (
+        Let mfAct : MemFenceAction <- ##action `! "MemFence" ;
+
+        If (##mfAct `? "Mem") Then (
+          Let memAct : MemAction <- ##mfAct `! "Mem" ;
+
+          If (##memAct `? "Store") Then (
+            Let st        : StoreCmd                  <- ##memAct `! "Store" ;
+            Let stAddr    : Addr                      <- ##st`"addr" ;
+            Let stVal     : FullCapWithTag            <- ##st`"stVal" ;
+            Let memSize   : Bit LgLgNumBytesFullCapSz <- ##st`"memSize" ;
+            LetA accepted : Bool                      <- liftAction np_mem ((memIfc ty).(mem_writeMem) stAddr stVal memSize) ;
+            If #accepted Then (
+              Act (liftAction np_inputFifo (@deq dom capacity DeferredReq ty)) ;
+              If (And [ Eq #stAddr ($ tohostAddr) ; isNotZero (##stVal`"addr") ]) Then (
+                Let tohostVal : Addr <- ##stVal`"addr" ;
+                If (Eq #tohostVal $1) Then (
+                  Sys [ DispString ty "TEST PASSED!\n" ; Finish ty ] ; Retv
+                ) ;
+                If (Not (Eq #tohostVal $1)) Then (
+                  Sys [ DispString ty "TEST FAILED at test case: " ; DispDecimal #tohostVal ; DispString ty "\n" ; Finish ty ] ; Retv
+                ) ;
+                Retv
+              ) ;
+              Retv
+            ) ;
+            Retv
+          ) Else (
+            Let  ld             : LoadCmd                   <- ##memAct `! "Load" ;
+            Let  ldAddr         : Addr                      <- ##ld`"addr" ;
+            Let  pending        : PendingLoad               <- ##ld`"pending" ;
+            Let  memSize        : Bit LgLgNumBytesFullCapSz <- ##pending`"memSize" ;
+            LetA loadBuf_isFull : Bool                      <- liftAction np_loadFifo (@isFull dom capacity LoadCmd ty) ;
+            If (Not #loadBuf_isFull) Then (
+              LetA accepted : Bool <- liftAction np_mem ((memIfc ty).(mem_readMemRq) ldAddr memSize) ;
+              If #accepted Then (
+                Act (liftAction np_loadFifo (@enq dom capacity LoadCmd ty ld)) ;
+                liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
+              ) ;
+              Retv
+            ) ;
+            Retv
+          ) ;
+          Retv
+        ) Else (
+          Let  fenceOp         : FenceOp <- ##mfAct `! "Fence" ;
+          Let  needsEmpty      : Bool    <- Or [ ##fenceOp`"RR" ; ##fenceOp`"RW" ] ;
+          LetA loadBuf_isEmpty : Bool    <- liftAction np_loadFifo (@isEmpty dom capacity LoadCmd ty) ;
+          LetA revBuf_isEmpty  : Bool    <- liftAction np_revFifo (@isEmpty dom capacity RevCmd ty) ;
+          If (Or [ Not #needsEmpty ; And [ #loadBuf_isEmpty ; #revBuf_isEmpty ] ]) Then (
+            LetA accepted : Bool <- liftAction np_mem ((memIfc ty).(mem_fence_req) fenceOp) ;
+            If #accepted Then (
+              liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
+            ) ;
+            Retv
+          ) ;
+          Retv
+        ) ;
+        Retv
+      ) Else (
+        Let  md       : MulDivCmd   <- ##action `! "MulDiv" ;
+        Let  op1      : Addr        <- ##md`"op1" ;
+        Let  mulDivOp : MulDivUnion <- ##md`"mulDivOp" ;
+        Let  dstIdx   : Bit RegIdxSz <- ##md`"dstIdx" ;
+        Let  isMul    : Bool        <- #mulDivOp `? "Mul" ;
+        LetA canEnq   : Bool        <-
+          liftAction np_mulDiv
+            (@modeCanEnq dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty isMul) ;
+        If #canEnq Then (
+          Act (liftAction np_mulDiv
+                 (@modeEnqReq dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty dstIdx op1 mulDivOp)) ;
+          liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
+        ) ;
+        Retv
+      ) ;
+      Retv
+    ) ;
+    Retv.
+
+  (* =========================================================================
+   * STAGE 2: loadRpAndWritebackOrIssueRevRq
+   *
+   * - Peeks load response via mem_getMemRp.
+   * - Uses dispatchLoadResponse:
+   *   - RevLookup: when revBuf is not full and mem_readRevBitRq is accepted,
+   *                dequeues mem_deqMemRp and loadFifo and enqueues into revFifo.
+   *   - Writeback: dequeues mem_deqMemRp and loadFifo, writes back to RF, and
+   *                clears waitBit[dstIdx].
+   * ========================================================================= *)
+  Definition loadRpAndWritebackOrIssueRevRq (config : RevConfig) : Action ty coreTree (Bit 0) :=
+    LetA inputHead : Option LoadCmd <- liftAction np_loadFifo (@first dom capacity LoadCmd ty) ;
+
+    If (#inputHead`"valid") Then (
+      Let  ld        : LoadCmd                   <- #inputHead`"data" ;
+      Let  ldAddr    : Addr                      <- ##ld`"addr" ;
+      Let  pl        : PendingLoad               <- ##ld`"pending" ;
+      Let  memSize   : Bit LgLgNumBytesFullCapSz <- ##pl`"memSize" ;
+      LetA memValOpt : Option FullCapWithTag     <- liftAction np_mem ((memIfc ty).(mem_getMemRp) ldAddr memSize) ;
+
+      If (##memValOpt`"valid") Then (
+        Let  memVal  : FullCapWithTag <- ##memValOpt`"data" ;
+        LetL outcome : LoadOutcome    <- dispatchLoadResponse config pl memVal ;
+
+        If (#outcome `? "RevLookup") Then (
+          Let  revInfo       : RevCmd           <- #outcome `! "RevLookup" ;
+          Let  revBase       : Bit (AddrSz + 1) <- ##revInfo`"base" ;
+          LetA revBuf_isFull : Bool             <- liftAction np_revFifo (@isFull dom capacity RevCmd ty) ;
+          If (Not #revBuf_isFull) Then (
+            LetA accepted : Bool <- liftAction np_mem ((memIfc ty).(mem_readRevBitRq) revBase) ;
+            If #accepted Then (
+              Act (liftAction np_mem ((memIfc ty).(mem_deqMemRp) ldAddr)) ;
+              Act (liftAction np_revFifo (@enq dom capacity RevCmd ty revInfo)) ;
+              liftAction np_loadFifo (@deq dom capacity LoadCmd ty)
+            ) ;
+            Retv
+          ) ;
+          Retv
+        ) Else (
+          Let wbInfo  : WbCmd           <- #outcome `! "Writeback" ;
+          Let dstIdxV : Bit RegIdxSz    <- ##wbInfo`"dstIdx" ;
+          Let dstValV : FullECapWithTag <- ##wbInfo`"dstVal" ;
+          Act (liftAction np_mem ((memIfc ty).(mem_deqMemRp) ldAddr)) ;
+          Act (commitWb dstIdxV dstValV) ;
+          liftAction np_loadFifo (@deq dom capacity LoadCmd ty)
+        ) ;
+        Retv
+      ) ;
+      Retv
+    ) ;
+    Retv.
+
+  (* =========================================================================
+   * STAGE 3: revRpAndWriteBack
+   *
+   * - Consumes revocation bit response via mem_getDeqRevBitRp, writes back
+   *   final capability to RF, clears waitBit[dstIdx], and dequeues revFifo.
+   * ========================================================================= *)
+  Definition revRpAndWriteBack : Action ty coreTree (Bit 0) :=
+    LetA inputHead : Option RevCmd <- liftAction np_revFifo (@first dom capacity RevCmd ty) ;
+
+    If (#inputHead`"valid") Then (
+      Let  revInfo   : RevCmd           <- #inputHead`"data" ;
+      Let  revBase   : Bit (AddrSz + 1) <- ##revInfo`"base" ;
+      Let  pr        : PendingRev       <- ##revInfo`"pendingRev" ;
+      LetA revBitOpt : Option Bool      <- liftAction np_mem ((memIfc ty).(mem_getDeqRevBitRp) revBase) ;
+
+      If (##revBitOpt`"valid") Then (
+        Let  revBit  : Bool            <- ##revBitOpt`"data" ;
+        LetL wbInfo  : WbCmd           <- dispatchRevResponse pr revBit ;
+        Let  dstIdxV : Bit RegIdxSz    <- ##wbInfo`"dstIdx" ;
+        Let  dstValV : FullECapWithTag <- ##wbInfo`"dstVal" ;
+        Act (commitWb dstIdxV dstValV) ;
+        liftAction np_revFifo (@deq dom capacity RevCmd ty)
+      ) ;
+      Retv
+    ) ;
+    Retv.
+
+  (* =========================================================================
+   * MULDIV SUBSYSTEM STAGES & WRITEBACK
+   * ========================================================================= *)
+
+  Definition mulStageRules : list (Action ty coreTree (Bit 0)) :=
+    map (fun a => liftAction np_mulDiv a)
+        (@modeAllStageRules dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty).
+
+  Local Definition mulDivWriteBack
+    (popResp : Action ty (modeMulDivTree dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode) (Option (MulDivWbResp (Z.to_nat Xlen))))
+    : Action ty coreTree (Bit 0) :=
+    LetA wbOpt : Option (MulDivWbResp (Z.to_nat Xlen)) <- liftAction np_mulDiv popResp ;
+    If (#wbOpt`"valid") Then (
+      Let wb      : MulDivWbResp (Z.to_nat Xlen) <- #wbOpt`"data" ;
+      Let dstIdx  : Bit RegIdxSz                <- ##wb`"dst" ;
+      Let resAddr : Addr                        <- ##wb`"res" ;
+      Let wbVal   : FullECapWithTag             <- STRUCT {
+        "tag"  ::= Const ty Bool false ;
+        "ecap" ::= Const ty ECap (getDefault _) ;
+        "addr" ::= #resAddr
+      } ;
+      commitWb dstIdx wbVal
+    ) ;
+    Retv.
+
+  Definition mulWriteBack : Action ty coreTree (Bit 0) :=
+    mulDivWriteBack (@modePopMulResp dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty).
+
+  Definition divStageRules : list (Action ty coreTree (Bit 0)) := [].
+
+  Definition divWriteBack : Action ty coreTree (Bit 0) :=
+    mulDivWriteBack (@modePopDivResp dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty).
+
+End DeferredStages.

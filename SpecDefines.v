@@ -1358,8 +1358,10 @@ Definition isRevokableAddr {ty : Kind -> Type} (config : RevConfig) (a : Expr ty
   And [ Uge a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;
         Ult a (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) (heapEndAddr config))) ].
 
+Definition needsRevocationCheck {ty : Kind -> Type} (config : RevConfig) (ecap : ty ECap) (rawTag : ty Bool) : Expr ty Bool :=
+  And [ #rawTag ; Not (isSealingCap ecap) ; isRevokableAddr config (##ecap`"base") ].
+
 Definition RevBitLookup := STRUCT_TYPE {
-  "isRevokable" :: Bool ;
   "revByteAddr" :: Addr ;
   "bitInByte"   :: Bit 3
 }.
@@ -1370,7 +1372,6 @@ Section RevBits.
 
   Definition computeRevBitAddr (base : ty (Bit (AddrSz + 1))) : LetExpr ty RevBitLookup.
     refine (
-      LetE is_revokable : Bool <- isRevokableAddr config #base ;
       LetE heapOffset : Bit (AddrSz + 1) <-
         Sub #base (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;
       LetE castHeapOffset <- castBits _ #heapOffset ;
@@ -1385,7 +1386,6 @@ Section RevBits.
       LetE bitInByte : Bit 3 <-
         TruncLsb (((AddrSz + 1) - config.(lgRevGranularity)) - 3) 3 #castTotalBitIdx ;
       @RetE ty RevBitLookup (STRUCT {
-        "isRevokable" ::= #is_revokable ;
         "revByteAddr" ::= #revByteAddr ;
         "bitInByte"   ::= #bitInByte
       })
@@ -1395,6 +1395,4 @@ Section RevBits.
 End RevBits.
 
 Definition extractRevBit {ty : Kind -> Type} (lookup : ty RevBitLookup) (byteVal : Expr ty (Bit 8)) : Expr ty Bool :=
-  ITE (##lookup`"isRevokable")
-      (ReadArray (FromBit (Array 8 Bool) byteVal) (##lookup`"bitInByte"))
-      (ConstBool false).
+  ReadArray (FromBit (Array 8 Bool) byteVal) (##lookup`"bitInByte").

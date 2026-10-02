@@ -869,39 +869,27 @@ Section ImplMemModel.
 
     (* 3. Revocation Bit Memory Channel *)
     Definition implReadRevBitRq (base : ty (Bit (AddrSz + 1))) : Action ty implMemTree Bool :=
-      LetL lookup : RevBitLookup <- computeRevBitAddr revConfig base ;
-      LetIf rdy : Bool <-
-        If (##lookup`"isRevokable") Then (
-          Let revByteAddr : Addr                      <- ##lookup`"revByteAddr" ;
-          Let sz0         : Bit LgLgNumBytesFullCapSz <- $0 ;
-          implRegionsReadRq regions revByteAddr sz0
-        ) Else (
-          Return (ConstBool true)
-        ) ;
-      Return #rdy.
+      LetL lookup      : RevBitLookup              <- computeRevBitAddr revConfig base ;
+      Let  revByteAddr : Addr                      <- ##lookup`"revByteAddr" ;
+      Let  sz0         : Bit LgLgNumBytesFullCapSz <- $0 ;
+      implRegionsReadRq regions revByteAddr sz0.
 
     Definition implGetDeqRevBitRp (base : ty (Bit (AddrSz + 1))) : Action ty implMemTree (Option Bool) :=
-      LetL lookup : RevBitLookup <- computeRevBitAddr revConfig base ;
-      LetIf revOpt : Option Bool <-
-        If (##lookup`"isRevokable") Then (
-          Let  revByteAddr : Addr                      <- ##lookup`"revByteAddr" ;
-          Let  sz0         : Bit LgLgNumBytesFullCapSz <- $0 ;
-          LetA rpOpt       : Option FullCapWithTag     <- implRegionsReadRp regions revByteAddr sz0 ;
-          LetIf rOpt : Option Bool <-
-            If (##rpOpt`"valid") Then (
-              Act (implRegionsDeqRp regions revByteAddr) ;
-              Let revCap  : FullCapWithTag <- ##rpOpt`"data" ;
-              Let revByte : Bit 8          <- TruncLsb (AddrSz - 8) 8 (##revCap`"addr") ;
-              Let revBit  : Bool           <- extractRevBit lookup #revByte ;
-              Return (mkSome #revBit)
-            ) Else (
-              Return ConstDef
-            ) ;
-          Return #rOpt
+      LetL lookup      : RevBitLookup              <- computeRevBitAddr revConfig base ;
+      Let  revByteAddr : Addr                      <- ##lookup`"revByteAddr" ;
+      Let  sz0         : Bit LgLgNumBytesFullCapSz <- $0 ;
+      LetA rpOpt       : Option FullCapWithTag     <- implRegionsReadRp regions revByteAddr sz0 ;
+      LetIf rOpt : Option Bool <-
+        If (##rpOpt`"valid") Then (
+          Act (implRegionsDeqRp regions revByteAddr) ;
+          Let revCap  : FullCapWithTag <- ##rpOpt`"data" ;
+          Let revByte : Bit 8          <- TruncLsb (AddrSz - 8) 8 (##revCap`"addr") ;
+          Let revBit  : Bool           <- extractRevBit lookup #revByte ;
+          Return (mkSome #revBit)
         ) Else (
-          Return (mkSome (ConstBool false))
+          Return ConstDef
         ) ;
-      Return #revOpt.
+      Return #rOpt.
 
     (* 4. Memory Write Channel (with store-address snooping for split-phase revoker) *)
     Definition implWriteMem (rev : @RevokerInstance dom (implRevokerExtraChildren dom) regions)
@@ -929,6 +917,7 @@ Section ImplMemModel.
       @implRevokerStepsFsm
         dom
         ty
+        revConfig
         implMemTree
         (fun k a => implMemNthRegionAction rev.(revokerIdx) (@revokerRegion dom (implRevokerExtraChildren dom) regions rev) rev.(pfRevoker) a)
         implReadMemRq

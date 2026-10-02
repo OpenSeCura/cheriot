@@ -257,26 +257,23 @@ Section Revoker.
 
         If (Not #isDone) Then (
           (* 1. Inspect capability at current scanAddr *)
-          Let capSz : Bit LgLgNumBytesFullCapSz <- $LgNumBytesFullCapSz ;
-          LetA ldFullCap : FullCapWithTag <- specMemRead regions scanAddr capSz ;
-          If (#ldFullCap`"tag") Then (
-            Let ldCap : Cap <- #ldFullCap`"cap" ;
-            Let ldAddr : Addr <- #ldFullCap`"addr" ;
-            LetA ldECap : ECap <- toAction memTree (DecodeCap ldCap ldAddr) ;
-            Let isSealing : Bool <- isSealingCap ldECap ;
-            If (Not #isSealing) Then (
-              Let ldBase : Bit (AddrSz + 1) <- #ldECap`"base" ;
-              LetA revBit : Bool <- readRevBit ldBase ;
-              If #revBit Then (
-                (* Capability revoked: invalidate tag in memory *)
-                Let untaggedCap : FullCapWithTag <- STRUCT {
-                  "tag"  ::= Const ty Bool false ;
-                  "cap"  ::= #ldFullCap`"cap" ;
-                  "addr" ::= #ldFullCap`"addr"
-                } ;
-                Act (specMemWrite regions scanAddr untaggedCap capSz) ;
-                Retv
-              ) ;
+          Let capSz      : Bit LgLgNumBytesFullCapSz <- $LgNumBytesFullCapSz ;
+          LetA ldFullCap : FullCapWithTag            <- specMemRead regions scanAddr capSz ;
+          Let ldTag      : Bool                      <- ##ldFullCap`"tag" ;
+          Let ldCap      : Cap                       <- ##ldFullCap`"cap" ;
+          Let ldAddr     : Addr                      <- ##ldFullCap`"addr" ;
+          LetA ldECap    : ECap                      <- toAction memTree (DecodeCap ldCap ldAddr) ;
+          If (needsRevocationCheck config ldECap ldTag) Then (
+            Let ldBase : Bit (AddrSz + 1) <- ##ldECap`"base" ;
+            LetA revBit : Bool <- readRevBit ldBase ;
+            If #revBit Then (
+              (* Capability revoked: invalidate tag in memory *)
+              Let untaggedCap : FullCapWithTag <- STRUCT {
+                "tag"  ::= Const ty Bool false ;
+                "cap"  ::= #ldCap ;
+                "addr" ::= #ldAddr
+              } ;
+              Act (specMemWrite regions scanAddr untaggedCap capSz) ;
               Retv
             ) ;
             Retv

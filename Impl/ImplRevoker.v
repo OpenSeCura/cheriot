@@ -91,6 +91,7 @@ Section ImplRevoker.
       Retv).
 
     (* Split-Phase Autonomous Revoker Steps *)
+    Variable revConfig    : RevConfig.
     Variable memTree      : Tree DomainElem.
     Variable revAct       : forall {k : Kind}, Action ty implRevokerTree k -> Action ty memTree k.
     Variable readMemRq      : ty Addr -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree Bool.
@@ -166,11 +167,11 @@ Section ImplRevoker.
         If (##rpOpt`"valid") Then (
           Act (deqMemRp scanAddr) ;
           Let ldFullCap   : FullCapWithTag <- ##rpOpt`"data" ;
+          Let ldTag       : Bool           <- ##ldFullCap`"tag" ;
           Let ldCap       : Cap            <- ##ldFullCap`"cap" ;
           Let ldAddr      : Addr           <- ##ldFullCap`"addr" ;
           LetA ldECap     : ECap           <- toAction memTree (DecodeCap ldCap ldAddr) ;
-          Let isSealing   : Bool           <- isSealingCap ldECap ;
-          Let shouldCheck : Bool           <- And [ ##ldFullCap`"tag" ; Not #isSealing ] ;
+          Let shouldCheck : Bool           <- needsRevocationCheck revConfig ldECap ldTag ;
           If #shouldCheck Then (
             Act (revAct (WriteReg pRevScanCap #ldFullCap Retv)) ;
             revAct (WriteReg pRevPhase (mkRevPhase "WaitRevBitRq") Retv)
