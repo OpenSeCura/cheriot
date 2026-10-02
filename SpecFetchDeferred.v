@@ -48,14 +48,9 @@ Definition MemActionType := [
 ].
 Definition MemAction := TaggedUnion MemActionType.
 
-Definition FenceCmd := STRUCT_TYPE {
-  "fenceOp"    :: FenceOp ;
-  "needsEmpty" :: Bool
-}.
-
 Definition MemFenceActionType := [
   ("Mem"%string,   MemAction) ;
-  ("Fence"%string, FenceCmd)
+  ("Fence"%string, FenceOp)
 ].
 Definition MemFenceAction := TaggedUnion MemFenceActionType.
 
@@ -163,13 +158,8 @@ Section CombinationalDeferred.
               ) ;
             @RetE _ MemFenceAction (UNION (MemFenceActionType, "Mem" ::= #memAct))
           ) ElseE (
-            LetE fenceVal        : FenceOp  <- ##memFence `! "Fence" ;
-            LetE fenceNeedsEmpty : Bool     <- Or [ ##fenceVal`"RW" ; ##fenceVal`"WW" ] ;
-            LetE fenceCmd        : FenceCmd <- STRUCT {
-              "fenceOp"    ::= #fenceVal ;
-              "needsEmpty" ::= #fenceNeedsEmpty
-            } ;
-            @RetE _ MemFenceAction (UNION (MemFenceActionType, "Fence" ::= #fenceCmd))
+            LetE fenceVal : FenceOp <- ##memFence `! "Fence" ;
+            @RetE _ MemFenceAction (UNION (MemFenceActionType, "Fence" ::= #fenceVal))
           ) ;
         @RetE _ DeferredAction (UNION (DeferredActionType, "MemFence" ::= #mfAct))
       ) ElseE (
