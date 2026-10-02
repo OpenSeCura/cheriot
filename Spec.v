@@ -47,16 +47,11 @@ Section SpecDom.
     Variable rev : @RevokerInstance core [] regions.
     Variable plic : @PlicInstance core (S (S (length (collectIrqActions regions)))) regions.
     Local Notation sysTree := (specSysTree regions).
-    Local Notation gprPathsWithKind := (gprPathsWithKind core pcAddrInit).
-    Local Notation scrPathsWithKind := (scrPathsWithKind core pcAddrInit).
-    Local Notation csrPathsWithKind := (csrPathsWithKind core pcAddrInit).
     Local Notation incrementMcycle := (incrementMcycle core pcAddrInit).
-    Local Notation incrementMinstret := (incrementMinstret core pcAddrInit).
     Local Notation specFetch := (specFetch core pcAddrInit).
     Local Notation specExecuteDeferred := (specExecuteDeferred core pcAddrInit tohostAddr).
     Local Notation regRead := (regRead core pcAddrInit).
     Local Notation executeNonDeferred := (executeNonDeferred core pcAddrInit).
-    Local Notation rfTree := (rfTree core pcAddrInit).
 
     Section Ty.
       Variable ty : Kind -> Type.

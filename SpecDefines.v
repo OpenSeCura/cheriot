@@ -1330,7 +1330,6 @@ Definition FetchOut := STRUCT_TYPE {
 
 Definition PendingLoad := STRUCT_TYPE {
   "dstIdx"     :: Bit RegIdxSz ;
-  "byteOffset" :: Bit LgNumBytesFullCapSz ;
   "memSize"    :: Bit LgLgNumBytesFullCapSz ;
   "isUnsigned" :: Bool ;
   "isLM"       :: Bool ;

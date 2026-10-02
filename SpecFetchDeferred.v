@@ -94,25 +94,6 @@ Definition LoadOutcome := TaggedUnion LoadOutcomeType.
 Section CombinationalDeferred.
   Variable ty : Kind -> Type.
 
-  Definition formatStorePayload (stVal : ty FullCapWithTag)
-                                (byteOffset : ty (Bit LgNumBytesFullCapSz))
-                                (isCap : ty Bool)
-                                (needsRotation : bool) : LetExpr ty FullCapWithTag :=
-    LetE tag        : Bool           <- ##stVal`"tag" ;
-    LetE cap        : Cap            <- ##stVal`"cap" ;
-    LetE data       : Data           <- ##stVal`"addr" ;
-    LetE stBytesInt : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
-      FromBit (Array (Z.to_nat NumBytesXlen) (Bit 8)) #data ;
-    LetE stBytesRot : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
-      if needsRotation then ArrayRotl #stBytesInt #byteOffset else #stBytesInt ;
-    LetE stAddr     : Addr           <- ITE #isCap #data (ToBit #stBytesRot) ;
-    LetE stTag      : Bool           <- And [ #isCap ; #tag ] ;
-    @RetE _ FullCapWithTag (STRUCT {
-      "tag"  ::= #stTag ;
-      "cap"  ::= #cap ;
-      "addr" ::= #stAddr
-    }).
-
   Definition decodeAndAttenuateCap (rawCap : ty Cap) (rawDataLsb : ty Addr)
                                   (rawTag isLM isLG : ty Bool) : LetExpr ty ECap :=
     LETE ldECapRaw   : ECap     <- DecodeCap rawCap rawDataLsb ;
@@ -133,26 +114,21 @@ Section CombinationalDeferred.
     @RetE _ Bool (And [ #rawTag ; Not #isSealing ]).
 
   Definition decodeSubwordData (rawDataLsb : ty Addr)
-                               (byteOffset : ty (Bit LgNumBytesFullCapSz))
                                (memSize : ty (Bit LgLgNumBytesFullCapSz))
-                               (isUnsigned : ty Bool)
-                               (needsRotation : bool) : LetExpr ty (Bit Xlen) :=
+                               (isUnsigned : ty Bool) : LetExpr ty (Bit Xlen) :=
     LetE rawBytes   : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
       FromBit (Array (Z.to_nat NumBytesXlen) (Bit 8)) #rawDataLsb ;
-    LetE rotBytes   : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
-      if needsRotation then ArrayRotr #rawBytes #byteOffset else #rawBytes ;
     LetE memSzBytes : Bit (LgNumBytesFullCapSz + 1) <- Sll $1 #memSize ;
     @RetE _ (Bit Xlen) (ToBit (
       ITE #isUnsigned
-          (ArrayZeroExtend #memSzBytes #rotBytes)
-          (ArraySignExtend #memSzBytes #rotBytes)
+          (ArrayZeroExtend #memSzBytes #rawBytes)
+          (ArraySignExtend #memSzBytes #rawBytes)
     )).
 
-  Definition dispatchDeferredReq (req : ty DeferredReq) (needsRotation : bool) : LetExpr ty DeferredAction :=
-    LetE dstIdx     : Bit RegIdxSz             <- ##req`"dstIdx" ;
-    LetE addr       : Addr                     <- ##req`"addr" ;
-    LetE byteOffset : Bit LgNumBytesFullCapSz  <- TruncLsb TagAddrWidth LgNumBytesFullCapSz #addr ;
-    LetE op         : DeferredUnion            <- ##req`"op" ;
+  Definition dispatchDeferredReq (req : ty DeferredReq) : LetExpr ty DeferredAction :=
+    LetE dstIdx     : Bit RegIdxSz    <- ##req`"dstIdx" ;
+    LetE addr       : Addr            <- ##req`"addr" ;
+    LetE op         : DeferredUnion   <- ##req`"op" ;
     LetIfE action : DeferredAction <-
       IfE (##op `? "MemFence") ThenE (
         LetE memFence   : MemFenceUnion <- ##op `! "MemFence" ;
@@ -161,14 +137,12 @@ Section CombinationalDeferred.
             LetE memPayload : MemPayload                <- ##memFence `! "Mem" ;
             LetE memSize    : Bit LgLgNumBytesFullCapSz <- ##memPayload`"memSize" ;
             LetE memOp      : LoadOrStoreKind           <- ##memPayload`"memOp" ;
-            LetE isCap      : Bool                      <- Eq #memSize $LgNumBytesFullCapSz ;
             LetIfE memAct : MemAction <-
               IfE (##memOp `? "Store") ThenE (
                 LetE stCapVal : FullCapWithTag <- ##memOp `! "Store" ;
-                LETE stVal    : FullCapWithTag <- formatStorePayload stCapVal byteOffset isCap needsRotation ;
                 LetE stCmd    : StoreCmd       <- STRUCT {
                   "addr"    ::= #addr ;
-                  "stVal"   ::= #stVal ;
+                  "stVal"   ::= #stCapVal ;
                   "memSize" ::= #memSize
                 } ;
                 @RetE _ MemAction (UNION (MemActionType, "Store" ::= #stCmd))
@@ -176,7 +150,6 @@ Section CombinationalDeferred.
                 LetE ldOpVal : LoadOp <- ##memOp `! "Load" ;
                 LetE pending : PendingLoad <- STRUCT {
                   "dstIdx"     ::= #dstIdx ;
-                  "byteOffset" ::= #byteOffset ;
                   "memSize"    ::= #memSize ;
                   "isUnsigned" ::= ##ldOpVal`"isUnsigned" ;
                   "isLM"       ::= ##ldOpVal`"isLM" ;
@@ -210,9 +183,8 @@ Section CombinationalDeferred.
       ) ;
     @RetE _ DeferredAction #action.
 
-  Definition dispatchLoadResponse (pl : ty PendingLoad) (memVal : ty FullCapWithTag) (needsRotation : bool) : LetExpr ty LoadOutcome :=
+  Definition dispatchLoadResponse (pl : ty PendingLoad) (memVal : ty FullCapWithTag) : LetExpr ty LoadOutcome :=
     LetE dstIdx     : Bit RegIdxSz              <- ##pl`"dstIdx" ;
-    LetE byteOffset : Bit LgNumBytesFullCapSz   <- ##pl`"byteOffset" ;
     LetE memSize    : Bit LgLgNumBytesFullCapSz <- ##pl`"memSize" ;
     LetE isUnsigned : Bool                      <- ##pl`"isUnsigned" ;
     LetE isLM       : Bool                      <- ##pl`"isLM" ;
@@ -257,7 +229,7 @@ Section CombinationalDeferred.
           ) ;
         @RetE _ LoadOutcome #outcomeCap
       ) ElseE (
-        LETE readBits : Bit Xlen <- decodeSubwordData rawDataLsb byteOffset memSize isUnsigned needsRotation ;
+        LETE readBits : Bit Xlen <- decodeSubwordData rawDataLsb memSize isUnsigned ;
         LetE dstVal   : FullECapWithTag <- STRUCT {
           "tag"  ::= Const ty Bool false ;
           "ecap" ::= Const ty ECap (getDefault _) ;
@@ -317,8 +289,6 @@ Section SpecCoreTree.
     Definition np_mem : NodePath coreTree :=
       Eval cbn in (getNodePath coreTree "core.mem").
 
-    Local Notation computeRevBitAddr := (computeRevBitAddr config).
-
     Local Notation readRevBit := (readRevBit config regions).
 
     (* ===========================================================================
@@ -359,7 +329,7 @@ Section SpecCoreTree.
      * specExecuteDeferredReq (Single Deferred Request Execution)
      * =========================================================================== *)
     Definition specExecuteDeferredReq (req : ty DeferredReq) : Action ty coreTree (Bit 0) :=
-      LetL action : DeferredAction <- dispatchDeferredReq req false ;
+      LetL action : DeferredAction <- dispatchDeferredReq req ;
 
       If (##action `? "MemFence") Then (
         Let mfAct : MemFenceAction <- ##action `! "MemFence" ;
@@ -392,7 +362,7 @@ Section SpecCoreTree.
             Let memSize   : Bit LgLgNumBytesFullCapSz <- ##pending`"memSize" ;
 
             LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions addr memSize) ;
-            LetL outcome  : LoadOutcome       <- dispatchLoadResponse pending memVal false ;
+            LetL outcome  : LoadOutcome       <- dispatchLoadResponse pending memVal ;
 
             If (#outcome `? "RevLookup") Then (
               Let  revInfo : RevCmd           <- #outcome `! "RevLookup" ;
