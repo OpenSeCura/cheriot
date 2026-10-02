@@ -59,12 +59,12 @@ Section DeferredStages.
 
   Variable pcAddrInit : Z.
   Variable tohostAddr : Z.
-  Variable bpTree fetchTree : Tree DomainElem.
+  Variable bpTree fetchTree decodeTree : Tree DomainElem.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable ty : Kind -> Type.
 
   Local Notation memTree := (memIfc ty).(memTree).
-  Local Notation coreTree := (coreTree dom pcAddrInit bpTree memTree fetchTree deferredTree).
+  Local Notation coreTree := (coreTree dom pcAddrInit bpTree memTree fetchTree decodeTree deferredTree).
   Local Notation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
@@ -89,7 +89,7 @@ Section DeferredStages.
     Let dstIdxReal : Bit RegIdxSzReal <- TruncLsb 1 RegIdxSzReal #dstIdx ;
     If (isNotZero #dstIdxReal) Then (
       Act (liftAction np_rf (writeRegsList gprPathsWithKind #dstIdx #dstVal)) ;
-      liftAction np_waitBits (@writeWaitBit dom ty #dstIdxReal (ConstBool false))
+      liftAction np_waitBits (@writeGprWaitBit dom ty #dstIdxReal (ConstBool false))
     ) ;
     Retv.
 

@@ -50,12 +50,12 @@ Section FetchStage.
   Variable noInstIfc : forall ty, @NoInstPredIfc ty.
   Variable withInstTree : Tree DomainElem.
   Variable memIfc : forall ty, @MemIfc ty.
-  Variable deferredTree : Tree DomainElem.
+  Variable decodeTree deferredTree : Tree DomainElem.
   Variable ty : Kind -> Type.
 
   Local Notation bpTree := (bpTree (noInstIfc ty).(noInstTree) withInstTree).
   Local Notation memTree := (memIfc ty).(memTree).
-  Local Notation coreTree := (coreTree dom pcAddrInit bpTree memTree fetchTree deferredTree).
+  Local Notation coreTree := (coreTree dom pcAddrInit bpTree memTree fetchTree decodeTree deferredTree).
   Local Notation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
@@ -89,7 +89,7 @@ Section FetchStage.
 
     If (Not #fetchBuf_isFull) Then (
       LetA fetchPc   : Addr            <- liftAction np_fetch (@readFetchPc ty) ;
-      LetA currEpoch : Epoch           <- @readCurrEpoch dom pcAddrInit bpTree memTree fetchTree deferredTree ty ;
+      LetA currEpoch : Epoch           <- @readCurrEpoch dom pcAddrInit bpTree memTree fetchTree decodeTree deferredTree ty ;
       LetA pcc       : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
 
       Let  pccECap     : ECap <- ##pcc`"ecap" ;

@@ -41,7 +41,11 @@ Definition FetchBufEntry := STRUCT_TYPE {
   "fetchExc" :: FetchException
 }.
 
-Definition DecodeToAluEntry := AluInInstGroup.
+Definition DecodeToAluEntry := STRUCT_TYPE {
+  "aluIn"  :: AluInInstGroup ;
+  "predPc" :: Addr ;
+  "epoch"  :: Epoch
+}.
 
 (* ===========================================================================
  * Hardware Pipeline State Trees & Register Accessors
@@ -52,43 +56,73 @@ Section ImplCommon.
   Variable pcAddrInit : Z.
 
   (* 1. Scoreboard (waitBits) *)
-  Definition waitBitLeaves : list (Tree DomainElem) :=
+  Definition gprWaitLeaves : list (Tree DomainElem) :=
     map (fun '(_, idx) =>
       Leaf ("waitBit_" ++ hex_string_of_Z idx)%string
            (dom, EReg (Build_Reg Bool (Some false) false))
     ) (enumerate (repeat tt (Z.to_nat NumRegs))).
 
+  Definition scrWaitLeaves : list (Tree DomainElem) :=
+    map (fun e =>
+      Leaf ("waitBit_" ++ e.(scrName))%string
+           (dom, EReg (Build_Reg Bool (Some false) false))
+    ) (ScrTable 0).
+
+  Definition csrWaitLeaves : list (Tree DomainElem) :=
+    map (fun e =>
+      Leaf ("waitBit_" ++ e.(csrName))%string
+           (dom, EReg (Build_Reg Bool (Some false) false))
+    ) PhysicalCsrTable.
+
   Definition waitBitsTree : Tree DomainElem :=
-    Node "waitBits" waitBitLeaves.
-
-  Definition waitBitPathsWithKind : list (RegOfKind (t:=waitBitsTree) Bool) :=
-    Eval cbn in (getTreeRegsOfKind Bool waitBitsTree).
-
-  Definition readWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit RegIdxSzReal))
-    : Action ty waitBitsTree Bool :=
-    readRegsList waitBitPathsWithKind idx.
-
-  Definition writeWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit RegIdxSzReal)) (val : Expr ty Bool)
-    : Action ty waitBitsTree (Bit 0) :=
-    writeRegsList waitBitPathsWithKind idx val.
-
-  (* 2. Decode Subtree & Core Tree *)
-  Definition decodeTree : Tree DomainElem :=
-    Node "decode" [
-      Leaf "decodePc"        (dom, EReg (Build_Reg (Option Addr) (Some (getDefault (Option Addr))) false)) ;
-      Node "decodeToAluBuf" [ fifoTree dom 1 DecodeToAluEntry ]
+    Node "waitBits" [
+      Node "gprs" gprWaitLeaves ;
+      Node "scrs" scrWaitLeaves ;
+      Node "csrs" csrWaitLeaves
     ].
 
-  Definition pDecodePc : RegPath decodeTree :=
-    Eval cbn in (getChildRegPathTree decodeTree "decodePc").
+  Definition np_waitGprs : NodePath waitBitsTree := Eval cbn in (getNodePath waitBitsTree "waitBits.gprs").
+  Definition np_waitScrs : NodePath waitBitsTree := Eval cbn in (getNodePath waitBitsTree "waitBits.scrs").
+  Definition np_waitCsrs : NodePath waitBitsTree := Eval cbn in (getNodePath waitBitsTree "waitBits.csrs").
 
-  Definition readDecodePc (ty : Kind -> Type) : Action ty decodeTree (Option Addr) :=
-    ReadReg "decodePc" pDecodePc (fun v => Return #v).
+  Definition gprWaitPathsWithKind : list (RegOfKind (t:=waitBitsTree) Bool) :=
+    Eval cbn in (map (embedRegOfKind np_waitGprs)
+                     (getTreeRegsOfKind Bool (getNode np_waitGprs))).
 
-  Definition writeDecodePc (ty : Kind -> Type) (val : Expr ty (Option Addr)) : Action ty decodeTree (Bit 0) :=
-    WriteReg pDecodePc val Retv.
+  Definition scrWaitPathsWithKind : list (RegOfKind (t:=waitBitsTree) Bool) :=
+    Eval cbn in (map (embedRegOfKind np_waitScrs)
+                     (getTreeRegsOfKind Bool (getNode np_waitScrs))).
 
-  Definition coreTree (bpTree memTree fetchTree deferredTree : Tree DomainElem) : Tree DomainElem :=
+  Definition csrWaitPathsWithKind : list (RegOfKind (t:=waitBitsTree) Bool) :=
+    Eval cbn in (map (embedRegOfKind np_waitCsrs)
+                     (getTreeRegsOfKind Bool (getNode np_waitCsrs))).
+
+  Definition readGprWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit RegIdxSzReal))
+    : Action ty waitBitsTree Bool :=
+    readRegsList gprWaitPathsWithKind idx.
+
+  Definition writeGprWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit RegIdxSzReal)) (val : Expr ty Bool)
+    : Action ty waitBitsTree (Bit 0) :=
+    writeRegsList gprWaitPathsWithKind idx val.
+
+  Definition readScrWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit ScrIdxSz))
+    : Action ty waitBitsTree Bool :=
+    readRegsList scrWaitPathsWithKind idx.
+
+  Definition writeScrWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit ScrIdxSz)) (val : Expr ty Bool)
+    : Action ty waitBitsTree (Bit 0) :=
+    writeRegsList scrWaitPathsWithKind idx val.
+
+  Definition readCsrWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit CsrIdxSz))
+    : Action ty waitBitsTree Bool :=
+    readRegsList csrWaitPathsWithKind idx.
+
+  Definition writeCsrWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit CsrIdxSz)) (val : Expr ty Bool)
+    : Action ty waitBitsTree (Bit 0) :=
+    writeRegsList csrWaitPathsWithKind idx val.
+
+  (* 2. Core Tree *)
+  Definition coreTree (bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) : Tree DomainElem :=
     Node "core" [
       rfTree dom pcAddrInit ;
       waitBitsTree ;
@@ -96,20 +130,20 @@ Section ImplCommon.
       Leaf "currEpoch" (dom, EReg (Build_Reg Epoch (Some Zmod.zero) false)) ;
       Node "mem"      [ memTree ] ;
       Node "fetch"    [ fetchTree ] ;
-      decodeTree ;
+      Node "decode"   [ decodeTree ] ;
       Node "deferred" [ deferredTree ]
     ].
 
-  Definition pCurrEpoch (bpTree memTree fetchTree deferredTree : Tree DomainElem)
-    : RegPath (coreTree bpTree memTree fetchTree deferredTree) :=
-    Eval cbn in (getChildRegPathTree (coreTree bpTree memTree fetchTree deferredTree) "currEpoch").
+  Definition pCurrEpoch (bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem)
+    : RegPath (coreTree bpTree memTree fetchTree decodeTree deferredTree) :=
+    Eval cbn in (getChildRegPathTree (coreTree bpTree memTree fetchTree decodeTree deferredTree) "currEpoch").
 
-  Definition readCurrEpoch (bpTree memTree fetchTree deferredTree : Tree DomainElem) (ty : Kind -> Type)
-    : Action ty (coreTree bpTree memTree fetchTree deferredTree) Epoch :=
-    ReadReg "currEpoch" (pCurrEpoch bpTree memTree fetchTree deferredTree) (fun v => Return #v).
+  Definition readCurrEpoch (bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) (ty : Kind -> Type)
+    : Action ty (coreTree bpTree memTree fetchTree decodeTree deferredTree) Epoch :=
+    ReadReg "currEpoch" (pCurrEpoch bpTree memTree fetchTree decodeTree deferredTree) (fun v => Return #v).
 
-  Definition writeCurrEpoch (bpTree memTree fetchTree deferredTree : Tree DomainElem) (ty : Kind -> Type)
-    (val : Expr ty Epoch) : Action ty (coreTree bpTree memTree fetchTree deferredTree) (Bit 0) :=
-    WriteReg (pCurrEpoch bpTree memTree fetchTree deferredTree) val Retv.
+  Definition writeCurrEpoch (bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) (ty : Kind -> Type)
+    (val : Expr ty Epoch) : Action ty (coreTree bpTree memTree fetchTree decodeTree deferredTree) (Bit 0) :=
+    WriteReg (pCurrEpoch bpTree memTree fetchTree decodeTree deferredTree) val Retv.
 
 End ImplCommon.
