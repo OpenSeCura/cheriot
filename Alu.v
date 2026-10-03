@@ -80,7 +80,7 @@ Section Alu.
     LetE jimm20 : Bit Xlen <- getJImm inst ;
     LetE scrIdx : Bit ScrAddrSz <- getScr inst ;
     LetE cs1Idx : Bit RegIdxSz <- getCs1 inst ;
-    LetE dstIdx : Bit RegIdxSz <- getCd inst ;
+    LetE dstIdx : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal (getCd inst) ;
     LetE memSize : Bit LgLgNumBytesFullCapSz <- getMemSize inst ;
 
     LetE BranchOrCjalOrAuiPcc : Bool <- ##aluControl`"BranchOrCjalOrAuiPcc" ;
@@ -409,15 +409,14 @@ Section AluRF.
   Local Notation incrementMcycle := (incrementMcycle dom pcAddrInit).
   Local Notation updateMshwmOnStore := (updateMshwmOnStore dom pcAddrInit).
 
-  Definition executeNonDeferred (meip mtip : ty Bool) (aluOut : ty AluOutUnion)
+  Definition executeNonDeferred (currPcc : ty FullECapWithTag) (meip mtip : ty Bool) (aluOut : ty AluOutUnion)
     : Action ty rfTree ExecuteOut :=
     Let  isComp         : Bool                       <- ##aluOut`"isComp" ;
-    Let  dstIdx         : Bit RegIdxSz               <- ##aluOut`"dstIdx" ;
+    Let  dstIdx         : Bit RegIdxSzReal           <- ##aluOut`"dstIdx" ;
     Let  dstVal         : FullECapWithTag            <- ##aluOut`"dstValue" ;
     Let  aluOp          : AluOpUnion                 <- ##aluOut`"Op" ;
     Let  pcStep         : Addr                       <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
 
-    LetA currPcc        : FullECapWithTag            <- readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) ;
     Let  seqPcc         : FullECapWithTag            <- #currPcc `{ "addr" <- Add [ ##currPcc`"addr" ; #pcStep ] } ;
 
     Let  isExc          : Bool                       <- #aluOp `? "Exception" ;
@@ -571,24 +570,19 @@ Section AluRF.
                                   LetIf nextPccECap : FullECapWithTag <-
                                     If (##addrECapOp `? "Cjalr") Then
                                       (
-                                        Let  newMIE     : Bool           <- #addrECapOp `! "Cjalr" ;
-                                        LetA mstatus    : Bit Xlen       <- readRegsList csrPathsWithKind
-                                                                              ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-                                        Let  newMstatus : Bit Xlen       <- setMstatusMIE #mstatus #newMIE ;
+                                        Let  newMIE     : Bool     <- #addrECapOp `! "Cjalr" ;
+                                        Let  newMstatus : Bit Xlen <- setMstatusMIE #mstatus #newMIE ;
                                         Act (writeRegsList csrPathsWithKind
                                                ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
                                         Return #newPcc
                                       )
                                     Else
                                       (
-                                        LetA mePcc      : FullECapWithTag <- readRegsList scrPathsWithKind ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) ;
-                                        LetA mstatus    : Bit Xlen        <- readRegsList csrPathsWithKind
-                                                                              ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-                                        Let  currMPIE   : Bool            <- getMstatusMPIE #mstatus ;
-                                        Let  newMstatus : Bit Xlen        <- setMstatusMIE #mstatus #currMPIE ;
+                                        Let  currMPIE   : Bool     <- getMstatusMPIE #mstatus ;
+                                        Let  newMstatus : Bit Xlen <- setMstatusMIE #mstatus #currMPIE ;
                                         Act (writeRegsList csrPathsWithKind
                                                ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
-                                        Return #mePcc
+                                        Return #newPcc
                                       ) ;
                                   Return #nextPccECap
                                 ) ;

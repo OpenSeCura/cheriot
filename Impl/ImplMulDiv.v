@@ -683,7 +683,7 @@ End ConcreteMulDivEngines.
  * 5. MODE-PARAMETERIZED SUBSYSTEM FOR `Impl.v` (`mode : MulDivMode`)
  * =========================================================================== *)
 
-Definition RegIdx : Kind := Bit RegIdxSz.
+Definition RegIdx : Kind := Bit RegIdxSzReal.
 
 Section ModeParameterizedSubsystem.
   Variable dom : string.

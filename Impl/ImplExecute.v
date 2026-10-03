@@ -128,7 +128,7 @@ Section ExecuteStage.
 
           LetA meip    : Bool       <- liftAction np_mem meipAct ;
           LetA mtip    : Bool       <- liftAction np_mem mtipAct ;
-          LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred meip mtip aluOut) ;
+          LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred pcc meip mtip aluOut) ;
 
           Let  cfOpt           : Option CfPayload <- ##execOut`"cf" ;
           Let  hasCf           : Bool             <- #cfOpt`"valid" ;

@@ -99,11 +99,10 @@ Section DeferredStages.
   Definition np_mulDiv : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.deferred.deferred.mulDiv").
 
-  Local Definition commitWb (dstIdx : ty (Bit RegIdxSz)) (dstVal : ty FullECapWithTag) : Action ty coreTree (Bit 0) :=
-    Let dstIdxReal : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal #dstIdx ;
-    If (isNotZero #dstIdxReal) Then (
+  Local Definition commitWb (dstIdx : ty (Bit RegIdxSzReal)) (dstVal : ty FullECapWithTag) : Action ty coreTree (Bit 0) :=
+    If (isNotZero #dstIdx) Then (
       Act (liftAction np_rf (writeRegsList gprPathsWithKind #dstIdx #dstVal)) ;
-      liftAction np_waitBits (@writeGprWaitBit dom ty #dstIdxReal (ConstBool false))
+      liftAction np_waitBits (@writeGprWaitBit dom ty #dstIdx (ConstBool false))
     ) ;
     Retv.
 
@@ -172,12 +171,12 @@ Section DeferredStages.
         ) ;
         Retv
       ) Else (
-        Let  md       : MulDivCmd   <- ##action `! "MulDiv" ;
-        Let  op1      : Addr        <- ##md`"op1" ;
-        Let  mulDivOp : MulDivUnion <- ##md`"mulDivOp" ;
-        Let  dstIdx   : Bit RegIdxSz <- ##md`"dstIdx" ;
-        Let  isMul    : Bool        <- #mulDivOp `? "Mul" ;
-        LetA canEnq   : Bool        <-
+        Let  md       : MulDivCmd        <- ##action `! "MulDiv" ;
+        Let  op1      : Addr             <- ##md`"op1" ;
+        Let  mulDivOp : MulDivUnion      <- ##md`"mulDivOp" ;
+        Let  dstIdx   : Bit RegIdxSzReal <- ##md`"dstIdx" ;
+        Let  isMul    : Bool             <- #mulDivOp `? "Mul" ;
+        LetA canEnq   : Bool             <-
           liftAction np_mulDiv
             (@mulDivCanEnq dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty isMul) ;
         If #canEnq Then (
@@ -225,9 +224,9 @@ Section DeferredStages.
           ) ;
           Retv
         ) Else (
-          Let wbInfo  : WbCmd           <- #outcome `! "Writeback" ;
-          Let dstIdxV : Bit RegIdxSz    <- ##wbInfo`"dstIdx" ;
-          Let dstValV : FullECapWithTag <- ##wbInfo`"dstVal" ;
+          Let wbInfo  : WbCmd            <- #outcome `! "Writeback" ;
+          Let dstIdxV : Bit RegIdxSzReal <- ##wbInfo`"dstIdx" ;
+          Let dstValV : FullECapWithTag  <- ##wbInfo`"dstVal" ;
           Act (liftAction np_mem ((memIfc ty).(mem_deqMemRp) ldAddr)) ;
           Act (commitWb dstIdxV dstValV) ;
           liftAction np_deferred (@writeState ty (UNION (DeferredStateList, "LoadRq" ::= ($0 : Expr ty (Bit 0)))))
@@ -255,10 +254,10 @@ Section DeferredStages.
       LetA revBitOpt : Option Bool      <- liftAction np_mem ((memIfc ty).(mem_getDeqRevBitRp) revBase) ;
 
       If (##revBitOpt`"valid") Then (
-        Let  revBit  : Bool            <- ##revBitOpt`"data" ;
-        LetL wbInfo  : WbCmd           <- dispatchRevResponse pr revBit ;
-        Let  dstIdxV : Bit RegIdxSz    <- ##wbInfo`"dstIdx" ;
-        Let  dstValV : FullECapWithTag <- ##wbInfo`"dstVal" ;
+        Let  revBit  : Bool             <- ##revBitOpt`"data" ;
+        LetL wbInfo  : WbCmd            <- dispatchRevResponse pr revBit ;
+        Let  dstIdxV : Bit RegIdxSzReal <- ##wbInfo`"dstIdx" ;
+        Let  dstValV : FullECapWithTag  <- ##wbInfo`"dstVal" ;
         Act (commitWb dstIdxV dstValV) ;
         liftAction np_deferred (@writeState ty (UNION (DeferredStateList, "LoadRq" ::= ($0 : Expr ty (Bit 0)))))
       ) ;
@@ -270,7 +269,7 @@ Section DeferredStages.
    * MULDIV SUBSYSTEM STAGES & WRITEBACK
    * ========================================================================= *)
 
-  Definition mulStageRules : list (Action ty coreTree (Bit 0)) :=
+  Definition mulDivStageRules : list (Action ty coreTree (Bit 0)) :=
     map (fun a => liftAction np_mulDiv a)
         (@mulDivAllStageRules dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty).
 
@@ -280,9 +279,9 @@ Section DeferredStages.
     LetA wbOpt : Option (MulDivWbResp (Z.to_nat Xlen)) <- liftAction np_mulDiv popResp ;
     If (#wbOpt`"valid") Then (
       Let wb      : MulDivWbResp (Z.to_nat Xlen) <- #wbOpt`"data" ;
-      Let dstIdx  : Bit RegIdxSz                <- ##wb`"dst" ;
-      Let resAddr : Addr                        <- ##wb`"res" ;
-      Let wbVal   : FullECapWithTag             <- STRUCT {
+      Let dstIdx  : Bit RegIdxSzReal             <- ##wb`"dst" ;
+      Let resAddr : Addr                         <- ##wb`"res" ;
+      Let wbVal   : FullECapWithTag              <- STRUCT {
         "tag"  ::= Const ty Bool false ;
         "ecap" ::= Const ty ECap (getDefault _) ;
         "addr" ::= #resAddr
@@ -293,8 +292,6 @@ Section DeferredStages.
 
   Definition mulWriteBack : Action ty coreTree (Bit 0) :=
     mulDivWriteBack (@mulDivPopMulResp dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty).
-
-  Definition divStageRules : list (Action ty coreTree (Bit 0)) := [].
 
   Definition divWriteBack : Action ty coreTree (Bit 0) :=
     mulDivWriteBack (@mulDivPopDivResp dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty).

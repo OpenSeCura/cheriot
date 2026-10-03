@@ -1209,7 +1209,7 @@ Definition ScrCsrPayload := STRUCT_TYPE {
 
 Definition AluOut := STRUCT_TYPE {
   "isComp"      :: Bool ;
-  "dstIdx"      :: Bit RegIdxSz ;
+  "dstIdx"      :: Bit RegIdxSzReal ;
   "dstValue"    :: FullECapWithTag ;
   "Exception"   :: Option ExceptionInfo ;
   "Deferred"    :: Option DeferredUnion ;
@@ -1250,7 +1250,7 @@ Definition AluOpUnion := TaggedUnion AluOpUnionType.
 
 Definition AluOutUnion := STRUCT_TYPE {
   "isComp"      :: Bool ;
-  "dstIdx"      :: Bit RegIdxSz ;
+  "dstIdx"      :: Bit RegIdxSzReal ;
   "dstValue"    :: FullECapWithTag ;
   "Op"          :: AluOpUnion
 }.
@@ -1349,7 +1349,7 @@ Arguments incrementMcycle dom pcAddrInit {ty}.
 Arguments updateMshwmOnStore dom pcAddrInit {ty} stAddr.
 
 Definition DeferredReq := STRUCT_TYPE {
-  "dstIdx" :: Bit RegIdxSz ;
+  "dstIdx" :: Bit RegIdxSzReal ;
   "addr"   :: Addr ;
   "op"     :: DeferredUnion
 }.
@@ -1368,7 +1368,7 @@ Definition FetchOut := STRUCT_TYPE {
 }.
 
 Definition PendingLoad := STRUCT_TYPE {
-  "dstIdx"     :: Bit RegIdxSz ;
+  "dstIdx"     :: Bit RegIdxSzReal ;
   "memSize"    :: Bit LgLgNumBytesFullCapSz ;
   "isUnsigned" :: Bool ;
   "isLM"       :: Bool ;
@@ -1376,7 +1376,7 @@ Definition PendingLoad := STRUCT_TYPE {
 }.
 
 Definition PendingRev := STRUCT_TYPE {
-  "dstIdx" :: Bit RegIdxSz ;
+  "dstIdx" :: Bit RegIdxSzReal ;
   "capVal" :: FullECapWithTag
 }.
 

@@ -99,14 +99,11 @@ Section SpecDom.
         LetA meip : Bool <- liftAction np_mem (plicMeipSystem plic ty) ;
         LetA mtip : Bool <- liftAction np_mem (readClintMtipAction clint ty) ;
 
-        (* 1. Fetch *)
+        (* 1. Fetch & Pre-Decode *)
         LetA fetchOut : FetchOut <- liftAction np_core (specFetch regions ty) ;
 
-        (* 2. Pre-Decode & Decode *)
-        Let  rawInst   : Inst      <- ##fetchOut`"inst" ;
-        LetL expInst   : Inst      <- preDecode rawInst ;
-        Let  fetchOut' : FetchOut  <- #fetchOut `{ "inst" <- #expInst } ;
-        LetL regReadIn : RegReadIn <- wrappedDecode fetchOut' ;
+        (* 2. Decode *)
+        LetL regReadIn : RegReadIn <- wrappedDecode fetchOut ;
 
         (* 3. Register Read (GPRs, SCRs, CSRs, mstatus) *)
         LetA aluInInstGroup : AluInInstGroup <- liftAction np_rf (regRead meip mtip regReadIn) ;
@@ -116,7 +113,7 @@ Section SpecDom.
         LetL aluOut : AluOutUnion     <- wrappedAlu pcc aluInInstGroup ;
 
         (* 5. Commit Non-Deferred (GPRs, SCRs, CSRs, PCC, Traps) *)
-        LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred meip mtip aluOut) ;
+        LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred pcc meip mtip aluOut) ;
 
         (* 6. Commit Deferred (Memory Loads, Stores, Fences) *)
         Let  reqOpt  : Option DeferredReq <- ##execOut`"deferredReq" ;

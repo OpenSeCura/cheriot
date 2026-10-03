@@ -58,7 +58,7 @@ Definition stallUntilEmptyScrNames : list string :=
   [ "MePrevPcc" ].
 
 Definition stallUntilEmptyCsrNames : list string :=
-  [ "minstret" ; "minstreth" ; "mshwm" ].
+  [ "minstret" ; "minstreth" ; "mshwm" ; "mip" ].
 
 Definition neverWaitCsrNames : list string :=
   [ "mcycle" ; "mcycleh" ].
@@ -83,7 +83,7 @@ Definition stallUntilEmptyScrIndices : list Z :=
 
 Definition stallUntilEmptyCsrIndices : list Z :=
   Eval cbn in (map snd (filter (fun '(e, _) => inStringList e.(csrName) stallUntilEmptyCsrNames)
-                               (enumerate PhysicalCsrTable))).
+                               (enumerate CsrTable))).
 
 Definition isStallUntilEmptyScr (ty : Kind -> Type) (idx : Expr ty (Bit ScrIdxSz)) : Expr ty Bool :=
   Or (map (fun i => Eq idx $i) stallUntilEmptyScrIndices).

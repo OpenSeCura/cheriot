@@ -55,7 +55,7 @@ Definition MemFenceActionType := [
 Definition MemFenceAction := TaggedUnion MemFenceActionType.
 
 Definition MulDivCmd := STRUCT_TYPE {
-  "dstIdx"   :: Bit RegIdxSz ;
+  "dstIdx"   :: Bit RegIdxSzReal ;
   "op1"      :: Addr ;
   "mulDivOp" :: MulDivUnion
 }.
@@ -72,7 +72,7 @@ Definition RevCmd := STRUCT_TYPE {
 }.
 
 Definition WbCmd := STRUCT_TYPE {
-  "dstIdx" :: Bit RegIdxSz ;
+  "dstIdx" :: Bit RegIdxSzReal ;
   "dstVal" :: FullECapWithTag
 }.
 
@@ -117,9 +117,9 @@ Section CombinationalDeferred.
     )).
 
   Definition dispatchDeferredReq (req : ty DeferredReq) : LetExpr ty DeferredAction :=
-    LetE dstIdx     : Bit RegIdxSz    <- ##req`"dstIdx" ;
-    LetE addr       : Addr            <- ##req`"addr" ;
-    LetE op         : DeferredUnion   <- ##req`"op" ;
+    LetE dstIdx     : Bit RegIdxSzReal <- ##req`"dstIdx" ;
+    LetE addr       : Addr             <- ##req`"addr" ;
+    LetE op         : DeferredUnion    <- ##req`"op" ;
     LetIfE action : DeferredAction <-
       IfE (##op `? "MemFence") ThenE (
         LetE memFence   : MemFenceUnion <- ##op `! "MemFence" ;
@@ -170,7 +170,7 @@ Section CombinationalDeferred.
     @RetE _ DeferredAction #action.
 
   Definition dispatchLoadResponse (config : RevConfig) (pl : ty PendingLoad) (memVal : ty FullCapWithTag) : LetExpr ty LoadOutcome :=
-    LetE dstIdx     : Bit RegIdxSz              <- ##pl`"dstIdx" ;
+    LetE dstIdx     : Bit RegIdxSzReal          <- ##pl`"dstIdx" ;
     LetE memSize    : Bit LgLgNumBytesFullCapSz <- ##pl`"memSize" ;
     LetE isUnsigned : Bool                      <- ##pl`"isUnsigned" ;
     LetE isLM       : Bool                      <- ##pl`"isLM" ;
@@ -230,7 +230,7 @@ Section CombinationalDeferred.
     @RetE _ LoadOutcome #outcome.
 
   Definition dispatchRevResponse (pr : ty PendingRev) (revBit : ty Bool) : LetExpr ty WbCmd :=
-    LetE dstIdx   : Bit RegIdxSz     <- ##pr`"dstIdx" ;
+    LetE dstIdx   : Bit RegIdxSzReal <- ##pr`"dstIdx" ;
     LetE capVal   : FullECapWithTag  <- ##pr`"capVal" ;
     LetE currTag  : Bool             <- ##capVal`"tag" ;
     LetE finalTag : Bool             <- And [ Not #revBit ; #currTag ] ;
@@ -281,27 +281,34 @@ Section SpecCoreTree.
      * specFetch (Atomic Combinational Fetch)
      * =========================================================================== *)
     Definition specFetch : Action ty coreTree FetchOut :=
-      LetA pcc     : FullECapWithTag            <- liftAction np_rf (readRegsList (gprPathsWithKind dom pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal))) ;
-      Let  pccAddr : Addr                       <- ##pcc`"addr" ;
-      Let  instSz  : Bit LgLgNumBytesFullCapSz  <- $LgNumBytesInstSz ;
-      LetA rawFull : FullCapWithTag             <- liftAction np_mem (specMemRead regions pccAddr instSz) ;
-      Let rawInst : Inst <- ##rawFull`"addr" ;
+      LetA pcc         : FullECapWithTag           <- liftAction np_rf (readRegsList (gprPathsWithKind dom pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal))) ;
+      Let  pccAddr     : Addr                      <- ##pcc`"addr" ;
+      Let  pccECap     : ECap                      <- ##pcc`"ecap" ;
+      Let  tagExc      : Bool                      <- Not ##pcc`"tag" ;
+      Let  sealExc     : Bool                      <- isSealed pccECap ;
+      Let  permExc     : Bool                      <- Not (##pccECap`"perms"`"EX") ;
+      Let  baseBndsExc : Bool                      <- Ult (ZeroExtendTo (AddrSz + 1) #pccAddr) (##pccECap`"base") ;
+      Let  hasPreFault : Bool                      <- Or [ #tagExc ; #sealExc ; #permExc ; #baseBndsExc ] ;
 
-      (* Fetch Exception Checks *)
-      Let pccECap      : ECap <- ##pcc`"ecap" ;
-      Let isComp       : Bool <- isCompressed rawInst ;
+      LetIf expInst : Inst <-
+        If #hasPreFault Then (
+          Return ($0 : Expr ty Inst)
+        ) Else (
+          Let  instSz  : Bit LgLgNumBytesFullCapSz <- $LgNumBytesInstSz ;
+          LetA rawFull : FullCapWithTag            <- liftAction np_mem (specMemRead regions pccAddr instSz) ;
+          Let  rawInst : Inst                      <- ##rawFull`"addr" ;
+          LetL exp     : Inst                      <- preDecode rawInst ;
+          Return #exp
+        ) ;
+
+      Let isComp       : Bool <- isCompressed expInst ;
       Let instBytesLen : Addr <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
-      Let tagExc       : Bool <- Not ##pcc`"tag" ;
-      Let sealExc      : Bool <- isSealed pccECap ;
-      Let permExc      : Bool <- Not (##pccECap`"perms"`"EX") ;
-      Let boundsExc    : Bool <- Or [
-        Ult (ZeroExtendTo (AddrSz + 2) ##pcc`"addr") (ZeroExtendTo (AddrSz + 2) ##pccECap`"base") ;
-        Ugt (ZeroExtendTo (AddrSz + 2) (Add [ ##pcc`"addr" ; #instBytesLen ])) (##pccECap`"top")
-      ] ;
+      Let topBndsExc   : Bool <- Ugt (ZeroExtendTo (AddrSz + 2) (Add [ #pccAddr ; #instBytesLen ])) (##pccECap`"top") ;
+      Let boundsExc    : Bool <- Or [ #baseBndsExc ; #topBndsExc ] ;
 
       Let fetchOut : FetchOut <- STRUCT {
         "hasAsr"   ::= ##pccECap`"perms"`"SR" ;
-        "inst"     ::= #rawInst ;
+        "inst"     ::= #expInst ;
         "fetchExc" ::= STRUCT {
           "tag"    ::= #tagExc ;
           "seal"   ::= #sealExc ;

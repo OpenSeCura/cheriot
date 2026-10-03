@@ -196,7 +196,7 @@ Extract Constant io_recv => "(\(readAddrRef, _, ieRef, rxBufRef) name k ->
               Data.IORef.writeIORef rxBufRef (Prelude.Just (Prelude.toInteger (Data.Char.ord c Data.Bits..&. 0xff)))
               Prelude.return Prelude.True
             else Prelude.return Prelude.False
-  in if name Prelude.== ""lineReadRqReady"" Prelude.|| name Prelude.== ""lineWriteRqReady"" Prelude.|| name Prelude.== ""lineReadRpValid"" then
+  in if name Prelude.== ""lineReadRqReady"" Prelude.|| name Prelude.== ""lineWriteRqReady"" Prelude.|| name Prelude.== ""lineReadRpValid"" Prelude.|| name Prelude.== ""lineReadRpReady"" then
        Prelude.return (unsafeCoerce Prelude.True)
      else if name Prelude.== ""lineReadRp"" then do
        addr <- Data.IORef.readIORef readAddrRef

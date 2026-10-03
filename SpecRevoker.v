@@ -262,7 +262,7 @@ Section Revoker.
           Let ldTag      : Bool                      <- ##ldFullCap`"tag" ;
           Let ldCap      : Cap                       <- ##ldFullCap`"cap" ;
           Let ldAddr     : Addr                      <- ##ldFullCap`"addr" ;
-          LetA ldECap    : ECap                      <- toAction memTree (DecodeCap ldCap ldAddr) ;
+          LetL ldECap    : ECap                      <- DecodeCap ldCap ldAddr ;
           If (needsRevocationCheck config ldECap ldTag) Then (
             Let ldBase : Bit (AddrSz + 1) <- ##ldECap`"base" ;
             LetA revBit : Bool <- readRevBit ldBase ;
