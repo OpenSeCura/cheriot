@@ -45,7 +45,7 @@ Section DeferredStages.
     Node "deferred" [
       Node "inputBuf" [ fifoTree dom capacity DeferredReq ] ;
       Leaf "state"    (dom, EReg (Build_Reg DeferredState (Some (getDefault _)) false)) ;
-      modeMulDivTree dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode
+      mulDivTree dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode
     ].
 
   Definition pState : RegPath deferredTree :=
@@ -56,6 +56,20 @@ Section DeferredStages.
 
   Definition writeState (ty : Kind -> Type) (val : Expr ty DeferredState) : Action ty deferredTree (Bit 0) :=
     WriteReg pState val Retv.
+
+  Definition np_defInputFifo : NodePath deferredTree :=
+    Eval cbn in (getNodePath deferredTree "deferred.inputBuf.fifo").
+
+  Definition np_defMulDiv : NodePath deferredTree :=
+    Eval cbn in (getNodePath deferredTree "deferred.mulDiv").
+
+  Definition deferredIsEmpty (ty : Kind -> Type) : Action ty deferredTree Bool :=
+    LetA inEmpty : Bool          <- liftAction np_defInputFifo (@isEmpty dom capacity DeferredReq ty) ;
+    LetA state   : DeferredState <- @readState ty ;
+    LetA mdEmpty : Bool          <-
+      liftAction np_defMulDiv
+        (@mulDivIsEmpty dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty) ;
+    Return (And [ #inEmpty ; #state `? "LoadRq" ; #mdEmpty ]).
 
   Variable pcAddrInit : Z.
   Variable tohostAddr : Z.
@@ -165,10 +179,10 @@ Section DeferredStages.
         Let  isMul    : Bool        <- #mulDivOp `? "Mul" ;
         LetA canEnq   : Bool        <-
           liftAction np_mulDiv
-            (@modeCanEnq dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty isMul) ;
+            (@mulDivCanEnq dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty isMul) ;
         If #canEnq Then (
           Act (liftAction np_mulDiv
-                 (@modeEnqReq dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty dstIdx op1 mulDivOp)) ;
+                 (@mulDivEnqReq dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty dstIdx op1 mulDivOp)) ;
           liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
         ) ;
         Retv
@@ -258,10 +272,10 @@ Section DeferredStages.
 
   Definition mulStageRules : list (Action ty coreTree (Bit 0)) :=
     map (fun a => liftAction np_mulDiv a)
-        (@modeAllStageRules dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty).
+        (@mulDivAllStageRules dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty).
 
   Local Definition mulDivWriteBack
-    (popResp : Action ty (modeMulDivTree dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode) (Option (MulDivWbResp (Z.to_nat Xlen))))
+    (popResp : Action ty (mulDivTree dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode) (Option (MulDivWbResp (Z.to_nat Xlen))))
     : Action ty coreTree (Bit 0) :=
     LetA wbOpt : Option (MulDivWbResp (Z.to_nat Xlen)) <- liftAction np_mulDiv popResp ;
     If (#wbOpt`"valid") Then (
@@ -278,11 +292,11 @@ Section DeferredStages.
     Retv.
 
   Definition mulWriteBack : Action ty coreTree (Bit 0) :=
-    mulDivWriteBack (@modePopMulResp dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty).
+    mulDivWriteBack (@mulDivPopMulResp dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty).
 
   Definition divStageRules : list (Action ty coreTree (Bit 0)) := [].
 
   Definition divWriteBack : Action ty coreTree (Bit 0) :=
-    mulDivWriteBack (@modePopDivResp dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty).
+    mulDivWriteBack (@mulDivPopDivResp dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty).
 
 End DeferredStages.

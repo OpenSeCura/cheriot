@@ -935,6 +935,45 @@ Definition RegReadIn := STRUCT_TYPE {
   "fetchExc"    :: FetchException
 }.
 
+Definition WaitSpecialInfo := STRUCT_TYPE {
+  "readsScr"        :: Bool ;
+  "writesScr"       :: Bool ;
+  "readWriteScrIdx" :: Bit ScrIdxSz ;
+  "readsCsr"        :: Bool ;
+  "readCsrIdx"      :: Bit CsrIdxSz ;
+  "writesCsr"       :: Bool ;
+  "writeCsrIdx"     :: Bit CsrIdxSz
+}.
+
+Section WaitSpecialHelper.
+  Variable ty : Kind -> Type.
+
+  Definition getWaitSpecialInfo (instGroup : ty InstGroup) (cs2Source : ty (TaggedUnion Cs2Source))
+    : LetExpr ty WaitSpecialInfo :=
+    LetE cs2IsSpecial    : Bool                  <- #cs2Source `? "ScrCsr" ;
+    LetE scrCsr          : TaggedUnion ScrCsrIdx <- #cs2Source `! "ScrCsr" ;
+    LetE readsScr        : Bool                  <- And [ #cs2IsSpecial ; #scrCsr `? "Scr" ] ;
+    LetE readWriteScrIdx : Bit ScrIdxSz          <- #scrCsr `! "Scr" ;
+    LetE readsCsr        : Bool                  <- And [ #cs2IsSpecial ; #scrCsr `? "Csr" ] ;
+    LetE readCsrIdx      : Bit CsrIdxSz          <- #scrCsr `! "Csr" ;
+    LetE writesScr       : Bool                  <- And [ ##instGroup`"Scr" ; ##instGroup`"ScrCsr_Write" ] ;
+    LetE isCsrWrite      : Bool                  <- And [ ##instGroup`"Csr" ; ##instGroup`"ScrCsr_Write" ] ;
+    LetE isMstatusWrite  : Bool                  <- Or [ ##instGroup`"Cjalr" ; ##instGroup`"Mret" ] ;
+    LetE writesCsr       : Bool                  <- Or [ #isCsrWrite ; #isMstatusWrite ] ;
+    LetE writeCsrIdx     : Bit CsrIdxSz          <- ITE #isCsrWrite
+                                                        #readCsrIdx
+                                                        ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+    @RetE ty WaitSpecialInfo (STRUCT {
+      "readsScr"        ::= #readsScr ;
+      "writesScr"       ::= #writesScr ;
+      "readWriteScrIdx" ::= #readWriteScrIdx ;
+      "readsCsr"        ::= #readsCsr ;
+      "readCsrIdx"      ::= #readCsrIdx ;
+      "writesCsr"       ::= #writesCsr ;
+      "writeCsrIdx"     ::= #writeCsrIdx
+    }).
+End WaitSpecialHelper.
+
 Definition AluControl := STRUCT_TYPE {
   (* AdderBeforeBoundsCheck *)
   (* AdderBeforeBoundsCheck_base_isPccAddrNotCs1Addr = BranchOrCjalOrAuiPcc *)

@@ -746,7 +746,7 @@ Section ModeParameterizedSubsystem.
       "op2"        ::= #op2
     }).
 
-  Definition modeMulDivTree (mode : MulDivMode) : Tree DomainElem :=
+  Definition mulDivTree (mode : MulDivMode) : Tree DomainElem :=
     match mode with
     | PipelinedMul_IterDiv =>
         Node "mulDiv" [
@@ -769,9 +769,9 @@ Section ModeParameterizedSubsystem.
         ]
     end.
 
-  Definition modeCanEnq (mode : MulDivMode) (ty : Kind -> Type) (isMul : ty Bool) :
-    Action ty (modeMulDivTree mode) Bool :=
-    match mode as m return Action ty (modeMulDivTree m) Bool with
+  Definition mulDivCanEnq (mode : MulDivMode) (ty : Kind -> Type) (isMul : ty Bool) :
+    Action ty (mulDivTree mode) Bool :=
+    match mode as m return Action ty (mulDivTree m) Bool with
     | PipelinedMul_IterDiv =>
         LetIf res : Bool <-
           If #isMul Then (
@@ -802,10 +802,25 @@ Section ModeParameterizedSubsystem.
         Return (And [ #c1 ; Not #f2 ])
     end.
 
-  Definition modeEnqReq (mode : MulDivMode) (ty : Kind -> Type)
+  Definition mulDivIsEmpty (mode : MulDivMode) (ty : Kind -> Type) :
+    Action ty (mulDivTree mode) Bool :=
+    match mode as m return Action ty (mulDivTree m) Bool with
+    | PipelinedMul_IterDiv =>
+        LetA e1 : Bool <- stagedLiftTail (stagedLiftHead (isEmpty dom MulDivFifoCapacity RegIdx ty)) ;
+        LetA e2 : Bool <- stagedLiftTail (stagedLiftTail (stagedLiftTail (stagedLiftHead (isEmpty dom MulDivFifoCapacity RegIdx ty)))) ;
+        Return (And [ #e1 ; #e2 ])
+    | IterMul_SeparateIterDiv =>
+        LetA e1 : Bool <- stagedLiftTail (stagedLiftHead (isEmpty dom MulDivFifoCapacity RegIdx ty)) ;
+        LetA e2 : Bool <- stagedLiftTail (stagedLiftTail (stagedLiftTail (stagedLiftHead (isEmpty dom MulDivFifoCapacity RegIdx ty)))) ;
+        Return (And [ #e1 ; #e2 ])
+    | IterMul_SharedIterDiv =>
+        stagedLiftTail (stagedLiftHead (isEmpty dom MulDivFifoCapacity RegIdx ty))
+    end.
+
+  Definition mulDivEnqReq (mode : MulDivMode) (ty : Kind -> Type)
     (dst : ty RegIdx) (op1 : ty (Bit d)) (mulDivOp : ty MulDivUnion) :
-    Action ty (modeMulDivTree mode) (Bit 0) :=
-    match mode as m return Action ty (modeMulDivTree m) (Bit 0) with
+    Action ty (mulDivTree mode) (Bit 0) :=
+    match mode as m return Action ty (mulDivTree m) (Bit 0) with
     | PipelinedMul_IterDiv =>
         If (#mulDivOp `? "Mul") Then (
           Let mulOp  : MulOp      <- #mulDivOp `! "Mul" ;
@@ -843,9 +858,9 @@ Section ModeParameterizedSubsystem.
         Retv
     end.
 
-  Definition modeAllStageRules (mode : MulDivMode) (ty : Kind -> Type) :
-    list (Action ty (modeMulDivTree mode) (Bit 0)) :=
-    match mode as m return list (Action ty (modeMulDivTree m) (Bit 0)) with
+  Definition mulDivAllStageRules (mode : MulDivMode) (ty : Kind -> Type) :
+    list (Action ty (mulDivTree mode) (Bit 0)) :=
+    match mode as m return list (Action ty (mulDivTree m) (Bit 0)) with
     | PipelinedMul_IterDiv =>
         map (fun r => stagedLiftHead r) (mulPipeRules dom input_width mul_stages ty) ++
         [ stagedLiftTail (stagedLiftTail (stagedLiftHead (divIterStepRule dom input_width div_stages ty))) ]
@@ -862,9 +877,9 @@ Section ModeParameterizedSubsystem.
       "res" :: Bit d
     }.
 
-  Definition modePopMulResp (mode : MulDivMode) (ty : Kind -> Type) :
-    Action ty (modeMulDivTree mode) (Option MulDivWbResp) :=
-    match mode as m return Action ty (modeMulDivTree m) (Option MulDivWbResp) with
+  Definition mulDivPopMulResp (mode : MulDivMode) (ty : Kind -> Type) :
+    Action ty (mulDivTree mode) (Option MulDivWbResp) :=
+    match mode as m return Action ty (mulDivTree m) (Option MulDivWbResp) with
     | PipelinedMul_IterDiv =>
         LetA optOut : Option (MulOutput d) <- stagedLiftHead (mulPipeFirst dom input_width mul_stages ty) ;
         LetA optDst : Option RegIdx         <- stagedLiftTail (stagedLiftHead (first dom MulDivFifoCapacity RegIdx ty)) ;
@@ -921,9 +936,9 @@ Section ModeParameterizedSubsystem.
         Return #resOpt
     end.
 
-  Definition modePopDivResp (mode : MulDivMode) (ty : Kind -> Type) :
-    Action ty (modeMulDivTree mode) (Option MulDivWbResp) :=
-    match mode as m return Action ty (modeMulDivTree m) (Option MulDivWbResp) with
+  Definition mulDivPopDivResp (mode : MulDivMode) (ty : Kind -> Type) :
+    Action ty (mulDivTree mode) (Option MulDivWbResp) :=
+    match mode as m return Action ty (mulDivTree m) (Option MulDivWbResp) with
     | PipelinedMul_IterDiv =>
         LetA optOut : Option (DivOutput d) <- stagedLiftTail (stagedLiftTail (stagedLiftHead (divIterFirst dom input_width div_stages ty))) ;
         LetA optDst : Option RegIdx         <- stagedLiftTail (stagedLiftTail (stagedLiftTail (stagedLiftHead (first dom MulDivFifoCapacity RegIdx ty)))) ;

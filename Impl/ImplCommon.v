@@ -48,6 +48,86 @@ Definition DecodeToAluEntry := STRUCT_TYPE {
 }.
 
 (* ===========================================================================
+ * Special Register Wait-Bit & Stall Lists
+ * =========================================================================== *)
+
+Definition inStringList (s : string) (ls : list string) : bool :=
+  existsb (String.eqb s) ls.
+
+Definition stallUntilEmptyScrNames : list string :=
+  [ "MePrevPcc" ].
+
+Definition stallUntilEmptyCsrNames : list string :=
+  [ "minstret" ; "minstreth" ; "mshwm" ].
+
+Definition neverWaitCsrNames : list string :=
+  [ "mcycle" ; "mcycleh" ].
+
+Definition noWaitScrNames : list string :=
+  stallUntilEmptyScrNames.
+
+Definition noWaitCsrNames : list string :=
+  neverWaitCsrNames ++ stallUntilEmptyCsrNames.
+
+Definition waitScrEntries : list (ScrEntry * Z) :=
+  filter (fun '(e, _) => negb (inStringList e.(scrName) noWaitScrNames))
+         (enumerate (ScrTable 0)).
+
+Definition waitCsrEntries : list (CsrEntry * Z) :=
+  filter (fun '(e, _) => negb (inStringList e.(csrName) noWaitCsrNames))
+         (enumerate PhysicalCsrTable).
+
+Definition stallUntilEmptyScrIndices : list Z :=
+  Eval cbn in (map snd (filter (fun '(e, _) => inStringList e.(scrName) stallUntilEmptyScrNames)
+                               (enumerate (ScrTable 0)))).
+
+Definition stallUntilEmptyCsrIndices : list Z :=
+  Eval cbn in (map snd (filter (fun '(e, _) => inStringList e.(csrName) stallUntilEmptyCsrNames)
+                               (enumerate PhysicalCsrTable))).
+
+Definition isStallUntilEmptyScr (ty : Kind -> Type) (idx : Expr ty (Bit ScrIdxSz)) : Expr ty Bool :=
+  Or (map (fun i => Eq idx $i) stallUntilEmptyScrIndices).
+
+Definition isStallUntilEmptyCsr (ty : Kind -> Type) (idx : Expr ty (Bit CsrIdxSz)) : Expr ty Bool :=
+  Or (map (fun i => Eq idx $i) stallUntilEmptyCsrIndices).
+
+Section IndexedWaitBitHelpers.
+  Variable ty : Kind -> Type.
+
+  Fixpoint readIndexedWaitBitHelper (acc : list (Expr ty Bool)) {sz : Z} {t : Tree DomainElem}
+    (indexedPaths : list (Z * RegOfKind (t:=t) Bool))
+    (idx : Expr ty (Bit sz)) : Action ty t Bool :=
+    match indexedPaths with
+    | [] => Return (Or acc)
+    | (regIdx, rk) :: rest =>
+        ReadReg "" rk.(rk_path) (fun val_ty =>
+          let pf_eq := Kind_eqb_eq _ _ rk.(rk_pf) in
+          let casted_ty := eq_rect (regKind (getRegFromPath rk.(rk_path))) (fun K => ty K) val_ty _ pf_eq in
+          let iteVal := ITE0 (Eq idx $regIdx) (Var _ _ casted_ty) in
+          readIndexedWaitBitHelper (iteVal :: acc) rest idx
+        )
+    end.
+
+  Definition readIndexedWaitBit {sz : Z} {t : Tree DomainElem} :=
+    @readIndexedWaitBitHelper (@nil (Expr ty Bool)) sz t.
+
+  Fixpoint writeIndexedWaitBit {sz : Z} {t : Tree DomainElem}
+    (indexedPaths : list (Z * RegOfKind (t:=t) Bool))
+    (idx : Expr ty (Bit sz))
+    (newVal : Expr ty Bool) : Action ty t (Bit 0) :=
+    match indexedPaths with
+    | [] => Retv
+    | (regIdx, rk) :: rest =>
+        let pf_eq := Kind_eqb_eq _ _ rk.(rk_pf) in
+        let castedVal := eq_rect Bool (fun K => Expr ty K) newVal _ (eq_sym pf_eq) in
+        IfElse EmptyString (Eq idx $regIdx)
+          (WriteReg rk.(rk_path) castedVal Retv)
+          Retv
+          (fun _ => writeIndexedWaitBit rest idx newVal)
+    end.
+End IndexedWaitBitHelpers.
+
+(* ===========================================================================
  * Hardware Pipeline State Trees & Register Accessors
  * =========================================================================== *)
 
@@ -63,16 +143,16 @@ Section ImplCommon.
     ) (enumerate (repeat tt (Z.to_nat NumRegs))).
 
   Definition scrWaitLeaves : list (Tree DomainElem) :=
-    map (fun e =>
+    map (fun '(e, _) =>
       Leaf ("waitBit_" ++ e.(scrName))%string
            (dom, EReg (Build_Reg Bool (Some false) false))
-    ) (ScrTable 0).
+    ) waitScrEntries.
 
   Definition csrWaitLeaves : list (Tree DomainElem) :=
-    map (fun e =>
+    map (fun '(e, _) =>
       Leaf ("waitBit_" ++ e.(csrName))%string
            (dom, EReg (Build_Reg Bool (Some false) false))
-    ) PhysicalCsrTable.
+    ) waitCsrEntries.
 
   Definition waitBitsTree : Tree DomainElem :=
     Node "waitBits" [
@@ -97,6 +177,12 @@ Section ImplCommon.
     Eval cbn in (map (embedRegOfKind np_waitCsrs)
                      (getTreeRegsOfKind Bool (getNode np_waitCsrs))).
 
+  Definition scrWaitIndexedPaths : list (Z * RegOfKind (t:=waitBitsTree) Bool) :=
+    Eval cbn in (combine (map snd waitScrEntries) scrWaitPathsWithKind).
+
+  Definition csrWaitIndexedPaths : list (Z * RegOfKind (t:=waitBitsTree) Bool) :=
+    Eval cbn in (combine (map snd waitCsrEntries) csrWaitPathsWithKind).
+
   Definition readGprWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit RegIdxSzReal))
     : Action ty waitBitsTree Bool :=
     readRegsList gprWaitPathsWithKind idx.
@@ -107,19 +193,34 @@ Section ImplCommon.
 
   Definition readScrWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit ScrIdxSz))
     : Action ty waitBitsTree Bool :=
-    readRegsList scrWaitPathsWithKind idx.
+    readIndexedWaitBit scrWaitIndexedPaths idx.
 
   Definition writeScrWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit ScrIdxSz)) (val : Expr ty Bool)
     : Action ty waitBitsTree (Bit 0) :=
-    writeRegsList scrWaitPathsWithKind idx val.
+    writeIndexedWaitBit scrWaitIndexedPaths idx val.
 
   Definition readCsrWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit CsrIdxSz))
     : Action ty waitBitsTree Bool :=
-    readRegsList csrWaitPathsWithKind idx.
+    readIndexedWaitBit csrWaitIndexedPaths idx.
 
   Definition writeCsrWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit CsrIdxSz)) (val : Expr ty Bool)
     : Action ty waitBitsTree (Bit 0) :=
-    writeRegsList csrWaitPathsWithKind idx val.
+    writeIndexedWaitBit csrWaitIndexedPaths idx val.
+
+  Definition setDstWaitBits (ty : Kind -> Type)
+    (writesGpr : Expr ty Bool) (gprIdx : Expr ty (Bit RegIdxSzReal))
+    (wInfo : ty WaitSpecialInfo)
+    (val : Expr ty Bool) : Action ty waitBitsTree (Bit 0) :=
+    If writesGpr Then (
+      writeGprWaitBit gprIdx val
+    ) ;
+    If (##wInfo`"writesScr") Then (
+      writeScrWaitBit (##wInfo`"readWriteScrIdx") val
+    ) ;
+    If (##wInfo`"writesCsr") Then (
+      writeCsrWaitBit (##wInfo`"writeCsrIdx") val
+    ) ;
+    Retv.
 
   (* 2. Core Tree *)
   Definition coreTree (bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) : Tree DomainElem :=
