@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Bool Psatz Nat Arith.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition.
-From Cheriot Require Import SpecDefines SpecDevice FunctionalUnits SpecRevoker ImplRevoker.
+From Cheriot Require Import SpecDefines Decoder SpecDevice FunctionalUnits SpecRevoker ImplRevoker.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -847,8 +847,10 @@ Section ImplMemModel.
       LetA rpOpt : Option FullCapWithTag <- implRegionsReadRp regions addr instSz ;
       LetIf instOpt : Option Inst <-
         If (##rpOpt`"valid") Then (
-          Let fullVal : FullCapWithTag <- ##rpOpt`"data" ;
-          Return (mkSome (##fullVal`"addr"))
+          Let  fullVal : FullCapWithTag <- ##rpOpt`"data" ;
+          Let  rawInst : Inst           <- ##fullVal`"addr" ;
+          LetL expInst : Inst           <- preDecode rawInst ;
+          Return (mkSome #expInst)
         ) Else (
           Return ConstDef
         ) ;

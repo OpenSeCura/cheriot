@@ -292,16 +292,15 @@ Section DecodeUncompressed.
     }).
 End DecodeUncompressed.
 
-Section DecodeCompressed.
+Section PreDecode.
   Variable ty : Kind -> Type.
   Variable inst : ty Inst.
-  Variable pcc : ty FullECapWithTag.
 
 (* ===========================================================================
- * Compressed Instruction Decoding (16-Bit)
+ * Compressed Instruction Pre-Decoding (16-Bit to 32-Bit Expansion)
  * =========================================================================== *)
 
-  Definition decodeQuadrant0 : LetExpr ty DecodeOut :=
+  Definition expandQuadrant0 : LetExpr ty Inst :=
     LetE f3 : Bit 3 <- #inst`[15:13] ;
     LetE cs13 : Bit 3 <- #inst`[9:7] ;
     LetE cd3  : Bit 3 <- #inst`[4:2] ;
@@ -325,9 +324,9 @@ Section DecodeCompressed.
                                  ITE0 (Eq #f3 $6) #pseudoSW;
                                  ITE0 (Eq #f3 $7) #pseudoSC] ;
     LetE pseudoInst : Inst <- {< #rawInst, Const _ (Bit 2) Zmod.zero >} ;
-    decodeUncompressed pseudoInst pcc.
+    RetE #pseudoInst.
 
-  Definition decodeQuadrant1 : LetExpr ty DecodeOut :=
+  Definition expandQuadrant1 : LetExpr ty Inst :=
     LetE f3 : Bit 3 <- #inst`[15:13] ;
     LetE rd5 : Bit 5 <- getCd inst ;
     LetE cs13 : Bit 3 <- #inst`[9:7] ;
@@ -390,9 +389,9 @@ Section DecodeCompressed.
                                  ITE0 (Eq #f3 $6) #pseudoBEQZ;
                                  ITE0 (Eq #f3 $7) #pseudoBNEZ] ;
     LetE pseudoInst : Inst <- {< #rawInst, Const _ (Bit 2) (Zmod.of_Z _ 1) >} ;
-    decodeUncompressed pseudoInst pcc.
+    RetE #pseudoInst.
 
-  Definition decodeQuadrant2 : LetExpr ty DecodeOut :=
+  Definition expandQuadrant2 : LetExpr ty Inst :=
     LetE f3 : Bit 3 <- #inst`[15:13] ;
     LetE rd5 : Bit 5 <- getCd inst ;
     LetE rs25 : Bit 5 <- #inst`[6:2] ;
@@ -429,23 +428,22 @@ Section DecodeCompressed.
                                  ITE0 (Eq #f3 $6) #pseudoSWSP;
                                  ITE0 (Eq #f3 $7) #pseudoCSCSP] ;
     LetE pseudoInst : Inst <- {< #rawInst, Const _ (Bit 2) (Zmod.of_Z _ 2) >} ;
-    decodeUncompressed pseudoInst pcc.
+    RetE #pseudoInst.
 
 (* ===========================================================================
- * Top-Level Instruction Decoder (decode)
+ * Top-Level Instruction Pre-Decoder (preDecode)
  * =========================================================================== *)
 
-  Definition decode : LetExpr ty DecodeOut :=
+  Definition preDecode : LetExpr ty Inst :=
     LetE quad : Bit 2 <- #inst`[1:0] ;
-    LETE q0 : DecodeOut <- decodeQuadrant0 ;
-    LETE q1 : DecodeOut <- decodeQuadrant1 ;
-    LETE q2 : DecodeOut <- decodeQuadrant2 ;
-    LETE unc : DecodeOut <- decodeUncompressed inst pcc ;
-    LetE res : DecodeOut <- caseDefault [(Eq #quad $0, #q0);
-                                         (Eq #quad $1, #q1);
-                                         (Eq #quad $2, #q2)] #unc ;
+    LETE q0   : Inst  <- expandQuadrant0 ;
+    LETE q1   : Inst  <- expandQuadrant1 ;
+    LETE q2   : Inst  <- expandQuadrant2 ;
+    LetE res  : Inst  <- caseDefault [(Eq #quad $0, #q0);
+                                      (Eq #quad $1, #q1);
+                                      (Eq #quad $2, #q2)] #inst ;
     RetE #res.
-End DecodeCompressed.
+End PreDecode.
 
 Section WrappedDecode.
   Variable ty : Kind -> Type.
@@ -458,7 +456,7 @@ Section WrappedDecode.
     LetE pcc       : FullECapWithTag <- ##fetchOut`"pcc" ;
     LetE inst      : Inst            <- ##fetchOut`"inst" ;
     LetE fetchExc  : FetchException  <- ##fetchOut`"fetchExc" ;
-    LETE decodeOut : DecodeOut       <- decode inst pcc ;
+    LETE decodeOut : DecodeOut       <- decodeUncompressed inst pcc ;
     @RetE ty RegReadIn (STRUCT {
       "pcc"       ::= #pcc ;
       "decodeOut" ::= #decodeOut ;

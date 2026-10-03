@@ -102,8 +102,11 @@ Section SpecDom.
         (* 1. Fetch *)
         LetA fetchOut : FetchOut <- liftAction np_core (specFetch regions ty) ;
 
-        (* 2. Decode *)
-        LetL regReadIn : RegReadIn <- wrappedDecode fetchOut ;
+        (* 2. Pre-Decode & Decode *)
+        Let  rawInst   : Inst      <- ##fetchOut`"inst" ;
+        LetL expInst   : Inst      <- preDecode rawInst ;
+        Let  fetchOut' : FetchOut  <- #fetchOut `{ "inst" <- #expInst } ;
+        LetL regReadIn : RegReadIn <- wrappedDecode fetchOut' ;
 
         (* 3. Register Read (GPRs, SCRs, CSRs, mstatus) *)
         LetA aluInInstGroup : AluInInstGroup <- liftAction np_rf (regRead meip mtip regReadIn) ;
