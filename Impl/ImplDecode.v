@@ -164,7 +164,7 @@ Section DecodeStage.
           Let  cs2Idx    : Bit RegIdxSzReal      <- #cs2Source `! "Reg" ;
           Let  writesCd  : Bool                  <- ##decodeOut`"writesCd" ;
           Let  instBits  : Inst                  <- ##decodeOut`"instBits" ;
-          Let  cdIdx     : Bit RegIdxSzReal      <- TruncLsb 1 RegIdxSzReal (getCd instBits) ;
+          Let  cdIdx     : Bit RegIdxSzReal      <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal (getCd instBits) ;
 
           LetL wInfo           : WaitSpecialInfo <- getWaitSpecialInfo instGroup cs2Source ;
           Let  readsScr        : Bool            <- ##wInfo`"readsScr" ;

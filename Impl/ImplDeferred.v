@@ -100,7 +100,7 @@ Section DeferredStages.
     Eval cbn in (getNodePath coreTree "core.deferred.deferred.mulDiv").
 
   Local Definition commitWb (dstIdx : ty (Bit RegIdxSz)) (dstVal : ty FullECapWithTag) : Action ty coreTree (Bit 0) :=
-    Let dstIdxReal : Bit RegIdxSzReal <- TruncLsb 1 RegIdxSzReal #dstIdx ;
+    Let dstIdxReal : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal #dstIdx ;
     If (isNotZero #dstIdxReal) Then (
       Act (liftAction np_rf (writeRegsList gprPathsWithKind #dstIdx #dstVal)) ;
       liftAction np_waitBits (@writeGprWaitBit dom ty #dstIdxReal (ConstBool false))
