@@ -34,17 +34,17 @@ Section DecodeStage.
 
   Definition decodeTree : Tree DomainElem :=
     Node "decode" [
-      Leaf "decodePc"        (dom, EReg (Build_Reg (Option Addr) (Some (getDefault (Option Addr))) false)) ;
+      Leaf "decodePc"        (dom, EReg (Build_Reg Addr (Some (Zmod.of_Z _ pcAddrInit)) false)) ;
       Node "decodeToAluBuf" [ fifoTree dom capacity DecodeToAluEntry ]
     ].
 
   Definition pDecodePc : RegPath decodeTree :=
     Eval cbn in (getChildRegPathTree decodeTree "decodePc").
 
-  Definition readDecodePc (ty : Kind -> Type) : Action ty decodeTree (Option Addr) :=
+  Definition readDecodePc (ty : Kind -> Type) : Action ty decodeTree Addr :=
     ReadReg "decodePc" pDecodePc (fun v => Return #v).
 
-  Definition writeDecodePc (ty : Kind -> Type) (val : Expr ty (Option Addr)) : Action ty decodeTree (Bit 0) :=
+  Definition writeDecodePc (ty : Kind -> Type) (val : Expr ty Addr) : Action ty decodeTree (Bit 0) :=
     WriteReg pDecodePc val Retv.
 
   Variable fetchCapacity deferredCapacity : nat.
@@ -127,10 +127,12 @@ Section DecodeStage.
       If (##instOpt`"valid") Then (
         Let  rawInst    : Inst        <- ##instOpt`"data" ;
         LetA currEpoch  : Epoch       <- @readCurrEpoch dom pcAddrInit bpTree memTree fTree decodeTree dTree ty ;
-        LetA decodePc   : Option Addr <- liftAction np_decode (@readDecodePc ty) ;
+        LetA decodePc   : Addr        <- liftAction np_decode (@readDecodePc ty) ;
+
+        (* Bad epoch instructions need to be dropped here. Otherwise decode will redirect PC
+           even though it is in the wrong path *)
         Let  isExpected : Bool        <- And [ Eq #epoch #currEpoch ;
-                                               Or [ Not (#decodePc`"valid") ;
-                                                    Eq #pcAddr (#decodePc`"data") ] ] ;
+                                               Eq #pcAddr #decodePc ] ;
 
         If (Not #isExpected) Then (
           Act (liftAction np_fetchFifo (@deq dom fetchCapacity FetchBufEntry ty)) ;
@@ -215,7 +217,7 @@ Section DecodeStage.
                       (ConstBool true))) ;
 
             LetA withInstPcPred : Addr <- liftAction np_bp ((withInstIfc ty).(withInst_getPred) pcAddr predPc decodeOut) ;
-            Act (liftAction np_decode (@writeDecodePc ty (mkSome #withInstPcPred))) ;
+            Act (liftAction np_decode (@writeDecodePc ty #withInstPcPred)) ;
             If (Not (Eq #withInstPcPred #predPc)) Then (
               liftAction np_fetch (@writeFetchPc dom pcAddrInit fetchCapacity ty #withInstPcPred)
             ) ;
