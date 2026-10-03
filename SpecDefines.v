@@ -1357,6 +1357,7 @@ Definition DeferredReq := STRUCT_TYPE {
 Definition ExecuteOut := STRUCT_TYPE {
   "deferredReq" :: Option DeferredReq ;
   "cf"          :: Option CfPayload ;
+  "nextPc"      :: Addr ;
   "isFenceIRq"  :: Bool
 }.
 
