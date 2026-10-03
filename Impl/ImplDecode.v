@@ -190,7 +190,7 @@ Section DecodeStage.
           (* However, faulting instructions do not set them to 0 *)
           Let  cs1Stall  : Bool <- And [ isNotZero #cs1Idx ; #cs1Wait ] ;
           Let  cs2Stall  : Bool <- And [ #cs2IsReg ; isNotZero #cs2Idx ; #cs2Wait ] ;
-          Let  cdStall   : Bool <- And [ #writesCd ; isNotZero #cdIdx ; #cdWait ] ;
+          Let  cdStall   : Bool <- And [ #writesCd ; #cdWait ] ;
           Let  scrStall  : Bool <- Or [ And [ Or [#readsScr ; #writesScr ] ; #scrWait ] ;
                                         And [ #scrStallEmpty ; Not #pipelineEmpty ] ] ;
           Let  csrStall  : Bool <- Or [ #mstatusWait ;
@@ -212,7 +212,7 @@ Section DecodeStage.
             (* Faulting instructions set random indices to wait, and unset them when the faults are handled *)
             Act (liftAction np_waitBits
                    (@setDstWaitBits dom ty
-                      (And [ #writesCd ; isNotZero #cdIdx ]) #cdIdx
+                      #writesCd #cdIdx
                       wInfo
                       (ConstBool true))) ;
 

@@ -275,7 +275,7 @@ Section DecodeUncompressed.
                (ITE #isCsr (mkCs2Csr #csrMappedIdx)
                     (mkCs2Reg #actualCs2Real))) ;
 
-    LetE writesCd : Bool <- Not (Or [ #isBranch; #isStore; #isFence; #isECall; #isEBreak; #isMret ]) ;
+    LetE writesCd : Bool <- And [ isNotZero #cdReal; Not (Or [ #isBranch; #isStore; #isFence; #isECall; #isEBreak; #isMret ]) ] ;
 
     LetE decodeExcVal : DecodeException <- STRUCT {
       "illegal" ::= #isIllegalInst ;
