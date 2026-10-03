@@ -112,10 +112,8 @@ Section SpecDom.
         LetA aluInInstGroup : AluInInstGroup <- liftAction np_rf (regRead meip mtip regReadIn) ;
 
         (* 4. Alu Control, Routing, and Execution *)
-        LetA pcc        : FullECapWithTag <- liftAction np_rf (readRegsList (gprPathsWithKind core pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal))) ;
-        LetL aluIn      : AluIn           <- constructAluIn aluInInstGroup ;
-        LetL routingOut : AluOut          <- AluRouting pcc aluIn ;
-        LetL aluOut     : AluOutUnion     <- Alu routingOut ;
+        LetA pcc    : FullECapWithTag <- liftAction np_rf (readRegsList (gprPathsWithKind core pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal))) ;
+        LetL aluOut : AluOutUnion     <- wrappedAlu pcc aluInInstGroup ;
 
         (* 5. Commit Non-Deferred (GPRs, SCRs, CSRs, PCC, Traps) *)
         LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred meip mtip aluOut) ;

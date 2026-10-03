@@ -389,6 +389,12 @@ Section Alu.
       "dstValue"    ::= ##routingOut`"dstValue" ;
       "Op"          ::= #opUnion
     }).
+
+  Definition wrappedAlu (pcc : ty FullECapWithTag) (pkg : ty AluInInstGroup) : LetExpr ty AluOutUnion :=
+    LETE aluIn      : AluIn       <- constructAluIn pkg ;
+    LETE routingOut : AluOut      <- AluRouting pcc aluIn ;
+    LETE aluOut     : AluOutUnion <- Alu routingOut ;
+    RetE #aluOut.
 End Alu.
 
 Section AluRF.
