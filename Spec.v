@@ -112,7 +112,7 @@ Section SpecDom.
         LetA aluInInstGroup : AluInInstGroup <- liftAction np_rf (regRead meip mtip regReadIn) ;
 
         (* 4. Alu Control, Routing, and Execution *)
-        Let  pcc        : FullECapWithTag <- ##fetchOut`"pcc" ;
+        LetA pcc        : FullECapWithTag <- liftAction np_rf (readRegsList (gprPathsWithKind core pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal))) ;
         LetL aluIn      : AluIn           <- constructAluIn aluInInstGroup ;
         LetL routingOut : AluOut          <- AluRouting pcc aluIn ;
         LetL aluOut     : AluOutUnion     <- Alu routingOut ;

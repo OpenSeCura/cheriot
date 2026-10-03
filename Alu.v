@@ -644,7 +644,7 @@ Section AluRF.
     @Return ty rfTree AluInInstGroup (STRUCT {
       "cs2Idx"              ::= #cs2Source ;
       "writesCd"            ::= ##decodeOut`"writesCd" ;
-      "inst"                ::= ##decodeOut`"instBits" ;
+      "inst"                ::= ##regReadIn`"inst" ;
       "decodeExc"           ::= ##decodeOut`"decodeExc" ;
       "fetchExc"            ::= #fetchExc ;
       "cs1"                 ::= #cs1 ;

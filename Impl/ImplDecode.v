@@ -125,7 +125,7 @@ Section DecodeStage.
         ) ;
 
       If (##instOpt`"valid") Then (
-        Let  rawInst    : Inst        <- ##instOpt`"data" ;
+        Let  inst       : Inst        <- ##instOpt`"data" ;
         LetA currEpoch  : Epoch       <- @readCurrEpoch dom pcAddrInit bpTree memTree fTree decodeTree dTree ty ;
         LetA decodePc   : Addr        <- liftAction np_decode (@readDecodePc ty) ;
 
@@ -143,14 +143,13 @@ Section DecodeStage.
         ) Else (
           LetA pcc       : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
           Let  pccECap   : ECap            <- ##pcc`"ecap" ;
-          Let  isComp    : Bool            <- isCompressed rawInst ;
+          Let  isComp    : Bool            <- isCompressed inst ;
           Let  instBytes : Addr            <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
           Let  topExc    : Bool            <- Ugt (ZeroExtendTo (AddrSz + 2) (Add [ #pcAddr ; #instBytes ])) (##pccECap`"top") ;
           Let  fetchExc  : FetchException  <- #preExc `{ "bounds" <- Or [ ##preExc`"bounds" ; #topExc ] } ;
-          Let  instPcc   : FullECapWithTag <- #pcc `{ "addr" <- #pcAddr } ;
           Let  fetchOut  : FetchOut        <- STRUCT {
-            "pcc"      ::= #instPcc ;
-            "inst"     ::= #rawInst ;
+            "hasAsr"   ::= ##pccECap`"perms"`"SR" ;
+            "inst"     ::= #inst ;
             "fetchExc" ::= #fetchExc
           } ;
 
@@ -163,8 +162,7 @@ Section DecodeStage.
           Let  cs2IsReg  : Bool                  <- #cs2Source `? "Reg" ;
           Let  cs2Idx    : Bit RegIdxSzReal      <- #cs2Source `! "Reg" ;
           Let  writesCd  : Bool                  <- ##decodeOut`"writesCd" ;
-          Let  instBits  : Inst                  <- ##decodeOut`"instBits" ;
-          Let  cdIdx     : Bit RegIdxSzReal      <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal (getCd instBits) ;
+          Let  cdIdx     : Bit RegIdxSzReal      <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal (getCd inst) ;
 
           LetL wInfo           : WaitSpecialInfo <- getWaitSpecialInfo instGroup cs2Source ;
           Let  readsScr        : Bool            <- ##wInfo`"readsScr" ;
@@ -216,7 +214,7 @@ Section DecodeStage.
                       wInfo
                       (ConstBool true))) ;
 
-            LetA withInstPcPred : Addr <- liftAction np_bp ((withInstIfc ty).(withInst_getPred) pcAddr predPc decodeOut) ;
+            LetA withInstPcPred : Addr <- liftAction np_bp ((withInstIfc ty).(withInst_getPred) pcAddr predPc inst decodeOut) ;
             Act (liftAction np_decode (@writeDecodePc ty #withInstPcPred)) ;
             If (Not (Eq #withInstPcPred #predPc)) Then (
               liftAction np_fetch (@writeFetchPc dom pcAddrInit fetchCapacity ty #withInstPcPred)

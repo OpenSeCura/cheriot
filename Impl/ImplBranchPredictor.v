@@ -54,7 +54,7 @@ Definition bpTree (noInstTree withInstTree : Tree DomainElem) : Tree DomainElem 
 
 Record WithInstPredIfc (noInstTree : Tree DomainElem) {ty : Kind -> Type} := {
   withInstTree     : Tree DomainElem ;
-  withInst_getPred : ty Addr -> ty Addr -> ty DecodeOut -> Action ty (bpTree noInstTree withInstTree) Addr ;
+  withInst_getPred : ty Addr -> ty Addr -> ty Inst -> ty DecodeOut -> Action ty (bpTree noInstTree withInstTree) Addr ;
   withInst_updCf   : ty Addr -> ty CfPayload -> Action ty (bpTree noInstTree withInstTree) (Bit 0)
 }.
 
@@ -115,9 +115,8 @@ Section ImplBranchPredictor.
       Local Definition np_noInst : NodePath tree :=
         Eval cbn in (embedNodeIntoPath (getNodePath tree "bp.noInst") singletonChildPath).
 
-      Definition implWithInst_getPred (pc predPc : ty Addr) (decodeOut : ty DecodeOut) : Action ty tree Addr :=
+      Definition implWithInst_getPred (pc predPc : ty Addr) (inst : ty Inst) (decodeOut : ty DecodeOut) : Action ty tree Addr :=
         Let instGroup    : InstGroup       <- ##decodeOut`"instGroup" ;
-        Let instBits     : Inst            <- ##decodeOut`"instBits" ;
         Let decodeExc    : DecodeException <- ##decodeOut`"decodeExc" ;
         Let hasDecodeExc : Bool            <- Or [ ##decodeExc`"illegal" ; ##decodeExc`"asr" ] ;
 
@@ -130,11 +129,11 @@ Section ImplBranchPredictor.
         Let seqPc        : Addr            <- Add [ #pc ; #stepBytes ] ;
 
         Let isJump       : Bool            <- And [ Not #hasDecodeExc ; ##instGroup`"Cjal" ] ;
-        Let jOffset      : Addr            <- getJImm instBits ;
+        Let jOffset      : Addr            <- getJImm inst ;
         Let jumpTarget   : Addr            <- Add [ #pc ; #jOffset ] ;
 
         Let isBranch     : Bool            <- And [ Not #hasDecodeExc ; ##instGroup`"Branch" ] ;
-        Let bOffset      : Addr            <- getBImm instBits ;
+        Let bOffset      : Addr            <- getBImm inst ;
         Let isPredTaken  : Bool            <- FromBit Bool (TruncMsb 1 (AddrSz - 1) #bOffset) ;
         Let branchTarget : Addr            <- Add [ #pc ; #bOffset ] ;
 

@@ -925,14 +925,13 @@ Definition DecodeOut := STRUCT_TYPE {
   "cs1Idx"    :: Bit RegIdxSzReal ;
   "cs2Idx"    :: TaggedUnion Cs2Source ;
   "writesCd"  :: Bool ;
-  "instBits"  :: Inst ;
   "decodeExc" :: DecodeException
 }.
 
 Definition RegReadIn := STRUCT_TYPE {
-  "pcc"         :: FullECapWithTag ;
-  "decodeOut"   :: DecodeOut ;
-  "fetchExc"    :: FetchException
+  "inst"      :: Inst ;
+  "decodeOut" :: DecodeOut ;
+  "fetchExc"  :: FetchException
 }.
 
 Definition WaitSpecialInfo := STRUCT_TYPE {
@@ -1362,7 +1361,7 @@ Definition ExecuteOut := STRUCT_TYPE {
 }.
 
 Definition FetchOut := STRUCT_TYPE {
-  "pcc"      :: FullECapWithTag ;
+  "hasAsr"   :: Bool ;
   "inst"     :: Inst ;
   "fetchExc" :: FetchException
 }.

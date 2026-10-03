@@ -300,7 +300,7 @@ Section SpecCoreTree.
       ] ;
 
       Let fetchOut : FetchOut <- STRUCT {
-        "pcc"      ::= #pcc ;
+        "hasAsr"   ::= ##pccECap`"perms"`"SR" ;
         "inst"     ::= #rawInst ;
         "fetchExc" ::= STRUCT {
           "tag"    ::= #tagExc ;

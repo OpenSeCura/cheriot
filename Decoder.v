@@ -29,7 +29,7 @@ Local Open Scope string_scope.
 Section DecodeUncompressed.
   Variable ty : Kind -> Type.
   Variable inst : ty Inst.
-  Variable pcc : ty FullECapWithTag.
+  Variable hasAsr : ty Bool.
 
 (* ===========================================================================
  * Uncompressed Instruction Decoding (32-Bit)
@@ -95,11 +95,6 @@ Section DecodeUncompressed.
     LetE isBranchUnsigned : Bool <- And [ #isBranch; FromBit Bool (#funct3`[1:1]) ] ;
     LetE isSltUnsigned    : Bool <- And [ #isSlt; FromBit Bool (#funct3`[0:0]) ] ;
     LetE isCompUnsigned   : Bool <- Or [ #isBranchUnsigned; #isSltUnsigned ] ;
-
-    (* PCC Permissions Extraction *)
-    LetE pccEcap  : ECap     <- ##pcc`"ecap" ;
-    LetE pccPerms : CapPerms  <- ##pccEcap`"perms" ;
-    LetE hasAsr   : Bool      <- ##pccPerms`"SR" ;
 
     (* System Operations & CSR Validation *)
     LetE isCsrOp: Bool <- And [ #isSystem; isNotZero (#funct3`[1:0]) ] ;
@@ -287,7 +282,6 @@ Section DecodeUncompressed.
       "cs1Idx"    ::= #actualCs1Idx ;
       "cs2Idx"    ::= #cs2SourceVal ;
       "writesCd"  ::= #writesCd ;
-      "instBits"  ::= #inst ;
       "decodeExc" ::= #decodeExcVal
     }).
 End DecodeUncompressed.
@@ -453,12 +447,12 @@ Section WrappedDecode.
  * =========================================================================== *)
 
   Definition wrappedDecode (fetchOut : ty FetchOut) : LetExpr ty RegReadIn :=
-    LetE pcc       : FullECapWithTag <- ##fetchOut`"pcc" ;
-    LetE inst      : Inst            <- ##fetchOut`"inst" ;
-    LetE fetchExc  : FetchException  <- ##fetchOut`"fetchExc" ;
-    LETE decodeOut : DecodeOut       <- decodeUncompressed inst pcc ;
+    LetE hasAsr    : Bool           <- ##fetchOut`"hasAsr" ;
+    LetE inst      : Inst           <- ##fetchOut`"inst" ;
+    LetE fetchExc  : FetchException <- ##fetchOut`"fetchExc" ;
+    LETE decodeOut : DecodeOut      <- decodeUncompressed inst hasAsr ;
     @RetE ty RegReadIn (STRUCT {
-      "pcc"       ::= #pcc ;
+      "inst"      ::= #inst ;
       "decodeOut" ::= #decodeOut ;
       "fetchExc"  ::= #fetchExc
     }).

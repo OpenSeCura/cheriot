@@ -96,7 +96,7 @@ Section FetchStage.
       Let  tagExc      : Bool <- Not ##pcc`"tag" ;
       Let  sealExc     : Bool <- isSealed pccECap ;
       Let  permExc     : Bool <- Not (##pccECap`"perms"`"EX") ;
-      Let  baseBndsExc : Bool <- Ult (ZeroExtendTo (AddrSz + 2) #fetchPc) (ZeroExtendTo (AddrSz + 2) ##pccECap`"base") ;
+      Let  baseBndsExc : Bool <- Ult (ZeroExtendTo (AddrSz + 1) #fetchPc) (##pccECap`"base") ;
       Let  hasPreFault : Bool <- Or [ #tagExc ; #sealExc ; #permExc ; #baseBndsExc ] ;
 
       Let  preFetchExc : FetchException <- STRUCT {
