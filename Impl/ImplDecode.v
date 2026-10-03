@@ -106,7 +106,7 @@ Section DecodeStage.
     LetA deferred_isEmpty    : Bool                 <- liftAction np_deferred (@deferredIsEmpty dom deferredCapacity ty) ;
     Let  pipelineEmpty       : Bool                 <- And [ #decodeToAlu_isEmpty ; #deferred_isEmpty ] ;
 
-    If (And [ ##fetchHead`"valid" ; Not #decodeToAlu_isFull ]) Then (
+    If (##fetchHead`"valid") Then (
       Let entry       : FetchBufEntry  <- ##fetchHead`"data" ;
       Let pcAddr      : Addr           <- ##entry`"pcAddr" ;
       Let predPc      : Addr           <- ##entry`"predPc" ;
@@ -197,7 +197,7 @@ Section DecodeStage.
                                         And [ #readsCsr ; #csrReadWait ] ;
                                         And [ #writesCsr ; #csrWriteWait ] ;
                                         And [ #csrStallEmpty ; Not #pipelineEmpty ] ] ;
-          Let  canIssue  : Bool <- Not (Or [ #cs1Stall ; #cs2Stall ; #cdStall ; #scrStall ; #csrStall ]) ;
+          Let  canIssue  : Bool <- Not (Or [ #decodeToAlu_isFull ; #cs1Stall ; #cs2Stall ; #cdStall ; #scrStall ; #csrStall ]) ;
 
           If #canIssue Then (
             Act (liftAction np_fetchFifo (@deq dom fetchCapacity FetchBufEntry ty)) ;
