@@ -248,8 +248,7 @@ Section ImplRevoker.
     Definition implRevokerStepsFsm : list (Action ty memTree (Bit 0)) :=
       [ implRevokerIdle ;
         (Act implRevokerWaitCapRp ; implRevokerWaitRevBitRq) ;
-        implRevokerWaitRevBitRp ;
-        implRevokerWriteCap ].
+        (Act implRevokerWaitRevBitRp ; implRevokerWriteCap) ].
 
   End Ty.
 

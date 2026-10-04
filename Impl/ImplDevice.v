@@ -691,9 +691,9 @@ Definition implMemRegionTargetPortActions
                                                                          | CustomMem children _ _ _ => implCustomMemRegionTree r children
                                                                          end) (Bit 0))) with
   | InternalMem true _ _ =>
-      [ (r.(regionDom), fun ty => @implInternalMemRegionTargetPortReadRq r ty) ;
-        (r.(regionDom), fun ty => @implInternalMemRegionTargetPortReadRp r ty) ;
-        (r.(regionDom), fun ty => @implInternalMemRegionTargetPortWrite r ty) ]
+      [ (r.(regionDom), fun ty => @implInternalMemRegionTargetPortWrite r ty) ;
+        (r.(regionDom), fun ty => @implInternalMemRegionTargetPortReadRq r ty) ;
+        (r.(regionDom), fun ty => @implInternalMemRegionTargetPortReadRp r ty) ]
   | _ => []
   end.
 
