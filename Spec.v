@@ -133,17 +133,18 @@ Section SpecDom.
      * =========================================================================== *)
 
     Definition spec : Mod sysTree :=
-      fun ty => ([
-        (core, specStep ty) ;
-        (core, specTickCycle ty) ;
-        (core, specTickTimer ty) ;
-        (core, specSampleMtipStep ty) ;
-        (core, specRevokerStep ty)
-      ] ++ map (fun a => (core, a)) (specPlicPendingsSteps ty)
+      fun ty => (
+        specInternalMemTargetPortSteps ty
+        ++ [ (core, specRevokerStep ty) ]
+        ++ map (fun a => (core, a)) (specPlicPendingsSteps ty)
         ++ [
-        (core, specPlicClaimStep ty) ;
-        (core, specPlicSampleMeipStep ty)
-      ] ++ specInternalMemTargetPortSteps ty)%list.
+          (core, specPlicClaimStep ty) ;
+          (core, specPlicSampleMeipStep ty) ;
+          (core, specTickCycle ty) ;
+          (core, specTickTimer ty) ;
+          (core, specSampleMtipStep ty) ;
+          (core, specStep ty)
+        ])%list.
 
   End Spec.
 

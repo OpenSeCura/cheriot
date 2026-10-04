@@ -205,6 +205,7 @@ Section ImplDom.
     Definition impl : Mod sysTree :=
       fun ty => (
         implClearWriteBusySteps ty
+        ++ implInternalMemTargetPortSteps ty
         ++ map (fun a => (core, a)) (implRevokerStepsSys ty)
         ++ map (fun a => (core, a)) (implPlicPendingsSteps ty)
         ++ [ (core, implPlicClaimStep ty) ;
@@ -223,8 +224,7 @@ Section ImplDom.
         ]
         ++ map (fun a => (core, a)) (mulDivStageActions ty)
         ++ [ (core, mulWriteBackStage ty) ;
-             (core, divWriteBackStage ty) ]
-        ++ implInternalMemTargetPortSteps ty)%list.
+             (core, divWriteBackStage ty) ])%list.
 
   End Impl.
 

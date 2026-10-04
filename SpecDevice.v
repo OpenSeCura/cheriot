@@ -1031,8 +1031,8 @@ Definition memRegionTargetPortActions
                                                                          | CustomMem children _ _ _ => customMemRegionTree r children
                                                                          end) (Bit 0))) with
   | InternalMem true _ _ =>
-      [ (r.(regionDom), fun ty => @internalMemRegionTargetPortRead r ty) ;
-        (r.(regionDom), fun ty => @internalMemRegionTargetPortWrite r ty) ]
+      [ (r.(regionDom), fun ty => @internalMemRegionTargetPortWrite r ty) ;
+        (r.(regionDom), fun ty => @internalMemRegionTargetPortRead r ty) ]
   | _ => []
   end.
 
