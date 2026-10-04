@@ -80,7 +80,7 @@ Section Revoker.
              (base : Z)
              (ty : Kind -> Type)
              (addr : ty Addr)
-             : Action ty tRev (LineReadRp RevokerLineConfig) :=
+             : Action ty tRev (LineReadRp false RevokerLineConfig) :=
     Let offset <- getMemOffset base RevokerSizeBytes #addr ;
     Let regIdx : Bit RevokerRegIdxWidth <- TruncMsb RevokerRegIdxWidth LgNumBytesXlen #offset ;
     ReadReg "base" revokerBasePath (fun baseVal =>
@@ -100,9 +100,9 @@ Section Revoker.
            ITE0 (Eq #regIdx (revokerRegIdxBit "interruptRequested")) (ZeroExtendTo Xlen (ToBit #reqVal)) ] ;
     Let readBytes : Array (Z.to_nat NumBytesXlen) (Bit ByteSz) <-
       FromBit (Array (Z.to_nat NumBytesXlen) (Bit ByteSz)) #readWord ;
-    @Return ty tRev (LineReadRp RevokerLineConfig) (STRUCT {
+    @Return ty tRev (LineReadRp false RevokerLineConfig) (STRUCT {
       "data" ::= #readBytes ;
-      "tag"  ::= Const ty (Array (cfgNumLineTags RevokerLineConfig) Bool) (getDefault _)
+      "tag"  ::= Const ty (Array (cfgNumLineTags false RevokerLineConfig) Bool) (getDefault _)
     }))))))).
 
   Arguments revokerLineReadAction base ty addr : clear implicits.
@@ -110,7 +110,7 @@ Section Revoker.
   Definition revokerLineWriteAction
              (base : Z)
              (ty : Kind -> Type)
-             (rq : ty (LineWriteRq RevokerLineConfig))
+             (rq : ty (LineWriteRq false RevokerLineConfig))
              : Action ty tRev (Bit 0) :=
     Let offset <- getMemOffset base RevokerSizeBytes (##rq`"addr") ;
     Let regIdx : Bit RevokerRegIdxWidth <- TruncMsb RevokerRegIdxWidth LgNumBytesXlen #offset ;

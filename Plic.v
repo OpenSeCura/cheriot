@@ -354,7 +354,7 @@ Section Plic.
 
     Definition plicLineReadAction
                (addr : ty Addr)
-               : Action ty tPlic (LineReadRp PlicLineConfig) :=
+               : Action ty tPlic (LineReadRp false PlicLineConfig) :=
       Let offset <- getMemOffset base PlicSizeBytes #addr ;
       Let isClaim     : Bool <- Eq #offset $(PLIC_CLAIM_OFFSET) ;
       Let isThreshold : Bool <- Eq #offset $(PLIC_THRESHOLD_OFFSET) ;
@@ -383,14 +383,14 @@ Section Plic.
                #claimedId ] ;
         Let dataArr : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
           FromBit (Array (Z.to_nat NumBytesXlen) (Bit 8)) #rVal ;
-        @Return ty tPlic (LineReadRp PlicLineConfig) (STRUCT {
+        @Return ty tPlic (LineReadRp false PlicLineConfig) (STRUCT {
           "data" ::= #dataArr ;
-          "tag"  ::= Const ty (Array (cfgNumLineTags PlicLineConfig) Bool) (getDefault _)
+          "tag"  ::= Const ty (Array (cfgNumLineTags false PlicLineConfig) Bool) (getDefault _)
         })
       ).
 
     Definition plicLineWriteAction
-               (rq : ty (LineWriteRq PlicLineConfig))
+               (rq : ty (LineWriteRq false PlicLineConfig))
                : Action ty tPlic (Bit 0) :=
       Let offset <- getMemOffset base PlicSizeBytes (##rq`"addr") ;
       Let writeWord : Bit Xlen <- ToBit (##rq`"data") ;

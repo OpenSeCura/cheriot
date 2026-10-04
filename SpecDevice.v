@@ -42,40 +42,44 @@ Record LineConfig := {
 Definition TaggedLine (lgLineBytes : nat) (pf : Is_true (Z.to_nat LgNumBytesFullCapSz <=? lgLineBytes)%nat) : LineConfig :=
   {| cfgLgLineBytes := lgLineBytes ; cfgHasTags := true ; cfgTaggedPf := pf |}.
 
+Arguments TaggedLine lgLineBytes pf : clear implicits.
+
 Definition RawLine (lgLineBytes : nat) : LineConfig :=
   {| cfgLgLineBytes := lgLineBytes ; cfgHasTags := false ; cfgTaggedPf := I |}.
 
 Definition cfgLineBytes (cfg : LineConfig) : nat :=
   Nat.pow 2 (cfgLgLineBytes cfg).
 
-Definition cfgLgNumLineTags (cfg : LineConfig) : nat :=
-  Nat.max 1 (cfgLgLineBytes cfg - Z.to_nat LgNumBytesFullCapSz).
+Definition cfgLgNumLineTags (isInternalMem : bool) (cfg : LineConfig) : nat :=
+  if isInternalMem
+  then Nat.max 1 (cfgLgLineBytes cfg - Z.to_nat LgNumBytesFullCapSz)
+  else (cfgLgLineBytes cfg - Z.to_nat LgNumBytesFullCapSz)%nat.
 
-Definition cfgNumLineTags (cfg : LineConfig) : nat :=
+Definition cfgNumLineTags (isInternalMem : bool) (cfg : LineConfig) : nat :=
   if cfgHasTags cfg
-  then Nat.pow 2 (cfgLgNumLineTags cfg)
+  then Nat.pow 2 (cfgLgNumLineTags isInternalMem cfg)
   else 0%nat.
 
-Definition cfgLgTagRowBytes (cfg : LineConfig) : nat :=
-  (Z.to_nat LgNumBytesFullCapSz + cfgLgNumLineTags cfg)%nat.
+Definition cfgLgTagRowBytes (isInternalMem : bool) (cfg : LineConfig) : nat :=
+  (Z.to_nat LgNumBytesFullCapSz + cfgLgNumLineTags isInternalMem cfg)%nat.
 
-Definition cfgTagRowBytes (cfg : LineConfig) : nat :=
-  Nat.pow 2 (cfgLgTagRowBytes cfg).
+Definition cfgTagRowBytes (isInternalMem : bool) (cfg : LineConfig) : nat :=
+  Nat.pow 2 (cfgLgTagRowBytes isInternalMem cfg).
 
-Definition cfgLgAlignBytes (cfg : LineConfig) : nat :=
-  if cfgHasTags cfg then cfgLgTagRowBytes cfg else cfgLgLineBytes cfg.
+Definition cfgLgAlignBytes (isInternalMem : bool) (cfg : LineConfig) : nat :=
+  if cfgHasTags cfg then cfgLgTagRowBytes isInternalMem cfg else cfgLgLineBytes cfg.
 
 Definition cfgNumLines (regionSize : Z) (cfg : LineConfig) : nat :=
   Z.to_nat (regionSize / Z.of_nat (cfgLineBytes cfg)).
 
-Definition cfgTagNumLines (regionSize : Z) (cfg : LineConfig) : nat :=
-  if cfgHasTags cfg then Z.to_nat (regionSize / Z.of_nat (cfgTagRowBytes cfg)) else 0%nat.
+Definition cfgTagNumLines (isInternalMem : bool) (regionSize : Z) (cfg : LineConfig) : nat :=
+  if cfgHasTags cfg then Z.to_nat (regionSize / Z.of_nat (cfgTagRowBytes isInternalMem cfg)) else 0%nat.
 
-Definition cfgTagTotal (regionSize : Z) (cfg : LineConfig) : nat :=
-  (cfgTagNumLines regionSize cfg * cfgNumLineTags cfg)%nat.
+Definition cfgTagTotal (isInternalMem : bool) (regionSize : Z) (cfg : LineConfig) : nat :=
+  (cfgTagNumLines isInternalMem regionSize cfg * cfgNumLineTags isInternalMem cfg)%nat.
 
 Definition defaultTagsInit (regionSize : Z) (cfg : LineConfig)
-  : option (option (type (Array (cfgTagTotal regionSize cfg) Bool))) :=
+  : option (option (type (Array (cfgTagTotal true regionSize cfg) Bool))) :=
   Some (Some (getDefault _)).
 
 Fixpoint takeChunk {A} (k : nat) (def : A) (ls : list A) : list A :=
@@ -123,34 +127,41 @@ Definition buildStrideTuple {A} (stride : nat) (def : A) (n b : nat) (ls : list 
   Build_SameTuple (tupleElems := strideStep stride def n (skipn b ls))
                   (transparent_Is_true _ (Is_true_Nat_eq_implies (strideStep_length stride def n (skipn b ls)))).
 
-Notation LineReadRp cfg := (STRUCT_TYPE {
+Notation LineReadRp isInternalMem cfg := (STRUCT_TYPE {
   "data" :: Array (cfgLineBytes cfg) (Bit 8) ;
-  "tag"  :: Array (cfgNumLineTags cfg) Bool
+  "tag"  :: Array (cfgNumLineTags isInternalMem cfg) Bool
 }).
 
-Notation LineWriteRq cfg := (STRUCT_TYPE {
+Notation LineWriteRq isInternalMem cfg := (STRUCT_TYPE {
   "addr"     :: Addr ;
   "data"     :: Array (cfgLineBytes cfg) (Bit 8) ;
   "dataMask" :: Array (cfgLineBytes cfg) Bool ;
-  "tag"      :: Array (cfgNumLineTags cfg) Bool ;
-  "tagMask"  :: Array (cfgNumLineTags cfg) Bool
+  "tag"      :: Array (cfgNumLineTags isInternalMem cfg) Bool ;
+  "tagMask"  :: Array (cfgNumLineTags isInternalMem cfg) Bool
 }).
 
 Inductive RegionKind (regionName : string) (regionSize : Z) (cfg : LineConfig) :=
 | InternalMem (isAccessible : bool)
               (initData : option (option (type (Array (Z.to_nat regionSize) (Bit 8)))))
-              (initTags : option (option (type (Array (cfgTagTotal regionSize cfg) Bool))))
+              (initTags : option (option (type (Array (cfgTagTotal true regionSize cfg) Bool))))
 | ExternalMem
 | CustomMem (children : list (Tree DomainElem))
             (readAction : forall ty, ty Addr ->
-                          Action ty (Node regionName children) (LineReadRp cfg))
-            (writeAction : forall ty, ty (LineWriteRq cfg) ->
+                          Action ty (Node regionName children) (LineReadRp false cfg))
+            (writeAction : forall ty, ty (LineWriteRq false cfg) ->
                            Action ty (Node regionName children) (Bit 0))
             (irqAction : option (forall ty, Action ty (Node regionName children) Bool)).
 
 Arguments InternalMem {regionName regionSize cfg} isAccessible initData initTags.
 Arguments ExternalMem {regionName regionSize cfg}.
 Arguments CustomMem {regionName regionSize cfg} children readAction writeAction irqAction.
+
+Definition isInternalRegionKind {regionName regionSize cfg}
+  (k : RegionKind regionName regionSize cfg) : bool :=
+  match k with
+  | InternalMem _ _ _ => true
+  | _ => false
+  end.
 
 Record MemRegion := {
   regionName        : string ;
@@ -161,9 +172,12 @@ Record MemRegion := {
   isReadOnly        : bool ;
   regionKind        : RegionKind regionName regionSize regionLineCfg ;
   regionInMemory    : Is_true ((0 <=? regionBase) && (regionBase + regionSize <=? Z.shiftl 1 AddrSz))%Z ;
-  regionBaseAligned : Is_true (regionBase mod (2 ^ Z.of_nat (cfgLgAlignBytes regionLineCfg)) =? 0)%Z ;
-  regionSizeAligned : Is_true (regionSize mod (2 ^ Z.of_nat (cfgLgAlignBytes regionLineCfg)) =? 0)%Z
+  regionBaseAligned : Is_true (regionBase mod (2 ^ Z.of_nat (cfgLgAlignBytes (isInternalRegionKind regionKind) regionLineCfg)) =? 0)%Z ;
+  regionSizeAligned : Is_true (regionSize mod (2 ^ Z.of_nat (cfgLgAlignBytes (isInternalRegionKind regionKind) regionLineCfg)) =? 0)%Z
 }.
+
+Definition isInternalMem (r : MemRegion) : bool :=
+  isInternalRegionKind r.(regionKind).
 
 Definition hasTags (r : MemRegion) : bool :=
   cfgHasTags r.(regionLineCfg).
@@ -174,8 +188,8 @@ Definition lgLineBytes (r : MemRegion) : nat :=
 Definition lineBytes (r : MemRegion) : nat :=
   cfgLineBytes r.(regionLineCfg).
 
-Definition numLineTags (r : MemRegion) : nat :=
-  cfgNumLineTags r.(regionLineCfg).
+Definition numLineTags (isInternal : bool) (r : MemRegion) : nat :=
+  cfgNumLineTags isInternal r.(regionLineCfg).
 
 Definition disjointBool (r1 r2 : MemRegion) : bool :=
   (r1.(regionBase) + r1.(regionSize) <=? r2.(regionBase))%Z ||
@@ -193,8 +207,8 @@ Definition isRegionAddr {ty : Kind -> Type} (r : MemRegion) (addr : Expr ty Addr
 Definition regionNumLines (r : MemRegion) : nat :=
   cfgNumLines r.(regionSize) r.(regionLineCfg).
 
-Definition regionTagSize (r : MemRegion) : nat :=
-  cfgTagNumLines r.(regionSize) r.(regionLineCfg).
+Definition regionTagSize (isInternal : bool) (r : MemRegion) : nat :=
+  cfgTagNumLines isInternal r.(regionSize) r.(regionLineCfg).
 
 (* ===========================================================================
  * Payload Utilities
@@ -211,32 +225,27 @@ Definition embedCapBytes {ty : Kind -> Type} (numBytes : nat)
 Lemma add_sub_cancel (a l : Z) : (l + (a - l))%Z = a.
 Proof. lia. Qed.
 
-Definition isInternalMem (r : MemRegion) : bool :=
-  match r.(regionKind) with
-  | InternalMem _ _ _ => true
-  | _ => false
-  end.
-
 Definition memLgLineBytesZ (r : MemRegion) : Z :=
   Z.of_nat (lgLineBytes r).
 
-Definition memLgNumLineTagsZ (r : MemRegion) : Z :=
-  Z.of_nat (cfgLgNumLineTags r.(regionLineCfg)).
+Definition memLgNumLineTagsZ (isInternal : bool) (r : MemRegion) : Z :=
+  Z.of_nat (cfgLgNumLineTags isInternal r.(regionLineCfg)).
 
-Definition memLgTagRowBytesZ (r : MemRegion) : Z :=
-  (LgNumBytesFullCapSz + memLgNumLineTagsZ r)%Z.
+Definition memLgTagRowBytesZ (isInternal : bool) (r : MemRegion) : Z :=
+  (LgNumBytesFullCapSz + memLgNumLineTagsZ isInternal r)%Z.
 
 Section MemAddrHelpers.
+  Variable isInternal : bool.
   Variable r : MemRegion.
   Variable ty : Kind -> Type.
 
   Let lBytes := lineBytes r.
-  Let nTags := numLineTags r.
+  Let nTags := numLineTags isInternal r.
   Let numLines := regionNumLines r.
-  Let numTagLines := regionTagSize r.
+  Let numTagLines := regionTagSize isInternal r.
   Let lgLineBytesZ := memLgLineBytesZ r.
-  Let lgNumLineTagsZ := memLgNumLineTagsZ r.
-  Let lgTagRowBytesZ := memLgTagRowBytesZ r.
+  Let lgNumLineTagsZ := memLgNumLineTagsZ isInternal r.
+  Let lgTagRowBytesZ := memLgTagRowBytesZ isInternal r.
 
   Definition memCastAddr (addr : Expr ty Addr) : Expr ty (Bit ((lgLineBytesZ + (AddrSz - lgLineBytesZ))%Z)) :=
     castBits (eq_sym (add_sub_cancel AddrSz lgLineBytesZ)) addr.
@@ -279,20 +288,34 @@ Section MemAddrHelpers.
     FromBit (Array nTags Bool)
       (Not (Sll (ConstBit (InvDefault _)) (memTagSlot addr))).
 
-  Definition memAdd1TagForLine (addr : Expr ty Addr) : Expr ty (Array nTags Bool) :=
-    if hasTags r && (lgLineBytes r =? Z.to_nat LgNumBytesFullCapSz)%nat then
-      let slot := memTagSlot addr in
-      let nextSlot : Expr ty (Bit lgNumLineTagsZ) := Add [ slot ; $1 ] in
-      UpdateArray (UpdateArray ConstDef nextSlot (ConstBool true)) slot (ConstBool false)
+  Definition memTagMasks
+    (addr : Expr ty Addr)
+    (memSize : Expr ty (Bit LgLgNumBytesFullCapSz))
+    : Expr ty (Array nTags Bool) * Expr ty (Array nTags Bool) :=
+    if hasTags r then
+      let capOffset := TruncLsb TagAddrWidth LgNumBytesFullCapSz addr in
+      let wTagCnt := (lgNumLineTagsZ + 2)%Z in
+      let numBytesActiveTag : Expr ty (Bit (LgNumBytesFullCapSz + wTagCnt)%Z) :=
+        Sll $1 (ZeroExtend (LgNumBytesFullCapSz + wTagCnt - LgLgNumBytesFullCapSz)%Z memSize) in
+      let endByteOffset : Expr ty (Bit (LgNumBytesFullCapSz + wTagCnt)%Z) :=
+        Sub (Add [ ZeroExtend wTagCnt capOffset ; numBytesActiveTag ]) $1 in
+      let numTagsActive : Expr ty (Bit wTagCnt) :=
+        Add [ TruncMsb wTagCnt LgNumBytesFullCapSz endByteOffset ; $1 ] in
+      let w := kindSize (Array nTags Bool) in
+      let baseMask : Expr ty (Bit (w + w)%Z) :=
+        Not (Sll (ConstBit (InvDefault (Bit (w + w)%Z))) numTagsActive) in
+      let shiftedMask : Expr ty (Bit (w + w)%Z) := Sll baseMask (memTagSlot addr) in
+      (FromBit (Array nTags Bool) (TruncLsb w w shiftedMask),
+       FromBit (Array nTags Bool) (TruncMsb w w shiftedMask))
     else
-      memAdd1Tag addr.
+      (ConstDef, ConstDef).
 
   Definition memMergeLineReadRp
     (addr : Expr ty Addr)
-    (rp0 rp1 : Expr ty (LineReadRp r.(regionLineCfg)))
-    : Expr ty (LineReadRp r.(regionLineCfg)) :=
+    (rp0 rp1 : Expr ty (LineReadRp isInternal r.(regionLineCfg)))
+    : Expr ty (LineReadRp isInternal r.(regionLineCfg)) :=
     let add1    := memAdd1 addr in
-    let add1Tag := memAdd1TagForLine addr in
+    let add1Tag := memAdd1Tag addr in
     STRUCT {
       "data" ::= ArrayBuilder (fun i =>
                    ITE (ReadArrayConst add1 i)
@@ -307,7 +330,7 @@ Section MemAddrHelpers.
   Definition memExtractReadCap
     (addr : Expr ty Addr)
     (memSize : Expr ty (Bit LgLgNumBytesFullCapSz))
-    (rp : Expr ty (LineReadRp r.(regionLineCfg)))
+    (rp : Expr ty (LineReadRp isInternal r.(regionLineCfg)))
     : Expr ty FullCapWithTag :=
     let capOffset := TruncLsb TagAddrWidth LgNumBytesFullCapSz addr in
     let isCapAligned := isZero capOffset in
@@ -330,7 +353,7 @@ Section MemAddrHelpers.
     (addr : Expr ty Addr)
     (stVal : Expr ty FullCapWithTag)
     (memSize : Expr ty (Bit LgLgNumBytesFullCapSz))
-    : Expr ty (LineWriteRq r.(regionLineCfg)) :=
+    : Expr ty (LineWriteRq isInternal r.(regionLineCfg)) :=
     let capOffset := TruncLsb TagAddrWidth LgNumBytesFullCapSz addr in
     let isCapAligned := isZero capOffset in
     let isCap := And [ Eq memSize $LgNumBytesFullCapSz ; isCapAligned ] in
@@ -343,11 +366,6 @@ Section MemAddrHelpers.
     let rotData := ArrayRotl baseData (memLineOffset addr) in
     let numBytesActive : Expr ty (Bit (lgLineBytesZ + 1)%Z) :=
       Sll $1 (ZeroExtend (lgLineBytesZ + 1 - LgLgNumBytesFullCapSz)%Z memSize) in
-    let numBytesActiveDXlen : Expr ty (Bit (LgNumBytesFullCapSz + 1)%Z) :=
-      Sll $1 (ZeroExtend (LgNumBytesFullCapSz + 1 - LgLgNumBytesFullCapSz)%Z memSize) in
-    let endOffsetDXlen : Expr ty (Bit (LgNumBytesFullCapSz + 1)%Z) :=
-      Add [ ZeroExtend 1 capOffset ; numBytesActiveDXlen ] in
-    let crossesDXlen := FromBit Bool (TruncMsb 1 LgNumBytesFullCapSz (Sub endOffsetDXlen $1)) in
     let isWrites :=
       FromBit (Array lBytes Bool)
         (rotateLeft (Not (Sll (ConstBit (InvDefault _)) numBytesActive)) (memLineOffset addr)) in
@@ -356,15 +374,9 @@ Section MemAddrHelpers.
         UpdateArray ConstDef (memTagSlot addr) (And [ isCap ; stVal`"tag" ])
       else
         ConstDef in
-    let nextTagSlot : Expr ty (Bit lgNumLineTagsZ) := Add [ memTagSlot addr ; $1 ] in
+    let '(tagMask0, tagMask1) := memTagMasks addr memSize in
     let tagMask : Expr ty (Array nTags Bool) :=
-      if hasTags r then
-        UpdateArray
-          (UpdateArray ConstDef nextTagSlot crossesDXlen)
-          (memTagSlot addr)
-          (ConstBool true)
-      else
-        ConstDef in
+      FromBit (Array nTags Bool) (Or [ ToBit tagMask0 ; ToBit tagMask1 ]) in
     STRUCT {
       "addr"     ::= addr ;
       "data"     ::= rotData ;
@@ -373,30 +385,34 @@ Section MemAddrHelpers.
       "tagMask"  ::= tagMask
     }.
 
-  Definition memLineWriteRq0 (rq : Expr ty (LineWriteRq r.(regionLineCfg)))
-    : Expr ty (LineWriteRq r.(regionLineCfg)) :=
+  Definition memLineWriteRq0
+    (rq : Expr ty (LineWriteRq isInternal r.(regionLineCfg)))
+    (memSize : Expr ty (Bit LgLgNumBytesFullCapSz))
+    : Expr ty (LineWriteRq isInternal r.(regionLineCfg)) :=
     let addr := rq`"addr" in
     let add1Bits := memAdd1 addr in
-    let add1TagBits := memAdd1TagForLine addr in
+    let '(tagMask0, _) := memTagMasks addr memSize in
     STRUCT {
       "addr"     ::= memLineAddr addr ;
       "data"     ::= rq`"data" ;
       "dataMask" ::= FromBit (Array lBytes Bool) (And [ ToBit (rq`"dataMask") ; Not (ToBit add1Bits) ]) ;
       "tag"      ::= rq`"tag" ;
-      "tagMask"  ::= FromBit (Array nTags Bool) (And [ ToBit (rq`"tagMask") ; Not (ToBit add1TagBits) ])
+      "tagMask"  ::= tagMask0
     }.
 
-  Definition memLineWriteRq1 (rq : Expr ty (LineWriteRq r.(regionLineCfg)))
-    : Expr ty (LineWriteRq r.(regionLineCfg)) :=
+  Definition memLineWriteRq1
+    (rq : Expr ty (LineWriteRq isInternal r.(regionLineCfg)))
+    (memSize : Expr ty (Bit LgLgNumBytesFullCapSz))
+    : Expr ty (LineWriteRq isInternal r.(regionLineCfg)) :=
     let addr := rq`"addr" in
     let add1Bits := memAdd1 addr in
-    let add1TagBits := memAdd1TagForLine addr in
+    let '(_, tagMask1) := memTagMasks addr memSize in
     STRUCT {
       "addr"     ::= memNextLineAddr addr ;
       "data"     ::= rq`"data" ;
       "dataMask" ::= FromBit (Array lBytes Bool) (And [ ToBit (rq`"dataMask") ; ToBit add1Bits ]) ;
       "tag"      ::= rq`"tag" ;
-      "tagMask"  ::= FromBit (Array nTags Bool) (And [ ToBit (rq`"tagMask") ; ToBit add1TagBits ])
+      "tagMask"  ::= tagMask1
     }.
 
   Definition memCrossesLine
@@ -419,18 +435,18 @@ Arguments memLineOffsetIdx r [ty] addr.
 Arguments memLineAddr r [ty] addr.
 Arguments memNextLineAddr r [ty] addr.
 Arguments memAdd1 r [ty] addr.
-Arguments memCastAddrForTag r [ty] addr.
-Arguments memTagLineIndex r [ty] addr.
-Arguments memTagRowOffset r [ty] addr.
-Arguments memTagLineOffsetIdx r [ty] addr.
-Arguments memTagSlot r [ty] addr.
-Arguments memAdd1Tag r [ty] addr.
-Arguments memAdd1TagForLine r [ty] addr.
-Arguments memMergeLineReadRp r [ty] addr rp0 rp1.
-Arguments memExtractReadCap r [ty] addr memSize rp.
-Arguments memBuildLineWriteRq r [ty] addr stVal memSize.
-Arguments memLineWriteRq0 r [ty] rq.
-Arguments memLineWriteRq1 r [ty] rq.
+Arguments memCastAddrForTag isInternal r [ty] addr.
+Arguments memTagLineIndex isInternal r [ty] addr.
+Arguments memTagRowOffset isInternal r [ty] addr.
+Arguments memTagLineOffsetIdx isInternal r [ty] addr.
+Arguments memTagSlot isInternal r [ty] addr.
+Arguments memAdd1Tag isInternal r [ty] addr.
+Arguments memTagMasks isInternal r [ty] addr memSize.
+Arguments memMergeLineReadRp isInternal r [ty] addr rp0 rp1.
+Arguments memExtractReadCap isInternal r [ty] addr memSize rp.
+Arguments memBuildLineWriteRq isInternal r [ty] addr stVal memSize.
+Arguments memLineWriteRq0 isInternal r [ty] rq memSize.
+Arguments memLineWriteRq1 isInternal r [ty] rq memSize.
 Arguments memCrossesLine r [ty] addr memSize.
 
 Definition child0Path {A : Type} {name : string} {c0 : Tree A} {cs : list (Tree A)}
@@ -458,11 +474,11 @@ Definition extractBankDataInit (r : MemRegion) (b : nat)
   end.
 
 Definition extractBankTagInit (r : MemRegion) (b : nat)
-  : option (option (type (Array (regionTagSize r) Bool))) :=
+  : option (option (type (Array (regionTagSize true r) Bool))) :=
   match r.(regionKind) with
   | InternalMem _ _ (Some (Some tup)) =>
       if hasTags r
-      then Some (Some (buildStrideTuple (numLineTags r) false (regionTagSize r) b tup.(tupleElems)))
+      then Some (Some (buildStrideTuple (numLineTags true r) false (regionTagSize true r) b tup.(tupleElems)))
       else None
   | InternalMem _ _ (Some None) => Some None
   | _ => None
@@ -472,14 +488,14 @@ Definition memBankLeaf (r : MemRegion) (b : nat) : Tree DomainElem :=
   Leaf "memBank" (r.(regionDom), EMem (@Build_Mem (regionNumLines r) (Bit 8) 1%nat (extractBankDataInit r b))).
 
 Definition tagBankLeaf (r : MemRegion) (b : nat) : Tree DomainElem :=
-  Leaf "tagBank" (r.(regionDom), EMem (@Build_Mem (regionTagSize r) Bool 1%nat (extractBankTagInit r b))).
+  Leaf "tagBank" (r.(regionDom), EMem (@Build_Mem (regionTagSize true r) Bool 1%nat (extractBankTagInit r b))).
 
 Definition internalMemTargetPortChildren (r : MemRegion) : list (Tree DomainElem) :=
   [ Leaf "lineReadRqValid"  (r.(regionDom), ERecv Bool) ;
     Leaf "lineReadRq"       (r.(regionDom), ERecv Addr) ;
-    Leaf "lineReadRp"       (r.(regionDom), ESend (LineReadRp r.(regionLineCfg))) ;
+    Leaf "lineReadRp"       (r.(regionDom), ESend (LineReadRp true r.(regionLineCfg))) ;
     Leaf "lineWriteRqValid" (r.(regionDom), ERecv Bool) ;
-    Leaf "lineWriteRq"      (r.(regionDom), ERecv (LineWriteRq r.(regionLineCfg)))
+    Leaf "lineWriteRq"      (r.(regionDom), ERecv (LineWriteRq true r.(regionLineCfg)))
   ].
 
 Definition internalMemRegionChildren
@@ -487,13 +503,13 @@ Definition internalMemRegionChildren
            (isAccessible : bool)
            : list (Tree DomainElem) :=
   ([ Node "memBanks" (map (memBankLeaf r) (seq 0 (lineBytes r))) ;
-     Node "tagBanks" (map (tagBankLeaf r) (seq 0 (numLineTags r)))
+     Node "tagBanks" (map (tagBankLeaf r) (seq 0 (numLineTags true r)))
    ] ++ if isAccessible then internalMemTargetPortChildren r else [])%list.
 
 Definition externalMemRegionChildren (r : MemRegion) : list (Tree DomainElem) :=
   [ Leaf "lineReadRq"  (r.(regionDom), ESend Addr) ;
-    Leaf "lineReadRp"  (r.(regionDom), ERecv (LineReadRp r.(regionLineCfg))) ;
-    Leaf "lineWriteRq" (r.(regionDom), ESend (LineWriteRq r.(regionLineCfg)))
+    Leaf "lineReadRp"  (r.(regionDom), ERecv (LineReadRp false r.(regionLineCfg))) ;
+    Leaf "lineWriteRq" (r.(regionDom), ESend (LineWriteRq false r.(regionLineCfg)))
   ].
 
 Arguments internalMemRegionChildren r isAccessible : clear implicits.
@@ -533,9 +549,9 @@ Section InternalMemRegionActions.
 
   Let tInt := internalMemRegionTree r isAccessible.
   Let numLines := regionNumLines r.
-  Let numTagLines := regionTagSize r.
+  Let numTagLines := regionTagSize true r.
   Let lBytes := lineBytes r.
-  Let nTags := numLineTags r.
+  Let nTags := numLineTags true r.
   Let port0 : FinType 1%nat := @Build_FinType 1%nat 0%nat I.
 
   Local Definition leaf_list_path_mem (n : nat) (p : FinType n) :=
@@ -658,8 +674,8 @@ Section InternalMemRegionActions.
                        ReadRqMem (memBankPath memIdx) (memSizeCast memIdx (bankLineIdx #lineIdx #add1Bits memIdx)) (memPortCast memIdx port0) acc)
                     Retv (genFinType lBytes)) ;
     if hasTags r then (
-      Let tagLineIdx  : Bit (Z.log2_up (Z.of_nat numTagLines)) <- memTagLineOffsetIdx r #addr ;
-      Let add1TagBits : Array nTags Bool                       <- memAdd1Tag r #addr ;
+      Let tagLineIdx  : Bit (Z.log2_up (Z.of_nat numTagLines)) <- memTagLineOffsetIdx true r #addr ;
+      Let add1TagBits : Array nTags Bool                       <- memAdd1Tag true r #addr ;
       fold_right (fun tagIdx acc =>
                     ReadRqMem (tagBankPath tagIdx) (tagSizeCast tagIdx (tagBankLineIdx #tagLineIdx #add1TagBits tagIdx)) (tagPortCast tagIdx port0) acc)
                  Retv (genFinType nTags)
@@ -668,7 +684,7 @@ Section InternalMemRegionActions.
     ).
 
   Definition internalMemRegionGetReadRp
-             : Action ty tInt (LineReadRp r.(regionLineCfg)) :=
+             : Action ty tInt (LineReadRp true r.(regionLineCfg)) :=
     LetA dataBytes : Array lBytes (Bit 8) <-
       fold_right (fun memIdx acc =>
                     ReadRpMem "readByteRp" (memBankPath memIdx) (memPortCast memIdx port0)
@@ -687,18 +703,18 @@ Section InternalMemRegionActions.
       ) else (
         Return ConstDef
       ) ;
-    @Return ty tInt (LineReadRp r.(regionLineCfg)) (STRUCT {
+    @Return ty tInt (LineReadRp true r.(regionLineCfg)) (STRUCT {
       "data" ::= #dataBytes ;
       "tag"  ::= #tagArr
     }).
 
   Definition internalMemRegionLineRead (addr : ty Addr)
-             : Action ty tInt (LineReadRp r.(regionLineCfg)) :=
+             : Action ty tInt (LineReadRp true r.(regionLineCfg)) :=
     Act (internalMemRegionIssueReadRq addr) ;
     internalMemRegionGetReadRp.
 
   Definition internalMemRegionLineWrite
-             (rq : ty (LineWriteRq r.(regionLineCfg)))
+             (rq : ty (LineWriteRq true r.(regionLineCfg)))
              : Action ty tInt (Bit 0) :=
     if r.(isReadOnly) then (
       Retv
@@ -713,8 +729,8 @@ Section InternalMemRegionActions.
                          acc)
                       Retv (genFinType lBytes)) ;
       if hasTags r then (
-        Let tagLineIdx  : Bit (Z.log2_up (Z.of_nat numTagLines)) <- memTagLineOffsetIdx r (##rq`"addr") ;
-        Let add1TagBits : Array nTags Bool                       <- memAdd1Tag r (##rq`"addr") ;
+        Let tagLineIdx  : Bit (Z.log2_up (Z.of_nat numTagLines)) <- memTagLineOffsetIdx true r (##rq`"addr") ;
+        Let add1TagBits : Array nTags Bool                       <- memAdd1Tag true r (##rq`"addr") ;
         fold_right (fun tagIdx acc =>
                       If (ReadArrayConst (##rq`"tagMask") tagIdx) Then (
                         WriteMem (tagBankPath tagIdx) (tagSizeCast tagIdx (tagBankLineIdx #tagLineIdx #add1TagBits tagIdx))
@@ -749,7 +765,7 @@ Section InternalMemTargetPortActions.
     Recv "valid" pTargetPortLineReadRqValid (fun valid =>
     If #valid Then (
       Recv "addr" pTargetPortLineReadRq (fun addr =>
-      LetA rp : LineReadRp r.(regionLineCfg) <-
+      LetA rp : LineReadRp true r.(regionLineCfg) <-
         internalMemRegionLineRead r true addr ;
       Send pTargetPortLineReadRp #rp Retv)
     ) ;
@@ -778,13 +794,13 @@ Section ExternalMemRegionActions.
   Local Definition pLineWriteRq : SendPath tExt := Eval cbn in (getChildSendPathTree tExt "lineWriteRq").
 
   Definition externalMemRegionLineRead (addr : ty Addr)
-             : Action ty tExt (LineReadRp r.(regionLineCfg)) :=
+             : Action ty tExt (LineReadRp false r.(regionLineCfg)) :=
     Send pLineReadRq #addr (
     Recv "rp" pLineReadRp (fun rp =>
     Return #rp)).
 
   Definition externalMemRegionLineWrite
-             (rq : ty (LineWriteRq r.(regionLineCfg)))
+             (rq : ty (LineWriteRq false r.(regionLineCfg)))
              : Action ty tExt (Bit 0) :=
     if r.(isReadOnly) then (
       Retv
@@ -802,19 +818,19 @@ Section CustomMemRegionActions.
   Variable children : list (Tree DomainElem).
   Variable readAction : forall ty, ty Addr ->
                         Action ty (Node r.(regionName) children)
-                               (LineReadRp r.(regionLineCfg)).
-  Variable writeAction : forall ty, ty (LineWriteRq r.(regionLineCfg)) ->
+                               (LineReadRp false r.(regionLineCfg)).
+  Variable writeAction : forall ty, ty (LineWriteRq false r.(regionLineCfg)) ->
                          Action ty (Node r.(regionName) children) (Bit 0).
   Variable ty : Kind -> Type.
 
   Local Definition tCust := customMemRegionTree r children.
 
   Definition customMemRegionLineRead (addr : ty Addr)
-             : Action ty tCust (LineReadRp r.(regionLineCfg)) :=
+             : Action ty tCust (LineReadRp false r.(regionLineCfg)) :=
     readAction addr.
 
   Definition customMemRegionLineWrite
-             (rq : ty (LineWriteRq r.(regionLineCfg)))
+             (rq : ty (LineWriteRq false r.(regionLineCfg)))
              : Action ty tCust (Bit 0) :=
     if r.(isReadOnly) then (
       Retv
@@ -831,12 +847,12 @@ Definition memRegionLineRead
            {ty : Kind -> Type}
            (r : MemRegion)
            (addr : ty Addr)
-           : Action ty (memRegionTree r) (LineReadRp r.(regionLineCfg)) :=
+           : Action ty (memRegionTree r) (LineReadRp (isInternalMem r) r.(regionLineCfg)) :=
   match r.(regionKind) as k return Action ty (match k with
                                               | InternalMem isAccessible _ _ => internalMemRegionTree r isAccessible
                                               | ExternalMem => externalMemRegionTree r
                                               | CustomMem children _ _ _ => customMemRegionTree r children
-                                              end) (LineReadRp r.(regionLineCfg)) with
+                                              end) (LineReadRp (isInternalRegionKind k) r.(regionLineCfg)) with
   | InternalMem isAccessible _ _ => internalMemRegionLineRead r isAccessible addr
   | ExternalMem => externalMemRegionLineRead r addr
   | CustomMem children readAct writeAct _ => customMemRegionLineRead r children readAct addr
@@ -845,17 +861,18 @@ Definition memRegionLineRead
 Definition memRegionLineWrite
            {ty : Kind -> Type}
            (r : MemRegion)
-           (rq : ty (LineWriteRq r.(regionLineCfg)))
+           (rq : ty (LineWriteRq (isInternalMem r) r.(regionLineCfg)))
            : Action ty (memRegionTree r) (Bit 0) :=
-  match r.(regionKind) as k return Action ty (match k with
+  match r.(regionKind) as k return ty (LineWriteRq (isInternalRegionKind k) r.(regionLineCfg)) ->
+                                   Action ty (match k with
                                               | InternalMem isAccessible _ _ => internalMemRegionTree r isAccessible
                                               | ExternalMem => externalMemRegionTree r
                                               | CustomMem children _ _ _ => customMemRegionTree r children
                                               end) (Bit 0) with
-  | InternalMem isAccessible _ _ => internalMemRegionLineWrite r isAccessible rq
-  | ExternalMem => externalMemRegionLineWrite r rq
-  | CustomMem children readAct writeAct _ => customMemRegionLineWrite r children writeAct rq
-  end.
+  | InternalMem isAccessible _ _ => fun rq' => internalMemRegionLineWrite r isAccessible rq'
+  | ExternalMem => fun rq' => externalMemRegionLineWrite r rq'
+  | CustomMem children readAct writeAct _ => fun rq' => customMemRegionLineWrite r children writeAct rq'
+  end rq.
 
 Arguments memRegionLineRead [ty] r addr.
 Arguments memRegionLineWrite [ty] r rq.
@@ -869,27 +886,28 @@ Section MemRegionActions.
   Variable ty : Kind -> Type.
 
   Local Definition tR := memRegionTree r.
+  Let isInt := isInternalMem r.
 
   Definition memRegionRead
              (addr : ty Addr)
              (memSize : ty (Bit LgLgNumBytesFullCapSz))
              : Action ty tR FullCapWithTag :=
-    if isInternalMem r then (
-      LetA rp : LineReadRp r.(regionLineCfg) <- memRegionLineRead r addr ;
-      Return (memExtractReadCap r #addr #memSize #rp)
+    if isInt then (
+      LetA rp : LineReadRp isInt r.(regionLineCfg) <- memRegionLineRead r addr ;
+      Return (memExtractReadCap isInt r #addr #memSize #rp)
     ) else (
-      Let  addr0   : Addr                         <- memLineAddr r #addr ;
-      LetA rp0     : LineReadRp r.(regionLineCfg) <- memRegionLineRead r addr0 ;
-      Let  crosses : Bool                         <- memCrossesLine r #addr #memSize ;
-      LetIf rp1 : LineReadRp r.(regionLineCfg) <-
+      Let  addr0   : Addr                               <- memLineAddr r #addr ;
+      LetA rp0     : LineReadRp isInt r.(regionLineCfg) <- memRegionLineRead r addr0 ;
+      Let  crosses : Bool                               <- memCrossesLine r #addr #memSize ;
+      LetIf rp1 : LineReadRp isInt r.(regionLineCfg) <-
         If #crosses Then (
           Let addr1 : Addr <- memNextLineAddr r #addr ;
           memRegionLineRead r addr1
         ) Else (
           Return ConstDef
         ) ;
-      Let  rp      : LineReadRp r.(regionLineCfg) <- memMergeLineReadRp r #addr #rp0 #rp1 ;
-      Return (memExtractReadCap r #addr #memSize #rp)
+      Let  rp      : LineReadRp isInt r.(regionLineCfg) <- memMergeLineReadRp isInt r #addr #rp0 #rp1 ;
+      Return (memExtractReadCap isInt r #addr #memSize #rp)
     ).
 
   Definition memRegionWrite
@@ -900,15 +918,15 @@ Section MemRegionActions.
     if r.(isReadOnly) then (
       Retv
     ) else (
-      Let rq : LineWriteRq r.(regionLineCfg) <- memBuildLineWriteRq r #addr #stVal #memSize ;
-      if isInternalMem r then (
+      Let rq : LineWriteRq isInt r.(regionLineCfg) <- memBuildLineWriteRq isInt r #addr #stVal #memSize ;
+      if isInt then (
         memRegionLineWrite r rq
       ) else (
-        Let rq0     : LineWriteRq r.(regionLineCfg) <- memLineWriteRq0 r #rq ;
+        Let rq0     : LineWriteRq isInt r.(regionLineCfg) <- memLineWriteRq0 isInt r #rq #memSize ;
         Act (memRegionLineWrite r rq0) ;
-        Let crosses : Bool                          <- memCrossesLine r #addr #memSize ;
+        Let crosses : Bool                                <- memCrossesLine r #addr #memSize ;
         If #crosses Then (
-          Let rq1 : LineWriteRq r.(regionLineCfg) <- memLineWriteRq1 r #rq ;
+          Let rq1 : LineWriteRq isInt r.(regionLineCfg) <- memLineWriteRq1 isInt r #rq #memSize ;
           memRegionLineWrite r rq1
         ) ;
         Retv

@@ -111,7 +111,7 @@ Section Clint.
              (base : Z)
              (ty : Kind -> Type)
              (addr : ty Addr)
-             : Action ty tClint (LineReadRp ClintLineConfig) :=
+             : Action ty tClint (LineReadRp false ClintLineConfig) :=
     Let offset <- getMemOffset base ClintSizeBytes #addr ;
     ReadReg "mtime" clintMtimePath (fun mtimeVal =>
     ReadReg "mtimeh" clintMtimehPath (fun mtimehVal =>
@@ -124,15 +124,15 @@ Section Clint.
            ITE0 (Eq #offset $(CLINT_MTIMECMPH_OFFSET)) #mtimecmphVal ] ;
     Let readBytes : Array (cfgLineBytes ClintLineConfig) (Bit ByteSz) <-
       FromBit (Array (cfgLineBytes ClintLineConfig) (Bit ByteSz)) #readWord ;
-    @Return ty tClint (LineReadRp ClintLineConfig) (STRUCT {
+    @Return ty tClint (LineReadRp false ClintLineConfig) (STRUCT {
       "data" ::= #readBytes ;
-      "tag"  ::= Const ty (Array (cfgNumLineTags ClintLineConfig) Bool) (getDefault _)
+      "tag"  ::= Const ty (Array (cfgNumLineTags false ClintLineConfig) Bool) (getDefault _)
     }))))).
 
   Definition clintLineWriteAction
              (base : Z)
              (ty : Kind -> Type)
-             (rq : ty (LineWriteRq ClintLineConfig))
+             (rq : ty (LineWriteRq false ClintLineConfig))
              : Action ty tClint (Bit 0) :=
     Let offset <- getMemOffset base ClintSizeBytes (##rq`"addr") ;
     Let writeWord : Bit Xlen <- ToBit (##rq`"data") ;
