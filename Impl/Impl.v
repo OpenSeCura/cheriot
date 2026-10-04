@@ -205,12 +205,17 @@ Section ImplDom.
     Definition impl : Mod sysTree :=
       fun ty => (
         implClearWriteBusySteps ty
-        ++ [
-          (core, fetchRqStage ty) ;
-          (core, decodeAndRegReadStage ty) ;
-          (core, aluAndExecuteNonDeferredStage ty) ;
-          (core, loadRqOrStoreOrFenceStage ty)
-        ]
+        ++ map (fun a => (core, a)) (implRevokerStepsSys ty)
+        ++ map (fun a => (core, a)) (implPlicPendingsSteps ty)
+        ++ [ (core, implPlicClaimStep ty) ;
+             (core, implPlicSampleMeipStep ty) ;
+             (core, implTickCycle ty) ;
+             (core, implTickTimer ty) ;
+             (core, implSampleMtipStep ty) ;
+             (core, fetchRqStage ty) ;
+             (core, decodeAndRegReadStage ty) ;
+             (core, aluAndExecuteNonDeferredStage ty) ;
+             (core, loadRqOrStoreOrFenceStage ty) ]
         ++ implRegionStepsSys ty
         ++ [
           (core, loadRpAndWritebackOrIssueRevRqStage ty) ;
@@ -218,14 +223,7 @@ Section ImplDom.
         ]
         ++ map (fun a => (core, a)) (mulDivStageActions ty)
         ++ [ (core, mulWriteBackStage ty) ;
-             (core, divWriteBackStage ty) ;
-             (core, implTickCycle ty) ;
-             (core, implTickTimer ty) ;
-             (core, implSampleMtipStep ty) ]
-        ++ map (fun a => (core, a)) (implRevokerStepsSys ty)
-        ++ map (fun a => (core, a)) (implPlicPendingsSteps ty)
-        ++ [ (core, implPlicClaimStep ty) ;
-             (core, implPlicSampleMeipStep ty) ]
+             (core, divWriteBackStage ty) ]
         ++ implInternalMemTargetPortSteps ty)%list.
 
   End Impl.
