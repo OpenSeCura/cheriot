@@ -80,6 +80,7 @@ Section Plic.
       Node "enables"    (enableLeaves n) ;
       Leaf "threshold"  (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false)) ;
       Leaf "claim"      (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false)) ;
+      Leaf "meip"       (dom, EReg (Build_Reg Bool       (Some false)     false)) ;
       Node "in_service" (inServiceLeaves n) ;
       Leaf "UartIrq"    (dom, ERecv Bool) ].
 
@@ -102,6 +103,8 @@ Section Plic.
       getChildRegPathTree tPlic "threshold".
     Definition plicClaimPath : RegPath tPlic :=
       getChildRegPathTree tPlic "claim".
+    Definition plicMeipPath : RegPath tPlic :=
+      getChildRegPathTree tPlic "meip".
     Definition plicUartIrqPath : RecvPath tPlic :=
       getChildRecvPathTree tPlic "UartIrq".
 
@@ -270,13 +273,25 @@ Section Plic.
       readPlicState (fun st =>
         LetL bestRes : PlicResType <-
           findMaxActive st.(st_thresh) st.(st_prios) st.(st_pends) st.(st_ens) st.(st_insvs) ;
-        Act (WriteReg (plicClaimPath n) (##bestRes`"id") Retv) ;
+        Let  bestId  : Bit Xlen    <- ##bestRes`"id" ;
+        Act (WriteReg (plicClaimPath n) #bestId Retv) ;
+        If (isZero #bestId) Then (
+          WriteReg (plicMeipPath n) (ConstBool false) Retv
+        ) ;
+        Retv
+      ).
+
+    Definition plicSampleMeip : Action ty tPlic (Bit 0) :=
+      ReadReg "claim" (plicClaimPath n) (fun val_claim =>
+        If (isNotZero (Var _ _ val_claim)) Then (
+          WriteReg (plicMeipPath n) (ConstBool true) Retv
+        ) ;
         Retv
       ).
 
     Definition plicMeip : Action ty tPlic Bool :=
-      ReadReg "claim" (plicClaimPath n) (fun val_claim =>
-        Return (isNotZero (Var _ _ val_claim))
+      ReadReg "meip" (plicMeipPath n) (fun val_meip =>
+        Return (Var _ _ val_meip)
       ).
 
     Definition plicClaim : Action ty tPlic (Bit Xlen) :=
@@ -286,6 +301,7 @@ Section Plic.
           Act (writeRegsList (pendingPathsWithKind n) claimedId (ConstBool false)) ;
           Act (writeRegsList (inServicePathsWithKind n) claimedId (ConstBool true)) ;
           Act (WriteReg (plicClaimPath n) $0 Retv) ;
+          Act (WriteReg (plicMeipPath n) (ConstBool false) Retv) ;
           Retv
         ) ;
         Return claimedId
@@ -409,6 +425,11 @@ Section Plic.
         ) ;
         Retv
       ) ;
+      If (Not #isComplete) Then (
+        Act (WriteReg (plicClaimPath n) $0 Retv) ;
+        Act (WriteReg (plicMeipPath n) (ConstBool false) Retv) ;
+        Retv
+      ) ;
       Retv.
 
   End PlicMmio.
@@ -504,6 +525,9 @@ Section Plic.
 
     Definition plicClaimStep : Action ty memTree (Bit 0) :=
       plicAction (@updateClaim n ty).
+
+    Definition plicSampleMeipStep : Action ty memTree (Bit 0) :=
+      plicAction (@plicSampleMeip n ty).
 
   End PlicSystem.
 

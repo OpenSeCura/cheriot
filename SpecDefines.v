@@ -815,6 +815,12 @@ Section CsrHelpers.
   Definition getMstatusMPIE (mstatus : Expr ty (Bit Xlen)) : Expr ty Bool :=
     (FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[MstatusMPIE_Bit].
 
+  Definition getMieMEIE (mie : Expr ty (Bit Xlen)) : Expr ty Bool :=
+    (FromBit (Array (Z.to_nat Xlen) Bool) mie)$[Z.to_nat MEIP_Bit].
+
+  Definition getMieMTIE (mie : Expr ty (Bit Xlen)) : Expr ty Bool :=
+    (FromBit (Array (Z.to_nat Xlen) Bool) mie)$[Z.to_nat MTIP_Bit].
+
   Definition setMstatusMIE (mstatus : Expr ty (Bit Xlen)) (mie : Expr ty Bool) : Expr ty (Bit Xlen) :=
     ToBit ((FromBit (Array (Z.to_nat Xlen) Bool) mstatus)$[MstatusMIE_Bit <- mie]).
 
@@ -1352,6 +1358,14 @@ Definition DeferredReq := STRUCT_TYPE {
   "dstIdx" :: Bit RegIdxSzReal ;
   "addr"   :: Addr ;
   "op"     :: DeferredUnion
+}.
+
+Definition InterruptPendingInfo := STRUCT_TYPE {
+  "isInterrupt" :: Bool ;
+  "meipPending" :: Bool ;
+  "mtipPending" :: Bool ;
+  "currMIE"     :: Bool ;
+  "mstatus"     :: Bit Xlen
 }.
 
 Definition ExecuteOut := STRUCT_TYPE {

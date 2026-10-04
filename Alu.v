@@ -409,6 +409,25 @@ Section AluRF.
   Local Notation incrementMcycle := (incrementMcycle dom pcAddrInit).
   Local Notation updateMshwmOnStore := (updateMshwmOnStore dom pcAddrInit).
 
+  Definition isInterruptPending (meip mtip : ty Bool) : Action ty rfTree InterruptPendingInfo :=
+    LetA mstatus     : Bit Xlen <- readRegsList csrPathsWithKind
+                                     ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+    LetA mie         : Bit Xlen <- readRegsList csrPathsWithKind
+                                     ($(getCsrPhysicalIdx "mie") : Expr ty (Bit CsrIdxSz)) ;
+    Let  currMIE     : Bool     <- getMstatusMIE #mstatus ;
+    Let  meie        : Bool     <- getMieMEIE #mie ;
+    Let  mtie        : Bool     <- getMieMTIE #mie ;
+    Let  meipPending : Bool     <- And [ #meip ; #meie ] ;
+    Let  mtipPending : Bool     <- And [ #mtip ; #mtie ] ;
+    Let  isInterrupt : Bool     <- And [ #currMIE ; Or [ #meipPending ; #mtipPending ] ] ;
+    @Return ty rfTree InterruptPendingInfo (STRUCT {
+      "isInterrupt" ::= #isInterrupt ;
+      "meipPending" ::= #meipPending ;
+      "mtipPending" ::= #mtipPending ;
+      "currMIE"     ::= #currMIE ;
+      "mstatus"     ::= #mstatus
+    }).
+
   Definition executeNonDeferred (currPcc : ty FullECapWithTag) (meip mtip : ty Bool) (aluOut : ty AluOutUnion)
     : Action ty rfTree ExecuteOut :=
     Let  isComp         : Bool                       <- ##aluOut`"isComp" ;
@@ -422,20 +441,15 @@ Section AluRF.
     Let  isExc          : Bool                       <- #aluOp `? "Exception" ;
     Let  noExc          : NoExceptionUnion           <- #aluOp `! "NoException" ;
 
-    LetA mstatus        : Bit Xlen                   <- readRegsList csrPathsWithKind
-                                                          ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-    Let  mip            : Bit Xlen                   <- createMip #meip #mtip ;
-    LetA mie            : Bit Xlen                   <- readRegsList csrPathsWithKind
-                                                          ($(getCsrPhysicalIdx "mie") : Expr ty (Bit CsrIdxSz)) ;
-    Let  pending        : Bit Xlen                   <- And [ #mip ; #mie ] ;
-    Let  currMIE        : Bool                       <- getMstatusMIE #mstatus ;
-    Let  isInterrupt    : Bool                       <- And [ #currMIE ; isNotZero #pending ] ;
+    LetA intInfo        : InterruptPendingInfo       <- isInterruptPending meip mtip ;
+    Let  isInterrupt    : Bool                       <- ##intInfo`"isInterrupt" ;
+    Let  meipPending    : Bool                       <- ##intInfo`"meipPending" ;
+    Let  mtipPending    : Bool                       <- ##intInfo`"mtipPending" ;
+    Let  currMIE        : Bool                       <- ##intInfo`"currMIE" ;
+    Let  mstatus        : Bit Xlen                   <- ##intInfo`"mstatus" ;
 
     (* Cause number, not the bitmask; external outranks timer.  ITE not caseDefault,
        which would OR the two when both are pending. *)
-    Let  pendingArr     : Array (Z.to_nat Xlen) Bool <- FromBit (Array (Z.to_nat Xlen) Bool) #pending ;
-    Let  meipPending    : Bool                       <- ReadArray #pendingArr ($MEIP_Bit : Expr ty (Bit LgXlen)) ;
-    Let  mtipPending    : Bool                       <- ReadArray #pendingArr ($MTIP_Bit : Expr ty (Bit LgXlen)) ;
     Let  intCauseNo     : Bit (Xlen - 1)             <- ITE #meipPending $MEIP_Bit (ITE0 #mtipPending $MTIP_Bit) ;
     Let  isTrap         : Bool                       <- Or [ #isInterrupt ; #isExc ] ;
 

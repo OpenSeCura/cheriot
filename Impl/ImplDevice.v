@@ -153,21 +153,33 @@ Section ImplInternalMemRegionActions.
   Local Definition pTargetRpPending : RegPath tImplInt := Eval cbn in (getChildRegPathTree tImplInt "targetRpPending").
   Local Definition pWriteBusy : RegPath tImplInt := Eval cbn in (getChildRegPathTree tImplInt "writeBusy").
 
-  Definition implInternalMemRegionLineReadRq (addr : ty Addr)
+  Definition implInternalMemRegionLineReadRdy
              : Action ty tImplInt Bool :=
     ReadReg "rpValid" pRpValid (fun rpValid =>
-    If (Not #rpValid) Then (
-      Act (liftAction child0Path (internalMemRegionIssueReadRq r isAccessible addr)) ;
-      WriteReg pRpValid (ConstBool true) Retv
-    ) ;
     Return (Not #rpValid)).
 
-  Definition implInternalMemRegionLineReadRp
+  Definition implInternalMemRegionLineWriteRdy
+             : Action ty tImplInt Bool :=
+    ReadReg "writeBusy" pWriteBusy (fun writeBusy =>
+    Return (Not #writeBusy)).
+
+  Definition implInternalMemRegionLineReadRq (isTarget : bool) (addr : ty Addr)
+             : Action ty tImplInt Bool :=
+    LetA rdy : Bool <- implInternalMemRegionLineReadRdy ;
+    If #rdy Then (
+      Act (liftAction child0Path (internalMemRegionIssueReadRq r isAccessible addr)) ;
+      WriteReg pRpValid (ConstBool true) (
+      WriteReg pTargetRpPending (ConstBool isTarget) Retv)
+    ) ;
+    Return #rdy.
+
+  Definition implInternalMemRegionLineReadRp (isTarget : bool)
              : Action ty tImplInt (Option (LineReadRp r.(regionLineCfg))) :=
     ReadReg "rpValid" pRpValid (fun rpValid =>
     ReadReg "targetRpPending" pTargetRpPending (fun targetRpPending =>
+    Let isMatch : Bool <- if isTarget then #targetRpPending else Not #targetRpPending ;
     LetIf rpOpt : Option (LineReadRp r.(regionLineCfg)) <-
-      If (And [ #rpValid ; Not #targetRpPending ]) Then (
+      If (And [ #rpValid ; #isMatch ]) Then (
         LetA rp : LineReadRp r.(regionLineCfg) <-
           liftAction child0Path (@internalMemRegionGetReadRp r isAccessible ty) ;
         Return (mkSome #rp)
@@ -176,17 +188,18 @@ Section ImplInternalMemRegionActions.
 
   Definition implInternalMemRegionLineDeqRp
              : Action ty tImplInt (Bit 0) :=
-    WriteReg pRpValid (ConstBool false) Retv.
+    WriteReg pRpValid (ConstBool false) (
+    WriteReg pTargetRpPending (ConstBool false) Retv).
 
   Definition implInternalMemRegionLineWriteRq
              (rq : ty (LineWriteRq r.(regionLineCfg)))
              : Action ty tImplInt Bool :=
-    ReadReg "writeBusy" pWriteBusy (fun writeBusy =>
-    If (Not #writeBusy) Then (
+    LetA rdy : Bool <- implInternalMemRegionLineWriteRdy ;
+    If #rdy Then (
       Act (liftAction child0Path (internalMemRegionLineWrite r isAccessible rq)) ;
       WriteReg pWriteBusy (ConstBool true) Retv
     ) ;
-    Return (Not #writeBusy)).
+    Return #rdy.
 
   Definition implInternalMemRegionClearWriteBusy
              : Action ty tImplInt (Bit 0) :=
@@ -196,7 +209,7 @@ Section ImplInternalMemRegionActions.
              (addr : ty Addr)
              (memSize : ty (Bit LgLgNumBytesFullCapSz))
              : Action ty tImplInt (Option FullCapWithTag) :=
-    LetA rpOpt : Option (LineReadRp r.(regionLineCfg)) <- implInternalMemRegionLineReadRp ;
+    LetA rpOpt : Option (LineReadRp r.(regionLineCfg)) <- implInternalMemRegionLineReadRp false ;
     LetIf resOpt : Option FullCapWithTag <-
       If (##rpOpt`"valid") Then (
         Let rp : LineReadRp r.(regionLineCfg) <- ##rpOpt`"data" ;
@@ -218,8 +231,10 @@ Section ImplInternalMemRegionActions.
 
 End ImplInternalMemRegionActions.
 
-Arguments implInternalMemRegionLineReadRq r isAccessible [ty] addr.
-Arguments implInternalMemRegionLineReadRp r isAccessible {ty}.
+Arguments implInternalMemRegionLineReadRdy r isAccessible {ty}.
+Arguments implInternalMemRegionLineWriteRdy r isAccessible {ty}.
+Arguments implInternalMemRegionLineReadRq r isAccessible [ty] isTarget addr.
+Arguments implInternalMemRegionLineReadRp r isAccessible {ty} isTarget.
 Arguments implInternalMemRegionLineDeqRp r isAccessible {ty}.
 Arguments implInternalMemRegionLineWriteRq r isAccessible [ty] rq.
 Arguments implInternalMemRegionClearWriteBusy r isAccessible {ty}.
@@ -232,9 +247,6 @@ Section ImplInternalMemTargetPortActions.
 
   Local Definition tIntSpec := internalMemRegionTree r true.
   Local Definition tImplIntTargetPort := implInternalMemRegionTree r true.
-  Local Definition pTargetPortRpValid          : RegPath  tImplIntTargetPort := Eval cbn in (getChildRegPathTree  tImplIntTargetPort "rpValid").
-  Local Definition pTargetPortRpPending        : RegPath  tImplIntTargetPort := Eval cbn in (getChildRegPathTree  tImplIntTargetPort "targetRpPending").
-  Local Definition pTargetPortWriteBusy        : RegPath  tImplIntTargetPort := Eval cbn in (getChildRegPathTree  tImplIntTargetPort "writeBusy").
   Local Definition pTargetPortLineReadRqReady  : SendPath tImplIntTargetPort := Eval cbn in (getChildSendPathTree tImplIntTargetPort "lineReadRqReady").
   Local Definition pTargetPortLineWriteRqReady : SendPath tImplIntTargetPort := Eval cbn in (getChildSendPathTree tImplIntTargetPort "lineWriteRqReady").
   Local Definition pTargetPortLineReadRpReady  : RecvPath tImplIntTargetPort := Eval cbn in (getChildRecvPathTree tImplIntTargetPort "lineReadRpReady").
@@ -246,49 +258,45 @@ Section ImplInternalMemTargetPortActions.
   Local Definition pTargetPortLineWriteRq      : RecvPath tIntSpec := Eval cbn in (getChildRecvPathTree tIntSpec "lineWriteRq").
 
   Definition implInternalMemRegionTargetPortReadRq : Action ty tImplIntTargetPort (Bit 0) :=
-    ReadReg "rpValid" pTargetPortRpValid (fun rpValid =>
-    Act (Send pTargetPortLineReadRqReady (Not #rpValid) Retv) ;
-    If (Not #rpValid) Then (
+    LetA rdy : Bool <- @implInternalMemRegionLineReadRdy r true ty ;
+    Act (Send pTargetPortLineReadRqReady #rdy Retv) ;
+    If #rdy Then (
       LetA valid : Bool <- liftAction child0Path (Recv "valid" pTargetPortLineReadRqValid (fun valid => Return #valid)) ;
       If #valid Then (
         LetA addr : Addr <- liftAction child0Path (Recv "addr" pTargetPortLineReadRq (fun addr => Return #addr)) ;
-        Act (liftAction child0Path (internalMemRegionIssueReadRq r true addr)) ;
-        WriteReg pTargetPortRpValid (ConstBool true) (
-        WriteReg pTargetPortRpPending (ConstBool true) Retv)
+        Act (implInternalMemRegionLineReadRq r true true addr) ;
+        Retv
       ) ;
       Retv
     ) ;
-    Retv).
+    Retv.
 
   Definition implInternalMemRegionTargetPortReadRp : Action ty tImplIntTargetPort (Bit 0) :=
-    ReadReg "rpValid" pTargetPortRpValid (fun rpValid =>
-    ReadReg "targetRpPending" pTargetPortRpPending (fun targetRpPending =>
-    If (And [ #rpValid ; #targetRpPending ]) Then (
+    LetA rpOpt : Option (LineReadRp r.(regionLineCfg)) <- @implInternalMemRegionLineReadRp r true ty true ;
+    If (##rpOpt`"valid") Then (
       Recv "rpReady" pTargetPortLineReadRpReady (fun rpReady =>
       If #rpReady Then (
-        LetA rp : LineReadRp r.(regionLineCfg) <-
-          liftAction child0Path (@internalMemRegionGetReadRp r true ty) ;
-        WriteReg pTargetPortRpValid (ConstBool false) (
-        WriteReg pTargetPortRpPending (ConstBool false) (
-        liftAction child0Path (Send pTargetPortLineReadRp #rp Retv)))
+        Let rp : LineReadRp r.(regionLineCfg) <- ##rpOpt`"data" ;
+        Act (@implInternalMemRegionLineDeqRp r true ty) ;
+        liftAction child0Path (Send pTargetPortLineReadRp #rp Retv)
       ) ;
       Retv)
     ) ;
-    Retv)).
+    Retv.
 
   Definition implInternalMemRegionTargetPortWrite : Action ty tImplIntTargetPort (Bit 0) :=
-    ReadReg "writeBusy" pTargetPortWriteBusy (fun writeBusy =>
-    Act (Send pTargetPortLineWriteRqReady (Not #writeBusy) Retv) ;
-    If (Not #writeBusy) Then (
+    LetA rdy : Bool <- @implInternalMemRegionLineWriteRdy r true ty ;
+    Act (Send pTargetPortLineWriteRqReady #rdy Retv) ;
+    If #rdy Then (
       LetA valid : Bool <- liftAction child0Path (Recv "valid" pTargetPortLineWriteRqValid (fun valid => Return #valid)) ;
       If #valid Then (
         LetA rq : LineWriteRq r.(regionLineCfg) <- liftAction child0Path (Recv "rq" pTargetPortLineWriteRq (fun rq => Return #rq)) ;
-        Act (liftAction child0Path (internalMemRegionLineWrite r true rq)) ;
-        WriteReg pTargetPortWriteBusy (ConstBool true) Retv
+        Act (implInternalMemRegionLineWriteRq r true rq) ;
+        Retv
       ) ;
       Retv
     ) ;
-    Retv).
+    Retv.
 
 End ImplInternalMemTargetPortActions.
 
@@ -601,7 +609,7 @@ Definition implMemRegionReadRq
                                               | ExternalMem => implExternalMemRegionTree r
                                               | CustomMem children _ _ _ => implCustomMemRegionTree r children
                                               end) Bool with
-  | InternalMem isAccessible _ _ => implInternalMemRegionLineReadRq r isAccessible addr
+  | InternalMem isAccessible _ _ => implInternalMemRegionLineReadRq r isAccessible false addr
   | ExternalMem => implExternalMemRegionReadRq r addr memSize
   | CustomMem children readAct _ _ => implCustomMemRegionReadRq r children readAct addr
   end.

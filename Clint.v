@@ -44,19 +44,21 @@ Section Clint.
   Variable dom : string.
 
   Definition clintChildren : list (Tree DomainElem) :=
-    [ Leaf "mtime"     (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false)) ;
-      Leaf "mtimeh"    (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false)) ;
-      Leaf "mtimecmp"  (dom, EReg (Build_Reg (Bit Xlen) (Some (Zmod.of_Z _ (2^Xlen - 1))) false)) ;
-      Leaf "mtimecmph" (dom, EReg (Build_Reg (Bit Xlen) (Some (Zmod.of_Z _ (2^Xlen - 1))) false)) ;
-      Leaf "mtip"      (dom, EReg (Build_Reg Bool       (Some false)     false)) ].
+    [ Leaf "mtime"       (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false)) ;
+      Leaf "mtimeh"      (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false)) ;
+      Leaf "mtimecmp"    (dom, EReg (Build_Reg (Bit Xlen) (Some (Zmod.of_Z _ (2^Xlen - 1))) false)) ;
+      Leaf "mtimecmph"   (dom, EReg (Build_Reg (Bit Xlen) (Some (Zmod.of_Z _ (2^Xlen - 1))) false)) ;
+      Leaf "mtip"        (dom, EReg (Build_Reg Bool       (Some false)     false)) ;
+      Leaf "sampledMtip" (dom, EReg (Build_Reg Bool       (Some false)     false)) ].
 
   Local Notation tClint := (Node "clint" clintChildren).
 
-  Definition clintMtimePath     : RegPath tClint := getChildRegPathTree tClint "mtime".
-  Definition clintMtimehPath    : RegPath tClint := getChildRegPathTree tClint "mtimeh".
-  Definition clintMtimecmpPath  : RegPath tClint := getChildRegPathTree tClint "mtimecmp".
-  Definition clintMtimecmphPath : RegPath tClint := getChildRegPathTree tClint "mtimecmph".
-  Definition clintMtipPath      : RegPath tClint := getChildRegPathTree tClint "mtip".
+  Definition clintMtimePath       : RegPath tClint := getChildRegPathTree tClint "mtime".
+  Definition clintMtimehPath      : RegPath tClint := getChildRegPathTree tClint "mtimeh".
+  Definition clintMtimecmpPath    : RegPath tClint := getChildRegPathTree tClint "mtimecmp".
+  Definition clintMtimecmphPath   : RegPath tClint := getChildRegPathTree tClint "mtimecmph".
+  Definition clintMtipPath        : RegPath tClint := getChildRegPathTree tClint "mtip".
+  Definition clintSampledMtipPath : RegPath tClint := getChildRegPathTree tClint "sampledMtip".
 
   Definition ClintLineConfig : LineConfig := RawLine (Z.to_nat LgNumBytesXlen).
 
@@ -78,7 +80,7 @@ Section Clint.
       Return {< #hi, #lo >}.
 
     Definition readClintMtip : Action ty tClint Bool :=
-      ReadReg "mtip" clintMtipPath (fun v => Return #v).
+      ReadReg "sampledMtip" clintSampledMtipPath (fun v => Return #v).
 
     Definition clintTick : Action ty tClint (Bit 0) :=
       LetA mtimeDXlen    : Bit DXlen <- readClintMtime ;
@@ -87,8 +89,21 @@ Section Clint.
       Act (WriteReg clintMtimePath (TruncLsb Xlen Xlen #nextMtime) Retv) ;
       Act (WriteReg clintMtimehPath (TruncMsb Xlen Xlen #nextMtime) Retv) ;
       Let  isMatch       : Bool      <- Uge #nextMtime #mtimecmpDXlen ;
-      LetA currMtip      : Bool      <- readClintMtip;
-      WriteReg clintMtipPath (Or [#currMtip ; #isMatch]) Retv.
+      LetA currMtip      : Bool      <- ReadReg "mtip" clintMtipPath (fun v => Return #v) ;
+      Let  nextMtip      : Bool      <- Or [#currMtip ; #isMatch] ;
+      Act (WriteReg clintMtipPath #nextMtip Retv) ;
+      If (Not #nextMtip) Then (
+        WriteReg clintSampledMtipPath (ConstBool false) Retv
+      ) ;
+      Retv.
+
+    Definition clintSampleMtip : Action ty tClint (Bit 0) :=
+      ReadReg "mtip" clintMtipPath (fun currMtip =>
+        If #currMtip Then (
+          WriteReg clintSampledMtipPath (ConstBool true) Retv
+        ) ;
+        Retv
+      ).
 
   End ClintActions.
 
@@ -129,11 +144,13 @@ Section Clint.
     ) ;
     If (Eq #offset $(CLINT_MTIMECMP_OFFSET)) Then (
       WriteReg clintMtimecmpPath #writeWord (
-      WriteReg clintMtipPath (ConstBool false) Retv)
+      WriteReg clintMtipPath (ConstBool false) (
+      WriteReg clintSampledMtipPath (ConstBool false) Retv))
     ) ;
     If (Eq #offset $(CLINT_MTIMECMPH_OFFSET)) Then (
       WriteReg clintMtimecmphPath #writeWord (
-      WriteReg clintMtipPath (ConstBool false) Retv)
+      WriteReg clintMtipPath (ConstBool false) (
+      WriteReg clintSampledMtipPath (ConstBool false) Retv))
     ) ;
     Retv.
 
@@ -190,6 +207,9 @@ Section Clint.
 
     Definition clintTickAction : Action ty memTree (Bit 0) :=
       clintAction (clintTick ty).
+
+    Definition clintSampleMtipAction : Action ty memTree (Bit 0) :=
+      clintAction (clintSampleMtip ty).
 
     Definition readClintMtipAction : Action ty memTree Bool :=
       clintAction (readClintMtip ty).

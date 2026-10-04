@@ -44,6 +44,7 @@ Section ExecuteStage.
   Local Notation dTree := (deferredTree dom deferredCapacity).
   Local Notation coreTree := (coreTree dom pcAddrInit bpTree memTree fTree decTree dTree).
   Local Notation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
+  Local Notation isInterruptPending := (isInterruptPending dom pcAddrInit).
   Local Notation executeNonDeferred := (executeNonDeferred dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
@@ -67,14 +68,18 @@ Section ExecuteStage.
   Definition np_decodeToAluFifo : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.decode.decode.decodeToAluBuf.fifo").
 
+  Definition np_deferred : NodePath coreTree :=
+    Eval cbn in (getNodePath coreTree "core.deferred.deferred").
+
   Definition np_deferredInFifo : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.deferred.deferred.inputBuf.fifo").
 
   (* =========================================================================
    * STAGE 3: aluAndExecuteNonDeferred
    *
-   * - Precondition: decodeToAluBuf is non-empty (and deferred inputBuf is not
-   *                 full when the instruction is deferred).
+   * - Precondition: decodeToAluBuf is non-empty, deferred inputBuf is not
+   *                 full when the instruction is deferred, and if an enabled
+   *                 interrupt is pending, the deferred pipeline is empty.
    * - Action:       Dequeue d2aEntry { aluIn, predPc, epoch } from
    *                 decodeToAluBuf.
    *                 - If epoch != currEpoch: drop entry and clear its
@@ -90,6 +95,7 @@ Section ExecuteStage.
   Definition aluAndExecuteNonDeferred : Action ty coreTree (Bit 0) :=
     LetA d2aHead           : Option DecodeToAluEntry <- liftAction np_decodeToAluFifo (@first dom decodeCapacity DecodeToAluEntry ty) ;
     LetA deferredIn_isFull : Bool                    <- liftAction np_deferredInFifo (@isFull dom deferredCapacity DeferredReq ty) ;
+    LetA deferred_isEmpty  : Bool                    <- liftAction np_deferred (@deferredIsEmpty dom deferredCapacity ty) ;
 
     If (##d2aHead`"valid") Then (
       Let  d2aEntry : DecodeToAluEntry <- ##d2aHead`"data" ;
@@ -123,11 +129,15 @@ Section ExecuteStage.
         Let  noExc         : NoExceptionUnion <- #aluOp `! "NoException" ;
         Let  isDeferredAlu : Bool             <- And [ #aluOp `? "NoException" ; #noExc `? "Deferred" ] ;
 
-        If (Or [ Not #isDeferredAlu ; Not #deferredIn_isFull ]) Then (
+        LetA meip          : Bool                 <- liftAction np_mem meipAct ;
+        LetA mtip          : Bool                 <- liftAction np_mem mtipAct ;
+        LetA intInfo       : InterruptPendingInfo <- liftAction np_rf (isInterruptPending meip mtip) ;
+        Let  isInterrupt   : Bool                 <- ##intInfo`"isInterrupt" ;
+        Let  intStall      : Bool                 <- And [ #isInterrupt ; Not #deferred_isEmpty ] ;
+
+        If (And [ Not #intStall ; Or [ Not #isDeferredAlu ; Not #deferredIn_isFull ] ]) Then (
           Act (liftAction np_decodeToAluFifo (@deq dom decodeCapacity DecodeToAluEntry ty)) ;
 
-          LetA meip    : Bool       <- liftAction np_mem meipAct ;
-          LetA mtip    : Bool       <- liftAction np_mem mtipAct ;
           LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred pcc meip mtip aluOut) ;
 
           Let  cfOpt           : Option CfPayload <- ##execOut`"cf" ;

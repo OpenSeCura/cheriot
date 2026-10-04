@@ -75,6 +75,9 @@ Section SpecDom.
       Definition specTickTimer : Action ty sysTree (Bit 0) :=
         liftAction np_mem (clintTickAction clint ty).
 
+      Definition specSampleMtipStep : Action ty sysTree (Bit 0) :=
+        liftAction np_mem (clintSampleMtipAction clint ty).
+
       (* Autonomous background revoker step *)
       Definition specRevokerStep : Action ty sysTree (Bit 0) :=
         liftAction np_mem (SpecRevoker.specRevokerStep rev config ty).
@@ -85,6 +88,9 @@ Section SpecDom.
 
       Definition specPlicClaimStep : Action ty sysTree (Bit 0) :=
         liftAction np_mem (plicClaimStep plic ty).
+
+      Definition specPlicSampleMeipStep : Action ty sysTree (Bit 0) :=
+        liftAction np_mem (plicSampleMeipStep plic ty).
 
       (* Autonomous TargetPort steps for accessible InternalMem regions *)
       Definition specInternalMemTargetPortSteps : list (string * Action ty sysTree (Bit 0)) :=
@@ -131,10 +137,13 @@ Section SpecDom.
         (core, specStep ty) ;
         (core, specTickCycle ty) ;
         (core, specTickTimer ty) ;
-        (core, specRevokerStep ty) ;
-        (core, specPlicClaimStep ty)
+        (core, specSampleMtipStep ty) ;
+        (core, specRevokerStep ty)
       ] ++ map (fun a => (core, a)) (specPlicPendingsSteps ty)
-        ++ specInternalMemTargetPortSteps ty)%list.
+        ++ [
+        (core, specPlicClaimStep ty) ;
+        (core, specPlicSampleMeipStep ty)
+      ] ++ specInternalMemTargetPortSteps ty)%list.
 
   End Spec.
 
