@@ -42,8 +42,6 @@ Record LineConfig := {
 Definition TaggedLine (lgLineBytes : nat) (pf : Is_true (Z.to_nat LgNumBytesFullCapSz <=? lgLineBytes)%nat) : LineConfig :=
   {| cfgLgLineBytes := lgLineBytes ; cfgHasTags := true ; cfgTaggedPf := pf |}.
 
-Arguments TaggedLine lgLineBytes pf : clear implicits.
-
 Definition RawLine (lgLineBytes : nat) : LineConfig :=
   {| cfgLgLineBytes := lgLineBytes ; cfgHasTags := false ; cfgTaggedPf := I |}.
 
@@ -512,9 +510,6 @@ Definition externalMemRegionChildren (r : MemRegion) : list (Tree DomainElem) :=
     Leaf "lineWriteRq" (r.(regionDom), ESend (LineWriteRq false r.(regionLineCfg)))
   ].
 
-Arguments internalMemRegionChildren r isAccessible : clear implicits.
-Arguments externalMemRegionChildren r : clear implicits.
-
 Definition internalMemRegionTree
            (r : MemRegion)
            (isAccessible : bool)
@@ -526,10 +521,6 @@ Definition externalMemRegionTree (r : MemRegion) : Tree DomainElem :=
 
 Definition customMemRegionTree (r : MemRegion) (children : list (Tree DomainElem)) : Tree DomainElem :=
   Node r.(regionName) children.
-
-Arguments internalMemRegionTree r isAccessible : clear implicits.
-Arguments externalMemRegionTree r : clear implicits.
-Arguments customMemRegionTree r children : clear implicits.
 
 Definition memRegionTree (r : MemRegion) : Tree DomainElem :=
   match r.(regionKind) with

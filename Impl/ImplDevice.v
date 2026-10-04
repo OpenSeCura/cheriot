@@ -107,10 +107,6 @@ Definition implExternalMemRegionTree (r : MemRegion) : Tree DomainElem :=
 Definition implCustomMemRegionTree (r : MemRegion) (children : list (Tree DomainElem)) : Tree DomainElem :=
   Node r.(regionName) (customMemRegionTree r children :: implCustomMemRegionExtraChildren r).
 
-Arguments implInternalMemRegionTree r isAccessible : clear implicits.
-Arguments implExternalMemRegionTree r : clear implicits.
-Arguments implCustomMemRegionTree r children : clear implicits.
-
 Definition implMemRegionTree (r : MemRegion) : Tree DomainElem :=
   match r.(regionKind) with
   | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible

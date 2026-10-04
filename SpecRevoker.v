@@ -105,8 +105,6 @@ Section Revoker.
       "tag"  ::= Const ty (Array (cfgNumLineTags false RevokerLineConfig) Bool) (getDefault _)
     }))))))).
 
-  Arguments revokerLineReadAction base ty addr : clear implicits.
-
   Definition revokerLineWriteAction
              (base : Z)
              (ty : Kind -> Type)
@@ -143,8 +141,6 @@ Section Revoker.
     ) ;
     Retv.
 
-  Arguments revokerLineWriteAction base ty rq : clear implicits.
-
   Definition revokerLocalInterrupt
              {ty : Kind -> Type}
              : Action ty tRev Bool :=
@@ -170,26 +166,24 @@ Section Revoker.
     regionLineCfg     := RevokerLineConfig ;
     isReadOnly        := false ;
     regionKind        := @CustomMem "revoker" RevokerSizeBytes RevokerLineConfig revokerChildren
-                                    (revokerLineReadAction base)
-                                    (revokerLineWriteAction base)
+                                    (@revokerLineReadAction base)
+                                    (@revokerLineWriteAction base)
                                     (Some (fun ty => revokerLocalInterrupt)) ;
     regionInMemory    := pfBound ;
     regionBaseAligned := revokerBaseAlignedLemma pfAligned ;
     regionSizeAligned := I
   |}.
 
-  Arguments revokerMemRegion base pfBound pfAligned : clear implicits.
-
   Record RevokerInstance (regions : list MemRegion) := {
     revokerIdx      : nat ;
     revokerBaseAddr : Z ;
     pfBound         : Is_true ((0 <=? revokerBaseAddr) && (revokerBaseAddr + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
     pfAligned       : Is_true (revokerBaseAddr mod NumBytesXlen =? 0)%Z ;
-    pfRevoker       : nth_error regions revokerIdx = Some (revokerMemRegion revokerBaseAddr pfBound pfAligned)
+    pfRevoker       : nth_error regions revokerIdx = Some (@revokerMemRegion revokerBaseAddr pfBound pfAligned)
   }.
 
   Definition revokerRegion {regions} (rev : RevokerInstance regions) : MemRegion :=
-    revokerMemRegion rev.(revokerBaseAddr) rev.(pfBound) rev.(pfAligned).
+    @revokerMemRegion rev.(revokerBaseAddr) rev.(pfBound) rev.(pfAligned).
 
   (* ===========================================================================
    * 2. Autonomous Revoker Step Action & Interrupt Query

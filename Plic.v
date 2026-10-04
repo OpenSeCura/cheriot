@@ -434,9 +434,6 @@ Section Plic.
 
   End PlicMmio.
 
-  Arguments plicLineReadAction n base ty addr : clear implicits.
-  Arguments plicLineWriteAction n base ty rq : clear implicits.
-
   (* ===========================================================================
    * MemRegion Constructor
    * =========================================================================== *)
@@ -455,15 +452,13 @@ Section Plic.
     isReadOnly        := false ;
     regionKind        := @CustomMem "plic" PlicSizeBytes PlicLineConfig
                                     (plicChildren n)
-                                    (plicLineReadAction n base)
-                                    (plicLineWriteAction n base)
+                                    (@plicLineReadAction n base)
+                                    (@plicLineWriteAction n base)
                                     None ;
     regionInMemory    := pfBound ;
     regionBaseAligned := pfAligned ;
     regionSizeAligned := I
   |}.
-
-  Arguments plicMemRegion n base pfBound pfAligned : clear implicits.
 
   (* ===========================================================================
    * System Integration Helpers
@@ -475,11 +470,11 @@ Section Plic.
     pfBound      : Is_true ((0 <=? plicBaseAddr) && (plicBaseAddr + PlicSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
     pfAligned    : Is_true (plicBaseAddr mod (2 ^ Z.of_nat (cfgLgLineBytes PlicLineConfig)) =? 0)%Z ;
     pfNumSources : Is_true (n <=? 1024)%nat ;
-    pfPlic       : nth_error regions plicIdx = Some (plicMemRegion n plicBaseAddr pfBound pfAligned)
+    pfPlic       : nth_error regions plicIdx = Some (@plicMemRegion n plicBaseAddr pfBound pfAligned)
   }.
 
   Definition plicRegion {n regions} (plic : PlicInstance n regions) : MemRegion :=
-    plicMemRegion n plic.(plicBaseAddr) plic.(pfBound) plic.(pfAligned).
+    @plicMemRegion n plic.(plicBaseAddr) plic.(pfBound) plic.(pfAligned).
 
   Section PlicSystem.
     Variable n : nat.

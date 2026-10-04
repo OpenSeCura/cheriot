@@ -154,9 +154,6 @@ Section Clint.
     ) ;
     Retv.
 
-  Arguments clintLineReadAction base ty addr : clear implicits.
-  Arguments clintLineWriteAction base ty rq : clear implicits.
-
   (* ===========================================================================
    * MemRegion Constructor
    * =========================================================================== *)
@@ -172,13 +169,11 @@ Section Clint.
     regionSize        := ClintSizeBytes ;
     regionLineCfg     := ClintLineConfig ;
     isReadOnly        := false ;
-    regionKind        := @CustomMem "clint" ClintSizeBytes ClintLineConfig clintChildren (clintLineReadAction base) (clintLineWriteAction base) None ;
+    regionKind        := @CustomMem "clint" ClintSizeBytes ClintLineConfig clintChildren (@clintLineReadAction base) (@clintLineWriteAction base) None ;
     regionInMemory    := pfBound ;
     regionBaseAligned := pfAligned ;
     regionSizeAligned := I
   |}.
-
-  Arguments clintMemRegion base pfBound pfAligned : clear implicits.
 
   (* ===========================================================================
    * System Integration Helpers
@@ -189,11 +184,11 @@ Section Clint.
     clintBaseAddr : Z ;
     pfBound       : Is_true ((0 <=? clintBaseAddr) && (clintBaseAddr + ClintSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
     pfAligned     : Is_true (clintBaseAddr mod (2 ^ Z.of_nat (cfgLgLineBytes ClintLineConfig)) =? 0)%Z ;
-    pfClint       : nth_error regions clintIdx = Some (clintMemRegion clintBaseAddr pfBound pfAligned)
+    pfClint       : nth_error regions clintIdx = Some (@clintMemRegion clintBaseAddr pfBound pfAligned)
   }.
 
   Definition clintRegion {regions} (clint : ClintInstance regions) : MemRegion :=
-    clintMemRegion clint.(clintBaseAddr) clint.(pfBound) clint.(pfAligned).
+    @clintMemRegion clint.(clintBaseAddr) clint.(pfBound) clint.(pfAligned).
 
   Section ClintSystem.
     Variable regions : list MemRegion.
