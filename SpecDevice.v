@@ -466,43 +466,6 @@ Arguments memLineWriteRq0 r isInternal [ty] rq memSize.
 Arguments memLineWriteRq1 r isInternal [ty] rq memSize.
 Arguments memCrossesLine r [ty] addr memSize.
 
-Definition child0Path {A : Type} {name : string} {c0 : Tree A} {cs : list (Tree A)}
-  : NodePath (Node name (c0 :: cs)) :=
-  inr (inl (inl tt)).
-
-Definition child1Path {A : Type} {name : string} {c0 c1 : Tree A} {cs : list (Tree A)}
-  : NodePath (Node name (c0 :: c1 :: cs)) :=
-  inr (inr (inl (inl tt))).
-
-Arguments child0Path {A name c0 cs}.
-Arguments child1Path {A name c0 c1 cs}.
-
-Definition optNode {A : Type} (name : string) (b : bool) (children : list (Tree A)) : Tree A :=
-  Node name (if b then children else []).
-
-Definition liftChild0OptAction {ty : Kind -> Type}
-  {rootName name : string} {b : bool}
-  {children rest : list (Tree DomainElem)} {k : Kind}
-  (act : Action ty (Node name children) k)
-  : Action ty (Node rootName (optNode name b children :: rest)) k :=
-  match b return Action ty (Node rootName (optNode name b children :: rest)) k with
-  | true  => liftAction child0Path act
-  | false => Return ConstDef
-  end.
-
-Definition liftChild1OptAction {ty : Kind -> Type}
-  {rootName name : string} {c0 : Tree DomainElem} {b : bool}
-  {children rest : list (Tree DomainElem)} {k : Kind}
-  (act : Action ty (Node name children) k)
-  : Action ty (Node rootName (c0 :: optNode name b children :: rest)) k :=
-  match b return Action ty (Node rootName (c0 :: optNode name b children :: rest)) k with
-  | true  => liftAction child1Path act
-  | false => Return ConstDef
-  end.
-
-Arguments liftChild0OptAction {ty rootName name b children rest k} act.
-Arguments liftChild1OptAction {ty rootName name c0 b children rest k} act.
-
 (* ===========================================================================
  * Banked Internal Memory Helpers & Converting a MemRegion into a Tree
  * =========================================================================== *)
