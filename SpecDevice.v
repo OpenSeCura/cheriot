@@ -477,6 +477,32 @@ Definition child1Path {A : Type} {name : string} {c0 c1 : Tree A} {cs : list (Tr
 Arguments child0Path {A name c0 cs}.
 Arguments child1Path {A name c0 c1 cs}.
 
+Definition optNode {A : Type} (name : string) (b : bool) (children : list (Tree A)) : Tree A :=
+  Node name (if b then children else []).
+
+Definition liftChild0OptAction {ty : Kind -> Type}
+  {rootName name : string} {b : bool}
+  {children rest : list (Tree DomainElem)} {k : Kind}
+  (act : Action ty (Node name children) k)
+  : Action ty (Node rootName (optNode name b children :: rest)) k :=
+  match b return Action ty (Node rootName (optNode name b children :: rest)) k with
+  | true  => liftAction child0Path act
+  | false => Return ConstDef
+  end.
+
+Definition liftChild1OptAction {ty : Kind -> Type}
+  {rootName name : string} {c0 : Tree DomainElem} {b : bool}
+  {children rest : list (Tree DomainElem)} {k : Kind}
+  (act : Action ty (Node name children) k)
+  : Action ty (Node rootName (c0 :: optNode name b children :: rest)) k :=
+  match b return Action ty (Node rootName (c0 :: optNode name b children :: rest)) k with
+  | true  => liftAction child1Path act
+  | false => Return ConstDef
+  end.
+
+Arguments liftChild0OptAction {ty rootName name b children rest k} act.
+Arguments liftChild1OptAction {ty rootName name c0 b children rest k} act.
+
 (* ===========================================================================
  * Banked Internal Memory Helpers & Converting a MemRegion into a Tree
  * =========================================================================== *)
@@ -523,18 +549,21 @@ Definition internalMemRegionChildren
      Node "tagBanks" (map (tagBankLeaf r) (seq 0 (numLineTags r true)))
    ] ++ if isAccessible then internalMemTargetPortChildren r else [])%list.
 
-Definition externalMemRegionChildrenAux (r : MemRegion) (hasExtraFetchPort : bool) : list (Tree DomainElem) :=
-  ([ Leaf "lineReadRq"  (r.(regionDom), ESend Addr) ;
-     Leaf "lineReadRp"  (r.(regionDom), ERecv (LineReadRp r.(regionLineCfg) false)) ;
-     Leaf "lineWriteRq" (r.(regionDom), ESend (LineWriteRq r.(regionLineCfg) false))
-   ] ++
-   if hasExtraFetchPort then
-     [ Leaf "fetchLineReadRq" (r.(regionDom), ESend Addr) ;
-       Leaf "fetchLineReadRp" (r.(regionDom), ERecv (LineReadRp r.(regionLineCfg) false)) ]
-   else [])%list.
+Definition externalMemFetchChildren (r : MemRegion) : list (Tree DomainElem) :=
+  [ Leaf "lineReadRq" (r.(regionDom), ESend Addr) ;
+    Leaf "lineReadRp" (r.(regionDom), ERecv (LineReadRp r.(regionLineCfg) false)) ].
+
+Definition externalMemFetchTree (r : MemRegion) : Tree DomainElem :=
+  Node "fetch" (externalMemFetchChildren r).
+
+Definition externalMemRegionBaseChildren (r : MemRegion) : list (Tree DomainElem) :=
+  [ Leaf "lineReadRq"  (r.(regionDom), ESend Addr) ;
+    Leaf "lineReadRp"  (r.(regionDom), ERecv (LineReadRp r.(regionLineCfg) false)) ;
+    Leaf "lineWriteRq" (r.(regionDom), ESend (LineWriteRq r.(regionLineCfg) false)) ].
 
 Definition externalMemRegionChildren (r : MemRegion) : list (Tree DomainElem) :=
-  externalMemRegionChildrenAux r r.(hasExtraFetchPort).
+  optNode "fetch" r.(hasExtraFetchPort) (externalMemFetchChildren r) ::
+  externalMemRegionBaseChildren r.
 
 Definition internalMemRegionTree
            (r : MemRegion)
@@ -542,11 +571,8 @@ Definition internalMemRegionTree
            : Tree DomainElem :=
   Node r.(regionName) (internalMemRegionChildren r isAccessible).
 
-Definition externalMemRegionTreeAux (r : MemRegion) (hasExtraFetchPort : bool) : Tree DomainElem :=
-  Node r.(regionName) (externalMemRegionChildrenAux r hasExtraFetchPort).
-
 Definition externalMemRegionTree (r : MemRegion) : Tree DomainElem :=
-  externalMemRegionTreeAux r r.(hasExtraFetchPort).
+  Node r.(regionName) (externalMemRegionChildren r).
 
 Definition customMemRegionTree (r : MemRegion) (children : list (Tree DomainElem)) : Tree DomainElem :=
   Node r.(regionName) children.
@@ -809,28 +835,26 @@ Section ExternalMemRegionActions.
   Variable r : MemRegion.
   Variable ty : Kind -> Type.
 
-  Local Definition tExt := externalMemRegionTree r.
-  Local Definition pLineReadRqTrue      : SendPath (externalMemRegionTreeAux r true)  := Eval cbn in (getChildSendPathTree (externalMemRegionTreeAux r true) "lineReadRq").
-  Local Definition pFetchLineReadRqTrue : SendPath (externalMemRegionTreeAux r true)  := Eval cbn in (getChildSendPathTree (externalMemRegionTreeAux r true) "fetchLineReadRq").
-  Local Definition pLineReadRqFalse     : SendPath (externalMemRegionTreeAux r false) := Eval cbn in (getChildSendPathTree (externalMemRegionTreeAux r false) "lineReadRq").
-  Local Definition pLineReadRpTrue      : RecvPath (externalMemRegionTreeAux r true)  := Eval cbn in (getChildRecvPathTree (externalMemRegionTreeAux r true) "lineReadRp").
-  Local Definition pFetchLineReadRpTrue : RecvPath (externalMemRegionTreeAux r true)  := Eval cbn in (getChildRecvPathTree (externalMemRegionTreeAux r true) "fetchLineReadRp").
-  Local Definition pLineReadRpFalse     : RecvPath (externalMemRegionTreeAux r false) := Eval cbn in (getChildRecvPathTree (externalMemRegionTreeAux r false) "lineReadRp").
-  Local Definition pLineWriteRq         : SendPath tExt                               := Eval cbn in (getChildSendPathTree tExt "lineWriteRq").
+  Local Definition tExt      := externalMemRegionTree r.
+  Local Definition tExtFetch := externalMemFetchTree r.
+
+  Local Definition pLineReadRq      : SendPath tExt      := Eval cbn in (getChildSendPathTree tExt "lineReadRq").
+  Local Definition pLineReadRp      : RecvPath tExt      := Eval cbn in (getChildRecvPathTree tExt "lineReadRp").
+  Local Definition pLineWriteRq     : SendPath tExt      := Eval cbn in (getChildSendPathTree tExt "lineWriteRq").
+  Local Definition pFetchLineReadRq : SendPath tExtFetch := Eval cbn in (getChildSendPathTree tExtFetch "lineReadRq").
+  Local Definition pFetchLineReadRp : RecvPath tExtFetch := Eval cbn in (getChildRecvPathTree tExtFetch "lineReadRp").
 
   Definition externalMemRegionIssueReadRq (isFetch : bool) (addr : ty Addr)
              : Action ty tExt (Bit 0) :=
-    match r.(hasExtraFetchPort) as b return Action ty (externalMemRegionTreeAux r b) (Bit 0) with
-    | true  => if isFetch then Send pFetchLineReadRqTrue #addr Retv else Send pLineReadRqTrue #addr Retv
-    | false => Send pLineReadRqFalse #addr Retv
-    end.
+    if isFetch && r.(hasExtraFetchPort)
+    then liftChild0OptAction (Send pFetchLineReadRq #addr Retv)
+    else Send pLineReadRq #addr Retv.
 
   Definition externalMemRegionGetReadRp (isFetch : bool)
              : Action ty tExt (LineReadRp r.(regionLineCfg) false) :=
-    match r.(hasExtraFetchPort) as b return Action ty (externalMemRegionTreeAux r b) (LineReadRp r.(regionLineCfg) false) with
-    | true  => if isFetch then Recv "rp" pFetchLineReadRpTrue (fun rp => Return #rp) else Recv "rp" pLineReadRpTrue (fun rp => Return #rp)
-    | false => Recv "rp" pLineReadRpFalse (fun rp => Return #rp)
-    end.
+    if isFetch && r.(hasExtraFetchPort)
+    then liftChild0OptAction (Recv "rp" pFetchLineReadRp (fun rp => Return #rp))
+    else Recv "rp" pLineReadRp (fun rp => Return #rp).
 
   Definition externalMemRegionLineRead (isFetch : bool) (addr : ty Addr)
              : Action ty tExt (LineReadRp r.(regionLineCfg) false) :=
