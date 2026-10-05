@@ -205,7 +205,7 @@ Definition lgLineBytes (r : MemRegion) : nat :=
 Definition lineBytes (r : MemRegion) : nat :=
   cfgLineBytes r.(regionLineCfg).
 
-Definition numLineTags (isInternal : bool) (r : MemRegion) : nat :=
+Definition numLineTags (r : MemRegion) (isInternal : bool) : nat :=
   cfgNumLineTags isInternal r.(regionLineCfg).
 
 Definition disjointBool (r1 r2 : MemRegion) : bool :=
@@ -224,7 +224,7 @@ Definition isRegionAddr {ty : Kind -> Type} (r : MemRegion) (addr : Expr ty Addr
 Definition regionNumLines (r : MemRegion) : nat :=
   cfgNumLines r.(regionSize) r.(regionLineCfg).
 
-Definition regionTagSize (isInternal : bool) (r : MemRegion) : nat :=
+Definition regionTagSize (r : MemRegion) (isInternal : bool) : nat :=
   cfgTagNumLines isInternal r.(regionSize) r.(regionLineCfg).
 
 (* ===========================================================================
@@ -245,24 +245,24 @@ Proof. lia. Qed.
 Definition memLgLineBytesZ (r : MemRegion) : Z :=
   Z.of_nat (lgLineBytes r).
 
-Definition memLgNumLineTagsZ (isInternal : bool) (r : MemRegion) : Z :=
+Definition memLgNumLineTagsZ (r : MemRegion) (isInternal : bool) : Z :=
   Z.of_nat (cfgLgNumLineTags isInternal r.(regionLineCfg)).
 
-Definition memLgTagRowBytesZ (isInternal : bool) (r : MemRegion) : Z :=
-  (LgNumBytesFullCapSz + memLgNumLineTagsZ isInternal r)%Z.
+Definition memLgTagRowBytesZ (r : MemRegion) (isInternal : bool) : Z :=
+  (LgNumBytesFullCapSz + memLgNumLineTagsZ r isInternal)%Z.
 
 Section MemAddrHelpers.
-  Variable isInternal : bool.
   Variable r : MemRegion.
+  Variable isInternal : bool.
   Variable ty : Kind -> Type.
 
   Let lBytes := lineBytes r.
-  Let nTags := numLineTags isInternal r.
+  Let nTags := numLineTags r isInternal.
   Let numLines := regionNumLines r.
-  Let numTagLines := regionTagSize isInternal r.
+  Let numTagLines := regionTagSize r isInternal.
   Let lgLineBytesZ := memLgLineBytesZ r.
-  Let lgNumLineTagsZ := memLgNumLineTagsZ isInternal r.
-  Let lgTagRowBytesZ := memLgTagRowBytesZ isInternal r.
+  Let lgNumLineTagsZ := memLgNumLineTagsZ r isInternal.
+  Let lgTagRowBytesZ := memLgTagRowBytesZ r isInternal.
 
   Definition memCastAddr (addr : Expr ty Addr) : Expr ty (Bit ((lgLineBytesZ + (AddrSz - lgLineBytesZ))%Z)) :=
     castBits (eq_sym (add_sub_cancel AddrSz lgLineBytesZ)) addr.
@@ -452,18 +452,18 @@ Arguments memLineOffsetIdx r [ty] addr.
 Arguments memLineAddr r [ty] addr.
 Arguments memNextLineAddr r [ty] addr.
 Arguments memAdd1 r [ty] addr.
-Arguments memCastAddrForTag isInternal r [ty] addr.
-Arguments memTagLineIndex isInternal r [ty] addr.
-Arguments memTagRowOffset isInternal r [ty] addr.
-Arguments memTagLineOffsetIdx isInternal r [ty] addr.
-Arguments memTagSlot isInternal r [ty] addr.
-Arguments memAdd1Tag isInternal r [ty] addr.
-Arguments memTagMasks isInternal r [ty] addr memSize.
-Arguments memMergeLineReadRp isInternal r [ty] addr rp0 rp1.
-Arguments memExtractReadCap isInternal r [ty] addr memSize rp.
-Arguments memBuildLineWriteRq isInternal r [ty] addr stVal memSize.
-Arguments memLineWriteRq0 isInternal r [ty] rq memSize.
-Arguments memLineWriteRq1 isInternal r [ty] rq memSize.
+Arguments memCastAddrForTag r isInternal [ty] addr.
+Arguments memTagLineIndex r isInternal [ty] addr.
+Arguments memTagRowOffset r isInternal [ty] addr.
+Arguments memTagLineOffsetIdx r isInternal [ty] addr.
+Arguments memTagSlot r isInternal [ty] addr.
+Arguments memAdd1Tag r isInternal [ty] addr.
+Arguments memTagMasks r isInternal [ty] addr memSize.
+Arguments memMergeLineReadRp r isInternal [ty] addr rp0 rp1.
+Arguments memExtractReadCap r isInternal [ty] addr memSize rp.
+Arguments memBuildLineWriteRq r isInternal [ty] addr stVal memSize.
+Arguments memLineWriteRq0 r isInternal [ty] rq memSize.
+Arguments memLineWriteRq1 r isInternal [ty] rq memSize.
 Arguments memCrossesLine r [ty] addr memSize.
 
 Definition child0Path {A : Type} {name : string} {c0 : Tree A} {cs : list (Tree A)}
@@ -491,11 +491,11 @@ Definition extractBankDataInit (r : MemRegion) (b : nat)
   end.
 
 Definition extractBankTagInit (r : MemRegion) (b : nat)
-  : option (option (type (Array (regionTagSize true r) Bool))) :=
+  : option (option (type (Array (regionTagSize r true) Bool))) :=
   match r.(regionKind) with
   | InternalMem _ _ (Some (Some tup)) =>
       if hasTags r
-      then Some (Some (buildStrideTuple (numLineTags true r) false (regionTagSize true r) b tup.(tupleElems)))
+      then Some (Some (buildStrideTuple (numLineTags r true) false (regionTagSize r true) b tup.(tupleElems)))
       else None
   | InternalMem _ _ (Some None) => Some None
   | _ => None
@@ -505,7 +505,7 @@ Definition memBankLeaf (r : MemRegion) (b : nat) : Tree DomainElem :=
   Leaf "memBank" (r.(regionDom), EMem (@Build_Mem (regionNumLines r) (Bit 8) (regionNumReadPorts r) (extractBankDataInit r b))).
 
 Definition tagBankLeaf (r : MemRegion) (b : nat) : Tree DomainElem :=
-  Leaf "tagBank" (r.(regionDom), EMem (@Build_Mem (regionTagSize true r) Bool (regionNumReadPorts r) (extractBankTagInit r b))).
+  Leaf "tagBank" (r.(regionDom), EMem (@Build_Mem (regionTagSize r true) Bool (regionNumReadPorts r) (extractBankTagInit r b))).
 
 Definition internalMemTargetPortChildren (r : MemRegion) : list (Tree DomainElem) :=
   [ Leaf "lineReadRqValid"  (r.(regionDom), ERecv Bool) ;
@@ -520,10 +520,10 @@ Definition internalMemRegionChildren
            (isAccessible : bool)
            : list (Tree DomainElem) :=
   ([ Node "memBanks" (map (memBankLeaf r) (seq 0 (lineBytes r))) ;
-     Node "tagBanks" (map (tagBankLeaf r) (seq 0 (numLineTags true r)))
+     Node "tagBanks" (map (tagBankLeaf r) (seq 0 (numLineTags r true)))
    ] ++ if isAccessible then internalMemTargetPortChildren r else [])%list.
 
-Definition externalMemRegionChildren (r : MemRegion) (hasExtraFetchPort : bool) : list (Tree DomainElem) :=
+Definition externalMemRegionChildrenAux (r : MemRegion) (hasExtraFetchPort : bool) : list (Tree DomainElem) :=
   ([ Leaf "lineReadRq"  (r.(regionDom), ESend Addr) ;
      Leaf "lineReadRp"  (r.(regionDom), ERecv (LineReadRp false r.(regionLineCfg))) ;
      Leaf "lineWriteRq" (r.(regionDom), ESend (LineWriteRq false r.(regionLineCfg)))
@@ -533,14 +533,20 @@ Definition externalMemRegionChildren (r : MemRegion) (hasExtraFetchPort : bool) 
        Leaf "fetchLineReadRp" (r.(regionDom), ERecv (LineReadRp false r.(regionLineCfg))) ]
    else [])%list.
 
+Definition externalMemRegionChildren (r : MemRegion) : list (Tree DomainElem) :=
+  externalMemRegionChildrenAux r r.(hasExtraFetchPort).
+
 Definition internalMemRegionTree
            (r : MemRegion)
            (isAccessible : bool)
            : Tree DomainElem :=
   Node r.(regionName) (internalMemRegionChildren r isAccessible).
 
-Definition externalMemRegionTree (r : MemRegion) (hasExtraFetchPort : bool) : Tree DomainElem :=
-  Node r.(regionName) (externalMemRegionChildren r hasExtraFetchPort).
+Definition externalMemRegionTreeAux (r : MemRegion) (hasExtraFetchPort : bool) : Tree DomainElem :=
+  Node r.(regionName) (externalMemRegionChildrenAux r hasExtraFetchPort).
+
+Definition externalMemRegionTree (r : MemRegion) : Tree DomainElem :=
+  externalMemRegionTreeAux r r.(hasExtraFetchPort).
 
 Definition customMemRegionTree (r : MemRegion) (children : list (Tree DomainElem)) : Tree DomainElem :=
   Node r.(regionName) children.
@@ -548,7 +554,7 @@ Definition customMemRegionTree (r : MemRegion) (children : list (Tree DomainElem
 Definition memRegionTree (r : MemRegion) : Tree DomainElem :=
   match r.(regionKind) with
   | InternalMem isAccessible _ _ => internalMemRegionTree r isAccessible
-  | ExternalMem => externalMemRegionTree r r.(hasExtraFetchPort)
+  | ExternalMem => externalMemRegionTree r
   | CustomMem children _ _ _ => customMemRegionTree r children
   end.
 
@@ -563,9 +569,9 @@ Section InternalMemRegionActions.
 
   Let tInt := internalMemRegionTree r isAccessible.
   Let numLines := regionNumLines r.
-  Let numTagLines := regionTagSize true r.
+  Let numTagLines := regionTagSize r true.
   Let lBytes := lineBytes r.
-  Let nTags := numLineTags true r.
+  Let nTags := numLineTags r true.
 
   Local Definition leaf_list_path_mem (n : nat) (p : FinType n) :=
     leaf_list_path_seq (memBankLeaf r) (fun _ => tt) 0 p.
@@ -688,8 +694,8 @@ Section InternalMemRegionActions.
                        ReadRqMem (memBankPath memIdx) (memSizeCast memIdx (bankLineIdx #lineIdx #add1Bits memIdx)) (memPortCast memIdx port) acc)
                     Retv (genFinType lBytes)) ;
     if hasTags r then (
-      Let tagLineIdx  : Bit (Z.log2_up (Z.of_nat numTagLines)) <- memTagLineOffsetIdx true r #addr ;
-      Let add1TagBits : Array nTags Bool                       <- memAdd1Tag true r #addr ;
+      Let tagLineIdx  : Bit (Z.log2_up (Z.of_nat numTagLines)) <- memTagLineOffsetIdx r true #addr ;
+      Let add1TagBits : Array nTags Bool                       <- memAdd1Tag r true #addr ;
       fold_right (fun tagIdx acc =>
                     ReadRqMem (tagBankPath tagIdx) (tagSizeCast tagIdx (tagBankLineIdx #tagLineIdx #add1TagBits tagIdx)) (tagPortCast tagIdx port) acc)
                  Retv (genFinType nTags)
@@ -744,8 +750,8 @@ Section InternalMemRegionActions.
                          acc)
                       Retv (genFinType lBytes)) ;
       if hasTags r then (
-        Let tagLineIdx  : Bit (Z.log2_up (Z.of_nat numTagLines)) <- memTagLineOffsetIdx true r (##rq`"addr") ;
-        Let add1TagBits : Array nTags Bool                       <- memAdd1Tag true r (##rq`"addr") ;
+        Let tagLineIdx  : Bit (Z.log2_up (Z.of_nat numTagLines)) <- memTagLineOffsetIdx r true (##rq`"addr") ;
+        Let add1TagBits : Array nTags Bool                       <- memAdd1Tag r true (##rq`"addr") ;
         fold_right (fun tagIdx acc =>
                       If (ReadArrayConst (##rq`"tagMask") tagIdx) Then (
                         WriteMem (tagBankPath tagIdx) (tagSizeCast tagIdx (tagBankLineIdx #tagLineIdx #add1TagBits tagIdx))
@@ -801,28 +807,27 @@ Arguments internalMemRegionTargetPortWrite r {ty}.
 
 Section ExternalMemRegionActions.
   Variable r : MemRegion.
-  Variable hasExtraFetchPort : bool.
   Variable ty : Kind -> Type.
 
-  Local Definition tExt := externalMemRegionTree r hasExtraFetchPort.
-  Local Definition pLineReadRqTrue      : SendPath (externalMemRegionTree r true)  := Eval cbn in (getChildSendPathTree (externalMemRegionTree r true) "lineReadRq").
-  Local Definition pFetchLineReadRqTrue : SendPath (externalMemRegionTree r true)  := Eval cbn in (getChildSendPathTree (externalMemRegionTree r true) "fetchLineReadRq").
-  Local Definition pLineReadRqFalse     : SendPath (externalMemRegionTree r false) := Eval cbn in (getChildSendPathTree (externalMemRegionTree r false) "lineReadRq").
-  Local Definition pLineReadRpTrue      : RecvPath (externalMemRegionTree r true)  := Eval cbn in (getChildRecvPathTree (externalMemRegionTree r true) "lineReadRp").
-  Local Definition pFetchLineReadRpTrue : RecvPath (externalMemRegionTree r true)  := Eval cbn in (getChildRecvPathTree (externalMemRegionTree r true) "fetchLineReadRp").
-  Local Definition pLineReadRpFalse     : RecvPath (externalMemRegionTree r false) := Eval cbn in (getChildRecvPathTree (externalMemRegionTree r false) "lineReadRp").
-  Local Definition pLineWriteRq         : SendPath tExt                            := Eval cbn in (getChildSendPathTree tExt "lineWriteRq").
+  Local Definition tExt := externalMemRegionTree r.
+  Local Definition pLineReadRqTrue      : SendPath (externalMemRegionTreeAux r true)  := Eval cbn in (getChildSendPathTree (externalMemRegionTreeAux r true) "lineReadRq").
+  Local Definition pFetchLineReadRqTrue : SendPath (externalMemRegionTreeAux r true)  := Eval cbn in (getChildSendPathTree (externalMemRegionTreeAux r true) "fetchLineReadRq").
+  Local Definition pLineReadRqFalse     : SendPath (externalMemRegionTreeAux r false) := Eval cbn in (getChildSendPathTree (externalMemRegionTreeAux r false) "lineReadRq").
+  Local Definition pLineReadRpTrue      : RecvPath (externalMemRegionTreeAux r true)  := Eval cbn in (getChildRecvPathTree (externalMemRegionTreeAux r true) "lineReadRp").
+  Local Definition pFetchLineReadRpTrue : RecvPath (externalMemRegionTreeAux r true)  := Eval cbn in (getChildRecvPathTree (externalMemRegionTreeAux r true) "fetchLineReadRp").
+  Local Definition pLineReadRpFalse     : RecvPath (externalMemRegionTreeAux r false) := Eval cbn in (getChildRecvPathTree (externalMemRegionTreeAux r false) "lineReadRp").
+  Local Definition pLineWriteRq         : SendPath tExt                               := Eval cbn in (getChildSendPathTree tExt "lineWriteRq").
 
   Definition externalMemRegionIssueReadRq (isFetch : bool) (addr : ty Addr)
              : Action ty tExt (Bit 0) :=
-    match hasExtraFetchPort as b return Action ty (externalMemRegionTree r b) (Bit 0) with
+    match r.(hasExtraFetchPort) as b return Action ty (externalMemRegionTreeAux r b) (Bit 0) with
     | true  => if isFetch then Send pFetchLineReadRqTrue #addr Retv else Send pLineReadRqTrue #addr Retv
     | false => Send pLineReadRqFalse #addr Retv
     end.
 
   Definition externalMemRegionGetReadRp (isFetch : bool)
              : Action ty tExt (LineReadRp false r.(regionLineCfg)) :=
-    match hasExtraFetchPort as b return Action ty (externalMemRegionTree r b) (LineReadRp false r.(regionLineCfg)) with
+    match r.(hasExtraFetchPort) as b return Action ty (externalMemRegionTreeAux r b) (LineReadRp false r.(regionLineCfg)) with
     | true  => if isFetch then Recv "rp" pFetchLineReadRpTrue (fun rp => Return #rp) else Recv "rp" pLineReadRpTrue (fun rp => Return #rp)
     | false => Recv "rp" pLineReadRpFalse (fun rp => Return #rp)
     end.
@@ -843,16 +848,15 @@ Section ExternalMemRegionActions.
 
 End ExternalMemRegionActions.
 
-Arguments externalMemRegionIssueReadRq r hasExtraFetchPort [ty] isFetch addr.
-Arguments externalMemRegionGetReadRp r hasExtraFetchPort {ty} isFetch.
-Arguments externalMemRegionLineRead r hasExtraFetchPort [ty] isFetch addr.
-Arguments externalMemRegionLineWrite r hasExtraFetchPort [ty] rq.
+Arguments externalMemRegionIssueReadRq r [ty] isFetch addr.
+Arguments externalMemRegionGetReadRp r {ty} isFetch.
+Arguments externalMemRegionLineRead r [ty] isFetch addr.
+Arguments externalMemRegionLineWrite r [ty] rq.
 
 Section CustomMemRegionActions.
   Variable r : MemRegion.
   Variable children : list (Tree DomainElem).
-  Variable hasExtraFetchPort : bool.
-  Variable readAction : forall ty, ReadPortSel hasExtraFetchPort -> ty Addr ->
+  Variable readAction : forall ty, ReadPortSel r.(hasExtraFetchPort) -> ty Addr ->
                         Action ty (Node r.(regionName) children)
                                (LineReadRp false r.(regionLineCfg)).
   Variable writeAction : forall ty, ty (LineWriteRq false r.(regionLineCfg)) ->
@@ -863,7 +867,7 @@ Section CustomMemRegionActions.
 
   Definition customMemRegionLineRead (isFetch : bool) (addr : ty Addr)
              : Action ty tCust (LineReadRp false r.(regionLineCfg)) :=
-    readAction (selectReadPortSel hasExtraFetchPort isFetch) addr.
+    readAction (selectReadPortSel r.(hasExtraFetchPort) isFetch) addr.
 
   Definition customMemRegionLineWrite
              (rq : ty (LineWriteRq false r.(regionLineCfg)))
@@ -876,43 +880,43 @@ Section CustomMemRegionActions.
 
 End CustomMemRegionActions.
 
-Arguments customMemRegionLineRead r children hasExtraFetchPort readAction [ty] isFetch addr.
+Arguments customMemRegionLineRead r children readAction [ty] isFetch addr.
 Arguments customMemRegionLineWrite r children writeAction [ty] rq.
 
 Definition memRegionLineRead
-           {ty : Kind -> Type}
            (r : MemRegion)
+           {ty : Kind -> Type}
            (isFetch : bool)
            (addr : ty Addr)
            : Action ty (memRegionTree r) (LineReadRp (isInternalMem r) r.(regionLineCfg)) :=
   match r.(regionKind) as k return Action ty (match k with
                                               | InternalMem isAccessible _ _ => internalMemRegionTree r isAccessible
-                                              | ExternalMem => externalMemRegionTree r r.(hasExtraFetchPort)
+                                              | ExternalMem => externalMemRegionTree r
                                               | CustomMem children _ _ _ => customMemRegionTree r children
                                               end) (LineReadRp (isInternalRegionKind k) r.(regionLineCfg)) with
   | InternalMem isAccessible _ _ => internalMemRegionLineRead r isAccessible isFetch addr
-  | ExternalMem => externalMemRegionLineRead r r.(hasExtraFetchPort) isFetch addr
-  | CustomMem children readAct writeAct _ => customMemRegionLineRead r children r.(hasExtraFetchPort) readAct isFetch addr
+  | ExternalMem => externalMemRegionLineRead r isFetch addr
+  | CustomMem children readAct writeAct _ => customMemRegionLineRead r children readAct isFetch addr
   end.
 
 Definition memRegionLineWrite
-           {ty : Kind -> Type}
            (r : MemRegion)
+           {ty : Kind -> Type}
            (rq : ty (LineWriteRq (isInternalMem r) r.(regionLineCfg)))
            : Action ty (memRegionTree r) (Bit 0) :=
   match r.(regionKind) as k return ty (LineWriteRq (isInternalRegionKind k) r.(regionLineCfg)) ->
                                    Action ty (match k with
                                               | InternalMem isAccessible _ _ => internalMemRegionTree r isAccessible
-                                              | ExternalMem => externalMemRegionTree r r.(hasExtraFetchPort)
+                                              | ExternalMem => externalMemRegionTree r
                                               | CustomMem children _ _ _ => customMemRegionTree r children
                                               end) (Bit 0) with
   | InternalMem isAccessible _ _ => fun rq' => internalMemRegionLineWrite r isAccessible rq'
-  | ExternalMem => fun rq' => externalMemRegionLineWrite r r.(hasExtraFetchPort) rq'
+  | ExternalMem => fun rq' => externalMemRegionLineWrite r rq'
   | CustomMem children readAct writeAct _ => fun rq' => customMemRegionLineWrite r children writeAct rq'
   end rq.
 
-Arguments memRegionLineRead [ty] r isFetch addr.
-Arguments memRegionLineWrite [ty] r rq.
+Arguments memRegionLineRead r [ty] isFetch addr.
+Arguments memRegionLineWrite r [ty] rq.
 
 (* ===========================================================================
  * Universal CHERI Capability Multi-Byte Read & Write for a MemRegion (Spec)
@@ -932,7 +936,7 @@ Section MemRegionActions.
              : Action ty tR FullCapWithTag :=
     if isInt then (
       LetA rp : LineReadRp isInt r.(regionLineCfg) <- memRegionLineRead r isFetch addr ;
-      Return (memExtractReadCap isInt r #addr #memSize #rp)
+      Return (memExtractReadCap r isInt #addr #memSize #rp)
     ) else (
       Let  addr0   : Addr                               <- memLineAddr r #addr ;
       LetA rp0     : LineReadRp isInt r.(regionLineCfg) <- memRegionLineRead r isFetch addr0 ;
@@ -944,8 +948,8 @@ Section MemRegionActions.
         ) Else (
           Return ConstDef
         ) ;
-      Let  rp      : LineReadRp isInt r.(regionLineCfg) <- memMergeLineReadRp isInt r #addr #rp0 #rp1 ;
-      Return (memExtractReadCap isInt r #addr #memSize #rp)
+      Let  rp      : LineReadRp isInt r.(regionLineCfg) <- memMergeLineReadRp r isInt #addr #rp0 #rp1 ;
+      Return (memExtractReadCap r isInt #addr #memSize #rp)
     ).
 
   Definition memRegionWrite
@@ -956,15 +960,15 @@ Section MemRegionActions.
     if r.(isReadOnly) then (
       Retv
     ) else (
-      Let rq : LineWriteRq isInt r.(regionLineCfg) <- memBuildLineWriteRq isInt r #addr #stVal #memSize ;
+      Let rq : LineWriteRq isInt r.(regionLineCfg) <- memBuildLineWriteRq r isInt #addr #stVal #memSize ;
       if isInt then (
         memRegionLineWrite r rq
       ) else (
-        Let rq0     : LineWriteRq isInt r.(regionLineCfg) <- memLineWriteRq0 isInt r #rq #memSize ;
+        Let rq0     : LineWriteRq isInt r.(regionLineCfg) <- memLineWriteRq0 r isInt #rq #memSize ;
         Act (memRegionLineWrite r rq0) ;
         Let crosses : Bool                                <- memCrossesLine r #addr #memSize ;
         If #crosses Then (
-          Let rq1 : LineWriteRq isInt r.(regionLineCfg) <- memLineWriteRq1 isInt r #rq #memSize ;
+          Let rq1 : LineWriteRq isInt r.(regionLineCfg) <- memLineWriteRq1 r isInt #rq #memSize ;
           memRegionLineWrite r rq1
         ) ;
         Retv
@@ -1095,7 +1099,7 @@ Definition memRegionIrqAction
            : option (forall ty, Action ty (memRegionTree r) Bool) :=
   match r.(regionKind) as k return option (forall ty, Action ty (match k with
                                                                 | InternalMem isAccessible _ _ => internalMemRegionTree r isAccessible
-                                                                | ExternalMem => externalMemRegionTree r r.(hasExtraFetchPort)
+                                                                | ExternalMem => externalMemRegionTree r
                                                                 | CustomMem children _ _ _ => customMemRegionTree r children
                                                                 end) Bool) with
   | CustomMem children _ _ (Some act) => Some act
@@ -1124,7 +1128,7 @@ Definition memRegionTargetPortActions
            : list (string * (forall ty, Action ty (memRegionTree r) (Bit 0))) :=
   match r.(regionKind) as k return list (string * (forall ty, Action ty (match k with
                                                                          | InternalMem isAccessible _ _ => internalMemRegionTree r isAccessible
-                                                                         | ExternalMem => externalMemRegionTree r r.(hasExtraFetchPort)
+                                                                         | ExternalMem => externalMemRegionTree r
                                                                          | CustomMem children _ _ _ => customMemRegionTree r children
                                                                          end) (Bit 0))) with
   | InternalMem true _ _ =>
