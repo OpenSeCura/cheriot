@@ -110,6 +110,7 @@ Section Clint.
   Definition clintLineReadAction
              (base : Z)
              (ty : Kind -> Type)
+             (_ : ReadPortSel false)
              (addr : ty Addr)
              : Action ty tClint (LineReadRp false ClintLineConfig) :=
     Let offset <- getMemOffset base ClintSizeBytes #addr ;
@@ -169,7 +170,8 @@ Section Clint.
     regionSize        := ClintSizeBytes ;
     regionLineCfg     := ClintLineConfig ;
     isReadOnly        := false ;
-    regionKind        := @CustomMem "clint" ClintSizeBytes ClintLineConfig clintChildren (@clintLineReadAction base) (@clintLineWriteAction base) None ;
+    hasExtraFetchPort := false ;
+    regionKind        := @CustomMem "clint" ClintSizeBytes ClintLineConfig false clintChildren (@clintLineReadAction base) (@clintLineWriteAction base) None ;
     regionInMemory    := pfBound ;
     regionBaseAligned := pfAligned ;
     regionSizeAligned := I

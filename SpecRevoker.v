@@ -79,6 +79,7 @@ Section Revoker.
   Definition revokerLineReadAction
              (base : Z)
              (ty : Kind -> Type)
+             (_ : ReadPortSel false)
              (addr : ty Addr)
              : Action ty tRev (LineReadRp false RevokerLineConfig) :=
     Let offset <- getMemOffset base RevokerSizeBytes #addr ;
@@ -165,7 +166,8 @@ Section Revoker.
     regionSize        := RevokerSizeBytes ;
     regionLineCfg     := RevokerLineConfig ;
     isReadOnly        := false ;
-    regionKind        := @CustomMem "revoker" RevokerSizeBytes RevokerLineConfig revokerChildren
+    hasExtraFetchPort := false ;
+    regionKind        := @CustomMem "revoker" RevokerSizeBytes RevokerLineConfig false revokerChildren
                                     (@revokerLineReadAction base)
                                     (@revokerLineWriteAction base)
                                     (Some (fun ty => revokerLocalInterrupt)) ;
@@ -252,7 +254,7 @@ Section Revoker.
         If (Not #isDone) Then (
           (* 1. Inspect capability at current scanAddr *)
           Let capSz      : Bit LgLgNumBytesFullCapSz <- $LgNumBytesFullCapSz ;
-          LetA ldFullCap : FullCapWithTag            <- specMemRead regions scanAddr capSz ;
+          LetA ldFullCap : FullCapWithTag            <- specMemRead regions false scanAddr capSz ;
           Let ldTag      : Bool                      <- ##ldFullCap`"tag" ;
           Let ldCap      : Cap                       <- ##ldFullCap`"cap" ;
           Let ldAddr     : Addr                      <- ##ldFullCap`"addr" ;

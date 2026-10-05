@@ -353,6 +353,7 @@ Section Plic.
                                       (ToBit arr))).
 
     Definition plicLineReadAction
+               (_ : ReadPortSel false)
                (addr : ty Addr)
                : Action ty tPlic (LineReadRp false PlicLineConfig) :=
       Let offset <- getMemOffset base PlicSizeBytes #addr ;
@@ -450,7 +451,8 @@ Section Plic.
     regionSize        := PlicSizeBytes ;
     regionLineCfg     := PlicLineConfig ;
     isReadOnly        := false ;
-    regionKind        := @CustomMem "plic" PlicSizeBytes PlicLineConfig
+    hasExtraFetchPort := false ;
+    regionKind        := @CustomMem "plic" PlicSizeBytes PlicLineConfig false
                                     (plicChildren n)
                                     (@plicLineReadAction n base)
                                     (@plicLineWriteAction n base)

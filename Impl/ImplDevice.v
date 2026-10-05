@@ -78,40 +78,52 @@ Definition CustomRegionStateList (cfg : LineConfig) : list (string * Kind) :=
 Definition CustomRegionState (cfg : LineConfig) : Kind :=
   TaggedUnion (CustomRegionStateList cfg).
 
-Definition implInternalMemRegionExtraChildren (r : MemRegion) : list (Tree DomainElem) :=
-  [ Leaf "rpValid"          (r.(regionDom), EReg (Build_Reg Bool (Some false) false)) ;
-    Leaf "targetRpPending"  (r.(regionDom), EReg (Build_Reg Bool (Some false) false)) ;
-    Leaf "writeBusy"        (r.(regionDom), EReg (Build_Reg Bool (Some false) false)) ;
-    Leaf "lineReadRqReady"  (r.(regionDom), ESend Bool) ;
-    Leaf "lineWriteRqReady" (r.(regionDom), ESend Bool) ;
-    Leaf "lineReadRpReady"  (r.(regionDom), ERecv Bool) ].
+Definition implInternalMemRegionExtraChildren (r : MemRegion) (hasExtraFetchPort : bool) : list (Tree DomainElem) :=
+  ([ Leaf "rpValid"          (r.(regionDom), EReg (Build_Reg Bool (Some false) false)) ;
+     Leaf "targetRpPending"  (r.(regionDom), EReg (Build_Reg Bool (Some false) false)) ;
+     Leaf "writeBusy"        (r.(regionDom), EReg (Build_Reg Bool (Some false) false)) ;
+     Leaf "lineReadRqReady"  (r.(regionDom), ESend Bool) ;
+     Leaf "lineWriteRqReady" (r.(regionDom), ESend Bool) ;
+     Leaf "lineReadRpReady"  (r.(regionDom), ERecv Bool) ] ++
+   if hasExtraFetchPort then
+     [ Leaf "fetchRpValid"   (r.(regionDom), EReg (Build_Reg Bool (Some false) false)) ]
+   else [])%list.
 
-Definition implExternalMemRegionExtraChildren (r : MemRegion) : list (Tree DomainElem) :=
-  [ Leaf "lineReadRqReady"  (r.(regionDom), ERecv Bool) ;
-    Leaf "lineWriteRqReady" (r.(regionDom), ERecv Bool) ;
-    Leaf "lineReadRpValid"  (r.(regionDom), ERecv Bool) ;
-    Leaf "lineReadRpReady"  (r.(regionDom), ESend (Bit 0)) ;
-    Leaf "state"            (r.(regionDom), EReg (Build_Reg (ExtRegionState r.(regionLineCfg)) (Some (getDefault _)) false)) ;
-    Leaf "nextLineAddr"     (r.(regionDom), EReg (Build_Reg (Option Addr) (Some (getDefault _)) false))
-  ].
+Definition implExternalMemRegionExtraChildren (r : MemRegion) (hasExtraFetchPort : bool) : list (Tree DomainElem) :=
+  ([ Leaf "lineReadRqReady"  (r.(regionDom), ERecv Bool) ;
+     Leaf "lineWriteRqReady" (r.(regionDom), ERecv Bool) ;
+     Leaf "lineReadRpValid"  (r.(regionDom), ERecv Bool) ;
+     Leaf "lineReadRpReady"  (r.(regionDom), ESend (Bit 0)) ;
+     Leaf "state"            (r.(regionDom), EReg (Build_Reg (ExtRegionState r.(regionLineCfg)) (Some (getDefault _)) false)) ;
+     Leaf "nextLineAddr"     (r.(regionDom), EReg (Build_Reg (Option Addr) (Some (getDefault _)) false)) ] ++
+   if hasExtraFetchPort then
+     [ Leaf "fetchLineReadRqReady" (r.(regionDom), ERecv Bool) ;
+       Leaf "fetchLineReadRpValid" (r.(regionDom), ERecv Bool) ;
+       Leaf "fetchLineReadRpReady" (r.(regionDom), ESend (Bit 0)) ;
+       Leaf "fetchState"           (r.(regionDom), EReg (Build_Reg (ExtRegionState r.(regionLineCfg)) (Some (getDefault _)) false)) ;
+       Leaf "fetchNextLineAddr"    (r.(regionDom), EReg (Build_Reg (Option Addr) (Some (getDefault _)) false)) ]
+   else [])%list.
 
-Definition implCustomMemRegionExtraChildren (r : MemRegion) : list (Tree DomainElem) :=
-  [ Leaf "state" (r.(regionDom), EReg (Build_Reg (CustomRegionState r.(regionLineCfg)) (Some (getDefault _)) false)) ].
+Definition implCustomMemRegionExtraChildren (r : MemRegion) (hasExtraFetchPort : bool) : list (Tree DomainElem) :=
+  ([ Leaf "state" (r.(regionDom), EReg (Build_Reg (CustomRegionState r.(regionLineCfg)) (Some (getDefault _)) false)) ] ++
+   if hasExtraFetchPort then
+     [ Leaf "fetchState" (r.(regionDom), EReg (Build_Reg (CustomRegionState r.(regionLineCfg)) (Some (getDefault _)) false)) ]
+   else [])%list.
 
-Definition implInternalMemRegionTree (r : MemRegion) (isAccessible : bool) : Tree DomainElem :=
-  Node r.(regionName) (internalMemRegionTree r isAccessible :: implInternalMemRegionExtraChildren r).
+Definition implInternalMemRegionTree (r : MemRegion) (isAccessible hasExtraFetchPort : bool) : Tree DomainElem :=
+  Node r.(regionName) (internalMemRegionTree r isAccessible :: implInternalMemRegionExtraChildren r hasExtraFetchPort).
 
-Definition implExternalMemRegionTree (r : MemRegion) : Tree DomainElem :=
-  Node r.(regionName) (externalMemRegionTree r :: implExternalMemRegionExtraChildren r).
+Definition implExternalMemRegionTree (r : MemRegion) (hasExtraFetchPort : bool) : Tree DomainElem :=
+  Node r.(regionName) (externalMemRegionTree r hasExtraFetchPort :: implExternalMemRegionExtraChildren r hasExtraFetchPort).
 
-Definition implCustomMemRegionTree (r : MemRegion) (children : list (Tree DomainElem)) : Tree DomainElem :=
-  Node r.(regionName) (customMemRegionTree r children :: implCustomMemRegionExtraChildren r).
+Definition implCustomMemRegionTree (r : MemRegion) (children : list (Tree DomainElem)) (hasExtraFetchPort : bool) : Tree DomainElem :=
+  Node r.(regionName) (customMemRegionTree r children :: implCustomMemRegionExtraChildren r hasExtraFetchPort).
 
 Definition implMemRegionTree (r : MemRegion) : Tree DomainElem :=
   match r.(regionKind) with
-  | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible
-  | ExternalMem => implExternalMemRegionTree r
-  | CustomMem children _ _ _ => implCustomMemRegionTree r children
+  | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible r.(hasExtraFetchPort)
+  | ExternalMem => implExternalMemRegionTree r r.(hasExtraFetchPort)
+  | CustomMem children _ _ _ => implCustomMemRegionTree r children r.(hasExtraFetchPort)
   end.
 
 Definition liftToImplRegion {ty : Kind -> Type} (r : MemRegion) {k : Kind}
@@ -119,13 +131,13 @@ Definition liftToImplRegion {ty : Kind -> Type} (r : MemRegion) {k : Kind}
   match r.(regionKind) as rk
     return Action ty (match rk with
                       | InternalMem isAccessible _ _ => internalMemRegionTree r isAccessible
-                      | ExternalMem => externalMemRegionTree r
+                      | ExternalMem => externalMemRegionTree r r.(hasExtraFetchPort)
                       | CustomMem children _ _ _ => customMemRegionTree r children
                       end) k ->
            Action ty (match rk with
-                      | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible
-                      | ExternalMem => implExternalMemRegionTree r
-                      | CustomMem children _ _ _ => implCustomMemRegionTree r children
+                      | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible r.(hasExtraFetchPort)
+                      | ExternalMem => implExternalMemRegionTree r r.(hasExtraFetchPort)
+                      | CustomMem children _ _ _ => implCustomMemRegionTree r children r.(hasExtraFetchPort)
                       end) k
   with
   | InternalMem isAccessible _ _ => fun a => liftAction child0Path a
@@ -142,16 +154,37 @@ Arguments liftToImplRegion {ty} r {k} act.
 Section ImplInternalMemRegionActions.
   Variable r : MemRegion.
   Variable isAccessible : bool.
+  Variable hasExtraFetchPort : bool.
   Variable ty : Kind -> Type.
 
-  Local Definition tImplInt := implInternalMemRegionTree r isAccessible.
-  Local Definition pRpValid : RegPath tImplInt := Eval cbn in (getChildRegPathTree tImplInt "rpValid").
-  Local Definition pTargetRpPending : RegPath tImplInt := Eval cbn in (getChildRegPathTree tImplInt "targetRpPending").
-  Local Definition pWriteBusy : RegPath tImplInt := Eval cbn in (getChildRegPathTree tImplInt "writeBusy").
+  Local Definition tImplInt := implInternalMemRegionTree r isAccessible hasExtraFetchPort.
+  Local Definition pTargetRpPending  : RegPath tImplInt := Eval cbn in (getChildRegPathTree tImplInt "targetRpPending").
+  Local Definition pWriteBusy        : RegPath tImplInt := Eval cbn in (getChildRegPathTree tImplInt "writeBusy").
+  Local Definition pRpValidTrue      : RegPath (implInternalMemRegionTree r isAccessible true)  := Eval cbn in (getChildRegPathTree (implInternalMemRegionTree r isAccessible true) "rpValid").
+  Local Definition pFetchRpValidTrue : RegPath (implInternalMemRegionTree r isAccessible true)  := Eval cbn in (getChildRegPathTree (implInternalMemRegionTree r isAccessible true) "fetchRpValid").
+  Local Definition pRpValidFalse     : RegPath (implInternalMemRegionTree r isAccessible false) := Eval cbn in (getChildRegPathTree (implInternalMemRegionTree r isAccessible false) "rpValid").
 
-  Definition implInternalMemRegionLineReadRdy
+  Local Definition readRpValid {k : Kind} (isFetch : bool)
+    (cont : ty Bool -> Action ty tImplInt k) : Action ty tImplInt k :=
+    match hasExtraFetchPort as b
+      return (ty Bool -> Action ty (implInternalMemRegionTree r isAccessible b) k) ->
+             Action ty (implInternalMemRegionTree r isAccessible b) k with
+    | true  => fun c => if isFetch then ReadReg "rpValid" pFetchRpValidTrue c else ReadReg "rpValid" pRpValidTrue c
+    | false => fun c => ReadReg "rpValid" pRpValidFalse c
+    end cont.
+
+  Local Definition writeRpValid {k : Kind} (isFetch : bool)
+    (v : Expr ty Bool) (cont : Action ty tImplInt k) : Action ty tImplInt k :=
+    match hasExtraFetchPort as b
+      return Action ty (implInternalMemRegionTree r isAccessible b) k ->
+             Action ty (implInternalMemRegionTree r isAccessible b) k with
+    | true  => fun c => if isFetch then WriteReg pFetchRpValidTrue v c else WriteReg pRpValidTrue v c
+    | false => fun c => WriteReg pRpValidFalse v c
+    end cont.
+
+  Definition implInternalMemRegionLineReadRdy (isFetch : bool)
              : Action ty tImplInt Bool :=
-    ReadReg "rpValid" pRpValid (fun rpValid =>
+    readRpValid isFetch (fun rpValid =>
     Return (Not #rpValid)).
 
   Definition implInternalMemRegionLineWriteRdy
@@ -159,33 +192,40 @@ Section ImplInternalMemRegionActions.
     ReadReg "writeBusy" pWriteBusy (fun writeBusy =>
     Return (Not #writeBusy)).
 
-  Definition implInternalMemRegionLineReadRq (isTarget : bool) (addr : ty Addr)
+  Definition implInternalMemRegionLineReadRq (isFetch isTarget : bool) (addr : ty Addr)
              : Action ty tImplInt Bool :=
-    LetA rdy : Bool <- implInternalMemRegionLineReadRdy ;
+    let useFetch := isFetch && hasExtraFetchPort in
+    LetA rdy : Bool <- implInternalMemRegionLineReadRdy isFetch ;
     If #rdy Then (
-      Act (liftAction child0Path (internalMemRegionIssueReadRq r isAccessible addr)) ;
-      WriteReg pRpValid (ConstBool true) (
-      WriteReg pTargetRpPending (ConstBool isTarget) Retv)
+      Act (liftAction child0Path (internalMemRegionIssueReadRq r isAccessible useFetch addr)) ;
+      writeRpValid isFetch (ConstBool true) (
+      if useFetch then Retv else WriteReg pTargetRpPending (ConstBool isTarget) Retv)
     ) ;
     Return #rdy.
 
-  Definition implInternalMemRegionLineReadRp (isTarget : bool)
+  Definition implInternalMemRegionLineReadRp (isFetch isTarget : bool)
              : Action ty tImplInt (Option (LineReadRp true r.(regionLineCfg))) :=
-    ReadReg "rpValid" pRpValid (fun rpValid =>
-    ReadReg "targetRpPending" pTargetRpPending (fun targetRpPending =>
-    Let isMatch : Bool <- if isTarget then #targetRpPending else Not #targetRpPending ;
+    let useFetch := isFetch && hasExtraFetchPort in
+    readRpValid isFetch (fun rpValid =>
+    LetA isMatch : Bool <-
+      if useFetch then
+        Return (ConstBool true)
+      else
+        ReadReg "targetRpPending" pTargetRpPending (fun targetRpPending =>
+        Return (if isTarget then #targetRpPending else Not #targetRpPending)) ;
     LetIf rpOpt : Option (LineReadRp true r.(regionLineCfg)) <-
       If (And [ #rpValid ; #isMatch ]) Then (
         LetA rp : LineReadRp true r.(regionLineCfg) <-
-          liftAction child0Path (@internalMemRegionGetReadRp r isAccessible ty) ;
+          liftAction child0Path (@internalMemRegionGetReadRp r isAccessible ty useFetch) ;
         Return (mkSome #rp)
       ) ;
-    Return #rpOpt)).
+    Return #rpOpt).
 
-  Definition implInternalMemRegionLineDeqRp
+  Definition implInternalMemRegionLineDeqRp (isFetch : bool)
              : Action ty tImplInt (Bit 0) :=
-    WriteReg pRpValid (ConstBool false) (
-    WriteReg pTargetRpPending (ConstBool false) Retv).
+    let useFetch := isFetch && hasExtraFetchPort in
+    writeRpValid isFetch (ConstBool false) (
+    if useFetch then Retv else WriteReg pTargetRpPending (ConstBool false) Retv).
 
   Definition implInternalMemRegionLineWriteRq
              (rq : ty (LineWriteRq true r.(regionLineCfg)))
@@ -202,10 +242,11 @@ Section ImplInternalMemRegionActions.
     WriteReg pWriteBusy (ConstBool false) Retv.
 
   Definition implInternalMemRegionReadRp
+             (isFetch : bool)
              (addr : ty Addr)
              (memSize : ty (Bit LgLgNumBytesFullCapSz))
              : Action ty tImplInt (Option FullCapWithTag) :=
-    LetA rpOpt : Option (LineReadRp true r.(regionLineCfg)) <- implInternalMemRegionLineReadRp false ;
+    LetA rpOpt : Option (LineReadRp true r.(regionLineCfg)) <- implInternalMemRegionLineReadRp isFetch false ;
     LetIf resOpt : Option FullCapWithTag <-
       If (##rpOpt`"valid") Then (
         Let rp : LineReadRp true r.(regionLineCfg) <- ##rpOpt`"data" ;
@@ -227,22 +268,23 @@ Section ImplInternalMemRegionActions.
 
 End ImplInternalMemRegionActions.
 
-Arguments implInternalMemRegionLineReadRdy r isAccessible {ty}.
-Arguments implInternalMemRegionLineWriteRdy r isAccessible {ty}.
-Arguments implInternalMemRegionLineReadRq r isAccessible [ty] isTarget addr.
-Arguments implInternalMemRegionLineReadRp r isAccessible {ty} isTarget.
-Arguments implInternalMemRegionLineDeqRp r isAccessible {ty}.
-Arguments implInternalMemRegionLineWriteRq r isAccessible [ty] rq.
-Arguments implInternalMemRegionClearWriteBusy r isAccessible {ty}.
-Arguments implInternalMemRegionReadRp r isAccessible [ty] addr memSize.
-Arguments implInternalMemRegionWriteRq r isAccessible [ty] addr stVal memSize.
+Arguments implInternalMemRegionLineReadRdy r isAccessible hasExtraFetchPort {ty} isFetch.
+Arguments implInternalMemRegionLineWriteRdy r isAccessible hasExtraFetchPort {ty}.
+Arguments implInternalMemRegionLineReadRq r isAccessible hasExtraFetchPort [ty] isFetch isTarget addr.
+Arguments implInternalMemRegionLineReadRp r isAccessible hasExtraFetchPort {ty} isFetch isTarget.
+Arguments implInternalMemRegionLineDeqRp r isAccessible hasExtraFetchPort {ty} isFetch.
+Arguments implInternalMemRegionLineWriteRq r isAccessible hasExtraFetchPort [ty] rq.
+Arguments implInternalMemRegionClearWriteBusy r isAccessible hasExtraFetchPort {ty}.
+Arguments implInternalMemRegionReadRp r isAccessible hasExtraFetchPort [ty] isFetch addr memSize.
+Arguments implInternalMemRegionWriteRq r isAccessible hasExtraFetchPort [ty] addr stVal memSize.
 
 Section ImplInternalMemTargetPortActions.
   Variable r : MemRegion.
+  Variable hasExtraFetchPort : bool.
   Variable ty : Kind -> Type.
 
   Local Definition tIntSpec := internalMemRegionTree r true.
-  Local Definition tImplIntTargetPort := implInternalMemRegionTree r true.
+  Local Definition tImplIntTargetPort := implInternalMemRegionTree r true hasExtraFetchPort.
   Local Definition pTargetPortLineReadRqReady  : SendPath tImplIntTargetPort := Eval cbn in (getChildSendPathTree tImplIntTargetPort "lineReadRqReady").
   Local Definition pTargetPortLineWriteRqReady : SendPath tImplIntTargetPort := Eval cbn in (getChildSendPathTree tImplIntTargetPort "lineWriteRqReady").
   Local Definition pTargetPortLineReadRpReady  : RecvPath tImplIntTargetPort := Eval cbn in (getChildRecvPathTree tImplIntTargetPort "lineReadRpReady").
@@ -254,13 +296,13 @@ Section ImplInternalMemTargetPortActions.
   Local Definition pTargetPortLineWriteRq      : RecvPath tIntSpec := Eval cbn in (getChildRecvPathTree tIntSpec "lineWriteRq").
 
   Definition implInternalMemRegionTargetPortReadRq : Action ty tImplIntTargetPort (Bit 0) :=
-    LetA rdy : Bool <- @implInternalMemRegionLineReadRdy r true ty ;
+    LetA rdy : Bool <- @implInternalMemRegionLineReadRdy r true hasExtraFetchPort ty false ;
     Act (Send pTargetPortLineReadRqReady #rdy Retv) ;
     If #rdy Then (
       LetA valid : Bool <- liftAction child0Path (Recv "valid" pTargetPortLineReadRqValid (fun valid => Return #valid)) ;
       If #valid Then (
         LetA addr : Addr <- liftAction child0Path (Recv "addr" pTargetPortLineReadRq (fun addr => Return #addr)) ;
-        Act (implInternalMemRegionLineReadRq r true true addr) ;
+        Act (implInternalMemRegionLineReadRq r true hasExtraFetchPort false true addr) ;
         Retv
       ) ;
       Retv
@@ -268,12 +310,12 @@ Section ImplInternalMemTargetPortActions.
     Retv.
 
   Definition implInternalMemRegionTargetPortReadRp : Action ty tImplIntTargetPort (Bit 0) :=
-    LetA rpOpt : Option (LineReadRp true r.(regionLineCfg)) <- @implInternalMemRegionLineReadRp r true ty true ;
+    LetA rpOpt : Option (LineReadRp true r.(regionLineCfg)) <- @implInternalMemRegionLineReadRp r true hasExtraFetchPort ty false true ;
     If (##rpOpt`"valid") Then (
       Recv "rpReady" pTargetPortLineReadRpReady (fun rpReady =>
       If #rpReady Then (
         Let rp : LineReadRp true r.(regionLineCfg) <- ##rpOpt`"data" ;
-        Act (@implInternalMemRegionLineDeqRp r true ty) ;
+        Act (@implInternalMemRegionLineDeqRp r true hasExtraFetchPort ty false) ;
         liftAction child0Path (Send pTargetPortLineReadRp #rp Retv)
       ) ;
       Retv)
@@ -281,13 +323,13 @@ Section ImplInternalMemTargetPortActions.
     Retv.
 
   Definition implInternalMemRegionTargetPortWrite : Action ty tImplIntTargetPort (Bit 0) :=
-    LetA rdy : Bool <- @implInternalMemRegionLineWriteRdy r true ty ;
+    LetA rdy : Bool <- @implInternalMemRegionLineWriteRdy r true hasExtraFetchPort ty ;
     Act (Send pTargetPortLineWriteRqReady #rdy Retv) ;
     If #rdy Then (
       LetA valid : Bool <- liftAction child0Path (Recv "valid" pTargetPortLineWriteRqValid (fun valid => Return #valid)) ;
       If #valid Then (
         LetA rq : LineWriteRq true r.(regionLineCfg) <- liftAction child0Path (Recv "rq" pTargetPortLineWriteRq (fun rq => Return #rq)) ;
-        Act (implInternalMemRegionLineWriteRq r true rq) ;
+        Act (implInternalMemRegionLineWriteRq r true hasExtraFetchPort rq) ;
         Retv
       ) ;
       Retv
@@ -296,9 +338,9 @@ Section ImplInternalMemTargetPortActions.
 
 End ImplInternalMemTargetPortActions.
 
-Arguments implInternalMemRegionTargetPortReadRq r {ty}.
-Arguments implInternalMemRegionTargetPortReadRp r {ty}.
-Arguments implInternalMemRegionTargetPortWrite r {ty}.
+Arguments implInternalMemRegionTargetPortReadRq r hasExtraFetchPort {ty}.
+Arguments implInternalMemRegionTargetPortReadRp r hasExtraFetchPort {ty}.
+Arguments implInternalMemRegionTargetPortWrite r hasExtraFetchPort {ty}.
 
 (* ===========================================================================
  * Split-Phase Implementation Actions for ExternalMem
@@ -306,43 +348,109 @@ Arguments implInternalMemRegionTargetPortWrite r {ty}.
 
 Section ImplExternalMemRegionActions.
   Variable r : MemRegion.
+  Variable hasExtraFetchPort : bool.
   Variable ty : Kind -> Type.
 
-  Local Definition tExtSpec := externalMemRegionTree r.
-  Local Definition tImplExt := implExternalMemRegionTree r.
+  Local Definition tExtSpec := externalMemRegionTree r hasExtraFetchPort.
+  Local Definition tImplExt := implExternalMemRegionTree r hasExtraFetchPort.
 
-  Local Definition pExtSpecLineReadRq : SendPath tExtSpec := Eval cbn in (getChildSendPathTree tExtSpec "lineReadRq").
-  Local Definition pExtSpecLineReadRp : RecvPath tExtSpec := Eval cbn in (getChildRecvPathTree tExtSpec "lineReadRp").
+  Local Definition pLineWriteRqReady         : RecvPath tImplExt                          := Eval cbn in (getChildRecvPathTree tImplExt "lineWriteRqReady").
+  Local Definition pState                    : RegPath  tImplExt                          := Eval cbn in (getChildRegPathTree tImplExt "state").
+  Local Definition pLineReadRqReadyTrue      : RecvPath (implExternalMemRegionTree r true)  := Eval cbn in (getChildRecvPathTree (implExternalMemRegionTree r true) "lineReadRqReady").
+  Local Definition pFetchLineReadRqReadyTrue : RecvPath (implExternalMemRegionTree r true)  := Eval cbn in (getChildRecvPathTree (implExternalMemRegionTree r true) "fetchLineReadRqReady").
+  Local Definition pLineReadRqReadyFalse     : RecvPath (implExternalMemRegionTree r false) := Eval cbn in (getChildRecvPathTree (implExternalMemRegionTree r false) "lineReadRqReady").
+  Local Definition pLineReadRpValidTrue      : RecvPath (implExternalMemRegionTree r true)  := Eval cbn in (getChildRecvPathTree (implExternalMemRegionTree r true) "lineReadRpValid").
+  Local Definition pFetchLineReadRpValidTrue : RecvPath (implExternalMemRegionTree r true)  := Eval cbn in (getChildRecvPathTree (implExternalMemRegionTree r true) "fetchLineReadRpValid").
+  Local Definition pLineReadRpValidFalse     : RecvPath (implExternalMemRegionTree r false) := Eval cbn in (getChildRecvPathTree (implExternalMemRegionTree r false) "lineReadRpValid").
+  Local Definition pLineReadRpReadyTrue      : SendPath (implExternalMemRegionTree r true)  := Eval cbn in (getChildSendPathTree (implExternalMemRegionTree r true) "lineReadRpReady").
+  Local Definition pFetchLineReadRpReadyTrue : SendPath (implExternalMemRegionTree r true)  := Eval cbn in (getChildSendPathTree (implExternalMemRegionTree r true) "fetchLineReadRpReady").
+  Local Definition pLineReadRpReadyFalse     : SendPath (implExternalMemRegionTree r false) := Eval cbn in (getChildSendPathTree (implExternalMemRegionTree r false) "lineReadRpReady").
+  Local Definition pStateTrue                : RegPath  (implExternalMemRegionTree r true)  := Eval cbn in (getChildRegPathTree (implExternalMemRegionTree r true) "state").
+  Local Definition pFetchStateTrue           : RegPath  (implExternalMemRegionTree r true)  := Eval cbn in (getChildRegPathTree (implExternalMemRegionTree r true) "fetchState").
+  Local Definition pStateFalse               : RegPath  (implExternalMemRegionTree r false) := Eval cbn in (getChildRegPathTree (implExternalMemRegionTree r false) "state").
+  Local Definition pNextLineAddrTrue         : RegPath  (implExternalMemRegionTree r true)  := Eval cbn in (getChildRegPathTree (implExternalMemRegionTree r true) "nextLineAddr").
+  Local Definition pFetchNextLineAddrTrue    : RegPath  (implExternalMemRegionTree r true)  := Eval cbn in (getChildRegPathTree (implExternalMemRegionTree r true) "fetchNextLineAddr").
+  Local Definition pNextLineAddrFalse        : RegPath  (implExternalMemRegionTree r false) := Eval cbn in (getChildRegPathTree (implExternalMemRegionTree r false) "nextLineAddr").
 
-  Local Definition pLineReadRqReady  : RecvPath tImplExt := Eval cbn in (getChildRecvPathTree tImplExt "lineReadRqReady").
-  Local Definition pLineWriteRqReady : RecvPath tImplExt := Eval cbn in (getChildRecvPathTree tImplExt "lineWriteRqReady").
-  Local Definition pLineReadRpValid  : RecvPath tImplExt := Eval cbn in (getChildRecvPathTree tImplExt "lineReadRpValid").
-  Local Definition pLineReadRpReady  : SendPath tImplExt := Eval cbn in (getChildSendPathTree tImplExt "lineReadRpReady").
-  Local Definition pExtState         : RegPath  tImplExt := Eval cbn in (getChildRegPathTree  tImplExt "state").
-  Local Definition pExtNextLineAddr  : RegPath  tImplExt := Eval cbn in (getChildRegPathTree  tImplExt "nextLineAddr").
+  Local Definition recvLineReadRqReady {k : Kind} (isFetch : bool)
+    (cont : ty Bool -> Action ty tImplExt k) : Action ty tImplExt k :=
+    match hasExtraFetchPort as b
+      return (ty Bool -> Action ty (implExternalMemRegionTree r b) k) ->
+             Action ty (implExternalMemRegionTree r b) k with
+    | true  => fun c => if isFetch then Recv "rdy" pFetchLineReadRqReadyTrue c else Recv "rdy" pLineReadRqReadyTrue c
+    | false => fun c => Recv "rdy" pLineReadRqReadyFalse c
+    end cont.
 
-  Definition implExternalMemRegionLineReadRq (addr : ty Addr)
+  Local Definition recvLineReadRpValid {k : Kind} (isFetch : bool)
+    (cont : ty Bool -> Action ty tImplExt k) : Action ty tImplExt k :=
+    match hasExtraFetchPort as b
+      return (ty Bool -> Action ty (implExternalMemRegionTree r b) k) ->
+             Action ty (implExternalMemRegionTree r b) k with
+    | true  => fun c => if isFetch then Recv "rpValid" pFetchLineReadRpValidTrue c else Recv "rpValid" pLineReadRpValidTrue c
+    | false => fun c => Recv "rpValid" pLineReadRpValidFalse c
+    end cont.
+
+  Local Definition readExtState {k : Kind} (isFetch : bool)
+    (cont : ty (ExtRegionState r.(regionLineCfg)) -> Action ty tImplExt k) : Action ty tImplExt k :=
+    match hasExtraFetchPort as b
+      return (ty (ExtRegionState r.(regionLineCfg)) -> Action ty (implExternalMemRegionTree r b) k) ->
+             Action ty (implExternalMemRegionTree r b) k with
+    | true  => fun c => if isFetch then ReadReg "state" pFetchStateTrue c else ReadReg "state" pStateTrue c
+    | false => fun c => ReadReg "state" pStateFalse c
+    end cont.
+
+  Local Definition writeExtState {k : Kind} (isFetch : bool)
+    (v : Expr ty (ExtRegionState r.(regionLineCfg))) (cont : Action ty tImplExt k) : Action ty tImplExt k :=
+    match hasExtraFetchPort as b
+      return Action ty (implExternalMemRegionTree r b) k ->
+             Action ty (implExternalMemRegionTree r b) k with
+    | true  => fun c => if isFetch then WriteReg pFetchStateTrue v c else WriteReg pStateTrue v c
+    | false => fun c => WriteReg pStateFalse v c
+    end cont.
+
+  Local Definition readExtNextLineAddr {k : Kind} (isFetch : bool)
+    (cont : ty (Option Addr) -> Action ty tImplExt k) : Action ty tImplExt k :=
+    match hasExtraFetchPort as b
+      return (ty (Option Addr) -> Action ty (implExternalMemRegionTree r b) k) ->
+             Action ty (implExternalMemRegionTree r b) k with
+    | true  => fun c => if isFetch then ReadReg "nextLineAddr" pFetchNextLineAddrTrue c else ReadReg "nextLineAddr" pNextLineAddrTrue c
+    | false => fun c => ReadReg "nextLineAddr" pNextLineAddrFalse c
+    end cont.
+
+  Local Definition writeExtNextLineAddr {k : Kind} (isFetch : bool)
+    (v : Expr ty (Option Addr)) (cont : Action ty tImplExt k) : Action ty tImplExt k :=
+    match hasExtraFetchPort as b
+      return Action ty (implExternalMemRegionTree r b) k ->
+             Action ty (implExternalMemRegionTree r b) k with
+    | true  => fun c => if isFetch then WriteReg pFetchNextLineAddrTrue v c else WriteReg pNextLineAddrTrue v c
+    | false => fun c => WriteReg pNextLineAddrFalse v c
+    end cont.
+
+  Definition implExternalMemRegionLineReadRq (isFetch : bool) (addr : ty Addr)
              : Action ty tImplExt Bool :=
-    Recv "rdy" pLineReadRqReady (fun rdy =>
+    recvLineReadRqReady isFetch (fun rdy =>
     If #rdy Then (
-      liftAction child0Path (Send pExtSpecLineReadRq #addr Retv)
+      liftAction child0Path (externalMemRegionIssueReadRq r hasExtraFetchPort isFetch addr)
     ) ;
     Return #rdy).
 
-  Definition implExternalMemRegionLineReadRp
+  Definition implExternalMemRegionLineReadRp (isFetch : bool)
              : Action ty tImplExt (Option (LineReadRp false r.(regionLineCfg))) :=
-    Recv "rpValid" pLineReadRpValid (fun rpValid =>
+    recvLineReadRpValid isFetch (fun rpValid =>
     LetIf rpOpt : Option (LineReadRp false r.(regionLineCfg)) <-
       If #rpValid Then (
         LetA rp : LineReadRp false r.(regionLineCfg) <-
-          liftAction child0Path (Recv "rp" pExtSpecLineReadRp (fun rp => Return #rp)) ;
+          liftAction child0Path (@externalMemRegionGetReadRp r hasExtraFetchPort ty isFetch) ;
         Return (mkSome #rp)
       ) ;
     Return #rpOpt).
 
-  Definition implExternalMemRegionLineDeqRp
+  Definition implExternalMemRegionLineDeqRp (isFetch : bool)
              : Action ty tImplExt (Bit 0) :=
-    Send pLineReadRpReady ($0 : Expr ty (Bit 0)) Retv.
+    match hasExtraFetchPort as b return Action ty (implExternalMemRegionTree r b) (Bit 0) with
+    | true  => if isFetch then Send pFetchLineReadRpReadyTrue ($0 : Expr ty (Bit 0)) Retv else Send pLineReadRpReadyTrue ($0 : Expr ty (Bit 0)) Retv
+    | false => Send pLineReadRpReadyFalse ($0 : Expr ty (Bit 0)) Retv
+    end.
 
   Definition implExternalMemRegionLineWriteRq
              (rq : ty (LineWriteRq false r.(regionLineCfg)))
@@ -352,26 +460,27 @@ Section ImplExternalMemRegionActions.
     ) else (
       Recv "rdy" pLineWriteRqReady (fun rdy =>
       If #rdy Then (
-        liftAction child0Path (externalMemRegionLineWrite r rq)
+        liftAction child0Path (externalMemRegionLineWrite r hasExtraFetchPort rq)
       ) ;
       Return #rdy)
     ).
 
   Definition implExternalMemRegionReadRq
+             (isFetch : bool)
              (addr : ty Addr)
              (memSize : ty (Bit LgLgNumBytesFullCapSz))
              : Action ty tImplExt Bool :=
-    ReadReg "state" pExtState (fun state =>
+    readExtState isFetch (fun state =>
     LetIf rdy : Bool <-
       If (##state `? "Idle") Then (
         Let  addr0 : Addr <- memLineAddr r #addr ;
-        LetA rdy0  : Bool <- implExternalMemRegionLineReadRq addr0 ;
+        LetA rdy0  : Bool <- implExternalMemRegionLineReadRq isFetch addr0 ;
         If #rdy0 Then (
-          Act (WriteReg pExtState (UNION (ExtRegionStateList r.(regionLineCfg), "ReadWait" ::= ($0 : Expr ty (Bit 0)))) Retv) ;
+          Act (writeExtState isFetch (UNION (ExtRegionStateList r.(regionLineCfg), "ReadWait" ::= ($0 : Expr ty (Bit 0)))) Retv) ;
           Let crosses : Bool <- memCrossesLine r #addr #memSize ;
           If #crosses Then (
             Let addr1 : Addr <- memNextLineAddr r #addr ;
-            WriteReg pExtNextLineAddr (mkSome #addr1) Retv
+            writeExtNextLineAddr isFetch (mkSome #addr1) Retv
           ) ;
           Retv
         ) ;
@@ -379,43 +488,44 @@ Section ImplExternalMemRegionActions.
       ) ;
     Return #rdy).
 
-  Definition implExternalMemRegionReadRp0 : Action ty tImplExt (Bit 0) :=
-    ReadReg "state" pExtState (fun state =>
-    ReadReg "nextLineAddr" pExtNextLineAddr (fun nextLineAddr =>
+  Definition implExternalMemRegionReadRp0 (isFetch : bool) : Action ty tImplExt (Bit 0) :=
+    readExtState isFetch (fun state =>
+    readExtNextLineAddr isFetch (fun nextLineAddr =>
     If (And [ ##state `? "ReadWait" ; ##nextLineAddr`"valid" ]) Then (
-      LetA rp0Opt : Option (LineReadRp false r.(regionLineCfg)) <- implExternalMemRegionLineReadRp ;
+      LetA rp0Opt : Option (LineReadRp false r.(regionLineCfg)) <- implExternalMemRegionLineReadRp isFetch ;
       If (##rp0Opt`"valid") Then (
         Let rp0 : LineReadRp false r.(regionLineCfg) <- ##rp0Opt`"data" ;
-        Act implExternalMemRegionLineDeqRp ;
-        WriteReg pExtState (UNION (ExtRegionStateList r.(regionLineCfg), "ReadRp0" ::= #rp0)) Retv
+        Act (implExternalMemRegionLineDeqRp isFetch) ;
+        writeExtState isFetch (UNION (ExtRegionStateList r.(regionLineCfg), "ReadRp0" ::= #rp0)) Retv
       ) ;
       Retv
     ) ;
     Retv)).
 
-  Definition implExternalMemRegionReadRq1 : Action ty tImplExt (Bit 0) :=
-    ReadReg "state" pExtState (fun state =>
-    ReadReg "nextLineAddr" pExtNextLineAddr (fun nextLineAddr =>
+  Definition implExternalMemRegionReadRq1 (isFetch : bool) : Action ty tImplExt (Bit 0) :=
+    readExtState isFetch (fun state =>
+    readExtNextLineAddr isFetch (fun nextLineAddr =>
     If (And [ ##state `? "ReadRp0" ; ##nextLineAddr`"valid" ]) Then (
       Let  addr1 : Addr <- ##nextLineAddr`"data" ;
-      LetA rdy1  : Bool <- implExternalMemRegionLineReadRq addr1 ;
+      LetA rdy1  : Bool <- implExternalMemRegionLineReadRq isFetch addr1 ;
       If #rdy1 Then (
-        WriteReg pExtNextLineAddr ConstDef Retv
+        writeExtNextLineAddr isFetch ConstDef Retv
       ) ;
       Retv
     ) ;
     Retv)).
 
   Definition implExternalMemRegionReadRp
+             (isFetch : bool)
              (addr : ty Addr)
              (memSize : ty (Bit LgLgNumBytesFullCapSz))
              : Action ty tImplExt (Option FullCapWithTag) :=
-    ReadReg "state" pExtState (fun state =>
-    ReadReg "nextLineAddr" pExtNextLineAddr (fun nextLineAddr =>
+    readExtState isFetch (fun state =>
+    readExtNextLineAddr isFetch (fun nextLineAddr =>
     LetIf resOpt : Option FullCapWithTag <-
       If (And [ Or [ ##state `? "ReadWait" ; ##state `? "ReadRp0" ] ;
                 Not (##nextLineAddr`"valid") ]) Then (
-        LetA lastRpOpt : Option (LineReadRp false r.(regionLineCfg)) <- implExternalMemRegionLineReadRp ;
+        LetA lastRpOpt : Option (LineReadRp false r.(regionLineCfg)) <- implExternalMemRegionLineReadRp isFetch ;
         LetIf rOpt : Option FullCapWithTag <-
           If (##lastRpOpt`"valid") Then (
             Let lastRp : LineReadRp false r.(regionLineCfg) <- ##lastRpOpt`"data" ;
@@ -431,9 +541,9 @@ Section ImplExternalMemRegionActions.
       ) ;
     Return #resOpt)).
 
-  Definition implExternalMemRegionDeqRp : Action ty tImplExt (Bit 0) :=
-    Act implExternalMemRegionLineDeqRp ;
-    WriteReg pExtState (UNION (ExtRegionStateList r.(regionLineCfg), "Idle" ::= ($0 : Expr ty (Bit 0)))) Retv.
+  Definition implExternalMemRegionDeqRp (isFetch : bool) : Action ty tImplExt (Bit 0) :=
+    Act (implExternalMemRegionLineDeqRp isFetch) ;
+    writeExtState isFetch (UNION (ExtRegionStateList r.(regionLineCfg), "Idle" ::= ($0 : Expr ty (Bit 0)))) Retv.
 
   Definition implExternalMemRegionWriteRq
              (addr : ty Addr)
@@ -443,7 +553,7 @@ Section ImplExternalMemRegionActions.
     if r.(isReadOnly) then (
       Return (ConstBool true)
     ) else (
-      ReadReg "state" pExtState (fun state =>
+      ReadReg "state" pState (fun state =>
       LetIf rdy : Bool <-
         If (##state `? "Idle") Then (
           Let  rq   : LineWriteRq false r.(regionLineCfg) <- memBuildLineWriteRq false r #addr #stVal #memSize ;
@@ -453,7 +563,7 @@ Section ImplExternalMemRegionActions.
             Let crosses : Bool <- memCrossesLine r #addr #memSize ;
             If #crosses Then (
               Let rq1 : LineWriteRq false r.(regionLineCfg) <- memLineWriteRq1 false r #rq #memSize ;
-              WriteReg pExtState (UNION (ExtRegionStateList r.(regionLineCfg), "WriteRq1" ::= #rq1)) Retv
+              WriteReg pState (UNION (ExtRegionStateList r.(regionLineCfg), "WriteRq1" ::= #rq1)) Retv
             ) ;
             Retv
           ) ;
@@ -466,12 +576,12 @@ Section ImplExternalMemRegionActions.
     if r.(isReadOnly) then (
       Retv
     ) else (
-      ReadReg "state" pExtState (fun state =>
+      ReadReg "state" pState (fun state =>
       If (##state `? "WriteRq1") Then (
         Let  rq1  : LineWriteRq false r.(regionLineCfg) <- ##state `! "WriteRq1" ;
         LetA rdy1 : Bool                                <- implExternalMemRegionLineWriteRq rq1 ;
         If #rdy1 Then (
-          WriteReg pExtState (UNION (ExtRegionStateList r.(regionLineCfg), "Idle" ::= ($0 : Expr ty (Bit 0)))) Retv
+          WriteReg pState (UNION (ExtRegionStateList r.(regionLineCfg), "Idle" ::= ($0 : Expr ty (Bit 0)))) Retv
         ) ;
         Retv
       ) ;
@@ -480,17 +590,17 @@ Section ImplExternalMemRegionActions.
 
 End ImplExternalMemRegionActions.
 
-Arguments implExternalMemRegionLineReadRq r [ty] addr.
-Arguments implExternalMemRegionLineReadRp r {ty}.
-Arguments implExternalMemRegionLineDeqRp r {ty}.
-Arguments implExternalMemRegionLineWriteRq r [ty] rq.
-Arguments implExternalMemRegionReadRq r [ty] addr memSize.
-Arguments implExternalMemRegionReadRp0 r {ty}.
-Arguments implExternalMemRegionReadRq1 r {ty}.
-Arguments implExternalMemRegionReadRp r [ty] addr memSize.
-Arguments implExternalMemRegionDeqRp r {ty}.
-Arguments implExternalMemRegionWriteRq r [ty] addr stVal memSize.
-Arguments implExternalMemRegionWriteStep r {ty}.
+Arguments implExternalMemRegionLineReadRq r hasExtraFetchPort [ty] isFetch addr.
+Arguments implExternalMemRegionLineReadRp r hasExtraFetchPort {ty} isFetch.
+Arguments implExternalMemRegionLineDeqRp r hasExtraFetchPort {ty} isFetch.
+Arguments implExternalMemRegionLineWriteRq r hasExtraFetchPort [ty] rq.
+Arguments implExternalMemRegionReadRq r hasExtraFetchPort [ty] isFetch addr memSize.
+Arguments implExternalMemRegionReadRp0 r hasExtraFetchPort {ty} isFetch.
+Arguments implExternalMemRegionReadRq1 r hasExtraFetchPort {ty} isFetch.
+Arguments implExternalMemRegionReadRp r hasExtraFetchPort [ty] isFetch addr memSize.
+Arguments implExternalMemRegionDeqRp r hasExtraFetchPort {ty} isFetch.
+Arguments implExternalMemRegionWriteRq r hasExtraFetchPort [ty] addr stVal memSize.
+Arguments implExternalMemRegionWriteStep r hasExtraFetchPort {ty}.
 
 (* ===========================================================================
  * Split-Phase Implementation Actions for CustomMem
@@ -499,32 +609,55 @@ Arguments implExternalMemRegionWriteStep r {ty}.
 Section ImplCustomMemRegionActions.
   Variable r : MemRegion.
   Variable children : list (Tree DomainElem).
-  Variable readAction : forall ty, ty Addr ->
+  Variable hasExtraFetchPort : bool.
+  Variable readAction : forall ty, ReadPortSel hasExtraFetchPort -> ty Addr ->
                         Action ty (Node r.(regionName) children)
                                (LineReadRp false r.(regionLineCfg)).
   Variable writeAction : forall ty, ty (LineWriteRq false r.(regionLineCfg)) ->
                          Action ty (Node r.(regionName) children) (Bit 0).
   Variable ty : Kind -> Type.
 
-  Local Definition tImplCust := implCustomMemRegionTree r children.
-  Local Definition pCustState : RegPath tImplCust := Eval cbn in (getChildRegPathTree tImplCust "state").
+  Local Definition tImplCust := implCustomMemRegionTree r children hasExtraFetchPort.
+  Local Definition pCustState          : RegPath tImplCust := Eval cbn in (getChildRegPathTree tImplCust "state").
+  Local Definition pCustStateTrue      : RegPath (implCustomMemRegionTree r children true)  := Eval cbn in (getChildRegPathTree (implCustomMemRegionTree r children true) "state").
+  Local Definition pCustFetchStateTrue : RegPath (implCustomMemRegionTree r children true)  := Eval cbn in (getChildRegPathTree (implCustomMemRegionTree r children true) "fetchState").
+  Local Definition pCustStateFalse     : RegPath (implCustomMemRegionTree r children false) := Eval cbn in (getChildRegPathTree (implCustomMemRegionTree r children false) "state").
 
-  Definition implCustomMemRegionReadRq (addr : ty Addr)
+  Local Definition readCustState {k : Kind} (isFetch : bool)
+    (cont : ty (CustomRegionState r.(regionLineCfg)) -> Action ty tImplCust k) : Action ty tImplCust k :=
+    match hasExtraFetchPort as b
+      return (ty (CustomRegionState r.(regionLineCfg)) -> Action ty (implCustomMemRegionTree r children b) k) ->
+             Action ty (implCustomMemRegionTree r children b) k with
+    | true  => fun c => if isFetch then ReadReg "state" pCustFetchStateTrue c else ReadReg "state" pCustStateTrue c
+    | false => fun c => ReadReg "state" pCustStateFalse c
+    end cont.
+
+  Local Definition writeCustState {k : Kind} (isFetch : bool)
+    (v : Expr ty (CustomRegionState r.(regionLineCfg))) (cont : Action ty tImplCust k) : Action ty tImplCust k :=
+    match hasExtraFetchPort as b
+      return Action ty (implCustomMemRegionTree r children b) k ->
+             Action ty (implCustomMemRegionTree r children b) k with
+    | true  => fun c => if isFetch then WriteReg pCustFetchStateTrue v c else WriteReg pCustStateTrue v c
+    | false => fun c => WriteReg pCustStateFalse v c
+    end cont.
+
+  Definition implCustomMemRegionReadRq (isFetch : bool) (addr : ty Addr)
              : Action ty tImplCust Bool :=
-    ReadReg "state" pCustState (fun state =>
+    readCustState isFetch (fun state =>
     Let isIdle : Bool <- ##state `? "Idle" ;
     If #isIdle Then (
       Let  addr0 : Addr                               <- memLineAddr r #addr ;
-      LetA rp0   : LineReadRp false r.(regionLineCfg) <- liftAction child0Path (customMemRegionLineRead r children readAction addr0) ;
-      WriteReg pCustState (UNION (CustomRegionStateList r.(regionLineCfg), "ReadRp0" ::= #rp0)) Retv
+      LetA rp0   : LineReadRp false r.(regionLineCfg) <- liftAction child0Path (customMemRegionLineRead r children hasExtraFetchPort readAction isFetch addr0) ;
+      writeCustState isFetch (UNION (CustomRegionStateList r.(regionLineCfg), "ReadRp0" ::= #rp0)) Retv
     ) ;
     Return #isIdle).
 
   Definition implCustomMemRegionReadRp
+             (isFetch : bool)
              (addr : ty Addr)
              (memSize : ty (Bit LgLgNumBytesFullCapSz))
              : Action ty tImplCust (Option FullCapWithTag) :=
-    ReadReg "state" pCustState (fun state =>
+    readCustState isFetch (fun state =>
     LetIf resOpt : Option FullCapWithTag <-
       If (##state `? "ReadRp0") Then (
         Let  rp0     : LineReadRp false r.(regionLineCfg) <- ##state `! "ReadRp0" ;
@@ -532,7 +665,7 @@ Section ImplCustomMemRegionActions.
         LetIf rp1 : LineReadRp false r.(regionLineCfg) <-
           If #crosses Then (
             Let addr1 : Addr <- memNextLineAddr r #addr ;
-            liftAction child0Path (customMemRegionLineRead r children readAction addr1)
+            liftAction child0Path (customMemRegionLineRead r children hasExtraFetchPort readAction isFetch addr1)
           ) Else (
             Return ConstDef
           ) ;
@@ -542,8 +675,8 @@ Section ImplCustomMemRegionActions.
       ) ;
     Return #resOpt).
 
-  Definition implCustomMemRegionDeqRp : Action ty tImplCust (Bit 0) :=
-    WriteReg pCustState (UNION (CustomRegionStateList r.(regionLineCfg), "Idle" ::= ($0 : Expr ty (Bit 0)))) Retv.
+  Definition implCustomMemRegionDeqRp (isFetch : bool) : Action ty tImplCust (Bit 0) :=
+    writeCustState isFetch (UNION (CustomRegionStateList r.(regionLineCfg), "Idle" ::= ($0 : Expr ty (Bit 0)))) Retv.
 
   Definition implCustomMemRegionWriteRq
              (addr : ty Addr)
@@ -584,11 +717,11 @@ Section ImplCustomMemRegionActions.
 
 End ImplCustomMemRegionActions.
 
-Arguments implCustomMemRegionReadRq r children readAction [ty] addr.
-Arguments implCustomMemRegionReadRp r children readAction [ty] addr memSize.
-Arguments implCustomMemRegionDeqRp r children {ty}.
-Arguments implCustomMemRegionWriteRq r children writeAction [ty] addr stVal memSize.
-Arguments implCustomMemRegionWriteStep r children writeAction {ty}.
+Arguments implCustomMemRegionReadRq r children hasExtraFetchPort readAction [ty] isFetch addr.
+Arguments implCustomMemRegionReadRp r children hasExtraFetchPort readAction [ty] isFetch addr memSize.
+Arguments implCustomMemRegionDeqRp r children hasExtraFetchPort {ty} isFetch.
+Arguments implCustomMemRegionWriteRq r children hasExtraFetchPort writeAction [ty] addr stVal memSize.
+Arguments implCustomMemRegionWriteStep r children hasExtraFetchPort writeAction {ty}.
 
 (* ===========================================================================
  * Unified Per-Region Implementation Dispatch
@@ -597,47 +730,50 @@ Arguments implCustomMemRegionWriteStep r children writeAction {ty}.
 Definition implMemRegionReadRq
            {ty : Kind -> Type}
            (r : MemRegion)
+           (isFetch : bool)
            (addr : ty Addr)
            (memSize : ty (Bit LgLgNumBytesFullCapSz))
            : Action ty (implMemRegionTree r) Bool :=
   match r.(regionKind) as k return Action ty (match k with
-                                              | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible
-                                              | ExternalMem => implExternalMemRegionTree r
-                                              | CustomMem children _ _ _ => implCustomMemRegionTree r children
+                                              | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible r.(hasExtraFetchPort)
+                                              | ExternalMem => implExternalMemRegionTree r r.(hasExtraFetchPort)
+                                              | CustomMem children _ _ _ => implCustomMemRegionTree r children r.(hasExtraFetchPort)
                                               end) Bool with
-  | InternalMem isAccessible _ _ => implInternalMemRegionLineReadRq r isAccessible false addr
-  | ExternalMem => implExternalMemRegionReadRq r addr memSize
-  | CustomMem children readAct _ _ => implCustomMemRegionReadRq r children readAct addr
+  | InternalMem isAccessible _ _ => implInternalMemRegionLineReadRq r isAccessible r.(hasExtraFetchPort) isFetch false addr
+  | ExternalMem => implExternalMemRegionReadRq r r.(hasExtraFetchPort) isFetch addr memSize
+  | CustomMem children readAct _ _ => implCustomMemRegionReadRq r children r.(hasExtraFetchPort) readAct isFetch addr
   end.
 
 Definition implMemRegionReadRp
            {ty : Kind -> Type}
            (r : MemRegion)
+           (isFetch : bool)
            (addr : ty Addr)
            (memSize : ty (Bit LgLgNumBytesFullCapSz))
            : Action ty (implMemRegionTree r) (Option FullCapWithTag) :=
   match r.(regionKind) as k return Action ty (match k with
-                                              | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible
-                                              | ExternalMem => implExternalMemRegionTree r
-                                              | CustomMem children _ _ _ => implCustomMemRegionTree r children
+                                              | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible r.(hasExtraFetchPort)
+                                              | ExternalMem => implExternalMemRegionTree r r.(hasExtraFetchPort)
+                                              | CustomMem children _ _ _ => implCustomMemRegionTree r children r.(hasExtraFetchPort)
                                               end) (Option FullCapWithTag) with
-  | InternalMem isAccessible _ _ => implInternalMemRegionReadRp r isAccessible addr memSize
-  | ExternalMem => implExternalMemRegionReadRp r addr memSize
-  | CustomMem children readAct _ _ => implCustomMemRegionReadRp r children readAct addr memSize
+  | InternalMem isAccessible _ _ => implInternalMemRegionReadRp r isAccessible r.(hasExtraFetchPort) isFetch addr memSize
+  | ExternalMem => implExternalMemRegionReadRp r r.(hasExtraFetchPort) isFetch addr memSize
+  | CustomMem children readAct _ _ => implCustomMemRegionReadRp r children r.(hasExtraFetchPort) readAct isFetch addr memSize
   end.
 
 Definition implMemRegionDeqRp
            {ty : Kind -> Type}
            (r : MemRegion)
+           (isFetch : bool)
            : Action ty (implMemRegionTree r) (Bit 0) :=
   match r.(regionKind) as k return Action ty (match k with
-                                              | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible
-                                              | ExternalMem => implExternalMemRegionTree r
-                                              | CustomMem children _ _ _ => implCustomMemRegionTree r children
+                                              | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible r.(hasExtraFetchPort)
+                                              | ExternalMem => implExternalMemRegionTree r r.(hasExtraFetchPort)
+                                              | CustomMem children _ _ _ => implCustomMemRegionTree r children r.(hasExtraFetchPort)
                                               end) (Bit 0) with
-  | InternalMem isAccessible _ _ => @implInternalMemRegionLineDeqRp r isAccessible ty
-  | ExternalMem => @implExternalMemRegionDeqRp r ty
-  | CustomMem children _ _ _ => @implCustomMemRegionDeqRp r children ty
+  | InternalMem isAccessible _ _ => @implInternalMemRegionLineDeqRp r isAccessible r.(hasExtraFetchPort) ty isFetch
+  | ExternalMem => @implExternalMemRegionDeqRp r r.(hasExtraFetchPort) ty isFetch
+  | CustomMem children _ _ _ => @implCustomMemRegionDeqRp r children r.(hasExtraFetchPort) ty isFetch
   end.
 
 Definition implMemRegionWriteRq
@@ -648,48 +784,51 @@ Definition implMemRegionWriteRq
            (memSize : ty (Bit LgLgNumBytesFullCapSz))
            : Action ty (implMemRegionTree r) Bool :=
   match r.(regionKind) as k return Action ty (match k with
-                                              | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible
-                                              | ExternalMem => implExternalMemRegionTree r
-                                              | CustomMem children _ _ _ => implCustomMemRegionTree r children
+                                              | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible r.(hasExtraFetchPort)
+                                              | ExternalMem => implExternalMemRegionTree r r.(hasExtraFetchPort)
+                                              | CustomMem children _ _ _ => implCustomMemRegionTree r children r.(hasExtraFetchPort)
                                               end) Bool with
-  | InternalMem isAccessible _ _ => implInternalMemRegionWriteRq r isAccessible addr stVal memSize
-  | ExternalMem => implExternalMemRegionWriteRq r addr stVal memSize
-  | CustomMem children _ writeAct _ => implCustomMemRegionWriteRq r children writeAct addr stVal memSize
+  | InternalMem isAccessible _ _ => implInternalMemRegionWriteRq r isAccessible r.(hasExtraFetchPort) addr stVal memSize
+  | ExternalMem => implExternalMemRegionWriteRq r r.(hasExtraFetchPort) addr stVal memSize
+  | CustomMem children _ writeAct _ => implCustomMemRegionWriteRq r children r.(hasExtraFetchPort) writeAct addr stVal memSize
   end.
 
-Arguments implMemRegionReadRq [ty] r addr memSize.
-Arguments implMemRegionReadRp [ty] r addr memSize.
-Arguments implMemRegionDeqRp {ty} r.
+Arguments implMemRegionReadRq [ty] r isFetch addr memSize.
+Arguments implMemRegionReadRp [ty] r isFetch addr memSize.
+Arguments implMemRegionDeqRp {ty} r isFetch.
 Arguments implMemRegionWriteRq [ty] r addr stVal memSize.
 
 Definition implMemRegionStepActions
            (r : MemRegion)
            : list (string * (forall ty, Action ty (implMemRegionTree r) (Bit 0))) :=
   match r.(regionKind) as k return list (string * (forall ty, Action ty (match k with
-                                                                         | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible
-                                                                         | ExternalMem => implExternalMemRegionTree r
-                                                                         | CustomMem children _ _ _ => implCustomMemRegionTree r children
+                                                                         | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible r.(hasExtraFetchPort)
+                                                                         | ExternalMem => implExternalMemRegionTree r r.(hasExtraFetchPort)
+                                                                         | CustomMem children _ _ _ => implCustomMemRegionTree r children r.(hasExtraFetchPort)
                                                                          end) (Bit 0))) with
   | InternalMem _ _ _ => []
   | ExternalMem =>
-      [ (r.(regionDom), fun ty => (Act (@implExternalMemRegionReadRp0 r ty) ; @implExternalMemRegionReadRq1 r ty)) ;
-        (r.(regionDom), fun ty => @implExternalMemRegionWriteStep r ty) ]
+      ([ (r.(regionDom), fun ty => (Act (@implExternalMemRegionReadRp0 r r.(hasExtraFetchPort) ty false) ; @implExternalMemRegionReadRq1 r r.(hasExtraFetchPort) ty false)) ] ++
+       (if r.(hasExtraFetchPort) then
+          [ (r.(regionDom), fun ty => (Act (@implExternalMemRegionReadRp0 r r.(hasExtraFetchPort) ty true) ; @implExternalMemRegionReadRq1 r r.(hasExtraFetchPort) ty true)) ]
+        else []) ++
+       [ (r.(regionDom), fun ty => @implExternalMemRegionWriteStep r r.(hasExtraFetchPort) ty) ])%list
   | CustomMem children _ writeAct _ =>
-      [ (r.(regionDom), fun ty => @implCustomMemRegionWriteStep r children writeAct ty) ]
+      [ (r.(regionDom), fun ty => @implCustomMemRegionWriteStep r children r.(hasExtraFetchPort) writeAct ty) ]
   end.
 
 Definition implMemRegionTargetPortActions
            (r : MemRegion)
            : list (string * (forall ty, Action ty (implMemRegionTree r) (Bit 0))) :=
   match r.(regionKind) as k return list (string * (forall ty, Action ty (match k with
-                                                                         | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible
-                                                                         | ExternalMem => implExternalMemRegionTree r
-                                                                         | CustomMem children _ _ _ => implCustomMemRegionTree r children
+                                                                         | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible r.(hasExtraFetchPort)
+                                                                         | ExternalMem => implExternalMemRegionTree r r.(hasExtraFetchPort)
+                                                                         | CustomMem children _ _ _ => implCustomMemRegionTree r children r.(hasExtraFetchPort)
                                                                          end) (Bit 0))) with
   | InternalMem true _ _ =>
-      [ (r.(regionDom), fun ty => @implInternalMemRegionTargetPortWrite r ty) ;
-        (r.(regionDom), fun ty => @implInternalMemRegionTargetPortReadRq r ty) ;
-        (r.(regionDom), fun ty => @implInternalMemRegionTargetPortReadRp r ty) ]
+      [ (r.(regionDom), fun ty => @implInternalMemRegionTargetPortWrite r r.(hasExtraFetchPort) ty) ;
+        (r.(regionDom), fun ty => @implInternalMemRegionTargetPortReadRq r r.(hasExtraFetchPort) ty) ;
+        (r.(regionDom), fun ty => @implInternalMemRegionTargetPortReadRp r r.(hasExtraFetchPort) ty) ]
   | _ => []
   end.
 
@@ -697,12 +836,12 @@ Definition implMemRegionClearWriteBusyActions
            (r : MemRegion)
            : list (string * (forall ty, Action ty (implMemRegionTree r) (Bit 0))) :=
   match r.(regionKind) as k return list (string * (forall ty, Action ty (match k with
-                                                                         | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible
-                                                                         | ExternalMem => implExternalMemRegionTree r
-                                                                         | CustomMem children _ _ _ => implCustomMemRegionTree r children
+                                                                         | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible r.(hasExtraFetchPort)
+                                                                         | ExternalMem => implExternalMemRegionTree r r.(hasExtraFetchPort)
+                                                                         | CustomMem children _ _ _ => implCustomMemRegionTree r children r.(hasExtraFetchPort)
                                                                          end) (Bit 0))) with
   | InternalMem isAccessible _ _ =>
-      [ (r.(regionDom), fun ty => @implInternalMemRegionClearWriteBusy r isAccessible ty) ]
+      [ (r.(regionDom), fun ty => @implInternalMemRegionClearWriteBusy r isAccessible r.(hasExtraFetchPort) ty) ]
   | _ => []
   end.
 
@@ -820,6 +959,7 @@ Section ImplRegionsRouter.
 
   Fixpoint implRegionsReadRq
            (regions : list MemRegion)
+           (isFetch : bool)
            (addr : ty Addr)
            (memSize : ty (Bit LgLgNumBytesFullCapSz))
            : Action ty (implRegionsTree regions) Bool :=
@@ -829,17 +969,18 @@ Section ImplRegionsRouter.
         Let isMatch : Bool <- isRegionAddr r #addr ;
         LetIf devRdy : Bool <-
           If #isMatch Then (
-            liftAction child0Path (implMemRegionReadRq r addr memSize)
+            liftAction child0Path (implMemRegionReadRq r isFetch addr memSize)
           ) Else (
             Return (ConstBool true)
           ) ;
         LetA restRdy : Bool <-
-          liftAction child1Path (implRegionsReadRq rs addr memSize) ;
+          liftAction child1Path (implRegionsReadRq rs isFetch addr memSize) ;
         Return (And [ #devRdy ; #restRdy ])
     end.
 
   Fixpoint implRegionsReadRp
            (regions : list MemRegion)
+           (isFetch : bool)
            (addr : ty Addr)
            (memSize : ty (Bit LgLgNumBytesFullCapSz))
            : Action ty (implRegionsTree regions) (Option FullCapWithTag) :=
@@ -849,12 +990,12 @@ Section ImplRegionsRouter.
         Let isMatch : Bool <- isRegionAddr r #addr ;
         LetIf devRp : Option FullCapWithTag <-
           If #isMatch Then (
-            liftAction child0Path (implMemRegionReadRp r addr memSize)
+            liftAction child0Path (implMemRegionReadRp r isFetch addr memSize)
           ) Else (
             Return (mkSome ConstDef)
           ) ;
         LetA restRp : Option FullCapWithTag <-
-          liftAction child1Path (implRegionsReadRp rs addr memSize) ;
+          liftAction child1Path (implRegionsReadRp rs isFetch addr memSize) ;
         @Return ty _ (Option FullCapWithTag) (STRUCT {
           "data"  ::= Or [ ##devRp`"data" ; ##restRp`"data" ] ;
           "valid" ::= And [ ##devRp`"valid" ; ##restRp`"valid" ]
@@ -863,6 +1004,7 @@ Section ImplRegionsRouter.
 
   Fixpoint implRegionsDeqRp
            (regions : list MemRegion)
+           (isFetch : bool)
            (addr : ty Addr)
            : Action ty (implRegionsTree regions) (Bit 0) :=
     match regions return Action ty (implRegionsTree regions) (Bit 0) with
@@ -870,9 +1012,9 @@ Section ImplRegionsRouter.
     | r :: rs =>
         Let isMatch : Bool <- isRegionAddr r #addr ;
         If #isMatch Then (
-          liftAction child0Path (@implMemRegionDeqRp ty r)
+          liftAction child0Path (@implMemRegionDeqRp ty r isFetch)
         ) ;
-        liftAction child1Path (implRegionsDeqRp rs addr)
+        liftAction child1Path (implRegionsDeqRp rs isFetch addr)
     end.
 
   Fixpoint implRegionsWrite
@@ -935,11 +1077,11 @@ Section ImplMemModel.
     (* 1. Instruction Memory Channel *)
     Definition implReadInstRq (addr : ty Addr) : Action ty implMemTree Bool :=
       Let instSz : Bit LgLgNumBytesFullCapSz <- $LgNumBytesInstSz ;
-      implRegionsReadRq regions addr instSz.
+      implRegionsReadRq regions true addr instSz.
 
     Definition implGetInstRp (addr : ty Addr) : Action ty implMemTree (Option Inst) :=
       Let instSz : Bit LgLgNumBytesFullCapSz <- $LgNumBytesInstSz ;
-      LetA rpOpt : Option FullCapWithTag <- implRegionsReadRp regions addr instSz ;
+      LetA rpOpt : Option FullCapWithTag <- implRegionsReadRp regions true addr instSz ;
       LetIf instOpt : Option Inst <-
         If (##rpOpt`"valid") Then (
           Let  fullVal : FullCapWithTag <- ##rpOpt`"data" ;
@@ -952,33 +1094,33 @@ Section ImplMemModel.
       Return #instOpt.
 
     Definition implDeqInstRp (addr : ty Addr) : Action ty implMemTree (Bit 0) :=
-      implRegionsDeqRp regions addr.
+      implRegionsDeqRp regions true addr.
 
     (* 2. Data Load Channel *)
     Definition implReadMemRq (addr : ty Addr) (memSize : ty (Bit LgLgNumBytesFullCapSz)) : Action ty implMemTree Bool :=
-      implRegionsReadRq regions addr memSize.
+      implRegionsReadRq regions false addr memSize.
 
     Definition implGetMemRp (addr : ty Addr) (memSize : ty (Bit LgLgNumBytesFullCapSz)) : Action ty implMemTree (Option FullCapWithTag) :=
-      implRegionsReadRp regions addr memSize.
+      implRegionsReadRp regions false addr memSize.
 
     Definition implDeqMemRp (addr : ty Addr) : Action ty implMemTree (Bit 0) :=
-      implRegionsDeqRp regions addr.
+      implRegionsDeqRp regions false addr.
 
     (* 3. Revocation Bit Memory Channel *)
     Definition implReadRevBitRq (base : ty (Bit (AddrSz + 1))) : Action ty implMemTree Bool :=
       LetL lookup      : RevBitLookup              <- computeRevBitAddr revConfig base ;
       Let  revByteAddr : Addr                      <- ##lookup`"revByteAddr" ;
       Let  sz0         : Bit LgLgNumBytesFullCapSz <- $0 ;
-      implRegionsReadRq regions revByteAddr sz0.
+      implRegionsReadRq regions false revByteAddr sz0.
 
     Definition implGetDeqRevBitRp (base : ty (Bit (AddrSz + 1))) : Action ty implMemTree (Option Bool) :=
       LetL lookup      : RevBitLookup              <- computeRevBitAddr revConfig base ;
       Let  revByteAddr : Addr                      <- ##lookup`"revByteAddr" ;
       Let  sz0         : Bit LgLgNumBytesFullCapSz <- $0 ;
-      LetA rpOpt       : Option FullCapWithTag     <- implRegionsReadRp regions revByteAddr sz0 ;
+      LetA rpOpt       : Option FullCapWithTag     <- implRegionsReadRp regions false revByteAddr sz0 ;
       LetIf rOpt : Option Bool <-
         If (##rpOpt`"valid") Then (
-          Act (implRegionsDeqRp regions revByteAddr) ;
+          Act (implRegionsDeqRp regions false revByteAddr) ;
           Let revCap  : FullCapWithTag <- ##rpOpt`"data" ;
           Let revByte : Bit 8          <- TruncLsb (AddrSz - 8) 8 (##revCap`"addr") ;
           Let revBit  : Bool           <- extractRevBit lookup #revByte ;

@@ -295,7 +295,7 @@ Section SpecCoreTree.
           Return ($0 : Expr ty Inst)
         ) Else (
           Let  instSz  : Bit LgLgNumBytesFullCapSz <- $LgNumBytesInstSz ;
-          LetA rawFull : FullCapWithTag            <- liftAction np_mem (specMemRead regions pccAddr instSz) ;
+          LetA rawFull : FullCapWithTag            <- liftAction np_mem (specMemRead regions true pccAddr instSz) ;
           Let  rawInst : Inst                      <- ##rawFull`"addr" ;
           LetL exp     : Inst                      <- preDecode rawInst ;
           Return #exp
@@ -354,7 +354,7 @@ Section SpecCoreTree.
             Let pending   : PendingLoad               <- ##ld`"pending" ;
             Let memSize   : Bit LgLgNumBytesFullCapSz <- ##pending`"memSize" ;
 
-            LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions addr memSize) ;
+            LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions false addr memSize) ;
             LetL outcome  : LoadOutcome       <- dispatchLoadResponse config pending memVal ;
 
             If (#outcome `? "RevLookup") Then (
