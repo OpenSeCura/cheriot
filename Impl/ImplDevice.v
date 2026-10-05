@@ -64,16 +64,16 @@ Record MemIfc {ty : Kind -> Type} := {
 Definition ExtRegionStateList (cfg : LineConfig) : list (string * Kind) :=
   [ ("Idle",     Bit 0) ;
     ("ReadWait", Bit 0) ;
-    ("ReadRp0",  LineReadRp false cfg) ;
-    ("WriteRq1", LineWriteRq false cfg) ].
+    ("ReadRp0",  LineReadRp cfg false) ;
+    ("WriteRq1", LineWriteRq cfg false) ].
 
 Definition ExtRegionState (cfg : LineConfig) : Kind :=
   TaggedUnion (ExtRegionStateList cfg).
 
 Definition CustomRegionStateList (cfg : LineConfig) : list (string * Kind) :=
   [ ("Idle",     Bit 0) ;
-    ("ReadRp0",  LineReadRp false cfg) ;
-    ("WriteRq1", LineWriteRq false cfg) ].
+    ("ReadRp0",  LineReadRp cfg false) ;
+    ("WriteRq1", LineWriteRq cfg false) ].
 
 Definition CustomRegionState (cfg : LineConfig) : Kind :=
   TaggedUnion (CustomRegionStateList cfg).
@@ -221,7 +221,7 @@ Section ImplInternalMemRegionActions.
     Return #rdy.
 
   Definition implInternalMemRegionLineReadRp (isFetch isTarget : bool)
-             : Action ty tImplInt (Option (LineReadRp true r.(regionLineCfg))) :=
+             : Action ty tImplInt (Option (LineReadRp r.(regionLineCfg) true)) :=
     let useFetch := isFetch && r.(hasExtraFetchPort) in
     readRpValid isFetch (fun rpValid =>
     LetA isMatch : Bool <-
@@ -230,9 +230,9 @@ Section ImplInternalMemRegionActions.
       else
         ReadReg "targetRpPending" pTargetRpPending (fun targetRpPending =>
         Return (if isTarget then #targetRpPending else Not #targetRpPending)) ;
-    LetIf rpOpt : Option (LineReadRp true r.(regionLineCfg)) <-
+    LetIf rpOpt : Option (LineReadRp r.(regionLineCfg) true) <-
       If (And [ #rpValid ; #isMatch ]) Then (
-        LetA rp : LineReadRp true r.(regionLineCfg) <-
+        LetA rp : LineReadRp r.(regionLineCfg) true <-
           liftAction child0Path (@internalMemRegionGetReadRp r isAccessible ty useFetch) ;
         Return (mkSome #rp)
       ) ;
@@ -245,7 +245,7 @@ Section ImplInternalMemRegionActions.
     if useFetch then Retv else WriteReg pTargetRpPending (ConstBool false) Retv).
 
   Definition implInternalMemRegionLineWriteRq
-             (rq : ty (LineWriteRq true r.(regionLineCfg)))
+             (rq : ty (LineWriteRq r.(regionLineCfg) true))
              : Action ty tImplInt Bool :=
     LetA rdy : Bool <- implInternalMemRegionLineWriteRdy ;
     If #rdy Then (
@@ -263,10 +263,10 @@ Section ImplInternalMemRegionActions.
              (addr : ty Addr)
              (memSize : ty (Bit LgLgNumBytesFullCapSz))
              : Action ty tImplInt (Option FullCapWithTag) :=
-    LetA rpOpt : Option (LineReadRp true r.(regionLineCfg)) <- implInternalMemRegionLineReadRp isFetch false ;
+    LetA rpOpt : Option (LineReadRp r.(regionLineCfg) true) <- implInternalMemRegionLineReadRp isFetch false ;
     LetIf resOpt : Option FullCapWithTag <-
       If (##rpOpt`"valid") Then (
-        Let rp : LineReadRp true r.(regionLineCfg) <- ##rpOpt`"data" ;
+        Let rp : LineReadRp r.(regionLineCfg) true <- ##rpOpt`"data" ;
         Return (mkSome (memExtractReadCap r true #addr #memSize #rp))
       )  ;
     Return #resOpt.
@@ -279,7 +279,7 @@ Section ImplInternalMemRegionActions.
     if r.(isReadOnly) then (
       Return (ConstBool true)
     ) else (
-      Let rq : LineWriteRq true r.(regionLineCfg) <- memBuildLineWriteRq r true #addr #stVal #memSize ;
+      Let rq : LineWriteRq r.(regionLineCfg) true <- memBuildLineWriteRq r true #addr #stVal #memSize ;
       implInternalMemRegionLineWriteRq rq
     ).
 
@@ -326,11 +326,11 @@ Section ImplInternalMemTargetPortActions.
     Retv.
 
   Definition implInternalMemRegionTargetPortReadRp : Action ty tImplIntTargetPort (Bit 0) :=
-    LetA rpOpt : Option (LineReadRp true r.(regionLineCfg)) <- @implInternalMemRegionLineReadRp r true ty false true ;
+    LetA rpOpt : Option (LineReadRp r.(regionLineCfg) true) <- @implInternalMemRegionLineReadRp r true ty false true ;
     If (##rpOpt`"valid") Then (
       Recv "rpReady" pTargetPortLineReadRpReady (fun rpReady =>
       If #rpReady Then (
-        Let rp : LineReadRp true r.(regionLineCfg) <- ##rpOpt`"data" ;
+        Let rp : LineReadRp r.(regionLineCfg) true <- ##rpOpt`"data" ;
         Act (@implInternalMemRegionLineDeqRp r true ty false) ;
         liftAction child0Path (Send pTargetPortLineReadRp #rp Retv)
       ) ;
@@ -344,7 +344,7 @@ Section ImplInternalMemTargetPortActions.
     If #rdy Then (
       LetA valid : Bool <- liftAction child0Path (Recv "valid" pTargetPortLineWriteRqValid (fun valid => Return #valid)) ;
       If #valid Then (
-        LetA rq : LineWriteRq true r.(regionLineCfg) <- liftAction child0Path (Recv "rq" pTargetPortLineWriteRq (fun rq => Return #rq)) ;
+        LetA rq : LineWriteRq r.(regionLineCfg) true <- liftAction child0Path (Recv "rq" pTargetPortLineWriteRq (fun rq => Return #rq)) ;
         Act (implInternalMemRegionLineWriteRq r true rq) ;
         Retv
       ) ;
@@ -450,11 +450,11 @@ Section ImplExternalMemRegionActions.
     Return #rdy).
 
   Definition implExternalMemRegionLineReadRp (isFetch : bool)
-             : Action ty tImplExt (Option (LineReadRp false r.(regionLineCfg))) :=
+             : Action ty tImplExt (Option (LineReadRp r.(regionLineCfg) false)) :=
     recvLineReadRpValid isFetch (fun rpValid =>
-    LetIf rpOpt : Option (LineReadRp false r.(regionLineCfg)) <-
+    LetIf rpOpt : Option (LineReadRp r.(regionLineCfg) false) <-
       If #rpValid Then (
-        LetA rp : LineReadRp false r.(regionLineCfg) <-
+        LetA rp : LineReadRp r.(regionLineCfg) false <-
           liftAction child0Path (@externalMemRegionGetReadRp r ty isFetch) ;
         Return (mkSome #rp)
       ) ;
@@ -468,7 +468,7 @@ Section ImplExternalMemRegionActions.
     end.
 
   Definition implExternalMemRegionLineWriteRq
-             (rq : ty (LineWriteRq false r.(regionLineCfg)))
+             (rq : ty (LineWriteRq r.(regionLineCfg) false))
              : Action ty tImplExt Bool :=
     if r.(isReadOnly) then (
       Return (ConstBool true)
@@ -507,9 +507,9 @@ Section ImplExternalMemRegionActions.
     readExtState isFetch (fun state =>
     readExtNextLineAddr isFetch (fun nextLineAddr =>
     If (And [ ##state `? "ReadWait" ; ##nextLineAddr`"valid" ]) Then (
-      LetA rp0Opt : Option (LineReadRp false r.(regionLineCfg)) <- implExternalMemRegionLineReadRp isFetch ;
+      LetA rp0Opt : Option (LineReadRp r.(regionLineCfg) false) <- implExternalMemRegionLineReadRp isFetch ;
       If (##rp0Opt`"valid") Then (
-        Let rp0 : LineReadRp false r.(regionLineCfg) <- ##rp0Opt`"data" ;
+        Let rp0 : LineReadRp r.(regionLineCfg) false <- ##rp0Opt`"data" ;
         Act (implExternalMemRegionLineDeqRp isFetch) ;
         writeExtState isFetch (UNION (ExtRegionStateList r.(regionLineCfg), "ReadRp0" ::= #rp0)) Retv
       ) ;
@@ -540,15 +540,15 @@ Section ImplExternalMemRegionActions.
     LetIf resOpt : Option FullCapWithTag <-
       If (And [ Or [ ##state `? "ReadWait" ; ##state `? "ReadRp0" ] ;
                 Not (##nextLineAddr`"valid") ]) Then (
-        LetA lastRpOpt : Option (LineReadRp false r.(regionLineCfg)) <- implExternalMemRegionLineReadRp isFetch ;
+        LetA lastRpOpt : Option (LineReadRp r.(regionLineCfg) false) <- implExternalMemRegionLineReadRp isFetch ;
         LetIf rOpt : Option FullCapWithTag <-
           If (##lastRpOpt`"valid") Then (
-            Let lastRp : LineReadRp false r.(regionLineCfg) <- ##lastRpOpt`"data" ;
-            Let rp0    : LineReadRp false r.(regionLineCfg) <-
+            Let lastRp : LineReadRp r.(regionLineCfg) false <- ##lastRpOpt`"data" ;
+            Let rp0    : LineReadRp r.(regionLineCfg) false <-
               ITE (##state `? "ReadRp0") (##state `! "ReadRp0") #lastRp ;
-            Let rp1    : LineReadRp false r.(regionLineCfg) <-
+            Let rp1    : LineReadRp r.(regionLineCfg) false <-
               ITE (##state `? "ReadRp0") #lastRp ConstDef ;
-            Let rp     : LineReadRp false r.(regionLineCfg) <- memMergeLineReadRp r false #addr #rp0 #rp1 ;
+            Let rp     : LineReadRp r.(regionLineCfg) false <- memMergeLineReadRp r false #addr #rp0 #rp1 ;
             Let res    : FullCapWithTag                     <- memExtractReadCap r false #addr #memSize #rp ;
             Return (mkSome #res)
           ) ;
@@ -571,13 +571,13 @@ Section ImplExternalMemRegionActions.
       ReadReg "state" pState (fun state =>
       LetIf rdy : Bool <-
         If (##state `? "Idle") Then (
-          Let  rq   : LineWriteRq false r.(regionLineCfg) <- memBuildLineWriteRq r false #addr #stVal #memSize ;
-          Let  rq0  : LineWriteRq false r.(regionLineCfg) <- memLineWriteRq0 r false #rq #memSize ;
+          Let  rq   : LineWriteRq r.(regionLineCfg) false <- memBuildLineWriteRq r false #addr #stVal #memSize ;
+          Let  rq0  : LineWriteRq r.(regionLineCfg) false <- memLineWriteRq0 r false #rq #memSize ;
           LetA rdy0 : Bool                                <- implExternalMemRegionLineWriteRq rq0 ;
           If #rdy0 Then (
             Let crosses : Bool <- memCrossesLine r #addr #memSize ;
             If #crosses Then (
-              Let rq1 : LineWriteRq false r.(regionLineCfg) <- memLineWriteRq1 r false #rq #memSize ;
+              Let rq1 : LineWriteRq r.(regionLineCfg) false <- memLineWriteRq1 r false #rq #memSize ;
               WriteReg pState (UNION (ExtRegionStateList r.(regionLineCfg), "WriteRq1" ::= #rq1)) Retv
             ) ;
             Retv
@@ -593,7 +593,7 @@ Section ImplExternalMemRegionActions.
     ) else (
       ReadReg "state" pState (fun state =>
       If (##state `? "WriteRq1") Then (
-        Let  rq1  : LineWriteRq false r.(regionLineCfg) <- ##state `! "WriteRq1" ;
+        Let  rq1  : LineWriteRq r.(regionLineCfg) false <- ##state `! "WriteRq1" ;
         LetA rdy1 : Bool                                <- implExternalMemRegionLineWriteRq rq1 ;
         If #rdy1 Then (
           WriteReg pState (UNION (ExtRegionStateList r.(regionLineCfg), "Idle" ::= ($0 : Expr ty (Bit 0)))) Retv
@@ -626,8 +626,8 @@ Section ImplCustomMemRegionActions.
   Variable children : list (Tree DomainElem).
   Variable readAction : forall ty, ReadPortSel r.(hasExtraFetchPort) -> ty Addr ->
                         Action ty (Node r.(regionName) children)
-                               (LineReadRp false r.(regionLineCfg)).
-  Variable writeAction : forall ty, ty (LineWriteRq false r.(regionLineCfg)) ->
+                               (LineReadRp r.(regionLineCfg) false).
+  Variable writeAction : forall ty, ty (LineWriteRq r.(regionLineCfg) false) ->
                          Action ty (Node r.(regionName) children) (Bit 0).
   Variable ty : Kind -> Type.
 
@@ -661,7 +661,7 @@ Section ImplCustomMemRegionActions.
     Let isIdle : Bool <- ##state `? "Idle" ;
     If #isIdle Then (
       Let  addr0 : Addr                               <- memLineAddr r #addr ;
-      LetA rp0   : LineReadRp false r.(regionLineCfg) <- liftAction child0Path (customMemRegionLineRead r children readAction isFetch addr0) ;
+      LetA rp0   : LineReadRp r.(regionLineCfg) false <- liftAction child0Path (customMemRegionLineRead r children readAction isFetch addr0) ;
       writeCustState isFetch (UNION (CustomRegionStateList r.(regionLineCfg), "ReadRp0" ::= #rp0)) Retv
     ) ;
     Return #isIdle).
@@ -674,16 +674,16 @@ Section ImplCustomMemRegionActions.
     readCustState isFetch (fun state =>
     LetIf resOpt : Option FullCapWithTag <-
       If (##state `? "ReadRp0") Then (
-        Let  rp0     : LineReadRp false r.(regionLineCfg) <- ##state `! "ReadRp0" ;
+        Let  rp0     : LineReadRp r.(regionLineCfg) false <- ##state `! "ReadRp0" ;
         Let  crosses : Bool                               <- memCrossesLine r #addr #memSize ;
-        LetIf rp1 : LineReadRp false r.(regionLineCfg) <-
+        LetIf rp1 : LineReadRp r.(regionLineCfg) false <-
           If #crosses Then (
             Let addr1 : Addr <- memNextLineAddr r #addr ;
             liftAction child0Path (customMemRegionLineRead r children readAction isFetch addr1)
           ) Else (
             Return ConstDef
           ) ;
-        Let  rp      : LineReadRp false r.(regionLineCfg) <- memMergeLineReadRp r false #addr #rp0 #rp1 ;
+        Let  rp      : LineReadRp r.(regionLineCfg) false <- memMergeLineReadRp r false #addr #rp0 #rp1 ;
         Let  res     : FullCapWithTag                     <- memExtractReadCap r false #addr #memSize #rp ;
         Return (mkSome #res)
       ) ;
@@ -703,12 +703,12 @@ Section ImplCustomMemRegionActions.
       ReadReg "state" pCustState (fun state =>
       Let isIdle : Bool <- ##state `? "Idle" ;
       If #isIdle Then (
-        Let rq      : LineWriteRq false r.(regionLineCfg) <- memBuildLineWriteRq r false #addr #stVal #memSize ;
-        Let rq0     : LineWriteRq false r.(regionLineCfg) <- memLineWriteRq0 r false #rq #memSize ;
+        Let rq      : LineWriteRq r.(regionLineCfg) false <- memBuildLineWriteRq r false #addr #stVal #memSize ;
+        Let rq0     : LineWriteRq r.(regionLineCfg) false <- memLineWriteRq0 r false #rq #memSize ;
         Act (liftAction child0Path (customMemRegionLineWrite r children writeAction rq0)) ;
         Let crosses : Bool                                <- memCrossesLine r #addr #memSize ;
         If #crosses Then (
-          Let rq1 : LineWriteRq false r.(regionLineCfg) <- memLineWriteRq1 r false #rq #memSize ;
+          Let rq1 : LineWriteRq r.(regionLineCfg) false <- memLineWriteRq1 r false #rq #memSize ;
           WriteReg pCustState (UNION (CustomRegionStateList r.(regionLineCfg), "WriteRq1" ::= #rq1)) Retv
         ) ;
         Retv
@@ -722,7 +722,7 @@ Section ImplCustomMemRegionActions.
     ) else (
       ReadReg "state" pCustState (fun state =>
       If (##state `? "WriteRq1") Then (
-        Let rq1 : LineWriteRq false r.(regionLineCfg) <- ##state `! "WriteRq1" ;
+        Let rq1 : LineWriteRq r.(regionLineCfg) false <- ##state `! "WriteRq1" ;
         Act (liftAction child0Path (customMemRegionLineWrite r children writeAction rq1)) ;
         WriteReg pCustState (UNION (CustomRegionStateList r.(regionLineCfg), "Idle" ::= ($0 : Expr ty (Bit 0)))) Retv
       ) ;
