@@ -96,6 +96,15 @@ Section ImplDom.
       Definition implSampleMtipStep : Action ty sysTree (Bit 0) :=
         liftAction np_mem (implClintAction (clintSampleMtip core ty)).
 
+      Definition implRevokerIdleStepSys : Action ty sysTree (Bit 0) :=
+        liftAction np_mem (@implRevokerIdleStep core regions ty rev).
+
+      Definition implRevokerCapRpRevBitRqStepSys : Action ty sysTree (Bit 0) :=
+        liftAction np_mem (@implRevokerCapRpRevBitRqStep core config regions ty rev).
+
+      Definition implRevokerRevBitRpWriteCapStepSys : Action ty sysTree (Bit 0) :=
+        liftAction np_mem (@implRevokerRevBitRpWriteCapStep core config regions ty rev).
+
       Definition implRevokerStepsSys : list (Action ty sysTree (Bit 0)) :=
         map (fun act => liftAction np_mem act) (@implRevokerSteps core config regions ty rev).
 
@@ -188,40 +197,98 @@ Section ImplDom.
         map (fun act => liftAction np_core act)
             (@mulDivRules core deferredCapacity pcAddrInit bpTree fTree decTree memIfc ty).
 
-      Definition implRegionStepsSys : list (string * Action ty sysTree (Bit 0)) :=
+      Definition fetchRps : list (string * Action ty sysTree (Bit 0)) :=
         map (fun '(dom, act) => (dom, liftAction np_mem act))
-            (@implMemCollectRegionStepActions regions ty).
+            (@implMemCollectFetchRpActions regions ty).
 
-      Definition implClearWriteBusySteps : list (string * Action ty sysTree (Bit 0)) :=
+      Definition fetchRqs : list (string * Action ty sysTree (Bit 0)) :=
         map (fun '(dom, act) => (dom, liftAction np_mem act))
-            (@implMemCollectClearWriteBusyActions regions ty).
+            (@implMemCollectFetchRqActions regions ty).
 
-      Definition implInternalMemTargetPortSteps : list (string * Action ty sysTree (Bit 0)) :=
+      Definition dataReadRps : list (string * Action ty sysTree (Bit 0)) :=
         map (fun '(dom, act) => (dom, liftAction np_mem act))
-            (@implMemCollectTargetPortActions regions ty).
+            (@implMemCollectDataReadRpActions regions ty).
+
+      Definition dataReadRqs : list (string * Action ty sysTree (Bit 0)) :=
+        map (fun '(dom, act) => (dom, liftAction np_mem act))
+            (@implMemCollectDataReadRqActions regions ty).
+
+      Definition dataWriteRqs : list (string * Action ty sysTree (Bit 0)) :=
+        map (fun '(dom, act) => (dom, liftAction np_mem act))
+            (@implMemCollectDataWriteRqActions regions ty).
+
+      Definition targetPortRqs : list (string * Action ty sysTree (Bit 0)) :=
+        map (fun '(dom, act) => (dom, liftAction np_mem act))
+            (@implMemCollectTargetPortRqActions regions ty).
+
+      Definition targetPortRps : list (string * Action ty sysTree (Bit 0)) :=
+        map (fun '(dom, act) => (dom, liftAction np_mem act))
+            (@implMemCollectTargetPortRpActions regions ty).
+
+      Definition fetchCrossLineSteps : list (string * Action ty sysTree (Bit 0)) :=
+        map (fun '(dom, act) => (dom, liftAction np_mem act))
+            (@implMemCollectFetchCrossLineActions regions ty).
+
+      Definition dataCrossLineSteps : list (string * Action ty sysTree (Bit 0)) :=
+        map (fun '(dom, act) => (dom, liftAction np_mem act))
+            (@implMemCollectDataCrossLineActions regions ty).
 
     End Ty.
 
     (* =======================================================================
-     * Top-Level Implementation Module (impl)
+     * Top-Level Implementation Modules (singleCycleMod / pipelinedMod)
      * ======================================================================= *)
 
-    Definition impl : Mod sysTree :=
-      fun ty => (
-        implClearWriteBusySteps ty
-        ++ implInternalMemTargetPortSteps ty
-        ++ map (fun a => (core, a)) (implRevokerStepsSys ty)
-        ++ map (fun a => (core, a)) (implPeripheralSteps ty)
-        ++ [ (core, fetchRqStage ty) ;
-             (core, decodeAndRegReadStage ty) ;
-             (core, aluAndExecuteNonDeferredStage ty) ;
-             (core, loadRqOrStoreOrFenceStage ty) ]
-        ++ implRegionStepsSys ty
-        ++ [
-          (core, loadRpAndWritebackOrIssueRevRqStage ty) ;
-          (core, revRpAndWriteBackStage ty)
-        ]
-        ++ map (fun a => (core, a)) (mulDivStageActions ty))%list.
+    Definition singleCycleList (ty : Kind -> Type) : list (string * Action ty sysTree (Bit 0)) :=
+      (map (fun a => (core, a)) (implPeripheralSteps ty)
+       ++ [ (core, fetchRqStage ty) ]
+       ++ fetchRqs ty ++ fetchRps ty
+       ++ fetchCrossLineSteps ty
+       ++ fetchRqs ty ++ fetchRps ty
+       ++ [ (core, decodeAndRegReadStage ty) ;
+            (core, aluAndExecuteNonDeferredStage ty) ;
+            (core, loadRqOrStoreOrFenceStage ty) ]
+       ++ dataWriteRqs ty ++ dataReadRqs ty ++ dataReadRps ty
+       ++ dataCrossLineSteps ty
+       ++ dataWriteRqs ty ++ dataReadRqs ty ++ dataReadRps ty
+       ++ [ (core, loadRpAndWritebackOrIssueRevRqStage ty) ]
+       ++ dataReadRqs ty ++ dataReadRps ty
+       ++ [ (core, revRpAndWriteBackStage ty) ]
+       ++ map (fun a => (core, a)) (mulDivStageActions ty)
+       ++ [ (core, implRevokerIdleStepSys ty) ]
+       ++ dataReadRqs ty ++ dataReadRps ty
+       ++ [ (core, implRevokerCapRpRevBitRqStepSys ty) ]
+       ++ dataReadRqs ty ++ dataReadRps ty
+       ++ [ (core, implRevokerRevBitRpWriteCapStepSys ty) ]
+       ++ dataWriteRqs ty
+       ++ targetPortRqs ty
+       ++ dataWriteRqs ty ++ dataReadRqs ty ++ dataReadRps ty
+       ++ targetPortRps ty)%list.
+
+    Definition singleCycleMod : Mod sysTree :=
+      fun ty => singleCycleList ty.
+
+    Definition pipelinedList (ty : Kind -> Type) : list (string * Action ty sysTree (Bit 0)) :=
+      (fetchRps ty ++ dataReadRps ty
+       ++ targetPortRps ty
+       ++ List.rev (
+            [ (core, fetchRqStage ty) ]
+            ++ fetchCrossLineSteps ty
+            ++ [ (core, decodeAndRegReadStage ty) ;
+                 (core, aluAndExecuteNonDeferredStage ty) ;
+                 (core, loadRqOrStoreOrFenceStage ty) ]
+            ++ dataCrossLineSteps ty
+            ++ [ (core, loadRpAndWritebackOrIssueRevRqStage ty) ;
+                 (core, revRpAndWriteBackStage ty) ]
+            ++ map (fun a => (core, a)) (mulDivStageActions ty)
+          )
+       ++ List.rev (map (fun a => (core, a)) (implPeripheralSteps ty))
+       ++ List.rev (map (fun a => (core, a)) (implRevokerStepsSys ty))
+       ++ targetPortRqs ty
+       ++ fetchRqs ty ++ dataReadRqs ty ++ dataWriteRqs ty)%list.
+
+    Definition pipelinedMod : Mod sysTree :=
+      fun ty => pipelinedList ty.
 
   End Impl.
 

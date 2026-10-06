@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Zmod Bool Psatz Nat Arith.
-From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Extraction Simulator.
+From Guru Require Import Primitives Library Syntax Combinators Notations Semantics.
 From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic SpecInst ImplRevoker ImplDevice ImplCommon ImplBranchPredictor ImplFetch ImplDecode ImplExecute ImplDeferred Impl Binary.
 
 Set Implicit Arguments.
@@ -56,20 +56,31 @@ Definition implConcretePlic : @PlicInstance "core" 3%nat implConcreteRegions :=
 Definition implSysTreeInst : Tree DomainElem :=
   implSysTree "core" PcAddrInit DefaultFetchCapacity DefaultDecodeCapacity DefaultDeferredCapacity concreteRevConfig implConcreteRegions.
 
+Definition singleCycleModInst : Mod implSysTreeInst :=
+  @singleCycleMod "core"
+                  PcAddrInit
+                  tohostAddr
+                  DefaultFetchCapacity
+                  DefaultDecodeCapacity
+                  DefaultDeferredCapacity
+                  concreteRevConfig
+                  implConcreteRegions
+                  implConcreteClint
+                  implConcreteRevoker
+                  implConcretePlic.
+
+Definition pipelinedModInst : Mod implSysTreeInst :=
+  @pipelinedMod "core"
+                PcAddrInit
+                tohostAddr
+                DefaultFetchCapacity
+                DefaultDecodeCapacity
+                DefaultDeferredCapacity
+                concreteRevConfig
+                implConcreteRegions
+                implConcreteClint
+                implConcreteRevoker
+                implConcretePlic.
+
 Definition implModInst : Mod implSysTreeInst :=
-  @impl "core"
-        PcAddrInit
-        tohostAddr
-        DefaultFetchCapacity
-        DefaultDecodeCapacity
-        DefaultDeferredCapacity
-        concreteRevConfig
-        implConcreteRegions
-        implConcreteClint
-        implConcreteRevoker
-        implConcretePlic.
-
-Set Extraction Output Directory "./Impl".
-
-Definition main : IO unit := evalModCyclesIO implSysTreeInst (Z.to_nat 50000000) implModInst.
-Extraction "Simulate" main.
+  singleCycleModInst.

@@ -56,10 +56,10 @@ all: coq
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/ $(CURR_DIR)/Clut/"
 
 rtl: coq
-	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" rtl
+	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Impl/ $(CURR_DIR)/Clut/" rtl
 
 rtlsim: coq
-	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" rtlsim
+	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Impl/ $(CURR_DIR)/Clut/" rtlsim
 
 sim: coq
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/" sim
