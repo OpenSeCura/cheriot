@@ -375,8 +375,9 @@ Section ImplInternalMemRegionActions.
     LetA rpOpt : Option (LineReadRp r.(regionLineCfg) true) <- implInternalMemRegionLineReadRp req ;
     LetIf resOpt : Option FullCapWithTag <-
       If (##rpOpt`"valid") Then (
-        Let rp : LineReadRp r.(regionLineCfg) true <- ##rpOpt`"data" ;
-        Return (mkSome (memExtractReadCap r true #addr #memSize #rp))
+        Let  rp  : LineReadRp r.(regionLineCfg) true <- ##rpOpt`"data" ;
+        LetL res : FullCapWithTag                    <- memExtractReadCap r true #addr #memSize #rp ;
+        Return (mkSome #res)
       )  ;
     Return #resOpt.
 
@@ -388,7 +389,7 @@ Section ImplInternalMemRegionActions.
     if r.(isReadOnly) then (
       Return (ConstBool true)
     ) else (
-      Let rq : LineWriteRq r.(regionLineCfg) true <- memBuildLineWriteRq r true #addr #stVal #memSize ;
+      LetL rq : LineWriteRq r.(regionLineCfg) true <- memBuildLineWriteRq r true #addr #stVal #memSize ;
       implInternalMemRegionLineWriteRq rq
     ).
 
@@ -728,7 +729,7 @@ Section ImplExternalMemRegionActions.
             Let rp1    : LineReadRp r.(regionLineCfg) false <-
               ITE (##state `? "ReadRp0") #lastRp ConstDef ;
             Let rp     : LineReadRp r.(regionLineCfg) false <- memMergeLineReadRp r false #addr #rp0 #rp1 ;
-            Let res    : FullCapWithTag                     <- memExtractReadCap r false #addr #memSize #rp ;
+            LetL res   : FullCapWithTag                     <- memExtractReadCap r false #addr #memSize #rp ;
             Return (mkSome #res)
           ) ;
         Return #rOpt
@@ -753,7 +754,7 @@ Section ImplExternalMemRegionActions.
       ReadReg "state" pState (fun state =>
       LetIf rdy : Bool <-
         If (##state `? "Idle") Then (
-          Let  rq   : LineWriteRq r.(regionLineCfg) false <- memBuildLineWriteRq r false #addr #stVal #memSize ;
+          LetL rq   : LineWriteRq r.(regionLineCfg) false <- memBuildLineWriteRq r false #addr #stVal #memSize ;
           Let  rq0  : LineWriteRq r.(regionLineCfg) false <- memLineWriteRq0 r false #rq #memSize ;
           LetA rdy0 : Bool                                <- implExternalMemRegionLineWriteRq rq0 ;
           If #rdy0 Then (
@@ -878,7 +879,7 @@ Section ImplCustomMemRegionActions.
             Return ConstDef
           ) ;
         Let  rp      : LineReadRp r.(regionLineCfg) false <- memMergeLineReadRp r false #addr #rp0 #rp1 ;
-        Let  res     : FullCapWithTag                     <- memExtractReadCap r false #addr #memSize #rp ;
+        LetL res     : FullCapWithTag                     <- memExtractReadCap r false #addr #memSize #rp ;
         Return (mkSome #res)
       ) ;
     Return #resOpt).
@@ -900,7 +901,7 @@ Section ImplCustomMemRegionActions.
       ReadReg "state" pCustState (fun state =>
       Let isIdle : Bool <- ##state `? "Idle" ;
       If #isIdle Then (
-        Let rq      : LineWriteRq r.(regionLineCfg) false <- memBuildLineWriteRq r false #addr #stVal #memSize ;
+        LetL rq     : LineWriteRq r.(regionLineCfg) false <- memBuildLineWriteRq r false #addr #stVal #memSize ;
         Let rq0     : LineWriteRq r.(regionLineCfg) false <- memLineWriteRq0 r false #rq #memSize ;
         Act (liftAction child0Path (customMemRegionLineWrite r children writeAction rq0)) ;
         Let crosses : Bool                                <- memCrossesLine r #addr #memSize ;

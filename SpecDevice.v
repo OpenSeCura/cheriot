@@ -348,59 +348,61 @@ Section MemAddrHelpers.
     (addr : Expr ty Addr)
     (memSize : Expr ty (Bit LgLgNumBytesFullCapSz))
     (rp : Expr ty (LineReadRp r.(regionLineCfg) isInternal))
-    : Expr ty FullCapWithTag :=
-    let capOffset := TruncLsb TagAddrWidth LgNumBytesFullCapSz addr in
-    let isCapAligned := isZero capOffset in
-    let isCap := And [ Eq memSize $LgNumBytesFullCapSz ; isCapAligned ] in
-    let rotData := ArrayRotr (rp`"data") (memLineOffset addr) in
-    let dataBytes := slice rotData (Const ty (Bit lgLineBytesZ) Zmod.zero) (Z.to_nat NumBytesFullCapSz) in
-    let rawData := ToBit dataBytes in
-    let rawTag :=
+    : LetExpr ty FullCapWithTag :=
+    LetE capOffset : Bit LgNumBytesFullCapSz <- TruncLsb TagAddrWidth LgNumBytesFullCapSz addr ;
+    LetE isCapAligned : Bool <- isZero #capOffset ;
+    LetE isCap : Bool <- And [ Eq memSize $LgNumBytesFullCapSz ; #isCapAligned ] ;
+    LETE rotData : Array lBytes (Bit 8) <- ArrayRotr (rp`"data") (memLineOffset addr) ;
+    LetE dataBytes : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <-
+      slice #rotData (Const ty (Bit lgLineBytesZ) Zmod.zero) (Z.to_nat NumBytesFullCapSz) ;
+    LetE rawData : Bit FullCapSz <- ToBit #dataBytes ;
+    LetE rawTag : Bool <-
       if hasTags r then
         ReadArray (rp`"tag") (memTagSlot addr)
       else
-        ConstBool false in
-    STRUCT {
-      "tag"  ::= And [ isCap ; rawTag ] ;
-      "cap"  ::= FromBit Cap (TruncMsb CapSz AddrSz rawData) ;
-      "addr" ::= TruncLsb CapSz AddrSz rawData
-    }.
+        ConstBool false ;
+    @RetE ty FullCapWithTag (STRUCT {
+      "tag"  ::= And [ #isCap ; #rawTag ] ;
+      "cap"  ::= FromBit Cap (TruncMsb CapSz AddrSz #rawData) ;
+      "addr" ::= TruncLsb CapSz AddrSz #rawData
+    }).
 
   Definition memBuildLineWriteRq
     (addr : Expr ty Addr)
     (stVal : Expr ty FullCapWithTag)
     (memSize : Expr ty (Bit LgLgNumBytesFullCapSz))
-    : Expr ty (LineWriteRq r.(regionLineCfg) isInternal) :=
-    let capOffset := TruncLsb TagAddrWidth LgNumBytesFullCapSz addr in
-    let isCapAligned := isZero capOffset in
-    let isCap := And [ Eq memSize $LgNumBytesFullCapSz ; isCapAligned ] in
-    let rawData :=
-      ITE isCap
+    : LetExpr ty (LineWriteRq r.(regionLineCfg) isInternal) :=
+    LetE capOffset : Bit LgNumBytesFullCapSz <- TruncLsb TagAddrWidth LgNumBytesFullCapSz addr ;
+    LetE isCapAligned : Bool <- isZero #capOffset ;
+    LetE isCap : Bool <- And [ Eq memSize $LgNumBytesFullCapSz ; #isCapAligned ] ;
+    LetE rawData : Bit FullCapSz <-
+      ITE #isCap
           {< ToBit (stVal`"cap"), stVal`"addr" >}
-          (ZeroExtendTo FullCapSz (stVal`"addr")) in
-    let capBytes := FromBit (Array (Z.to_nat NumBytesFullCapSz) (Bit 8)) rawData in
-    let baseData := embedCapBytes lBytes capBytes in
-    let rotData := ArrayRotl baseData (memLineOffset addr) in
-    let numBytesActive : Expr ty (Bit (lgLineBytesZ + 1)%Z) :=
-      Sll $1 (ZeroExtend (lgLineBytesZ + 1 - LgLgNumBytesFullCapSz)%Z memSize) in
-    let isWrites :=
+          (ZeroExtendTo FullCapSz (stVal`"addr")) ;
+    LetE capBytes : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <-
+      FromBit (Array (Z.to_nat NumBytesFullCapSz) (Bit 8)) #rawData ;
+    LetE baseData : Array lBytes (Bit 8) <- embedCapBytes lBytes #capBytes ;
+    LETE rotData : Array lBytes (Bit 8) <- ArrayRotl #baseData (memLineOffset addr) ;
+    LetE numBytesActive : Bit (lgLineBytesZ + 1)%Z <-
+      Sll $1 (ZeroExtend (lgLineBytesZ + 1 - LgLgNumBytesFullCapSz)%Z memSize) ;
+    LetE isWrites : Array lBytes Bool <-
       FromBit (Array lBytes Bool)
-        (rotateLeft (Not (Sll (ConstBit (InvDefault _)) numBytesActive)) (memLineOffset addr)) in
-    let tagData : Expr ty (Array nTags Bool) :=
+        (rotateLeft (Not (Sll (ConstBit (InvDefault _)) #numBytesActive)) (memLineOffset addr)) ;
+    LetE tagData : Array nTags Bool <-
       if hasTags r then
-        UpdateArray ConstDef (memTagSlot addr) (And [ isCap ; stVal`"tag" ])
+        UpdateArray ConstDef (memTagSlot addr) (And [ #isCap ; stVal`"tag" ])
       else
-        ConstDef in
+        ConstDef ;
     let '(tagMask0, tagMask1) := memTagMasks addr memSize in
-    let tagMask : Expr ty (Array nTags Bool) :=
-      FromBit (Array nTags Bool) (Or [ ToBit tagMask0 ; ToBit tagMask1 ]) in
-    STRUCT {
+    LetE tagMask : Array nTags Bool <-
+      FromBit (Array nTags Bool) (Or [ ToBit tagMask0 ; ToBit tagMask1 ]) ;
+    @RetE ty (LineWriteRq r.(regionLineCfg) isInternal) (STRUCT {
       "addr"     ::= addr ;
-      "data"     ::= rotData ;
-      "dataMask" ::= isWrites ;
-      "tag"      ::= tagData ;
-      "tagMask"  ::= tagMask
-    }.
+      "data"     ::= #rotData ;
+      "dataMask" ::= #isWrites ;
+      "tag"      ::= #tagData ;
+      "tagMask"  ::= #tagMask
+    }).
 
   Definition memLineWriteRq0
     (rq : Expr ty (LineWriteRq r.(regionLineCfg) isInternal))
@@ -922,8 +924,9 @@ Section MemRegionActions.
              (memSize : ty (Bit LgLgNumBytesFullCapSz))
              : Action ty tR FullCapWithTag :=
     if isInt then (
-      LetA rp : LineReadRp r.(regionLineCfg) isInt <- memRegionLineRead r isFetch addr ;
-      Return (memExtractReadCap r isInt #addr #memSize #rp)
+      LetA rp  : LineReadRp r.(regionLineCfg) isInt <- memRegionLineRead r isFetch addr ;
+      LetL res : FullCapWithTag                     <- memExtractReadCap r isInt #addr #memSize #rp ;
+      Return #res
     ) else (
       Let  addr0   : Addr                               <- memLineAddr r #addr ;
       LetA rp0     : LineReadRp r.(regionLineCfg) isInt <- memRegionLineRead r isFetch addr0 ;
@@ -936,7 +939,8 @@ Section MemRegionActions.
           Return ConstDef
         ) ;
       Let  rp      : LineReadRp r.(regionLineCfg) isInt <- memMergeLineReadRp r isInt #addr #rp0 #rp1 ;
-      Return (memExtractReadCap r isInt #addr #memSize #rp)
+      LetL res     : FullCapWithTag                     <- memExtractReadCap r isInt #addr #memSize #rp ;
+      Return #res
     ).
 
   Definition memRegionWrite
@@ -947,7 +951,7 @@ Section MemRegionActions.
     if r.(isReadOnly) then (
       Retv
     ) else (
-      Let rq : LineWriteRq r.(regionLineCfg) isInt <- memBuildLineWriteRq r isInt #addr #stVal #memSize ;
+      LetL rq : LineWriteRq r.(regionLineCfg) isInt <- memBuildLineWriteRq r isInt #addr #stVal #memSize ;
       if isInt then (
         memRegionLineWrite r rq
       ) else (

@@ -416,7 +416,7 @@ Section GenericIterativeHardwareProof.
   Variable InpK StateK OutK : Kind.
   Variable num_stages : nat.
   Local Notation stepsSz := (iterStepsSz num_stages).
-  Variable numStepsFn : forall ty, ty InpK -> Expr ty (Bit stepsSz).
+  Variable numStepsFn : forall ty, ty InpK -> LetExpr ty (Bit stepsSz).
   Variable initFn     : forall ty, ty InpK -> LetExpr ty StateK.
   Variable stepFn     : forall ty, ty StateK -> LetExpr ty StateK.
   Variable finishFn   : forall ty, ty StateK -> LetExpr ty OutK.
@@ -440,10 +440,11 @@ Section GenericIterativeHardwareProof.
     Action ty stagedIterTree (Bit 0) :=
     ReadReg "work" stagedWorkRegPath (fun w : ty WorkK =>
       If (Not (##w`"busy")) Then (
-        LetL st0 : StateK <- initFn ty inp ;
+        LetL st0         : StateK      <- initFn ty inp ;
+        LetL targetSteps : Bit stepsSz <- numStepsFn ty inp ;
         Let nextW : WorkK <- STRUCT {
           "busy"     ::= Const ty Bool true ;
-          "stepsRem" ::= numStepsFn ty inp ;
+          "stepsRem" ::= #targetSteps ;
           "state"    ::= #st0
         } ;
         WriteReg stagedWorkRegPath #nextW Retv
@@ -495,7 +496,7 @@ Section GenericIterativeHardwareProof.
     fun ty => [ (dom, stagedIterStep ty) ].
 
   Definition IterTargetSteps (inp : type InpK) : nat :=
-    Z.to_nat (Zmod.unsigned (evalExpr (numStepsFn type inp))).
+    Z.to_nat (Zmod.unsigned (evalLetExpr (numStepsFn type inp))).
 
   (* Step-indexed hardware state predicate:
    * At step `m`, the register `s` has `busy = true`, `stepsRem = IterTargetSteps inp - m`,
@@ -557,6 +558,7 @@ Section GenericIterativeHardwareProof.
     pose proof (InversionActionPropGen Hsem) as Hinv.
     unfold stagedIterEnq, stagedWorkRegPath, stagedIterTree in Hinv.
     revert Hinv; cbn -[toAction stepsSz].
+    rewrite evalActionPropGen_toAction; cbn -[toAction stepsSz].
     rewrite evalActionPropGen_toAction; cbn -[stepsSz]; intros [<- <-].
     unfold IterStateAtStep, IterTargetSteps; cbn [Fst Snd readDiffTupleStr getFinStructOption String.eqb Ascii.eqb fst snd eqb readDiffTuple finNum StageValAt].
     split; [reflexivity | split; [lia | split; [lia | reflexivity]]].

@@ -601,8 +601,8 @@ Section ConcreteMulDivEngines.
   Definition mulIterTree : Tree DomainElem :=
     stagedIterTree dom (MulStageState d) mul_stages.
 
-  Definition mulStepsConst (ty : Kind -> Type) (_ : ty (MulInput d)) : Expr ty (Bit (iterStepsSz mul_stages)) :=
-    Const ty (Bit (iterStepsSz mul_stages)) (bits.of_Z (iterStepsSz mul_stages) (Z.of_nat mul_stages)).
+  Definition mulStepsConst (ty : Kind -> Type) (_ : ty (MulInput d)) : LetExpr ty (Bit (iterStepsSz mul_stages)) :=
+    RetE (Const ty (Bit (iterStepsSz mul_stages)) (bits.of_Z (iterStepsSz mul_stages) (Z.of_nat mul_stages))).
 
   Definition mulIterCanEnq (ty : Kind -> Type) :=
     stagedIterCanEnq dom (MulStageState d) mul_stages ty.
@@ -626,8 +626,8 @@ Section ConcreteMulDivEngines.
   Definition divIterTree : Tree DomainElem :=
     stagedIterTree dom (DivStageState d) div_stages.
 
-  Definition divStepsConst (ty : Kind -> Type) (_ : ty (DivInput d)) : Expr ty (Bit (iterStepsSz div_stages)) :=
-    Const ty (Bit (iterStepsSz div_stages)) (bits.of_Z (iterStepsSz div_stages) (Z.of_nat div_stages)).
+  Definition divStepsConst (ty : Kind -> Type) (_ : ty (DivInput d)) : LetExpr ty (Bit (iterStepsSz div_stages)) :=
+    RetE (Const ty (Bit (iterStepsSz div_stages)) (bits.of_Z (iterStepsSz div_stages) (Z.of_nat div_stages))).
 
   Definition divIterCanEnq (ty : Kind -> Type) :=
     stagedIterCanEnq dom (DivStageState d) div_stages ty.
@@ -653,11 +653,11 @@ Section ConcreteMulDivEngines.
   Definition sharedIterTree : Tree DomainElem :=
     stagedIterTree dom (SharedStageState d) shared_max_stages.
 
-  Definition sharedStepsFn (ty : Kind -> Type) (inp : ty (SharedInput d)) : Expr ty (Bit (iterStepsSz shared_max_stages)) :=
+  Definition sharedStepsFn (ty : Kind -> Type) (inp : ty (SharedInput d)) : LetExpr ty (Bit (iterStepsSz shared_max_stages)) :=
     let sz := iterStepsSz shared_max_stages in
-    ITE (##inp`"isMul")
-        (Const ty (Bit sz) (bits.of_Z sz (Z.of_nat mul_stages)))
-        (Const ty (Bit sz) (bits.of_Z sz (Z.of_nat div_stages))).
+    LetE mSteps : Bit sz <- Const ty (Bit sz) (bits.of_Z sz (Z.of_nat mul_stages)) ;
+    LetE dSteps : Bit sz <- Const ty (Bit sz) (bits.of_Z sz (Z.of_nat div_stages)) ;
+    RetE (ITE (##inp`"isMul") #mSteps #dSteps).
 
   Definition sharedIterCanEnq (ty : Kind -> Type) :=
     stagedIterCanEnq dom (SharedStageState d) shared_max_stages ty.

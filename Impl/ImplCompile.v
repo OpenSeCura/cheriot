@@ -21,4 +21,4 @@ From Cheriot Require Import ImplInst.
 Set Extraction Output Directory "./Impl".
 
 Definition compiledMod := compile pipelinedModInst.
-(* Extraction "Compile" kindSize Z.log2_up getDefault isEq compiledMod. *)
+Extraction "Compile" kindSize Z.log2_up getDefault isEq compiledMod.
