@@ -296,4 +296,10 @@ Section DeferredStages.
   Definition divWriteBack : Action ty coreTree (Bit 0) :=
     mulDivWriteBack (@mulDivPopDivResp dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode ty).
 
+  Definition mulDivWriteBackRules : list (Action ty coreTree (Bit 0)) :=
+    [mulWriteBack ; divWriteBack].
+
+  Definition mulDivRules : list (Action ty coreTree (Bit 0)) :=
+    mulDivStageRules ++ mulDivWriteBackRules.
+
 End DeferredStages.

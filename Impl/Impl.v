@@ -133,6 +133,15 @@ Section ImplDom.
           end in
         map (fun act => liftAction np_mem act) memSteps.
 
+      Definition implPlicSteps : list (Action ty sysTree (Bit 0)) :=
+        implPlicPendingsSteps ++ [implPlicClaimStep ; implPlicSampleMeipStep].
+
+      Definition implTimerSteps : list (Action ty sysTree (Bit 0)) :=
+        [implTickCycle ; implTickTimer ; implSampleMtipStep].
+
+      Definition implPeripheralSteps : list (Action ty sysTree (Bit 0)) :=
+        implPlicSteps ++ implTimerSteps.
+
       (* =====================================================================
        * STAGE 1: Fetch Request
        * ===================================================================== *)
@@ -176,13 +185,8 @@ Section ImplDom.
         liftAction np_core (@revRpAndWriteBack core deferredCapacity pcAddrInit bpTree fTree decTree memIfc ty).
 
       Definition mulDivStageActions : list (Action ty sysTree (Bit 0)) :=
-        map (fun act => liftAction np_core act) (@mulDivStageRules core deferredCapacity pcAddrInit bpTree fTree decTree memIfc ty).
-
-      Definition mulWriteBackStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@mulWriteBack core deferredCapacity pcAddrInit bpTree fTree decTree memIfc ty).
-
-      Definition divWriteBackStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@divWriteBack core deferredCapacity pcAddrInit bpTree fTree decTree memIfc ty).
+        map (fun act => liftAction np_core act)
+            (@mulDivRules core deferredCapacity pcAddrInit bpTree fTree decTree memIfc ty).
 
       Definition implRegionStepsSys : list (string * Action ty sysTree (Bit 0)) :=
         map (fun '(dom, act) => (dom, liftAction np_mem act))
@@ -207,13 +211,8 @@ Section ImplDom.
         implClearWriteBusySteps ty
         ++ implInternalMemTargetPortSteps ty
         ++ map (fun a => (core, a)) (implRevokerStepsSys ty)
-        ++ map (fun a => (core, a)) (implPlicPendingsSteps ty)
-        ++ [ (core, implPlicClaimStep ty) ;
-             (core, implPlicSampleMeipStep ty) ;
-             (core, implTickCycle ty) ;
-             (core, implTickTimer ty) ;
-             (core, implSampleMtipStep ty) ;
-             (core, fetchRqStage ty) ;
+        ++ map (fun a => (core, a)) (implPeripheralSteps ty)
+        ++ [ (core, fetchRqStage ty) ;
              (core, decodeAndRegReadStage ty) ;
              (core, aluAndExecuteNonDeferredStage ty) ;
              (core, loadRqOrStoreOrFenceStage ty) ]
@@ -222,9 +221,7 @@ Section ImplDom.
           (core, loadRpAndWritebackOrIssueRevRqStage ty) ;
           (core, revRpAndWriteBackStage ty)
         ]
-        ++ map (fun a => (core, a)) (mulDivStageActions ty)
-        ++ [ (core, mulWriteBackStage ty) ;
-             (core, divWriteBackStage ty) ])%list.
+        ++ map (fun a => (core, a)) (mulDivStageActions ty))%list.
 
   End Impl.
 
