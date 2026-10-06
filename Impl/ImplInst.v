@@ -82,5 +82,3 @@ Definition pipelinedModInst : Mod implSysTreeInst :=
                 implConcreteRevoker
                 implConcretePlic.
 
-Definition implModInst : Mod implSysTreeInst :=
-  singleCycleModInst.
