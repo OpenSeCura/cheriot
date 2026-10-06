@@ -106,7 +106,9 @@ Section ImplDom.
         liftAction np_mem (@implRevokerRevBitRpWriteCapStep core config regions ty rev).
 
       Definition implRevokerStepsSys : list (Action ty sysTree (Bit 0)) :=
-        map (fun act => liftAction np_mem act) (@implRevokerSteps core config regions ty rev).
+        [ implRevokerIdleStepSys ;
+          implRevokerCapRpRevBitRqStepSys ;
+          implRevokerRevBitRpWriteCapStepSys ].
 
       Definition implPlicClaimStep : Action ty sysTree (Bit 0) :=
         liftAction np_mem (implPlicAction (@updateClaim core nIrq ty)).

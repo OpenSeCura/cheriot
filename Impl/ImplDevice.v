@@ -477,7 +477,6 @@ Section ImplExternalMemRegionActions.
   Variable r : MemRegion.
   Variable ty : Kind -> Type.
 
-  Local Definition tExtSpec      := externalMemRegionTree r.
   Local Definition tImplExt      := implExternalMemRegionTree r.
   Local Definition tImplExtFetch := implExternalMemFetchTree r.
 
@@ -1504,20 +1503,6 @@ Section ImplMemModel.
         ty
         implMemTree
         (fun k a => implMemNthRegionAction rev.(revokerIdx) (@revokerRegion dom (implRevokerExtraChildren dom) regions rev) rev.(pfRevoker) a)
-        (fun addr stVal sz => implRegionsWrite regions addr stVal sz).
-
-    Definition implRevokerSteps (rev : @RevokerInstance dom (implRevokerExtraChildren dom) regions) : list (Action ty implMemTree (Bit 0)) :=
-      @implRevokerStepsFsm
-        dom
-        ty
-        revConfig
-        implMemTree
-        (fun k a => implMemNthRegionAction rev.(revokerIdx) (@revokerRegion dom (implRevokerExtraChildren dom) regions rev) rev.(pfRevoker) a)
-        (implRegionsReadRq regions ReqRevoker)
-        (implRegionsReadRp regions ReqRevoker)
-        (implRegionsDeqRp regions ReqRevoker)
-        (implReadRevBitRqFor ReqRevoker)
-        (implGetDeqRevBitRpFor ReqRevoker)
         (fun addr stVal sz => implRegionsWrite regions addr stVal sz).
 
     (* 7. Top-level MemIfc Instance *)
