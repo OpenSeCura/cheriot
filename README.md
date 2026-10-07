@@ -59,6 +59,7 @@ While `cheriot-sail` is the defacto standard specification, our ISA specificatio
    - In CHERIoT RTOS, `ECALL` (`mcause = 11`) simply invokes the scheduler (`scheduler::exception_entry`) to expire any elapsed timers (`Timer::expiretimers()`) and switch to the next runnable thread (`Thread::schedule()`), advancing `mepcc` by 4 on return.
    - Since `WFI` is executed in the idle thread loop (`wfi; j .Lidle_loop` in `boot.S`) when all user threads are sleeping, treating `WFI` as `ECALL` causes the idle thread to immediately yield into the scheduler, poll `mtime` to wake up any threads whose timeout has elapsed, and switch threads without requiring dedicated `WFI` stall state.
 
+<!--
 ---
 
 ## Multi-Core Memory Consistency & Pipeline Refinement Specification
@@ -105,3 +106,4 @@ A ValidProgram is one where all traces generated when executed on the atomic spe
 Theorem pipeline_refines_spec : forall (p : Program) (result : FinalState),
   ValidProgram p -> Pipeline_Exec p result -> Spec_Exec p result.
 ```
+-->
