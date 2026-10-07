@@ -54,13 +54,13 @@ Section DecodeStage.
   Variable ty : Kind -> Type.
   Variable meipAct mtipAct : Action ty (memIfc ty).(memTree) Bool.
 
-  Local Notation bpTree := (bpTree noInstTree (withInstIfc ty).(withInstTree)).
-  Local Notation memTree := (memIfc ty).(memTree).
-  Local Notation fTree := (fetchTree dom pcAddrInit fetchCapacity).
-  Local Notation dTree := (deferredTree dom deferredCapacity).
-  Local Notation coreTree := (coreTree dom pcAddrInit bpTree memTree fTree decodeTree dTree).
-  Local Notation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
-  Local Notation regRead := (regRead dom pcAddrInit).
+  Local Abbreviation bpTree := (bpTree noInstTree (withInstIfc ty).(withInstTree)).
+  Local Abbreviation memTree := (memIfc ty).(memTree).
+  Local Abbreviation fTree := (fetchTree dom pcAddrInit fetchCapacity).
+  Local Abbreviation dTree := (deferredTree dom deferredCapacity).
+  Local Abbreviation coreTree := (coreTree dom pcAddrInit bpTree memTree fTree decodeTree dTree).
+  Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
+  Local Abbreviation regRead := (regRead dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.rf").

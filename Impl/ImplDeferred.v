@@ -76,9 +76,9 @@ Section DeferredStages.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable ty : Kind -> Type.
 
-  Local Notation memTree := (memIfc ty).(memTree).
-  Local Notation coreTree := (coreTree dom pcAddrInit bpTree memTree fetchTree decodeTree deferredTree).
-  Local Notation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
+  Local Abbreviation memTree := (memIfc ty).(memTree).
+  Local Abbreviation coreTree := (coreTree dom pcAddrInit bpTree memTree fetchTree decodeTree deferredTree).
+  Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.rf").

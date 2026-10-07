@@ -53,10 +53,10 @@ Section FetchStage.
   Variable decodeTree deferredTree : Tree DomainElem.
   Variable ty : Kind -> Type.
 
-  Local Notation bpTree := (bpTree (noInstIfc ty).(noInstTree) withInstTree).
-  Local Notation memTree := (memIfc ty).(memTree).
-  Local Notation coreTree := (coreTree dom pcAddrInit bpTree memTree fetchTree decodeTree deferredTree).
-  Local Notation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
+  Local Abbreviation bpTree := (bpTree (noInstIfc ty).(noInstTree) withInstTree).
+  Local Abbreviation memTree := (memIfc ty).(memTree).
+  Local Abbreviation coreTree := (coreTree dom pcAddrInit bpTree memTree fetchTree decodeTree deferredTree).
+  Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.rf").

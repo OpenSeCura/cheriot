@@ -125,12 +125,12 @@ Definition buildStrideTuple {A} (stride : nat) (def : A) (n b : nat) (ls : list 
   Build_SameTuple (tupleElems := strideStep stride def n (skipn b ls))
                   (transparent_Is_true _ (Is_true_Nat_eq_implies (strideStep_length stride def n (skipn b ls)))).
 
-Notation LineReadRp cfg isInternalMem := (STRUCT_TYPE {
+Abbreviation LineReadRp cfg isInternalMem := (STRUCT_TYPE {
   "data" :: Array (cfgLineBytes cfg) (Bit 8) ;
   "tag"  :: Array (cfgNumLineTags cfg isInternalMem) Bool
 }).
 
-Notation LineWriteRq cfg isInternalMem := (STRUCT_TYPE {
+Abbreviation LineWriteRq cfg isInternalMem := (STRUCT_TYPE {
   "addr"     :: Addr ;
   "data"     :: Array (cfgLineBytes cfg) (Bit 8) ;
   "dataMask" :: Array (cfgLineBytes cfg) Bool ;

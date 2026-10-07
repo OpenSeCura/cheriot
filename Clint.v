@@ -27,7 +27,7 @@ Local Open Scope Z_scope.
 Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
-Local Notation ByteSz := 8%Z.
+Local Abbreviation ByteSz := 8%Z.
 
 (* ===========================================================================
  * CLINT Register Offsets & Tree Structure
@@ -51,7 +51,7 @@ Section Clint.
       Leaf "mtip"        (dom, EReg (Build_Reg Bool       (Some false)     false)) ;
       Leaf "sampledMtip" (dom, EReg (Build_Reg Bool       (Some false)     false)) ].
 
-  Local Notation tClint := (Node "clint" clintChildren).
+  Local Abbreviation tClint := (Node "clint" clintChildren).
 
   Definition clintMtimePath       : RegPath tClint := getChildRegPathTree tClint "mtime".
   Definition clintMtimehPath      : RegPath tClint := getChildRegPathTree tClint "mtimeh".
@@ -197,7 +197,7 @@ Section Clint.
     Variable clint : ClintInstance regions.
     Variable ty : Kind -> Type.
 
-    Local Notation memTree := (specMemTree regions).
+    Local Abbreviation memTree := (specMemTree regions).
 
     Definition clintAction {k : Kind} (act : Action ty tClint k) : Action ty memTree k :=
       nthRegionAction clint.(clintIdx) regions (clintRegion clint) clint.(pfClint) act.

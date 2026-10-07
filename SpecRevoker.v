@@ -38,7 +38,7 @@ Definition RevokerRegNames : list string :=
 Definition revokerRegIdx (name : string) :=
   forceOption (getStrIndexOption name RevokerRegNames).
 
-Local Notation ByteSz := 8%Z.
+Local Abbreviation ByteSz := 8%Z.
 
 Definition RevokerControlSignature : Z := 0x5500.
 Definition RevokerControlSignatureWidth : Z := Eval compute in (Xlen / 2).
@@ -59,7 +59,7 @@ Section Revoker.
        Leaf "interruptRequested" (dom, EReg (Build_Reg Bool (Some false) false)) ;
        Leaf "scanAddr" (dom, EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero) false)) ] ++ extraChildren)%list.
 
-  Local Notation tRev := (Node "revoker" revokerChildren).
+  Local Abbreviation tRev := (Node "revoker" revokerChildren).
 
   Definition revokerBasePath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "base").
   Definition revokerTopPath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "top").
@@ -73,7 +73,7 @@ Section Revoker.
 
   Definition RevokerRegIdxWidth : Z := Eval compute in (Z.log2_up (Z.of_nat RevokerNumRegs)).
 
-  Notation revokerRegIdxBit name :=
+  Abbreviation revokerRegIdxBit name :=
     ($(Z.of_nat (revokerRegIdx name))).
 
   Definition revokerLineReadAction
@@ -197,7 +197,7 @@ Section Revoker.
     Variable config : RevConfig.
     Variable ty : Kind -> Type.
 
-    Local Notation memTree := (specMemTree regions).
+    Local Abbreviation memTree := (specMemTree regions).
 
     Local Definition revokerAction {k : Kind} (act : Action ty tRev k) : Action ty memTree k :=
       nthRegionAction rev.(revokerIdx) regions (revokerRegion rev) rev.(pfRevoker) act.
@@ -238,7 +238,7 @@ Section Revoker.
     Local Definition writeRevokerScanAddr (v : ty (Bit TagAddrWidth)) : Action ty memTree (Bit 0) :=
       revokerAction (WriteReg revokerScanAddrPath #v Retv).
 
-    Local Notation readRevBit := (readRevBit config regions).
+    Local Abbreviation readRevBit := (readRevBit config regions).
 
     Definition specRevokerStep : Action ty memTree (Bit 0) :=
       LetA epoch : Bit Xlen <- readRevokerEpoch ;

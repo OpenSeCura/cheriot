@@ -28,6 +28,7 @@ Local Open Scope guru_scope.
 
 Definition getMemOffset {ty: Kind -> Type} (startAddr: Z) (size: Z) n (addr: Expr ty (Bit n)) :
   Expr ty (Bit (Z.log2_up size)).
+Proof.
   refine
   (let castAddr := castBits _ addr in
    if Z.eqb (startAddr mod (2 ^ Z.log2_up size)) 0
@@ -1318,7 +1319,7 @@ Section RfTree.
     Eval cbn in (map (embedRegOfKind np_csrs)
                      (getTreeRegsOfKind (Bit Xlen) (getNode np_csrs))).
 
-  Notation incrementDXlenCsr lowCsr highCsr :=
+  Abbreviation incrementDXlenCsr lowCsr highCsr :=
     (LetA currLow  : Bit Xlen  <- readRegsList csrPathsWithKind ($(getCsrPhysicalIdx lowCsr) : Expr _ (Bit CsrIdxSz)) ;
      LetA currHigh : Bit Xlen  <- readRegsList csrPathsWithKind ($(getCsrPhysicalIdx highCsr) : Expr _ (Bit CsrIdxSz)) ;
      Let  newVal   : Bit DXlen <- Add [ {< #currHigh, #currLow >} ; $1 ] ;
@@ -1424,6 +1425,7 @@ Section RevBits.
   Variable ty : Kind -> Type.
 
   Definition computeRevBitAddr (base : ty (Bit (AddrSz + 1))) : LetExpr ty RevBitLookup.
+  Proof.
     refine (
       LetE heapOffset : Bit (AddrSz + 1) <-
         Sub #base (Const ty (Bit (AddrSz + 1)) (bits.of_Z (AddrSz + 1) config.(heapStartAddr))) ;

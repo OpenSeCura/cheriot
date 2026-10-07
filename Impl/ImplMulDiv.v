@@ -287,7 +287,7 @@ End PureSpecifications.
 
 Section StageIndependentCombinational.
   Variable input_width : nat.
-  Local Notation d := (dataLen input_width).
+  Local Abbreviation d := (dataLen input_width).
 
   Variable ty : Kind -> Type.
 
@@ -570,9 +570,9 @@ Section ConcreteMulDivEngines.
   Variable dom : string.
   Variable input_width mul_stages div_stages : nat.
 
-  Local Notation d := (dataLen input_width).
-  Local Notation mul_bps := (input_width / mul_stages)%nat.
-  Local Notation div_bps := (input_width / div_stages)%nat.
+  Local Abbreviation d := (dataLen input_width).
+  Local Abbreviation mul_bps := (input_width / mul_stages)%nat.
+  Local Abbreviation div_bps := (input_width / div_stages)%nat.
 
   (* --- 4A. Pipelined Multiplier Instance (`stagedPipeTree`) --- *)
 
@@ -648,7 +648,7 @@ Section ConcreteMulDivEngines.
 
   (* --- 4D. Shared-Accumulator Iterative Mul/Div Instance (`stagedIterTree`) --- *)
 
-  Local Notation shared_max_stages := (Nat.max mul_stages div_stages).
+  Local Abbreviation shared_max_stages := (Nat.max mul_stages div_stages).
 
   Definition sharedIterTree : Tree DomainElem :=
     stagedIterTree dom (SharedStageState d) shared_max_stages.
@@ -689,7 +689,7 @@ Section ModeParameterizedSubsystem.
   Variable dom : string.
   Variable input_width mul_stages div_stages : nat.
 
-  Local Notation d := (dataLen input_width).
+  Local Abbreviation d := (dataLen input_width).
 
   Local Lemma xlen_to_d_cast : (Xlen = d + (Xlen - d))%Z.
   Proof. lia. Qed.

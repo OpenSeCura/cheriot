@@ -89,7 +89,7 @@ Section Plic.
 
   Section PlicPaths.
     Variable n : nat.
-    Local Notation tPlic := (plicTree n).
+    Local Abbreviation tPlic := (plicTree n).
 
     Definition plicPrioritiesNodePath : NodePath tPlic :=
       getNodePath tPlic "plic.priorities".
@@ -161,7 +161,7 @@ Section Plic.
 
   Section PlicCoreLogic.
     Variable n : nat.
-    Local Notation tPlic := (plicTree n).
+    Local Abbreviation tPlic := (plicTree n).
     Variable ty : Kind -> Type.
 
     Definition listToExprArray {k : Kind} {n : nat}
@@ -341,7 +341,7 @@ Section Plic.
     Variable n : nat.
     Variable base : Z.
     Variable ty : Kind -> Type.
-    Local Notation tPlic := (plicTree n).
+    Local Abbreviation tPlic := (plicTree n).
 
     Definition boolArrayToByteArray
                (arr : Expr ty (Array n Bool))
@@ -484,7 +484,7 @@ Section Plic.
     Variable plic : PlicInstance n regions.
     Variable ty : Kind -> Type.
 
-    Local Notation memTree := (specMemTree regions).
+    Local Abbreviation memTree := (specMemTree regions).
 
     Definition plicAction {k : Kind} (act : Action ty (plicTree n) k) : Action ty memTree k :=
       nthRegionAction plic.(plicIdx) regions (plicRegion plic) plic.(pfPlic) act.

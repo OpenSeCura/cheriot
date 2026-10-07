@@ -106,7 +106,7 @@ Section Clut.
         Leaf "dmaCheckAccess" (dom, ERecv (Array NumChannels DmaReq))
       ].
 
-    Local Notation cl := clutIfc.
+    Local Abbreviation cl := clutIfc.
 
     Definition dmaCanAccessPath (i: FinType NumChannels) : SendPath clutIfc.
     Proof.

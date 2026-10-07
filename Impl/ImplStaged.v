@@ -415,14 +415,14 @@ Section GenericIterativeHardwareProof.
   Variable dom : string.
   Variable InpK StateK OutK : Kind.
   Variable num_stages : nat.
-  Local Notation stepsSz := (iterStepsSz num_stages).
+  Local Abbreviation stepsSz := (iterStepsSz num_stages).
   Variable numStepsFn : forall ty, ty InpK -> LetExpr ty (Bit stepsSz).
   Variable initFn     : forall ty, ty InpK -> LetExpr ty StateK.
   Variable stepFn     : forall ty, ty StateK -> LetExpr ty StateK.
   Variable finishFn   : forall ty, ty StateK -> LetExpr ty OutK.
   Variable specFn     : forall ty, ty InpK -> LetExpr ty OutK.
 
-  Local Notation WorkK := (IterWorkState num_stages StateK).
+  Local Abbreviation WorkK := (IterWorkState num_stages StateK).
 
   (* Hardware state is JUST the single `work` register (`busy`, `stepsRem`, `state`). *)
   Definition stagedIterTree : Tree DomainElem :=

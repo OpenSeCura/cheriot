@@ -40,7 +40,7 @@ Definition RevPhaseList : list (string * Kind) :=
 
 Definition RevPhase : Kind := TaggedUnion RevPhaseList.
 
-Notation mkRevPhase tag := (UNION (RevPhaseList, tag ::= Const ltac:(getTy) (Bit 0) Zmod.zero)) (only parsing).
+Abbreviation mkRevPhase tag := (UNION (RevPhaseList, tag ::= Const ltac:(getTy) (Bit 0) Zmod.zero)) (only parsing).
 
 Section ImplRevoker.
   Variable dom : string.

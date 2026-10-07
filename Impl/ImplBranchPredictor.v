@@ -109,8 +109,8 @@ Section ImplBranchPredictor.
     Section WithInstTy.
       Variable ty : Kind -> Type.
 
-      Local Notation noInstTree := (noInstIfc ty).(noInstTree).
-      Local Notation tree := (bpTree noInstTree implWithInstTree).
+      Local Abbreviation noInstTree := (noInstIfc ty).(noInstTree).
+      Local Abbreviation tree := (bpTree noInstTree implWithInstTree).
 
       Local Definition np_noInst : NodePath tree :=
         Eval cbn in (embedNodeIntoPath (getNodePath tree "bp.noInst") singletonChildPath).

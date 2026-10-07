@@ -351,7 +351,7 @@ Section ParameterizedStageArithmetic.
   Variable input_width : nat.
   Hypothesis H_width_pos : (0 < input_width)%nat.
 
-  Local Notation d := (dataLen input_width).
+  Local Abbreviation d := (dataLen input_width).
 
   Lemma d_pos : 0 < d.
   Proof. unfold dataLen; lia. Qed.
@@ -1649,10 +1649,10 @@ Section ConcreteMulDivInvariants.
   Variable dom : string.
   Variable input_width mul_stages div_stages : nat.
 
-  Local Notation d := (dataLen input_width).
-  Local Notation mul_bps := (input_width / mul_stages)%nat.
-  Local Notation div_bps := (input_width / div_stages)%nat.
-  Local Notation max_stages := (Nat.max mul_stages div_stages).
+  Local Abbreviation d := (dataLen input_width).
+  Local Abbreviation mul_bps := (input_width / mul_stages)%nat.
+  Local Abbreviation div_bps := (input_width / div_stages)%nat.
+  Local Abbreviation max_stages := (Nat.max mul_stages div_stages).
 
   (* --- 3A. `PipelinedMul` Stage Invariant (`PipelinedMul_StageAtStep`) --- *)
 

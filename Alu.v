@@ -401,13 +401,13 @@ Section AluRF.
   Variable dom : string.
   Variable pcAddrInit : Z.
   Variable ty : Kind -> Type.
-  Local Notation rfTree := (rfTree dom pcAddrInit).
-  Local Notation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
-  Local Notation scrPathsWithKind := (scrPathsWithKind dom pcAddrInit).
-  Local Notation csrPathsWithKind := (csrPathsWithKind dom pcAddrInit).
-  Local Notation incrementMinstret := (incrementMinstret dom pcAddrInit).
-  Local Notation incrementMcycle := (incrementMcycle dom pcAddrInit).
-  Local Notation updateMshwmOnStore := (updateMshwmOnStore dom pcAddrInit).
+  Local Abbreviation rfTree := (rfTree dom pcAddrInit).
+  Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
+  Local Abbreviation scrPathsWithKind := (scrPathsWithKind dom pcAddrInit).
+  Local Abbreviation csrPathsWithKind := (csrPathsWithKind dom pcAddrInit).
+  Local Abbreviation incrementMinstret := (incrementMinstret dom pcAddrInit).
+  Local Abbreviation incrementMcycle := (incrementMcycle dom pcAddrInit).
+  Local Abbreviation updateMshwmOnStore := (updateMshwmOnStore dom pcAddrInit).
 
   Definition isInterruptPending (meip mtip : ty Bool) : Action ty rfTree InterruptPendingInfo :=
     LetA mstatus     : Bit Xlen <- readRegsList csrPathsWithKind

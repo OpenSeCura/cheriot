@@ -19,7 +19,7 @@
 CURR_DIR = $(shell pwd)
 
 Makefile.coq.all: force
-	$(COQBIN)rocq makefile -f _CoqProject -o Makefile.coq.all
+	$(COQBIN)rocq makefile --no-rocq-package-warning -docroot Cheriot -f _CoqProject -o Makefile.coq.all
 
 coq: Makefile.coq.all
 	$(MAKE) -j -C ../Guru coq

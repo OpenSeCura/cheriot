@@ -265,8 +265,8 @@ Section SpecCoreTree.
     Variable regions : list MemRegion.
     Variable ty : Kind -> Type.
 
-    Local Notation memTree := (specMemTree regions).
-    Local Notation coreTree := (specCoreTree regions).
+    Local Abbreviation memTree := (specMemTree regions).
+    Local Abbreviation coreTree := (specCoreTree regions).
 
     Definition np_rf : NodePath coreTree :=
       Eval cbn in (getNodePath coreTree "core.rf").
@@ -274,7 +274,7 @@ Section SpecCoreTree.
     Definition np_mem : NodePath coreTree :=
       Eval cbn in (getNodePath coreTree "core.mem").
 
-    Local Notation readRevBit := (readRevBit config regions).
+    Local Abbreviation readRevBit := (readRevBit config regions).
 
     (* ===========================================================================
      * specFetch (Atomic Combinational Fetch)

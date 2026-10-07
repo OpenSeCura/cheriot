@@ -36,9 +36,9 @@ Section ImplDom.
   Variable pcAddrInit : Z.
   Variable fetchCapacity decodeCapacity deferredCapacity : nat.
 
-  Local Notation fTree := (fetchTree core pcAddrInit fetchCapacity).
-  Local Notation decTree := (decodeTree core pcAddrInit decodeCapacity).
-  Local Notation dTree := (deferredTree core deferredCapacity).
+  Local Abbreviation fTree := (fetchTree core pcAddrInit fetchCapacity).
+  Local Abbreviation decTree := (decodeTree core pcAddrInit decodeCapacity).
+  Local Abbreviation dTree := (deferredTree core deferredCapacity).
 
   Definition implSysTree (config : RevConfig) (regions : list MemRegion) : Tree DomainElem :=
     Node "sys" [
@@ -52,13 +52,13 @@ Section ImplDom.
     Variable rev : @RevokerInstance core (implRevokerExtraChildren core) regions.
     Variable plic : @PlicInstance core (S (S (length (collectIrqActions regions)))) regions.
 
-    Local Notation bpTree := implBpTree.
-    Local Notation noInstIfc := (fun ty => @implNoInstIfc ty).
-    Local Notation withInstIfc := (fun ty => @implWithInstIfc noInstIfc ty).
-    Local Notation memTree := (implMemTree regions).
-    Local Notation memIfc := (fun ty => @implMemIfc core config regions ty rev).
-    Local Notation sysTree := (implSysTree config regions).
-    Local Notation incrementMcycle := (incrementMcycle core pcAddrInit).
+    Local Abbreviation bpTree := implBpTree.
+    Local Abbreviation noInstIfc := (fun ty => @implNoInstIfc ty).
+    Local Abbreviation withInstIfc := (fun ty => @implWithInstIfc noInstIfc ty).
+    Local Abbreviation memTree := (implMemTree regions).
+    Local Abbreviation memIfc := (fun ty => @implMemIfc core config regions ty rev).
+    Local Abbreviation sysTree := (implSysTree config regions).
+    Local Abbreviation incrementMcycle := (incrementMcycle core pcAddrInit).
 
     Section Ty.
       Variable ty : Kind -> Type.
@@ -80,7 +80,7 @@ Section ImplDom.
         : Action ty memTree k :=
         @implMemNthRegionAction regions ty clint.(clintIdx) (@clintRegion core regions clint) clint.(pfClint) k act.
 
-      Local Notation nIrq := (S (S (length (collectIrqActions regions)))).
+      Local Abbreviation nIrq := (S (S (length (collectIrqActions regions)))).
 
       Local Definition implPlicAction {k : Kind} (act : Action ty (plicTree core nIrq) k)
         : Action ty memTree k :=
