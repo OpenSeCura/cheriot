@@ -72,7 +72,6 @@ Section DeferredStages.
     Return (And [ #inEmpty ; #state `? "LoadRq" ; #mdEmpty ]).
 
   Variable pcAddrInit : Z.
-  Variable tohostAddr : Z.
   Variable bpTree fetchTree decodeTree : Tree DomainElem.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable ty : Kind -> Type.
@@ -139,18 +138,7 @@ Section DeferredStages.
             Let memSize   : Bit LgLgNumBytesFullCapSz <- ##st`"memSize" ;
             LetA accepted : Bool                      <- liftAction np_mem ((memIfc ty).(mem_writeMem) stAddr stVal memSize) ;
             If #accepted Then (
-              Act (liftAction np_inputFifo (@deq dom capacity DeferredReq ty)) ;
-              If (And [ Eq #stAddr ($ tohostAddr) ; isNotZero (##stVal`"addr") ]) Then (
-                Let tohostVal : Addr <- ##stVal`"addr" ;
-                If (Eq #tohostVal $1) Then (
-                  Sys [ DispString ty "TEST PASSED!\n" ; Finish ty ] ; Retv
-                ) ;
-                If (Not (Eq #tohostVal $1)) Then (
-                  Sys [ DispString ty "TEST FAILED at test case: " ; DispDecimal #tohostVal ; DispString ty "\n" ; Finish ty ] ; Retv
-                ) ;
-                Retv
-              ) ;
-              Retv
+              liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
             ) ;
             Retv
           ) Else (

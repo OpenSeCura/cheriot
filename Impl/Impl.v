@@ -34,7 +34,6 @@ Local Open Scope guru_scope.
 Section ImplDom.
   Variable core : string.
   Variable pcAddrInit : Z.
-  Variable tohostAddr : Z.
   Variable fetchCapacity decodeCapacity deferredCapacity : nat.
 
   Local Notation fTree := (fetchTree core pcAddrInit fetchCapacity).
@@ -187,7 +186,7 @@ Section ImplDom.
        * ===================================================================== *)
 
       Definition loadRqOrStoreOrFenceStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@loadRqOrStoreOrFence core deferredCapacity pcAddrInit tohostAddr bpTree fTree decTree memIfc ty).
+        liftAction np_core (@loadRqOrStoreOrFence core deferredCapacity pcAddrInit bpTree fTree decTree memIfc ty).
 
       Definition loadRpAndWritebackOrIssueRevRqStage : Action ty sysTree (Bit 0) :=
         liftAction np_core (@loadRpAndWritebackOrIssueRevRq core deferredCapacity pcAddrInit bpTree fTree decTree memIfc ty config).

@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Bool Psatz Nat Arith.
 From Guru Require Import Primitives Library Syntax Combinators Notations.
-From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic Spec Binary.
+From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic Spec.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -31,9 +31,10 @@ Local Open Scope guru_scope.
  * Physical Memory Map & Device Addresses
  * =========================================================================== *)
 
-Definition RamBase        : Z := MemStartAddr.
+Definition PcAddrInit     : Z := 0x80000000.
+Definition RamBase        : Z := 0x80000000.
 Definition RamSize        : Z := 256 * 1024. (* 256 KB *)
-Definition RamLineConfig  : LineConfig := @TaggedLine (S (Z.to_nat LgNumBytesFullCapSz)) I.
+Definition RamLineConfig  : LineConfig := @TaggedLine (Z.to_nat LgNumBytesFullCapSz) I.
 
 Definition RevTableBase       : Z := 0x83000000.
 Definition RevTableSize       : Z := 4 * 1024. (* 4 KB bitmap *)
@@ -63,12 +64,6 @@ Definition concreteRevConfig : RevConfig := {|
  * Concrete Memory Regions
  * =========================================================================== *)
 
-Definition fixedBinary : list (bits 8) := map (fun v => bits.of_Z 8 v) binary.
-
-Definition ramInitData
-  : option (option (type (Array (Z.to_nat RamSize) (Bit 8)))) :=
-  bytesToMemInit RamSize fixedBinary.
-
 Definition ramRegion : MemRegion := {|
   regionName        := "ram" ;
   regionDom         := "core" ;
@@ -77,7 +72,7 @@ Definition ramRegion : MemRegion := {|
   regionLineCfg     := RamLineConfig ;
   isReadOnly        := false ;
   hasExtraFetchPort := true ;
-  regionKind        := InternalMem true ramInitData (defaultTagsInit RamLineConfig RamSize) ;
+  regionKind        := ExternalMem ;
   regionInMemory    := I ;
   regionBaseAligned := I ;
   regionSizeAligned := I
@@ -141,7 +136,6 @@ Definition specSysTreeInst : Tree DomainElem :=
 Definition specModInst : Mod specSysTreeInst :=
   @spec "core"
         PcAddrInit
-        tohostAddr
         concreteRevConfig
         concreteRegions
         concreteClint

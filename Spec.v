@@ -33,7 +33,6 @@ Local Open Scope guru_scope.
 Section SpecDom.
   Variable core : string.
   Variable pcAddrInit : Z.
-  Variable tohostAddr : Z.
 
   Definition specSysTree (regions : list MemRegion) : Tree DomainElem :=
     Node "sys" [
@@ -49,7 +48,7 @@ Section SpecDom.
     Local Notation sysTree := (specSysTree regions).
     Local Notation incrementMcycle := (incrementMcycle core pcAddrInit).
     Local Notation specFetch := (specFetch core pcAddrInit).
-    Local Notation specExecuteDeferred := (specExecuteDeferred core pcAddrInit tohostAddr).
+    Local Notation specExecuteDeferred := (specExecuteDeferred core pcAddrInit).
     Local Notation regRead := (regRead core pcAddrInit).
     Local Notation executeNonDeferred := (executeNonDeferred core pcAddrInit).
 

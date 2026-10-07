@@ -17,20 +17,32 @@ set -e
 
 CHERIOT_DIR="/Users/muralivi/work/Cherified/cheriot"
 TEST_DIR="/Users/muralivi/work/Cherified/basic-riscv-tests-cheriot/binaries"
+TEST_SUITE="/Users/muralivi/work/Cheriot/cheriot-rtos/tests/build/cheriot/cheriot/release/test-suite"
+LLVM_DIR="${LLVM_DIR:-$HOME/work/Cheriot/llvm-project/builds/cheriot-llvm}"
+SIM="${SIM:-./Simulate}"
 
 cd "$CHERIOT_DIR"
+
+make -j sim
+
+TMP_BIN=$(mktemp)
+TMP_HEX=$(mktemp)
+trap 'rm -f "$TMP_BIN" "$TMP_HEX"' EXIT
 
 passed=0
 total=0
 failed_list=()
 
-for elf in "$TEST_DIR"/*.elf; do
+for elf in "$TEST_DIR"/*.elf "$TEST_SUITE"; do
     total=$((total + 1))
     name=$(basename "$elf")
     echo "========================================"
     echo "Running test: $name"
     echo "========================================"
-    if make -j BINARY="$elf" sim && ./Simulate; then
+    TOHOST=$("$LLVM_DIR/bin/llvm-objdump" -t "$elf" | awk '$NF == "tohost" {print $1}')
+    "$LLVM_DIR/bin/llvm-objcopy" -O binary "$elf" "$TMP_BIN"
+    hexdump -v -e '1/8 "%016x\n"' "$TMP_BIN" > "$TMP_HEX"
+    if "$SIM" "+bin=$TMP_HEX" "+tohost=$TOHOST"; then
         echo "[PASS] $name"
         passed=$((passed + 1))
     else

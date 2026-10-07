@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Bool Psatz Nat Arith.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics.
-From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic SpecInst ImplRevoker ImplDevice ImplCommon ImplBranchPredictor ImplFetch ImplDecode ImplExecute ImplDeferred Impl Binary.
+From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic SpecInst ImplRevoker ImplDevice ImplCommon ImplBranchPredictor ImplFetch ImplDecode ImplExecute ImplDeferred Impl.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -59,7 +59,6 @@ Definition implSysTreeInst : Tree DomainElem :=
 Definition singleCycleModInst : Mod implSysTreeInst :=
   @singleCycleMod "core"
                   PcAddrInit
-                  tohostAddr
                   DefaultFetchCapacity
                   DefaultDecodeCapacity
                   DefaultDeferredCapacity
@@ -72,7 +71,6 @@ Definition singleCycleModInst : Mod implSysTreeInst :=
 Definition pipelinedModInst : Mod implSysTreeInst :=
   @pipelinedMod "core"
                 PcAddrInit
-                tohostAddr
                 DefaultFetchCapacity
                 DefaultDecodeCapacity
                 DefaultDeferredCapacity

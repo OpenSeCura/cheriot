@@ -12,40 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-BINARY_ROOT  ?= ../basic-riscv-tests-cheriot
-LLVM_DIR     ?= $(HOME)/work/Cheriot/llvm-project/builds/cheriot-llvm
-
 .PHONY: all rtl rtlsim sim force
 
 .DEFAULT_GOAL = all
 
 CURR_DIR = $(shell pwd)
-BINARY ?= $(BINARY_ROOT)/binaries/simple.elf
-COMPILE_BINARY ?= $(MAKE) -C $(BINARY_ROOT) LLVM_DIR="$(LLVM_DIR)"
 
-$(BINARY):
-	$(COMPILE_BINARY)
-
-Binary.v: $(BINARY) force
-	@echo $(CURR_DIR)
-	echo "From Stdlib Require Import List ZArith Zmod." > Binary.v
-	echo "" >> Binary.v
-	echo "Local Open Scope Z_scope." >> Binary.v
-	echo "" >> Binary.v
-	ENTRY_POINT=$$(python3 -c "import struct; f=open('$(BINARY)', 'rb'); f.seek(24); print(hex(struct.unpack('<I', f.read(4))[0]))"); \
-	echo "Definition PcAddrInit : Z := $$ENTRY_POINT." >> Binary.v
-	BASE_ADDR=$$(python3 -c "import struct; f=open('$(BINARY)', 'rb'); elf=f.read(); phoff, phnum = struct.unpack_from('<II', elf, 28)[0], struct.unpack_from('<H', elf, 44)[0]; print(hex(min(struct.unpack_from('<I', elf, phoff + i*32 + 8)[0] for i in range(phnum) if struct.unpack_from('<I', elf, phoff + i*32)[0] == 1)))"); \
-	echo "Definition MemStartAddr : Z := $$BASE_ADDR." >> Binary.v
-	TOHOST_ADDR=$$($(LLVM_DIR)/bin/llvm-objdump -t $(BINARY) | awk '$$NF == "tohost" {print $$1}'); \
-	echo "Definition tohostAddr : Z := 0x$$TOHOST_ADDR." >> Binary.v
-	echo "" >> Binary.v
-	echo "Definition binary: list Z := (" >> Binary.v
-	$(LLVM_DIR)/bin/llvm-objcopy -O binary $(BINARY) $(CURR_DIR)/tmp && cd $(CURR_DIR)
-	hexdump -e '1/1 "0x%02x " "::\n"' -v tmp >> Binary.v
-	rm tmp
-	echo "nil)." >> Binary.v
-
-Makefile.coq.all: Binary.v force
+Makefile.coq.all: force
 	$(COQBIN)rocq makefile -f _CoqProject -o Makefile.coq.all
 
 coq: Makefile.coq.all
@@ -57,9 +30,11 @@ all: coq
 
 rtl: coq
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Impl/ $(CURR_DIR)/Clut/" rtl
+	./Impl/Rtl > ./Impl/Rtl.sv
 
-rtlsim: coq
-	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Impl/ $(CURR_DIR)/Clut/" rtlsim
+rtlsim: rtl
+	verilator -Wno-CMPCONST --top Tb --binary -I../Guru/Verilog -I./Impl --Mdir Impl/obj_dir Impl/Tb.sv
+	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" rtlsim
 
 sim: coq
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/" sim
@@ -90,5 +65,4 @@ clean:: Makefile.coq.all
 	find . -type d -depth -name 'obj_dir' -exec rm -rf {} \;
 	rm -f Makefile.coq.all Makefile.coq.all.conf .Makefile.coq.all.d
 	rm -f .nia.cache .lia.cache
-	rm -f Binary.v
 
