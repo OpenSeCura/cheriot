@@ -811,6 +811,7 @@ Section ImplCustomMemRegionActions.
   Variable r : MemRegion.
   Variable children : list (Tree DomainElem).
   Variable readAction : forall ty, ReadPortSel r.(hasExtraFetchPort) -> ty Addr ->
+                        ty (Array (cfgLineBytes r.(regionLineCfg)) Bool) ->
                         Action ty (Node r.(regionName) children)
                                (LineReadRp r.(regionLineCfg) false).
   Variable writeAction : forall ty, ty (LineWriteRq r.(regionLineCfg) false) ->
@@ -839,15 +840,20 @@ Section ImplCustomMemRegionActions.
          else WriteReg pCustState v Retv) ;
     cont.
 
-  Definition implCustomMemRegionReadRq (req : MemRequester) (addr : ty Addr)
+  Definition implCustomMemRegionReadRq
+             (req : MemRequester)
+             (addr : ty Addr)
+             (memSize : ty (Bit LgLgNumBytesFullCapSz))
              : Action ty tImplCust Bool :=
     let isFetch := isFetchRequester req in
     let useFetch := isFetch && r.(hasExtraFetchPort) in
+    let '(dataMask0Expr, _) := memDataMasks r #addr #memSize in
     readCustState isFetch (fun state =>
     Let isIdle : Bool <- ##state `? "Idle" ;
     If #isIdle Then (
-      Let  addr0 : Addr                               <- memLineAddr r #addr ;
-      LetA rp0   : LineReadRp r.(regionLineCfg) false <- liftAction child0Path (customMemRegionLineRead r children readAction isFetch addr0) ;
+      Let  addr0     : Addr                               <- memLineAddr r #addr ;
+      Let  dataMask0 : Array (lineBytes r) Bool           <- dataMask0Expr ;
+      LetA rp0       : LineReadRp r.(regionLineCfg) false <- liftAction child0Path (customMemRegionLineRead r children readAction isFetch addr0 dataMask0) ;
       writeCustState isFetch (UNION (CustomRegionStateList r.(regionLineCfg), "ReadRp0" ::= #rp0)) (
       if useFetch then Retv else WriteReg pCustRequester (mkRequesterOpt req) Retv)
     ) ;
@@ -860,6 +866,7 @@ Section ImplCustomMemRegionActions.
              : Action ty tImplCust (Option FullCapWithTag) :=
     let isFetch := isFetchRequester req in
     let useFetch := isFetch && r.(hasExtraFetchPort) in
+    let '(_, dataMask1Expr) := memDataMasks r #addr #memSize in
     readCustState isFetch (fun state =>
     LetA isMatch : Bool <-
       if useFetch then
@@ -873,8 +880,9 @@ Section ImplCustomMemRegionActions.
         Let  crosses : Bool                               <- memCrossesLine r #addr #memSize ;
         LetIf rp1 : LineReadRp r.(regionLineCfg) false <-
           If #crosses Then (
-            Let addr1 : Addr <- memNextLineAddr r #addr ;
-            liftAction child0Path (customMemRegionLineRead r children readAction isFetch addr1)
+            Let addr1     : Addr                     <- memNextLineAddr r #addr ;
+            Let dataMask1 : Array (lineBytes r) Bool <- dataMask1Expr ;
+            liftAction child0Path (customMemRegionLineRead r children readAction isFetch addr1 dataMask1)
           ) Else (
             Return ConstDef
           ) ;
@@ -929,7 +937,7 @@ Section ImplCustomMemRegionActions.
 
 End ImplCustomMemRegionActions.
 
-Arguments implCustomMemRegionReadRq r children readAction [ty] req addr.
+Arguments implCustomMemRegionReadRq r children readAction [ty] req addr memSize.
 Arguments implCustomMemRegionReadRp r children readAction [ty] req addr memSize.
 Arguments implCustomMemRegionDeqRp r children {ty} req.
 Arguments implCustomMemRegionWriteRq r children writeAction [ty] addr stVal memSize.
@@ -953,7 +961,7 @@ Definition implMemRegionReadRq
                                               end) Bool with
   | InternalMem isAccessible _ _ => implInternalMemRegionLineReadRq r isAccessible req addr
   | ExternalMem => implExternalMemRegionReadRq r req addr memSize
-  | CustomMem children readAct _ _ => implCustomMemRegionReadRq r children readAct req addr
+  | CustomMem children readAct _ _ => implCustomMemRegionReadRq r children readAct req addr memSize
   end.
 
 Definition implMemRegionReadRp

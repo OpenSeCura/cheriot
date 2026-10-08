@@ -25,7 +25,7 @@ Binary.v
 # Generated RTL & Simulation files
 Compile.hs
 Rtl
-*.sv
+Rtl.sv
 obj_dir
 Simulate.hs
 Simulate

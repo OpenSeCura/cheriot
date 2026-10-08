@@ -26,6 +26,8 @@ Set Asymmetric Patterns.
 
 Local Open Scope guru_scope.
 
+Local Abbreviation ByteSz := 8%Z.
+
 (* ===========================================================================
  * PLIC Register Offsets & Memory Sizing
  * =========================================================================== *)
@@ -37,8 +39,11 @@ Definition PLIC_THRESHOLD_OFFSET : Z := 0x200000.
 Definition PLIC_CLAIM_OFFSET     : Z := 0x200004.
 Definition PlicSizeBytes         : Z := 0x400000. (* 4 MB *)
 Definition PlicOffsetSz          : Z := Eval compute in Z.log2_up PlicSizeBytes.
-Definition PlicLineConfig        : LineConfig := RawLine (Z.to_nat LgNumBytesXlen).
-Definition plicNumBytes (n : nat) : nat := Nat.div (n + 7) 8.
+Definition PlicLineConfig        : LineConfig := {|
+  cfgLgLineBytes := Z.to_nat LgNumBytesFullCapSz ;
+  cfgHasTags     := false ;
+  cfgLinePf      := I
+|}.
 
 (* ===========================================================================
  * Tree Structure (Ordered by MMIO Offset)
@@ -130,15 +135,19 @@ Section Plic.
    * =========================================================================== *)
 
   Record PlicState (ty : Kind -> Type) (n : nat) := {
-    st_thresh : ty (Bit Xlen) ;
-    st_prios  : ty (Array n (Bit Xlen)) ;
-    st_pends  : ty (Array n Bool) ;
-    st_ens    : ty (Array n Bool) ;
-    st_insvs  : ty (Array n Bool)
+    st_thresh  : ty (Bit Xlen) ;
+    st_claim   : ty (Bit Xlen) ;
+    st_prios   : ty (Array n (Bit Xlen)) ;
+    st_pends   : ty (Array n Bool) ;
+    st_enWords : ty (Array (plicNumEnableWords n) (Bit Xlen)) ;
+    st_ens     : ty (Array n Bool) ;
+    st_insvs   : ty (Array n Bool)
   }.
   Arguments st_thresh {ty n} p.
+  Arguments st_claim {ty n} p.
   Arguments st_prios {ty n} p.
   Arguments st_pends {ty n} p.
+  Arguments st_enWords {ty n} p.
   Arguments st_ens {ty n} p.
   Arguments st_insvs {ty n} p.
 
@@ -217,25 +226,30 @@ Section Plic.
     Definition readPlicState {ans : Kind}
                (k : PlicState ty n -> Action ty tPlic ans) : Action ty tPlic ans :=
       LetA thresh : Bit Xlen <- ReadReg "threshold" (plicThresholdPath n) (fun v => Return #v) ;
+      LetA claim  : Bit Xlen <- ReadReg "claim" (plicClaimPath n) (fun v => Return #v) ;
       readRegs (enablesPathsWithKind n) (fun enList =>
         readAllSources (priorityPathsWithKind n)
                        (pendingPathsWithKind n)
                        (inServicePathsWithKind n)
                        (fun prioList pendList insvList =>
-          Let prios : Array n (Bit Xlen) <- listToExprArray prioList ($0 : Expr ty (Bit Xlen)) ;
-          Let pends : Array n Bool       <- listToExprArray pendList (ConstBool false) ;
-          Let insvs : Array n Bool       <- listToExprArray insvList (ConstBool false) ;
-          Let ens   : Array n Bool       <-
+          Let prios   : Array n (Bit Xlen) <- listToExprArray prioList ($0 : Expr ty (Bit Xlen)) ;
+          Let pends   : Array n Bool       <- listToExprArray pendList (ConstBool false) ;
+          Let insvs   : Array n Bool       <- listToExprArray insvList (ConstBool false) ;
+          Let enWords : Array (plicNumEnableWords n) (Bit Xlen) <-
+            listToExprArray enList ($0 : Expr ty (Bit Xlen)) ;
+          Let ens     : Array n Bool       <-
             ArrayBuilder (fun (i : FinType n) =>
               let wordExpr := nth (finNum i / Z.to_nat Xlen)%nat (map (Var _ _) enList) ($0 : Expr ty (Bit Xlen)) in
               let wordBits := FromBit (Array (Z.to_nat Xlen) Bool) wordExpr in
               readNatToFinType (ConstBool false) (ReadArrayConst wordBits) (finNum i mod Z.to_nat Xlen)%nat
             ) ;
-          k {| st_thresh := thresh ;
-               st_prios  := prios ;
-               st_pends  := pends ;
-               st_ens    := ens ;
-               st_insvs  := insvs |}
+          k {| st_thresh  := thresh ;
+               st_claim   := claim ;
+               st_prios   := prios ;
+               st_pends   := pends ;
+               st_enWords := enWords ;
+               st_ens     := ens ;
+               st_insvs   := insvs |}
         )
       ).
 
@@ -246,17 +260,13 @@ Section Plic.
                (ens : ty (Array n Bool))
                (insvs : ty (Array n Bool))
                (i : nat) : LetExpr ty PlicResType :=
-      match i with
-      | 0%nat => RetE plicResEmpty
-      | S _ =>
-          let idx := ($(Z.of_nat i) : Expr ty (Bit Xlen)) in
-          LetE pend : Bool       <- #pends @[ idx ] ;
-          LetE en : Bool         <- #ens @[ idx ] ;
-          LetE insv : Bool       <- #insvs @[ idx ] ;
-          LetE prio : Bit Xlen   <- #prios @[ idx ] ;
-          LetE active : Bool     <- And [ #pend ; #en ; Not #insv ; Ugt #prio #thresh ] ;
-          RetE (ITE #active (mkPlicRes idx #prio) plicResEmpty)
-      end.
+      let idx := ($(Z.of_nat i) : Expr ty (Bit Xlen)) in
+      LetE pend   : Bool     <- #pends @[ idx ] ;
+      LetE en     : Bool     <- #ens @[ idx ] ;
+      LetE insv   : Bool     <- #insvs @[ idx ] ;
+      LetE prio   : Bit Xlen <- #prios @[ idx ] ;
+      LetE active : Bool     <- And [ #pend ; #en ; Not #insv ; Ugt #prio #thresh ] ;
+      RetE (ITE #active (mkPlicRes idx #prio) plicResEmpty).
 
     (* Combinational claim search using merge_fold_list tournament tree *)
     Definition findMaxActive
@@ -294,18 +304,15 @@ Section Plic.
         Return (Var _ _ val_meip)
       ).
 
-    Definition plicClaim : Action ty tPlic (Bit Xlen) :=
-      ReadReg "claim" (plicClaimPath n) (fun val_claim =>
-        let claimedId := Var _ _ val_claim in
-        If (isNotZero claimedId) Then (
-          Act (writeRegsList (pendingPathsWithKind n) claimedId (ConstBool false)) ;
-          Act (writeRegsList (inServicePathsWithKind n) claimedId (ConstBool true)) ;
-          Act (WriteReg (plicClaimPath n) $0 Retv) ;
-          Act (WriteReg (plicMeipPath n) (ConstBool false) Retv) ;
-          Retv
-        ) ;
-        Return claimedId
-      ).
+    Definition plicClaim (claimedId : ty (Bit Xlen)) : Action ty tPlic (Bit 0) :=
+      If (isNotZero #claimedId) Then (
+        Act (writeRegsList (pendingPathsWithKind n) #claimedId (ConstBool false)) ;
+        Act (writeRegsList (inServicePathsWithKind n) #claimedId (ConstBool true)) ;
+        Act (WriteReg (plicClaimPath n) $0 Retv) ;
+        Act (WriteReg (plicMeipPath n) (ConstBool false) Retv) ;
+        Retv
+      ) ;
+      Retv.
 
     Definition plicComplete (completedId : ty (Bit Xlen)) : Action ty tPlic (Bit 0) :=
       If (isNotZero #completedId) Then (
@@ -342,96 +349,155 @@ Section Plic.
     Variable base : Z.
     Variable ty : Kind -> Type.
     Local Abbreviation tPlic := (plicTree n).
+    Local Abbreviation numLineWords := (Z.to_nat (NumBytesFullCapSz / NumBytesXlen)).
 
-    Definition boolArrayToByteArray
+    Definition boolArrayToWordArray
                (arr : Expr ty (Array n Bool))
-               : Expr ty (Array (plicNumBytes n) (Bit 8)) :=
-      FromBit (Array (plicNumBytes n) (Bit 8))
-              (castBits (add_sub_cancel (kindSize (Array (plicNumBytes n) (Bit 8)))
+               : Expr ty (Array (plicNumEnableWords n) (Bit Xlen)) :=
+      FromBit (Array (plicNumEnableWords n) (Bit Xlen))
+              (castBits (add_sub_cancel (kindSize (Array (plicNumEnableWords n) (Bit Xlen)))
                                         (kindSize (Array n Bool)))
-                        (ZeroExtendTo (kindSize (Array (plicNumBytes n) (Bit 8)))
+                        (ZeroExtendTo (kindSize (Array (plicNumEnableWords n) (Bit Xlen)))
                                       (ToBit arr))).
+
+    Record PlicLineDecode := {
+      dec_isThreshClaim : Expr ty Bool ;
+      dec_isEnable      : Expr ty Bool ;
+      dec_isPending     : Expr ty Bool ;
+      dec_isPrio        : Expr ty Bool ;
+      dec_prioWordIdx   : Expr ty (Bit (PlicOffsetSz - LgNumBytesXlen)) ;
+      dec_pendWordIdx   : Expr ty (Bit (PlicOffsetSz - LgNumBytesXlen)) ;
+      dec_enWordIdx     : Expr ty (Bit (PlicOffsetSz - LgNumBytesXlen)) ;
+      dec_touchesClaim  : Expr ty Bool ;
+      dec_touchesConfig : Expr ty Bool
+    }.
+
+    Definition getWordIdx (offset : ty (Bit PlicOffsetSz)) (regionOffset : Z)
+               : Expr ty (Bit (PlicOffsetSz - LgNumBytesXlen)) :=
+      TruncMsb (PlicOffsetSz - LgNumBytesXlen) LgNumBytesXlen (Sub #offset $(regionOffset)).
+
+    Definition decodePlicLine {ans : Kind}
+               (addr : Expr ty Addr)
+               (dataMask : Expr ty (Array (cfgLineBytes PlicLineConfig) Bool))
+               (k : PlicLineDecode -> Action ty tPlic ans)
+               : Action ty tPlic ans :=
+      Let offset        <- getMemOffset base PlicSizeBytes addr ;
+      Let isThreshClaim : Bool <- Eq  #offset $(PLIC_THRESHOLD_OFFSET) ;
+      Let isEnable      : Bool <- Uge #offset $(PLIC_ENABLE_OFFSET) ;
+      Let isPending     : Bool <- Uge #offset $(PLIC_PENDING_OFFSET) ;
+      Let isPrio        : Bool <- ConstBool true ;
+      Let prioWordIdx   <- getWordIdx offset PLIC_PRIORITY_BASE ;
+      Let pendWordIdx   <- getWordIdx offset PLIC_PENDING_OFFSET ;
+      Let enWordIdx     <- getWordIdx offset PLIC_ENABLE_OFFSET ;
+      Let maskBits      <- ToBit dataMask ;
+      Let hasLo         : Bool <- isNotZero (TruncLsb NumBytesXlen NumBytesXlen #maskBits) ;
+      Let hasHi         : Bool <- isNotZero (TruncMsb NumBytesXlen NumBytesXlen #maskBits) ;
+      Let touchesClaim  : Bool <- And [ #isThreshClaim ; #hasHi ] ;
+      Let touchesConfig : Bool <- Or [ #hasLo ; And [ #hasHi ; Not #isThreshClaim ] ] ;
+      k {| dec_isThreshClaim := #isThreshClaim ;
+           dec_isEnable      := #isEnable ;
+           dec_isPending     := #isPending ;
+           dec_isPrio        := #isPrio ;
+           dec_prioWordIdx   := #prioWordIdx ;
+           dec_pendWordIdx   := #pendWordIdx ;
+           dec_enWordIdx     := #enWordIdx ;
+           dec_touchesClaim  := #touchesClaim ;
+           dec_touchesConfig := #touchesConfig |}.
+
+    Definition sliceLineWords {m : nat} {sz : Z}
+               (arr : Expr ty (Array m (Bit Xlen)))
+               (wordIdx : Expr ty (Bit sz))
+               : Expr ty (Bit FullCapSz) :=
+      ToBit (Combinators.slice arr wordIdx numLineWords).
+
+    Definition writeLineWords {sz : Z}
+               (paths : list (RegOfKind (t:=tPlic) (Bit Xlen)))
+               (wordIdx : Expr ty (Bit sz))
+               (words : Expr ty (Array numLineWords (Bit Xlen)))
+               : Action ty tPlic (Bit 0) :=
+      fold_right (fun (i : FinType numLineWords) acc =>
+        Act (writeRegsList paths (Add [ wordIdx ; $(Z.of_nat (finNum i)) ]) (ReadArrayConst words i)) ;
+        acc
+      ) Retv (genFinType numLineWords).
+
+    Definition readPlicLine
+               (st : PlicState ty n)
+               (d : PlicLineDecode)
+               : Expr ty (Array (cfgLineBytes PlicLineConfig) (Bit ByteSz)) :=
+      let thresh         := st.(st_thresh) in
+      let claim          := st.(st_claim) in
+      let prios          := st.(st_prios) in
+      let pends          := st.(st_pends) in
+      let enWords        := st.(st_enWords) in
+      let prioVal        := sliceLineWords #prios d.(dec_prioWordIdx) in
+      let pendVal        := sliceLineWords (boolArrayToWordArray #pends) d.(dec_pendWordIdx) in
+      let enVal          := sliceLineWords #enWords d.(dec_enWordIdx) in
+      let threshClaimVal := {< #claim, #thresh >} in
+      FromBit (Array (cfgLineBytes PlicLineConfig) (Bit ByteSz))
+              (Or [ ITE0 d.(dec_isPrio)        prioVal ;
+                    ITE0 d.(dec_isPending)     pendVal ;
+                    ITE0 d.(dec_isEnable)      enVal ;
+                    ITE0 d.(dec_isThreshClaim) threshClaimVal ]).
 
     Definition plicLineReadAction
                (_ : ReadPortSel false)
                (addr : ty Addr)
+               (dataMask : ty (Array (cfgLineBytes PlicLineConfig) Bool))
                : Action ty tPlic (LineReadRp PlicLineConfig false) :=
-      Let offset <- getMemOffset base PlicSizeBytes #addr ;
-      Let isClaim     : Bool <- Eq #offset $(PLIC_CLAIM_OFFSET) ;
-      Let isThreshold : Bool <- Eq #offset $(PLIC_THRESHOLD_OFFSET) ;
-      Let isEnable    : Bool <- Uge #offset $(PLIC_ENABLE_OFFSET) ;
-      Let isPending   : Bool <- Uge #offset $(PLIC_PENDING_OFFSET) ;
+      decodePlicLine #addr #dataMask (fun d =>
       readPlicState (fun st =>
-        let thresh := st.(st_thresh) in
-        let prios  := st.(st_prios) in
-        let pends  := st.(st_pends) in
-        Let prioOffset <- Sub #offset $(PLIC_PRIORITY_BASE) ;
-        Let prioIdx : Bit Xlen <- ZeroExtendTo Xlen (TruncMsb (PlicOffsetSz - LgNumBytesXlen) LgNumBytesXlen #prioOffset) ;
-        Let prioVal : Bit Xlen <- #prios @[ #prioIdx ] ;
-        Let pendOffset <- Sub #offset $(PLIC_PENDING_OFFSET) ;
-        Let pendSlice : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
-          Combinators.slice (boolArrayToByteArray #pends) #pendOffset (Z.to_nat NumBytesXlen) ;
-        Let pendVal : Bit Xlen <- ToBit #pendSlice ;
-        Let enOffset <- Sub #offset $(PLIC_ENABLE_OFFSET) ;
-        Let enWordIdx : Bit Xlen <- ZeroExtendTo Xlen (TruncMsb (PlicOffsetSz - LgNumBytesXlen) LgNumBytesXlen #enOffset) ;
-        LetIf enVal : Bit Xlen <- If #isEnable Then (readRegsList (enablesPathsWithKind n) #enWordIdx) ;
-        LetIf claimedId : Bit Xlen <- If #isClaim Then (@plicClaim n ty) ;
-        Let rVal : Bit Xlen <-
-          Or [ #prioVal ;
-               ITE0 #isPending #pendVal ;
-               ITE0 #isEnable #enVal ;
-               ITE0 #isThreshold #thresh ;
-               #claimedId ] ;
-        Let dataArr : Array (Z.to_nat NumBytesXlen) (Bit 8) <-
-          FromBit (Array (Z.to_nat NumBytesXlen) (Bit 8)) #rVal ;
+        Let readBytes : Array (cfgLineBytes PlicLineConfig) (Bit ByteSz) <- readPlicLine st d ;
+        If d.(dec_touchesClaim) Then (
+          @plicClaim n ty st.(st_claim)
+        ) ;
         @Return ty tPlic (LineReadRp PlicLineConfig false) (STRUCT {
-          "data" ::= #dataArr ;
+          "data" ::= #readBytes ;
           "tag"  ::= Const ty (Array (cfgNumLineTags PlicLineConfig false) Bool) (getDefault _)
         })
-      ).
+      )).
 
     Definition plicLineWriteAction
                (rq : ty (LineWriteRq PlicLineConfig false))
                : Action ty tPlic (Bit 0) :=
-      Let offset <- getMemOffset base PlicSizeBytes (##rq`"addr") ;
-      Let writeWord : Bit Xlen <- ToBit (##rq`"data") ;
-      (* Only the lowerbound checks are done; upper bound automatically falls off *)
-      Let isComplete  : Bool <- Eq #offset $(PLIC_CLAIM_OFFSET) ;
-      Let isThreshold : Bool <- Eq #offset $(PLIC_THRESHOLD_OFFSET) ;
-      Let isEnable    : Bool <- Uge #offset $(PLIC_ENABLE_OFFSET) ;
-      Let isPrio      : Bool <- ConstBool true ;
-      If #isComplete Then (
-        @plicComplete n ty writeWord
-      ) ;
-      If #isThreshold Then (
-        Act (WriteReg (plicThresholdPath n) #writeWord Retv) ;
-        Retv
-      ) ;
-      If #isEnable Then (
-        Let enOffset <- Sub #offset $(PLIC_ENABLE_OFFSET) ;
-        Let enWordIdx : Bit Xlen <- ZeroExtendTo Xlen (TruncMsb (PlicOffsetSz - LgNumBytesXlen) LgNumBytesXlen #enOffset) ;
-        Let cleanWriteWord : Bit Xlen <-
-          ITE (Eq #enWordIdx $0)
-              {< TruncMsb (Xlen - 1) 1 #writeWord, Const ty (Bit 1) Zmod.zero >}
-              #writeWord ;
-        Act (writeRegsList (enablesPathsWithKind n) #enWordIdx #cleanWriteWord) ;
-        Retv
-      ) ;
-      If #isPrio Then (
-        Let prioOffset <- Sub #offset $(PLIC_PRIORITY_BASE) ;
-        Let prioWord : Bit Xlen <- ZeroExtendTo Xlen (TruncMsb (PlicOffsetSz - LgNumBytesXlen) LgNumBytesXlen #prioOffset) ;
-        If (isNotZero #prioWord) Then (
-          Act (writeRegsList (priorityPathsWithKind n) #prioWord #writeWord) ;
+      decodePlicLine (##rq`"addr") (##rq`"dataMask") (fun d =>
+      readPlicState (fun st =>
+        Let oldBytes : Array (cfgLineBytes PlicLineConfig) (Bit ByteSz) <- readPlicLine st d ;
+        Let newBytes : Array (cfgLineBytes PlicLineConfig) (Bit ByteSz) <-
+          ArrayBuilder (fun i =>
+            ITE (ReadArrayConst (##rq`"dataMask") i)
+                (ReadArrayConst (##rq`"data") i)
+                (ReadArrayConst #oldBytes i)) ;
+        Let newWords : Array numLineWords (Bit Xlen) <-
+          FromBit (Array numLineWords (Bit Xlen)) (ToBit ##newBytes) ;
+        Let cleanEnWords : Array numLineWords (Bit Xlen) <-
+          ITE (isZero d.(dec_enWordIdx))
+              ((##newWords) $[ 0%nat <- {< TruncMsb (Xlen - 1) 1 ((##newWords) $[0%nat]), Const ty (Bit 1) Zmod.zero >} ])
+              #newWords ;
+        Let cleanPrioWords : Array numLineWords (Bit Xlen) <-
+          ITE (isZero d.(dec_prioWordIdx))
+              ((##newWords) $[ 0%nat <- $0 ])
+              #newWords ;
+        If d.(dec_isThreshClaim) Then (
+          Act (WriteReg (plicThresholdPath n) ((##newWords) $[0%nat]) Retv) ;
+          If d.(dec_touchesClaim) Then (
+            Let completedId : Bit Xlen <- (##newWords) $[1%nat] ;
+            @plicComplete n ty completedId
+          ) ;
+          Retv
+        ) ;
+        If d.(dec_isEnable) Then (
+          writeLineWords (enablesPathsWithKind n) d.(dec_enWordIdx) #cleanEnWords
+        ) ;
+        If d.(dec_isPrio) Then (
+          writeLineWords (priorityPathsWithKind n) d.(dec_prioWordIdx) #cleanPrioWords
+        ) ;
+        If d.(dec_touchesConfig) Then (
+          Act (WriteReg (plicClaimPath n) $0 Retv) ;
+          Act (WriteReg (plicMeipPath n) (ConstBool false) Retv) ;
           Retv
         ) ;
         Retv
-      ) ;
-      If (Not #isComplete) Then (
-        Act (WriteReg (plicClaimPath n) $0 Retv) ;
-        Act (WriteReg (plicMeipPath n) (ConstBool false) Retv) ;
-        Retv
-      ) ;
-      Retv.
+      )).
 
   End PlicMmio.
 

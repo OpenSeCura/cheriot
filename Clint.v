@@ -35,32 +35,30 @@ Local Abbreviation ByteSz := 8%Z.
 
 Definition ClintSizeBytes : Z := 0x10000.
 
-Definition CLINT_MTIMECMP_OFFSET  : Z := 0x4000.
-Definition CLINT_MTIMECMPH_OFFSET : Z := 0x4004.
-Definition CLINT_MTIME_OFFSET     : Z := 0xbff8.
-Definition CLINT_MTIMEH_OFFSET    : Z := 0xbffc.
+Definition CLINT_MTIMECMP_OFFSET : Z := 0x4000.
+Definition CLINT_MTIME_OFFSET    : Z := 0xbff8.
 
 Section Clint.
   Variable dom : string.
 
   Definition clintChildren : list (Tree DomainElem) :=
-    [ Leaf "mtime"       (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false)) ;
-      Leaf "mtimeh"      (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false)) ;
-      Leaf "mtimecmp"    (dom, EReg (Build_Reg (Bit Xlen) (Some (Zmod.of_Z _ (2^Xlen - 1))) false)) ;
-      Leaf "mtimecmph"   (dom, EReg (Build_Reg (Bit Xlen) (Some (Zmod.of_Z _ (2^Xlen - 1))) false)) ;
-      Leaf "mtip"        (dom, EReg (Build_Reg Bool       (Some false)     false)) ;
-      Leaf "sampledMtip" (dom, EReg (Build_Reg Bool       (Some false)     false)) ].
+    [ Leaf "mtime"       (dom, EReg (Build_Reg (Bit DXlen) (Some Zmod.zero) false)) ;
+      Leaf "mtimecmp"    (dom, EReg (Build_Reg (Bit DXlen) (Some (Zmod.of_Z _ (2^DXlen - 1))) false)) ;
+      Leaf "mtip"        (dom, EReg (Build_Reg Bool        (Some false)     false)) ;
+      Leaf "sampledMtip" (dom, EReg (Build_Reg Bool        (Some false)     false)) ].
 
   Local Abbreviation tClint := (Node "clint" clintChildren).
 
   Definition clintMtimePath       : RegPath tClint := getChildRegPathTree tClint "mtime".
-  Definition clintMtimehPath      : RegPath tClint := getChildRegPathTree tClint "mtimeh".
   Definition clintMtimecmpPath    : RegPath tClint := getChildRegPathTree tClint "mtimecmp".
-  Definition clintMtimecmphPath   : RegPath tClint := getChildRegPathTree tClint "mtimecmph".
   Definition clintMtipPath        : RegPath tClint := getChildRegPathTree tClint "mtip".
   Definition clintSampledMtipPath : RegPath tClint := getChildRegPathTree tClint "sampledMtip".
 
-  Definition ClintLineConfig : LineConfig := RawLine (Z.to_nat LgNumBytesXlen).
+  Definition ClintLineConfig : LineConfig := {|
+    cfgLgLineBytes := Z.to_nat LgNumBytesFullCapSz ;
+    cfgHasTags     := false ;
+    cfgLinePf      := I
+  |}.
 
   (* ===========================================================================
    * CLINT Atomic Actions
@@ -70,14 +68,10 @@ Section Clint.
     Variable ty : Kind -> Type.
 
     Definition readClintMtime : Action ty tClint (Bit DXlen) :=
-      LetA lo : Bit Xlen <- ReadReg "mtime" clintMtimePath (fun v => Return #v) ;
-      LetA hi : Bit Xlen <- ReadReg "mtimeh" clintMtimehPath (fun v => Return #v) ;
-      Return {< #hi, #lo >}.
+      ReadReg "mtime" clintMtimePath (fun v => Return #v).
 
     Definition readClintMtimecmp : Action ty tClint (Bit DXlen) :=
-      LetA lo : Bit Xlen <- ReadReg "mtimecmp" clintMtimecmpPath (fun v => Return #v) ;
-      LetA hi : Bit Xlen <- ReadReg "mtimecmph" clintMtimecmphPath (fun v => Return #v) ;
-      Return {< #hi, #lo >}.
+      ReadReg "mtimecmp" clintMtimecmpPath (fun v => Return #v).
 
     Definition readClintMtip : Action ty tClint Bool :=
       ReadReg "sampledMtip" clintSampledMtipPath (fun v => Return #v).
@@ -86,8 +80,7 @@ Section Clint.
       LetA mtimeDXlen    : Bit DXlen <- readClintMtime ;
       LetA mtimecmpDXlen : Bit DXlen <- readClintMtimecmp ;
       Let  nextMtime     : Bit DXlen <- Add [ #mtimeDXlen ; $1 ] ;
-      Act (WriteReg clintMtimePath (TruncLsb Xlen Xlen #nextMtime) Retv) ;
-      Act (WriteReg clintMtimehPath (TruncMsb Xlen Xlen #nextMtime) Retv) ;
+      Act (WriteReg clintMtimePath #nextMtime Retv) ;
       Let  isMatch       : Bool      <- Uge #nextMtime #mtimecmpDXlen ;
       LetA currMtip      : Bool      <- ReadReg "mtip" clintMtipPath (fun v => Return #v) ;
       Let  nextMtip      : Bool      <- Or [#currMtip ; #isMatch] ;
@@ -112,46 +105,46 @@ Section Clint.
              (ty : Kind -> Type)
              (_ : ReadPortSel false)
              (addr : ty Addr)
+             (_ : ty (Array (cfgLineBytes ClintLineConfig) Bool))
              : Action ty tClint (LineReadRp ClintLineConfig false) :=
     Let offset <- getMemOffset base ClintSizeBytes #addr ;
     ReadReg "mtime" clintMtimePath (fun mtimeVal =>
-    ReadReg "mtimeh" clintMtimehPath (fun mtimehVal =>
     ReadReg "mtimecmp" clintMtimecmpPath (fun mtimecmpVal =>
-    ReadReg "mtimecmph" clintMtimecmphPath (fun mtimecmphVal =>
-    Let readWord : Bit Xlen <-
-      Or [ ITE0 (Eq #offset $(CLINT_MTIME_OFFSET))     #mtimeVal ;
-           ITE0 (Eq #offset $(CLINT_MTIMEH_OFFSET))    #mtimehVal ;
-           ITE0 (Eq #offset $(CLINT_MTIMECMP_OFFSET))  #mtimecmpVal ;
-           ITE0 (Eq #offset $(CLINT_MTIMECMPH_OFFSET)) #mtimecmphVal ] ;
+    Let rawData : Bit DXlen <-
+      Or [ ITE0 (Eq #offset $(CLINT_MTIME_OFFSET))    #mtimeVal ;
+           ITE0 (Eq #offset $(CLINT_MTIMECMP_OFFSET)) #mtimecmpVal ] ;
     Let readBytes : Array (cfgLineBytes ClintLineConfig) (Bit ByteSz) <-
-      FromBit (Array (cfgLineBytes ClintLineConfig) (Bit ByteSz)) #readWord ;
+      FromBit (Array (cfgLineBytes ClintLineConfig) (Bit ByteSz)) #rawData ;
     @Return ty tClint (LineReadRp ClintLineConfig false) (STRUCT {
       "data" ::= #readBytes ;
       "tag"  ::= Const ty (Array (cfgNumLineTags ClintLineConfig false) Bool) (getDefault _)
-    }))))).
+    }))).
 
   Definition clintLineWriteAction
              (base : Z)
              (ty : Kind -> Type)
              (rq : ty (LineWriteRq ClintLineConfig false))
              : Action ty tClint (Bit 0) :=
-    Let offset <- getMemOffset base ClintSizeBytes (##rq`"addr") ;
-    Let writeWord : Bit Xlen <- ToBit (##rq`"data") ;
-    If (Eq #offset $(CLINT_MTIME_OFFSET)) Then (
-      WriteReg clintMtimePath #writeWord Retv
-    ) ;
-    If (Eq #offset $(CLINT_MTIMEH_OFFSET)) Then (
-      WriteReg clintMtimehPath #writeWord Retv
-    ) ;
-    If (Eq #offset $(CLINT_MTIMECMP_OFFSET)) Then (
-      WriteReg clintMtimecmpPath #writeWord (
-      WriteReg clintMtipPath (ConstBool false) (
-      WriteReg clintSampledMtipPath (ConstBool false) Retv))
-    ) ;
-    If (Eq #offset $(CLINT_MTIMECMPH_OFFSET)) Then (
-      WriteReg clintMtimecmphPath #writeWord (
-      WriteReg clintMtipPath (ConstBool false) (
-      WriteReg clintSampledMtipPath (ConstBool false) Retv))
+    Let offset   <- getMemOffset base ClintSizeBytes (##rq`"addr") ;
+    Let anyWrite : Bool <- isNotZero (ToBit (##rq`"dataMask")) ;
+    let mergeReg (oldVal : Expr ty (Bit DXlen)) : Expr ty (Bit DXlen) :=
+      let oldBytes := FromBit (Array (cfgLineBytes ClintLineConfig) (Bit ByteSz)) oldVal in
+      ToBit (ArrayBuilder (fun i =>
+        ITE (ReadArrayConst (##rq`"dataMask") i)
+            (ReadArrayConst (##rq`"data") i)
+            (ReadArrayConst oldBytes i))) in
+    If #anyWrite Then (
+      Act (If (Eq #offset $(CLINT_MTIME_OFFSET)) Then (
+        ReadReg "mtime" clintMtimePath (fun mtimeVal =>
+        WriteReg clintMtimePath (mergeReg #mtimeVal) Retv)
+      ) ; Retv) ;
+      If (Eq #offset $(CLINT_MTIMECMP_OFFSET)) Then (
+        ReadReg "mtimecmp" clintMtimecmpPath (fun mtimecmpVal =>
+        WriteReg clintMtimecmpPath (mergeReg #mtimecmpVal) (
+        WriteReg clintMtipPath (ConstBool false) (
+        WriteReg clintSampledMtipPath (ConstBool false) Retv)))
+      ) ;
+      Retv
     ) ;
     Retv.
 

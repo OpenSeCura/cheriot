@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 # Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,8 +22,6 @@ LLVM_DIR="${LLVM_DIR:-$HOME/work/Cheriot/llvm-project/builds/cheriot-llvm}"
 SIM="${SIM:-./Simulate}"
 
 cd "$CHERIOT_DIR"
-
-make -j sim
 
 TMP_BIN=$(mktemp)
 TMP_HEX=$(mktemp)

@@ -34,16 +34,8 @@ Local Open Scope guru_scope.
 Record LineConfig := {
   cfgLgLineBytes : nat ;
   cfgHasTags     : bool ;
-  cfgTaggedPf    : if cfgHasTags
-                   then Is_true (Z.to_nat LgNumBytesFullCapSz <=? cfgLgLineBytes)%nat
-                   else True
+  cfgLinePf      : Is_true (Z.to_nat LgNumBytesFullCapSz <=? cfgLgLineBytes)%nat
 }.
-
-Definition TaggedLine (lgLineBytes : nat) (pf : Is_true (Z.to_nat LgNumBytesFullCapSz <=? lgLineBytes)%nat) : LineConfig :=
-  {| cfgLgLineBytes := lgLineBytes ; cfgHasTags := true ; cfgTaggedPf := pf |}.
-
-Definition RawLine (lgLineBytes : nat) : LineConfig :=
-  {| cfgLgLineBytes := lgLineBytes ; cfgHasTags := false ; cfgTaggedPf := I |}.
 
 Definition cfgLineBytes (cfg : LineConfig) : nat :=
   Nat.pow 2 (cfgLgLineBytes cfg).
@@ -154,6 +146,7 @@ Inductive RegionKind (regionName : string) (regionSize : Z) (cfg : LineConfig) (
 | ExternalMem
 | CustomMem (children : list (Tree DomainElem))
             (readAction : forall ty, ReadPortSel hasExtraFetchPort -> ty Addr ->
+                          ty (Array (cfgLineBytes cfg) Bool) ->
                           Action ty (Node regionName children) (LineReadRp cfg false))
             (writeAction : forall ty, ty (LineWriteRq cfg false) ->
                            Action ty (Node regionName children) (Bit 0))
@@ -367,6 +360,19 @@ Section MemAddrHelpers.
       "addr" ::= TruncLsb CapSz AddrSz #rawData
     }).
 
+  Definition memDataMasks
+    (addr : Expr ty Addr)
+    (memSize : Expr ty (Bit LgLgNumBytesFullCapSz))
+    : Expr ty (Array lBytes Bool) * Expr ty (Array lBytes Bool) :=
+    let numBytesActive : Expr ty (Bit (lgLineBytesZ + 1)%Z) :=
+      Sll $1 (ZeroExtend (lgLineBytesZ + 1 - LgLgNumBytesFullCapSz)%Z memSize) in
+    let fullMask : Expr ty (Bit (kindSize (Array lBytes Bool))) :=
+      rotateLeft (Not (Sll (ConstBit (InvDefault _)) numBytesActive)) (memLineOffset addr) in
+    let add1Bits : Expr ty (Bit (kindSize (Array lBytes Bool))) :=
+      ToBit (memAdd1 addr) in
+    (FromBit (Array lBytes Bool) (And [ fullMask ; Not add1Bits ]),
+     FromBit (Array lBytes Bool) (And [ fullMask ; add1Bits ])).
+
   Definition memBuildLineWriteRq
     (addr : Expr ty Addr)
     (stVal : Expr ty FullCapWithTag)
@@ -383,11 +389,9 @@ Section MemAddrHelpers.
       FromBit (Array (Z.to_nat NumBytesFullCapSz) (Bit 8)) #rawData ;
     LetE baseData : Array lBytes (Bit 8) <- embedCapBytes lBytes #capBytes ;
     LETE rotData : Array lBytes (Bit 8) <- ArrayRotl #baseData (memLineOffset addr) ;
-    LetE numBytesActive : Bit (lgLineBytesZ + 1)%Z <-
-      Sll $1 (ZeroExtend (lgLineBytesZ + 1 - LgLgNumBytesFullCapSz)%Z memSize) ;
+    let '(dataMask0, dataMask1) := memDataMasks addr memSize in
     LetE isWrites : Array lBytes Bool <-
-      FromBit (Array lBytes Bool)
-        (rotateLeft (Not (Sll (ConstBit (InvDefault _)) #numBytesActive)) (memLineOffset addr)) ;
+      FromBit (Array lBytes Bool) (Or [ ToBit dataMask0 ; ToBit dataMask1 ]) ;
     LetE tagData : Array nTags Bool <-
       if hasTags r then
         UpdateArray ConstDef (memTagSlot addr) (And [ #isCap ; stVal`"tag" ])
@@ -461,6 +465,7 @@ Arguments memTagLineOffsetIdx r isInternal [ty] addr.
 Arguments memTagSlot r isInternal [ty] addr.
 Arguments memAdd1Tag r isInternal [ty] addr.
 Arguments memTagMasks r isInternal [ty] addr memSize.
+Arguments memDataMasks r [ty] addr memSize.
 Arguments memMergeLineReadRp r isInternal [ty] addr rp0 rp1.
 Arguments memExtractReadCap r isInternal [ty] addr memSize rp.
 Arguments memBuildLineWriteRq r isInternal [ty] addr stVal memSize.
@@ -846,6 +851,7 @@ Section CustomMemRegionActions.
   Variable r : MemRegion.
   Variable children : list (Tree DomainElem).
   Variable readAction : forall ty, ReadPortSel r.(hasExtraFetchPort) -> ty Addr ->
+                        ty (Array (cfgLineBytes r.(regionLineCfg)) Bool) ->
                         Action ty (Node r.(regionName) children)
                                (LineReadRp r.(regionLineCfg) false).
   Variable writeAction : forall ty, ty (LineWriteRq r.(regionLineCfg) false) ->
@@ -854,9 +860,12 @@ Section CustomMemRegionActions.
 
   Local Definition tCust := customMemRegionTree r children.
 
-  Definition customMemRegionLineRead (isFetch : bool) (addr : ty Addr)
+  Definition customMemRegionLineRead
+             (isFetch : bool)
+             (addr : ty Addr)
+             (dataMask : ty (Array (cfgLineBytes r.(regionLineCfg)) Bool))
              : Action ty tCust (LineReadRp r.(regionLineCfg) false) :=
-    readAction (selectReadPortSel r.(hasExtraFetchPort) isFetch) addr.
+    readAction (selectReadPortSel r.(hasExtraFetchPort) isFetch) addr dataMask.
 
   Definition customMemRegionLineWrite
              (rq : ty (LineWriteRq r.(regionLineCfg) false))
@@ -869,7 +878,7 @@ Section CustomMemRegionActions.
 
 End CustomMemRegionActions.
 
-Arguments customMemRegionLineRead r children readAction [ty] isFetch addr.
+Arguments customMemRegionLineRead r children readAction [ty] isFetch addr dataMask.
 Arguments customMemRegionLineWrite r children writeAction [ty] rq.
 
 Definition memRegionLineRead
@@ -877,6 +886,7 @@ Definition memRegionLineRead
            {ty : Kind -> Type}
            (isFetch : bool)
            (addr : ty Addr)
+           (dataMask : ty (Array (cfgLineBytes r.(regionLineCfg)) Bool))
            : Action ty (memRegionTree r) (LineReadRp r.(regionLineCfg) (isInternalMem r)) :=
   match r.(regionKind) as k return Action ty (match k with
                                               | InternalMem isAccessible _ _ => internalMemRegionTree r isAccessible
@@ -885,7 +895,7 @@ Definition memRegionLineRead
                                               end) (LineReadRp r.(regionLineCfg) (isInternalRegionKind k)) with
   | InternalMem isAccessible _ _ => internalMemRegionLineRead r isAccessible isFetch addr
   | ExternalMem => externalMemRegionLineRead r isFetch addr
-  | CustomMem children readAct writeAct _ => customMemRegionLineRead r children readAct isFetch addr
+  | CustomMem children readAct writeAct _ => customMemRegionLineRead r children readAct isFetch addr dataMask
   end.
 
 Definition memRegionLineWrite
@@ -904,7 +914,7 @@ Definition memRegionLineWrite
   | CustomMem children readAct writeAct _ => fun rq' => customMemRegionLineWrite r children writeAct rq'
   end rq.
 
-Arguments memRegionLineRead r [ty] isFetch addr.
+Arguments memRegionLineRead r [ty] isFetch addr dataMask.
 Arguments memRegionLineWrite r [ty] rq.
 
 (* ===========================================================================
@@ -923,18 +933,23 @@ Section MemRegionActions.
              (addr : ty Addr)
              (memSize : ty (Bit LgLgNumBytesFullCapSz))
              : Action ty tR FullCapWithTag :=
+    let '(dataMask0Expr, dataMask1Expr) := memDataMasks r #addr #memSize in
     if isInt then (
-      LetA rp  : LineReadRp r.(regionLineCfg) isInt <- memRegionLineRead r isFetch addr ;
-      LetL res : FullCapWithTag                     <- memExtractReadCap r isInt #addr #memSize #rp ;
+      Let  fullMask : Array (lineBytes r) Bool          <-
+        FromBit (Array (lineBytes r) Bool) (Or [ ToBit dataMask0Expr ; ToBit dataMask1Expr ]) ;
+      LetA rp       : LineReadRp r.(regionLineCfg) isInt <- memRegionLineRead r isFetch addr fullMask ;
+      LetL res      : FullCapWithTag                     <- memExtractReadCap r isInt #addr #memSize #rp ;
       Return #res
     ) else (
-      Let  addr0   : Addr                               <- memLineAddr r #addr ;
-      LetA rp0     : LineReadRp r.(regionLineCfg) isInt <- memRegionLineRead r isFetch addr0 ;
-      Let  crosses : Bool                               <- memCrossesLine r #addr #memSize ;
+      Let  addr0     : Addr                               <- memLineAddr r #addr ;
+      Let  dataMask0 : Array (lineBytes r) Bool           <- dataMask0Expr ;
+      LetA rp0       : LineReadRp r.(regionLineCfg) isInt <- memRegionLineRead r isFetch addr0 dataMask0 ;
+      Let  crosses   : Bool                               <- memCrossesLine r #addr #memSize ;
       LetIf rp1 : LineReadRp r.(regionLineCfg) isInt <-
         If #crosses Then (
-          Let addr1 : Addr <- memNextLineAddr r #addr ;
-          memRegionLineRead r isFetch addr1
+          Let addr1     : Addr                     <- memNextLineAddr r #addr ;
+          Let dataMask1 : Array (lineBytes r) Bool <- dataMask1Expr ;
+          memRegionLineRead r isFetch addr1 dataMask1
         ) Else (
           Return ConstDef
         ) ;

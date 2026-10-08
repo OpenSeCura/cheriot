@@ -34,11 +34,19 @@ Local Open Scope guru_scope.
 Definition PcAddrInit     : Z := 0x80000000.
 Definition RamBase        : Z := 0x80000000.
 Definition RamSize        : Z := 256 * 1024. (* 256 KB *)
-Definition RamLineConfig  : LineConfig := @TaggedLine (Z.to_nat LgNumBytesFullCapSz) I.
+Definition RamLineConfig  : LineConfig := {|
+  cfgLgLineBytes := Z.to_nat LgNumBytesFullCapSz ;
+  cfgHasTags     := true ;
+  cfgLinePf      := I
+|}.
 
 Definition RevTableBase       : Z := 0x83000000.
 Definition RevTableSize       : Z := 4 * 1024. (* 4 KB bitmap *)
-Definition RevTableLineConfig : LineConfig := RawLine (Z.to_nat LgNumBytesXlen).
+Definition RevTableLineConfig : LineConfig := {|
+  cfgLgLineBytes := Z.to_nat LgNumBytesFullCapSz ;
+  cfgHasTags     := false ;
+  cfgLinePf      := I
+|}.
 
 Definition ClintBaseAddr   : Z := 0x02000000.
 Definition RevokerBaseAddr : Z := 0x03000000.
@@ -47,7 +55,11 @@ Definition PlicBaseAddr    : Z := 0x04000000.
 Definition ExtMemBase        : Z := 0x10000000.
 Definition ExtMemSize        : Z := 0x70000000.
 Definition LgExtMemLineBytes : Z := 4.
-Definition ExtMemLineConfig  : LineConfig := @TaggedLine (Z.to_nat LgExtMemLineBytes) I.
+Definition ExtMemLineConfig  : LineConfig := {|
+  cfgLgLineBytes := Z.to_nat LgExtMemLineBytes ;
+  cfgHasTags     := true ;
+  cfgLinePf      := I
+|}.
 
 (* ===========================================================================
  * Revoker Configuration
