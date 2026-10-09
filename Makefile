@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.PHONY: all rtl rtlsim sim force
+.PHONY: all rtl rtlexe haskellexe force
 
 .DEFAULT_GOAL = all
 
@@ -30,14 +30,13 @@ all: coq
 
 rtl: coq
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Impl/ $(CURR_DIR)/Clut/" rtl
-	./Impl/Rtl > ./Impl/Rtl.sv
 
-rtlsim: rtl
+rtlexe: rtl
 	verilator -Wno-CMPCONST --top Tb --binary -I../Guru/Verilog -I./Impl --Mdir Impl/obj_dir Impl/Tb.sv
-	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" rtlsim
+	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" rtlexe
 
-sim: coq
-	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/" sim
+haskellexe: coq
+	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/" haskellexe
 
 force:
 
