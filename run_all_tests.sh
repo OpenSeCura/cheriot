@@ -15,11 +15,16 @@
 
 set -e
 
+if [ $# -lt 1 ]; then
+    echo "Usage: $0 <simulator>"
+    exit 1
+fi
+
 CHERIOT_DIR="/Users/muralivi/work/Cherified/cheriot"
 TEST_DIR="/Users/muralivi/work/Cherified/basic-riscv-tests-cheriot/binaries"
 TEST_SUITE="/Users/muralivi/work/Cheriot/cheriot-rtos/tests/build/cheriot/cheriot/release/test-suite"
 LLVM_DIR="${LLVM_DIR:-$HOME/work/Cheriot/llvm-project/builds/cheriot-llvm}"
-SIM="${SIM:-./Simulate}"
+SIM="$1"
 
 cd "$CHERIOT_DIR"
 

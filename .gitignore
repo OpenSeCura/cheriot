@@ -26,8 +26,6 @@ Binary.v
 Compile.hs
 Rtl
 Rtl.sv
+SimRtl.sv
 obj_dir
-Simulate.hs
-Simulate
-Simulate_prof
-Simulate_prof.prof
+sim_obj_dir

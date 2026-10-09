@@ -272,7 +272,3 @@ Set Extraction Output Directory "./Clut".
 From Guru Require Import Compiler.
 Definition compiledMod := compile (clut "core").
 Extraction "Compile" kindSize Z.log2_up getDefault isEq compiledMod.
-
-From Guru Require Import Simulator.
-Definition main : IO unit := evalModCyclesIO (clutIfc "core") 10 (clut "core").
-Extraction "Simulate" main.
