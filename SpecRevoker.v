@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Zmod Bool Psatz Nat Arith.
-From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition SimulatorOnly.
+From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition.
 From Cheriot Require Import SpecDefines SpecDevice FunctionalUnits.
 
 Set Implicit Arguments.
