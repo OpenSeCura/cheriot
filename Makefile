@@ -32,7 +32,7 @@ rtl: coq
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Impl/ $(CURR_DIR)/Clut/" rtl
 
 rtlexe: rtl
-	verilator -Wno-CMPCONST --top Tb --binary -I../Guru/Verilog -I./Impl --Mdir Impl/obj_dir Impl/Tb.sv
+	verilator -Wno-CMPCONST --top Tb --binary -I../Guru/Verilog -I./Impl -I. --Mdir Impl/obj_dir Impl/Tb.sv
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" rtlexe
 
 simrtl: coq
@@ -40,7 +40,7 @@ simrtl: coq
 
 simrtlexe: simrtl
 	verilator -Wno-CMPCONST --top Tb --binary -I../Guru/Verilog -I. --Mdir sim_obj_dir SimTb.sv
-	verilator -Wno-CMPCONST --top Tb --binary -I../Guru/Verilog -I./Impl --Mdir Impl/sim_obj_dir Impl/SimTb.sv
+	verilator -Wno-CMPCONST --top Tb --binary -I../Guru/Verilog -I./Impl -I. --Mdir Impl/sim_obj_dir SimTb.sv
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" simrtlexe
 
 force:
