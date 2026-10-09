@@ -81,6 +81,9 @@ Section Clut.
     Definition LeftOverCommandSize := Eval compute in (kindSize (Option Command) - Xlen).
     Definition RespToProcSize := Eval compute in kindSize (Option (Bit (LgClutSz + 1))).
 
+    Definition dmaCanAccessLeaf (b : nat) : Tree DomainElem :=
+      Leaf ("dmaCanAccess_" ++ hex_string_of_Z (Z.of_nat b))%string (dom, ESend Bool).
+
     Definition clutIfc : Tree DomainElem :=
       Node "" [
         (* Keeps track if entry is used *)
@@ -97,7 +100,7 @@ Section Clut.
         (* Response to processor send *)
         Leaf "respToProc_out" (dom, ESend (Bit Xlen));
         (* Response to DMA if it can access the request received for DMA check access *)
-        Node "dmaCanAccess" (repeat (Leaf "dmaCanAccess" (dom, ESend Bool)) NumChannels);
+        Node "dmaCanAccess" (map dmaCanAccessLeaf (seq 0 NumChannels));
         (* Config from processor *)
         Leaf "config" (dom, ERecv (Option ConfigReq));
         (* Return from a read memory transaction to clear busy bit *)

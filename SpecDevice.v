@@ -498,10 +498,10 @@ Definition extractBankTagInit (r : MemRegion) (b : nat)
   end.
 
 Definition memBankLeaf (r : MemRegion) (b : nat) : Tree DomainElem :=
-  Leaf "memBank" (r.(regionDom), EMem (@Build_Mem (regionNumLines r) (Bit 8) (regionNumReadPorts r) (extractBankDataInit r b))).
+  Leaf ("memBank_" ++ hex_string_of_Z (Z.of_nat b))%string (r.(regionDom), EMem (@Build_Mem (regionNumLines r) (Bit 8) (regionNumReadPorts r) (extractBankDataInit r b))).
 
 Definition tagBankLeaf (r : MemRegion) (b : nat) : Tree DomainElem :=
-  Leaf "tagBank" (r.(regionDom), EMem (@Build_Mem (regionTagSize r true) Bool (regionNumReadPorts r) (extractBankTagInit r b))).
+  Leaf ("tagBank_" ++ hex_string_of_Z (Z.of_nat b))%string (r.(regionDom), EMem (@Build_Mem (regionTagSize r true) Bool (regionNumReadPorts r) (extractBankTagInit r b))).
 
 Definition internalMemTargetPortChildren (r : MemRegion) : list (Tree DomainElem) :=
   [ Leaf "lineReadRqValid"  (r.(regionDom), ERecv Bool) ;

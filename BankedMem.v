@@ -39,35 +39,41 @@ Section BankedMem.
   Local Definition EachSize := Z.to_nat (Z.shiftl 1 LgEachSize).
   Local Definition MemAddrSz := LgNumBanks + LgEachSize.
 
+  Definition memBankLeaf (b : nat) : Tree DomainElem :=
+    Leaf ("memBank_" ++ hex_string_of_Z (Z.of_nat b))%string (dom, EMem (@Build_Mem EachSize (Bit 8) 2%nat None)).
+
+  Definition tagBankLeaf (b : nat) : Tree DomainElem :=
+    Leaf ("tagBank_" ++ hex_string_of_Z (Z.of_nat b))%string (dom, EMem (@Build_Mem EachSize Bool 2%nat None)).
+
   Definition bankedMemIfc : Tree DomainElem :=
     Node "" [
-      Node "memBanks" (repeat (Leaf "memBank" (dom, EMem (@Build_Mem EachSize (Bit 8) 2%nat None))) NumBanks);
-      Node "tagBanks" (repeat (Leaf "tagBank" (dom, EMem (@Build_Mem EachSize Bool 2%nat None))) Num8Banks);
+      Node "memBanks" (map memBankLeaf (seq 0 NumBanks));
+      Node "tagBanks" (map tagBankLeaf (seq 0 Num8Banks));
       Leaf "initTagReg" (dom, EReg (Build_Reg (Bit (LgEachSize + 1)) (Some (getDefault _)) false))
     ].
 
   Definition cl := bankedMemIfc.
 
   Definition leaf_list_path_mem (n: nat) (p: FinType n) :=
-    leaf_list_path_repeat (Leaf "memBank" (dom, EMem (@Build_Mem EachSize (Bit 8) 2%nat None))) tt p.
+    leaf_list_path_seq memBankLeaf (fun _ => tt) 0 p.
 
   Definition leaf_list_path_tag (n: nat) (p: FinType n) :=
-    leaf_list_path_repeat (Leaf "tagBank" (dom, EMem (@Build_Mem EachSize Bool 2%nat None))) tt p.
+    leaf_list_path_seq tagBankLeaf (fun _ => tt) 0 p.
 
   Lemma leaf_list_path_mem_is_mem n (i: FinType n) :
-    Is_true (isMemElem (@getLeafElem (Node "memBanks" (repeat (Leaf "memBank" (dom, EMem (@Build_Mem EachSize (Bit 8) 2%nat None))) n)) (leaf_list_path_mem i))).
+    Is_true (isMemElem (@getLeafElem (Node "memBanks" (map memBankLeaf (seq 0 n))) (leaf_list_path_mem i))).
   Proof.
     unfold leaf_list_path_mem, getLeafElem.
-    rewrite getLeaf_repeat.
+    rewrite getLeaf_seq.
     simpl.
     exact I.
   Qed.
 
   Lemma leaf_list_path_tag_is_mem n (i: FinType n) :
-    Is_true (isMemElem (@getLeafElem (Node "tagBanks" (repeat (Leaf "tagBank" (dom, EMem (@Build_Mem EachSize Bool 2%nat None))) n)) (leaf_list_path_tag i))).
+    Is_true (isMemElem (@getLeafElem (Node "tagBanks" (map tagBankLeaf (seq 0 n))) (leaf_list_path_tag i))).
   Proof.
     unfold leaf_list_path_tag, getLeafElem.
-    rewrite getLeaf_repeat.
+    rewrite getLeaf_seq.
     simpl.
     exact I.
   Qed.
@@ -87,20 +93,20 @@ Section BankedMem.
   Defined.
 
   Lemma memBankEq n (i: FinType n) :
-    @getMemFromPathUnsafe (Node "memBanks" (repeat (Leaf "memBank" (dom, EMem (@Build_Mem EachSize (Bit 8) 2%nat None))) n)) (leaf_list_path_mem i) =
+    @getMemFromPathUnsafe (Node "memBanks" (map memBankLeaf (seq 0 n))) (leaf_list_path_mem i) =
     {| memSize := EachSize; memKind := Bit 8; memPort := 2; memInit := None |}.
   Proof.
     unfold leaf_list_path_mem, getMemFromPathUnsafe, getLeafElem.
-    rewrite getLeaf_repeat.
+    rewrite getLeaf_seq.
     reflexivity.
   Qed.
 
   Lemma tagBankEq n (i: FinType n) :
-    @getMemFromPathUnsafe (Node "tagBanks" (repeat (Leaf "tagBank" (dom, EMem (@Build_Mem EachSize Bool 2%nat None))) n)) (leaf_list_path_tag i) =
+    @getMemFromPathUnsafe (Node "tagBanks" (map tagBankLeaf (seq 0 n))) (leaf_list_path_tag i) =
     {| memSize := EachSize; memKind := Bool; memPort := 2; memInit := None |}.
   Proof.
     unfold leaf_list_path_tag, getMemFromPathUnsafe, getLeafElem.
-    rewrite getLeaf_repeat.
+    rewrite getLeaf_seq.
     reflexivity.
   Qed.
 
