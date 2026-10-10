@@ -44,30 +44,21 @@ module Tb();
   logic Recv_sys_core_mem__ram_lineReadRpValid;
 
   // =========================================================================
-  // 2. Revocation Table Target Port Signals (implConcreteRegions[1]: revTableRegion)
-  // =========================================================================
-  logic decl_Send_sys_core_mem___revTable_lineReadRqReady;
-  logic decl_SendEn_sys_core_mem___revTable_lineReadRqReady;
-  logic decl_Send_sys_core_mem___revTable_lineWriteRqReady;
-  logic decl_SendEn_sys_core_mem___revTable_lineWriteRqReady;
-  logic Recv_sys_core_mem___revTable_lineReadRpReady;
-
-  // =========================================================================
-  // 3. PLIC UART Interrupt Signal (implConcreteRegions[4]: plicMemRegion)
+  // 2. PLIC UART Interrupt Signal (implConcreteRegions[4]: plicMemRegion)
   // =========================================================================
   logic Recv_sys_core_mem______plic_plic_UartIrq;
 
   // =========================================================================
-  // 4. External Memory / UART MMIO Signals (implConcreteRegions[5]: extMemRegion)
+  // 3. UART MMIO Signals (implConcreteRegions[5]: uartRegion)
   // =========================================================================
-  logic [31 : 0]  decl_Send_sys_core_mem_______extMem_extMem_lineReadRq;
-  logic           decl_SendEn_sys_core_mem_______extMem_extMem_lineReadRq;
-  extMemReadRp_t  Recv_sys_core_mem_______extMem_extMem_lineReadRp;
-  extMemWriteRq_t decl_Send_sys_core_mem_______extMem_extMem_lineWriteRq;
-  logic           decl_SendEn_sys_core_mem_______extMem_extMem_lineWriteRq;
-  logic           Recv_sys_core_mem_______extMem_lineReadRqReady;
-  logic           Recv_sys_core_mem_______extMem_lineWriteRqReady;
-  logic           Recv_sys_core_mem_______extMem_lineReadRpValid;
+  logic [31 : 0] decl_Send_sys_core_mem_______uart_uart_lineReadRq;
+  logic          decl_SendEn_sys_core_mem_______uart_uart_lineReadRq;
+  uartReadRp_t   Recv_sys_core_mem_______uart_uart_lineReadRp;
+  uartWriteRq_t  decl_Send_sys_core_mem_______uart_uart_lineWriteRq;
+  logic          decl_SendEn_sys_core_mem_______uart_uart_lineWriteRq;
+  logic          Recv_sys_core_mem_______uart_lineReadRqReady;
+  logic          Recv_sys_core_mem_______uart_lineWriteRqReady;
+  logic          Recv_sys_core_mem_______uart_lineReadRpValid;
 
   // =========================================================================
   // Instantiate Guru Generated Top Module
@@ -86,20 +77,15 @@ module Tb();
     .Recv_sys_core_mem__ram_lineReadRqReady(Recv_sys_core_mem__ram_lineReadRqReady),
     .Recv_sys_core_mem__ram_lineWriteRqReady(Recv_sys_core_mem__ram_lineWriteRqReady),
     .Recv_sys_core_mem__ram_lineReadRpValid(Recv_sys_core_mem__ram_lineReadRpValid),
-    .decl_Send_sys_core_mem___revTable_lineReadRqReady(decl_Send_sys_core_mem___revTable_lineReadRqReady),
-    .decl_SendEn_sys_core_mem___revTable_lineReadRqReady(decl_SendEn_sys_core_mem___revTable_lineReadRqReady),
-    .decl_Send_sys_core_mem___revTable_lineWriteRqReady(decl_Send_sys_core_mem___revTable_lineWriteRqReady),
-    .decl_SendEn_sys_core_mem___revTable_lineWriteRqReady(decl_SendEn_sys_core_mem___revTable_lineWriteRqReady),
-    .Recv_sys_core_mem___revTable_lineReadRpReady(Recv_sys_core_mem___revTable_lineReadRpReady),
     .Recv_sys_core_mem______plic_plic_UartIrq(Recv_sys_core_mem______plic_plic_UartIrq),
-    .decl_Send_sys_core_mem_______extMem_extMem_lineReadRq(decl_Send_sys_core_mem_______extMem_extMem_lineReadRq),
-    .decl_SendEn_sys_core_mem_______extMem_extMem_lineReadRq(decl_SendEn_sys_core_mem_______extMem_extMem_lineReadRq),
-    .Recv_sys_core_mem_______extMem_extMem_lineReadRp(Recv_sys_core_mem_______extMem_extMem_lineReadRp),
-    .decl_Send_sys_core_mem_______extMem_extMem_lineWriteRq(decl_Send_sys_core_mem_______extMem_extMem_lineWriteRq),
-    .decl_SendEn_sys_core_mem_______extMem_extMem_lineWriteRq(decl_SendEn_sys_core_mem_______extMem_extMem_lineWriteRq),
-    .Recv_sys_core_mem_______extMem_lineReadRqReady(Recv_sys_core_mem_______extMem_lineReadRqReady),
-    .Recv_sys_core_mem_______extMem_lineWriteRqReady(Recv_sys_core_mem_______extMem_lineWriteRqReady),
-    .Recv_sys_core_mem_______extMem_lineReadRpValid(Recv_sys_core_mem_______extMem_lineReadRpValid),
+    .decl_Send_sys_core_mem_______uart_uart_lineReadRq(decl_Send_sys_core_mem_______uart_uart_lineReadRq),
+    .decl_SendEn_sys_core_mem_______uart_uart_lineReadRq(decl_SendEn_sys_core_mem_______uart_uart_lineReadRq),
+    .Recv_sys_core_mem_______uart_uart_lineReadRp(Recv_sys_core_mem_______uart_uart_lineReadRp),
+    .decl_Send_sys_core_mem_______uart_uart_lineWriteRq(decl_Send_sys_core_mem_______uart_uart_lineWriteRq),
+    .decl_SendEn_sys_core_mem_______uart_uart_lineWriteRq(decl_SendEn_sys_core_mem_______uart_uart_lineWriteRq),
+    .Recv_sys_core_mem_______uart_lineReadRqReady(Recv_sys_core_mem_______uart_lineReadRqReady),
+    .Recv_sys_core_mem_______uart_lineWriteRqReady(Recv_sys_core_mem_______uart_lineWriteRqReady),
+    .Recv_sys_core_mem_______uart_lineReadRpValid(Recv_sys_core_mem_______uart_lineReadRpValid),
 
     .clk_core(clk_core),
     .rst_n_core(rst_n_core)
@@ -111,23 +97,22 @@ module Tb();
   always_ff @(posedge clk_core or negedge rst_n_core) begin
     if (!rst_n_core) begin
       cycleCount <= 64'd0;
-      Recv_sys_core_mem__ram_fetch_lineReadRqReady                    <= 1'b1;
-      Recv_sys_core_mem__ram_fetch_lineReadRpValid                    <= 1'b0;
-      Recv_sys_core_mem__ram_ram_fetch_lineReadRp                     <= '0;
-      Recv_sys_core_mem__ram_lineReadRqReady                          <= 1'b1;
-      Recv_sys_core_mem__ram_lineWriteRqReady                         <= 1'b1;
-      Recv_sys_core_mem__ram_lineReadRpValid                          <= 1'b0;
-      Recv_sys_core_mem__ram_ram_lineReadRp                           <= '0;
-      Recv_sys_core_mem___revTable_lineReadRpReady                    <= 1'b1;
-      Recv_sys_core_mem______plic_plic_UartIrq                        <= 1'b0;
-      Recv_sys_core_mem_______extMem_lineReadRqReady                  <= 1'b1;
-      Recv_sys_core_mem_______extMem_lineWriteRqReady                 <= 1'b1;
-      Recv_sys_core_mem_______extMem_lineReadRpValid                  <= 1'b0;
-      Recv_sys_core_mem_______extMem_extMem_lineReadRp                <= '0;
+      Recv_sys_core_mem__ram_fetch_lineReadRqReady   <= 1'b1;
+      Recv_sys_core_mem__ram_fetch_lineReadRpValid   <= 1'b0;
+      Recv_sys_core_mem__ram_ram_fetch_lineReadRp    <= '0;
+      Recv_sys_core_mem__ram_lineReadRqReady         <= 1'b1;
+      Recv_sys_core_mem__ram_lineWriteRqReady        <= 1'b1;
+      Recv_sys_core_mem__ram_lineReadRpValid         <= 1'b0;
+      Recv_sys_core_mem__ram_ram_lineReadRp          <= '0;
+      Recv_sys_core_mem______plic_plic_UartIrq       <= 1'b0;
+      Recv_sys_core_mem_______uart_lineReadRqReady   <= 1'b1;
+      Recv_sys_core_mem_______uart_lineWriteRqReady  <= 1'b1;
+      Recv_sys_core_mem_______uart_lineReadRpValid   <= 1'b0;
+      Recv_sys_core_mem_______uart_uart_lineReadRp   <= '0;
     end else begin
       logic fetchRpValid;
       logic dataRpValid;
-      logic extRpValid;
+      logic uartRpValid;
 
       if ((cycleCount % 64'd250000) == 64'd0) begin
         $display("[Cycle %0d]", cycleCount);
@@ -151,13 +136,13 @@ module Tb();
         tb_send("decl_Send_sys_core_mem__ram_ram_lineWriteRq",
                 tb_io_val_t'(decl_Send_sys_core_mem__ram_ram_lineWriteRq));
       end
-      if (decl_SendEn_sys_core_mem_______extMem_extMem_lineReadRq) begin
-        tb_send("decl_Send_sys_core_mem_______extMem_extMem_lineReadRq",
-                tb_io_val_t'(decl_Send_sys_core_mem_______extMem_extMem_lineReadRq));
+      if (decl_SendEn_sys_core_mem_______uart_uart_lineReadRq) begin
+        tb_send("decl_Send_sys_core_mem_______uart_uart_lineReadRq",
+                tb_io_val_t'(decl_Send_sys_core_mem_______uart_uart_lineReadRq));
       end
-      if (decl_SendEn_sys_core_mem_______extMem_extMem_lineWriteRq) begin
-        tb_send("decl_Send_sys_core_mem_______extMem_extMem_lineWriteRq",
-                tb_io_val_t'(decl_Send_sys_core_mem_______extMem_extMem_lineWriteRq));
+      if (decl_SendEn_sys_core_mem_______uart_uart_lineWriteRq) begin
+        tb_send("decl_Send_sys_core_mem_______uart_uart_lineWriteRq",
+                tb_io_val_t'(decl_Send_sys_core_mem_______uart_uart_lineWriteRq));
       end
 
       // 2. Drive Recv ports for next cycle
@@ -183,21 +168,19 @@ module Tb();
           verilog_bits#(TbIoWidth, $bits(ramReadRp_t) - 1, 0)::extract(tb_recv("Recv_sys_core_mem__ram_ram_lineReadRp"));
       end
 
-      Recv_sys_core_mem___revTable_lineReadRpReady <=
-        verilog_bits#(TbIoWidth, 0, 0)::extract(tb_recv("Recv_sys_core_mem___revTable_lineReadRpReady"));
       Recv_sys_core_mem______plic_plic_UartIrq <=
         verilog_bits#(TbIoWidth, 0, 0)::extract(tb_recv("Recv_sys_core_mem______plic_plic_UartIrq"));
 
-      Recv_sys_core_mem_______extMem_lineReadRqReady <=
-        verilog_bits#(TbIoWidth, 0, 0)::extract(tb_recv("Recv_sys_core_mem_______extMem_lineReadRqReady"));
-      Recv_sys_core_mem_______extMem_lineWriteRqReady <=
-        verilog_bits#(TbIoWidth, 0, 0)::extract(tb_recv("Recv_sys_core_mem_______extMem_lineWriteRqReady"));
-      extRpValid =
-        verilog_bits#(TbIoWidth, 0, 0)::extract(tb_recv("Recv_sys_core_mem_______extMem_lineReadRpValid"));
-      Recv_sys_core_mem_______extMem_lineReadRpValid <= extRpValid;
-      if (extRpValid) begin
-        Recv_sys_core_mem_______extMem_extMem_lineReadRp <=
-          verilog_bits#(TbIoWidth, $bits(extMemReadRp_t) - 1, 0)::extract(tb_recv("Recv_sys_core_mem_______extMem_extMem_lineReadRp"));
+      Recv_sys_core_mem_______uart_lineReadRqReady <=
+        verilog_bits#(TbIoWidth, 0, 0)::extract(tb_recv("Recv_sys_core_mem_______uart_lineReadRqReady"));
+      Recv_sys_core_mem_______uart_lineWriteRqReady <=
+        verilog_bits#(TbIoWidth, 0, 0)::extract(tb_recv("Recv_sys_core_mem_______uart_lineWriteRqReady"));
+      uartRpValid =
+        verilog_bits#(TbIoWidth, 0, 0)::extract(tb_recv("Recv_sys_core_mem_______uart_lineReadRpValid"));
+      Recv_sys_core_mem_______uart_lineReadRpValid <= uartRpValid;
+      if (uartRpValid) begin
+        Recv_sys_core_mem_______uart_uart_lineReadRp <=
+          verilog_bits#(TbIoWidth, $bits(uartReadRp_t) - 1, 0)::extract(tb_recv("Recv_sys_core_mem_______uart_uart_lineReadRp"));
       end
     end
   end

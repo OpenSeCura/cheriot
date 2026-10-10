@@ -41,7 +41,7 @@ Definition implConcreteRegions : list MemRegion := [
   @clintMemRegion "core" ClintBaseAddr I I ;
   @revokerMemRegion "core" (implRevokerExtraChildren "core") RevokerBaseAddr I I ;
   @plicMemRegion "core" 3 PlicBaseAddr I I ;
-  extMemRegion
+  uartRegion
 ].
 
 Definition implConcreteClint : @ClintInstance "core" implConcreteRegions :=

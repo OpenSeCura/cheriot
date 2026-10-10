@@ -39,7 +39,7 @@
   typedef struct packed {
     logic [15 : 0][7 : 0] data;
     logic [1 : 0]         tag;
-  } extMemReadRp_t;
+  } uartReadRp_t;
 
   typedef struct packed {
     logic [31 : 0]        addr;
@@ -47,9 +47,9 @@
     logic [15 : 0]        dataMask;
     logic [1 : 0]         tag;
     logic [1 : 0]         tagMask;
-  } extMemWriteRq_t;
+  } uartWriteRq_t;
 
-  localparam int TbIoWidth = $bits(extMemWriteRq_t);
+  localparam int TbIoWidth = $bits(uartWriteRq_t);
   typedef logic [TbIoWidth - 1 : 0] tb_io_val_t;
 
   logic [LineBits - 1 : 0] ramData [0 : NumLines - 1];
@@ -98,7 +98,7 @@
       end else if (has_substr(name, "_ram_")) begin
         ramDataReadAddr    = val[31 : 0];
         ramDataReadRpValid = 1'b1;
-      end else if (has_substr(name, "_extMem_")) begin
+      end else if (has_substr(name, "_uart_")) begin
         uartReadAddr    = val[31 : 0];
         uartReadRpValid = 1'b1;
       end
@@ -142,9 +142,9 @@
             end
           end
         end
-      end else if (has_substr(name, "_extMem_")) begin
-        extMemWriteRq_t wr;
-        wr = val[$bits(extMemWriteRq_t) - 1 : 0];
+      end else if (has_substr(name, "_uart_")) begin
+        uartWriteRq_t wr;
+        wr = val[$bits(uartWriteRq_t) - 1 : 0];
         if (wr.addr == 32'h1000_0000) begin
           if (wr.dataMask[12]) begin
             dlab = wr.data[12][7];
@@ -191,7 +191,7 @@
         rp.tag[0] = ramTag[idx];
         return tb_io_val_t'(rp);
       end else begin
-        extMemReadRp_t rp;
+        uartReadRp_t rp;
         rp              = '0;
         uartReadRpValid = 1'b0;
         if (uartReadAddr == 32'h1000_0000) begin

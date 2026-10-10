@@ -52,11 +52,11 @@ Definition ClintBaseAddr   : Z := 0x02000000.
 Definition RevokerBaseAddr : Z := 0x03000000.
 Definition PlicBaseAddr    : Z := 0x04000000.
 
-Definition ExtMemBase        : Z := 0x10000000.
-Definition ExtMemSize        : Z := 0x70000000.
-Definition LgExtMemLineBytes : Z := 4.
-Definition ExtMemLineConfig  : LineConfig := {|
-  cfgLgLineBytes := Z.to_nat LgExtMemLineBytes ;
+Definition UartBase        : Z := 0x10000000.
+Definition UartSize        : Z := 0x70000000.
+Definition LgUartLineBytes : Z := 4.
+Definition UartLineConfig  : LineConfig := {|
+  cfgLgLineBytes := Z.to_nat LgUartLineBytes ;
   cfgHasTags     := true ;
   cfgLinePf      := I
 |}.
@@ -104,12 +104,12 @@ Definition revTableRegion : MemRegion := {|
   regionSizeAligned := I
 |}.
 
-Definition extMemRegion : MemRegion := {|
-  regionName        := "extMem" ;
+Definition uartRegion : MemRegion := {|
+  regionName        := "uart" ;
   regionDom         := "core" ;
-  regionBase        := ExtMemBase ;
-  regionSize        := ExtMemSize ;
-  regionLineCfg     := ExtMemLineConfig ;
+  regionBase        := UartBase ;
+  regionSize        := UartSize ;
+  regionLineCfg     := UartLineConfig ;
   isReadOnly        := false ;
   hasExtraFetchPort := false ;
   regionKind        := ExternalMem ;
@@ -124,7 +124,7 @@ Definition concreteRegions : list MemRegion := [
   @clintMemRegion "core" ClintBaseAddr I I ;
   @revokerMemRegion "core" [] RevokerBaseAddr I I ;
   @plicMemRegion "core" 3 PlicBaseAddr I I ;
-  extMemRegion
+  uartRegion
 ].
 
 Definition concreteRegionsDisjoint : Is_true (pairwiseDisjoint concreteRegions) := I.

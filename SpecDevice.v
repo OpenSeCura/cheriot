@@ -511,13 +511,17 @@ Definition internalMemTargetPortChildren (r : MemRegion) : list (Tree DomainElem
     Leaf "lineWriteRq"      (r.(regionDom), ERecv (LineWriteRq r.(regionLineCfg) true))
   ].
 
+Definition internalMemTargetPortTree (r : MemRegion) : Tree DomainElem :=
+  Node "target" (internalMemTargetPortChildren r).
+
 Definition internalMemRegionChildren
            (r : MemRegion)
            (isAccessible : bool)
            : list (Tree DomainElem) :=
-  ([ Node "memBanks" (map (memBankLeaf r) (seq 0 (lineBytes r))) ;
-     Node "tagBanks" (map (tagBankLeaf r) (seq 0 (numLineTags r true)))
-   ] ++ if isAccessible then internalMemTargetPortChildren r else [])%list.
+  [ Node "memBanks" (map (memBankLeaf r) (seq 0 (lineBytes r))) ;
+    Node "tagBanks" (map (tagBankLeaf r) (seq 0 (numLineTags r true))) ;
+    optNode "target" isAccessible (internalMemTargetPortChildren r)
+  ].
 
 Definition externalMemFetchChildren (r : MemRegion) : list (Tree DomainElem) :=
   [ Leaf "lineReadRq" (r.(regionDom), ESend Addr) ;
@@ -772,29 +776,30 @@ Section InternalMemTargetPortActions.
   Variable ty : Kind -> Type.
 
   Local Definition tIntTargetPort := internalMemRegionTree r true.
-  Local Definition pTargetPortLineReadRqValid  : RecvPath tIntTargetPort := getChildRecvPathTree tIntTargetPort "lineReadRqValid".
-  Local Definition pTargetPortLineReadRq       : RecvPath tIntTargetPort := getChildRecvPathTree tIntTargetPort "lineReadRq".
-  Local Definition pTargetPortLineReadRp       : SendPath tIntTargetPort := getChildSendPathTree tIntTargetPort "lineReadRp".
-  Local Definition pTargetPortLineWriteRqValid : RecvPath tIntTargetPort := getChildRecvPathTree tIntTargetPort "lineWriteRqValid".
-  Local Definition pTargetPortLineWriteRq      : RecvPath tIntTargetPort := getChildRecvPathTree tIntTargetPort "lineWriteRq".
+  Local Definition tTargetPort    := internalMemTargetPortTree r.
+  Local Definition pTargetPortLineReadRqValid  : RecvPath tTargetPort := getChildRecvPathTree tTargetPort "lineReadRqValid".
+  Local Definition pTargetPortLineReadRq       : RecvPath tTargetPort := getChildRecvPathTree tTargetPort "lineReadRq".
+  Local Definition pTargetPortLineReadRp       : SendPath tTargetPort := getChildSendPathTree tTargetPort "lineReadRp".
+  Local Definition pTargetPortLineWriteRqValid : RecvPath tTargetPort := getChildRecvPathTree tTargetPort "lineWriteRqValid".
+  Local Definition pTargetPortLineWriteRq      : RecvPath tTargetPort := getChildRecvPathTree tTargetPort "lineWriteRq".
 
   Definition internalMemRegionTargetPortRead : Action ty tIntTargetPort (Bit 0) :=
-    Recv "valid" pTargetPortLineReadRqValid (fun valid =>
+    LetA valid : Bool <- liftAction child2Path (Recv "valid" pTargetPortLineReadRqValid (fun valid => Return #valid)) ;
     If #valid Then (
-      Recv "addr" pTargetPortLineReadRq (fun addr =>
+      LetA addr : Addr <- liftAction child2Path (Recv "addr" pTargetPortLineReadRq (fun addr => Return #addr)) ;
       LetA rp : LineReadRp r.(regionLineCfg) true <-
         internalMemRegionLineRead r true false addr ;
-      Send pTargetPortLineReadRp #rp Retv)
+      liftAction child2Path (Send pTargetPortLineReadRp #rp Retv)
     ) ;
-    Retv).
+    Retv.
 
   Definition internalMemRegionTargetPortWrite : Action ty tIntTargetPort (Bit 0) :=
-    Recv "valid" pTargetPortLineWriteRqValid (fun valid =>
+    LetA valid : Bool <- liftAction child2Path (Recv "valid" pTargetPortLineWriteRqValid (fun valid => Return #valid)) ;
     If #valid Then (
-      Recv "rq" pTargetPortLineWriteRq (fun rq =>
-      internalMemRegionLineWrite r true rq)
+      LetA rq : LineWriteRq r.(regionLineCfg) true <- liftAction child2Path (Recv "rq" pTargetPortLineWriteRq (fun rq => Return #rq)) ;
+      internalMemRegionLineWrite r true rq
     ) ;
-    Retv).
+    Retv.
 
 End InternalMemTargetPortActions.
 
