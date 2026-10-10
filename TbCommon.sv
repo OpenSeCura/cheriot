@@ -83,8 +83,15 @@
     return 1'b0;
   endfunction
 
+  function automatic bit has_suffix(string s, string suf);
+    int sl = s.len();
+    int bl = suf.len();
+    if (sl < bl) return 1'b0;
+    return (s.substr(sl - bl, sl - 1) == suf);
+  endfunction
+
   function automatic void tb_send(string name, tb_io_val_t val);
-    if (has_substr(name, "_lineReadRq_")) begin
+    if (has_suffix(name, "_lineReadRq")) begin
       if (has_substr(name, "_fetch_")) begin
         ramFetchReadAddr    = val[31 : 0];
         ramFetchReadRpValid = 1'b1;
@@ -95,7 +102,7 @@
         uartReadAddr    = val[31 : 0];
         uartReadRpValid = 1'b1;
       end
-    end else if (has_substr(name, "_lineWriteRq_")) begin
+    end else if (has_suffix(name, "_lineWriteRq")) begin
       if (has_substr(name, "_ram_")) begin
         ramWriteRq_t                wr;
         logic [31 : 0]              wrAddr;
@@ -155,11 +162,11 @@
   endfunction
 
   function automatic tb_io_val_t tb_recv(string name);
-    if (has_substr(name, "_lineReadRqReady_") ||
-        has_substr(name, "_lineWriteRqReady_") ||
-        has_substr(name, "_lineReadRpReady_")) begin
+    if (has_suffix(name, "_lineReadRqReady") ||
+        has_suffix(name, "_lineWriteRqReady") ||
+        has_suffix(name, "_lineReadRpReady")) begin
       return tb_io_val_t'(1'b1);
-    end else if (has_substr(name, "_lineReadRpValid_")) begin
+    end else if (has_suffix(name, "_lineReadRpValid")) begin
       if (has_substr(name, "_fetch_")) begin
         return tb_io_val_t'(ramFetchReadRpValid);
       end else if (has_substr(name, "_ram_")) begin
@@ -167,7 +174,7 @@
       end else begin
         return tb_io_val_t'(uartReadRpValid);
       end
-    end else if (has_substr(name, "_lineReadRp_")) begin
+    end else if (has_suffix(name, "_lineReadRp")) begin
       if (has_substr(name, "_ram_")) begin
         ramReadRp_t                 rp;
         logic [31 : 0]              addr;
@@ -197,7 +204,7 @@
         end
         return tb_io_val_t'(rp);
       end
-    end else if (has_substr(name, "_UartIrq_")) begin
+    end else if (has_suffix(name, "_UartIrq")) begin
       return tb_io_val_t'(1'(ie[0] ? (rxBufValid | ie[1]) : ie[1]));
     end else begin
       return '0;
