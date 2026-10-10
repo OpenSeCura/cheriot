@@ -260,83 +260,41 @@ Qed.
  * 3. GENERIC ACTION-LIFTING HELPERS
  * =========================================================================== *)
 
-Fixpoint stagedLiftHead {ty : Kind -> Type} {name : string}
-  {x : Tree DomainElem} {xs : list (Tree DomainElem)} {k : Kind}
-  (a : Action ty x k) : Action ty (Node name (x :: xs)) k :=
-  match a with
-  | ReadReg s x_reg cont =>
-      ReadReg s (@Build_RegPath (Node name (x :: xs)) (inl x_reg.(regPath)) x_reg.(regPathPf))
-              (fun v => stagedLiftHead (cont v))
-  | WriteReg x_reg v cont =>
-      WriteReg (@Build_RegPath (Node name (x :: xs)) (inl x_reg.(regPath)) x_reg.(regPathPf)) v
-               (stagedLiftHead cont)
-  | ReadRqMem m i port cont =>
-      ReadRqMem (@Build_MemPath (Node name (x :: xs)) (inl m.(memPath)) m.(memPathPf)) i port
-                (stagedLiftHead cont)
-  | ReadRpMem s m port cont =>
-      ReadRpMem s (@Build_MemPath (Node name (x :: xs)) (inl m.(memPath)) m.(memPathPf)) port
-                (fun v => stagedLiftHead (cont v))
-  | WriteMem m i v cont =>
-      WriteMem (@Build_MemPath (Node name (x :: xs)) (inl m.(memPath)) m.(memPathPf)) i v
-               (stagedLiftHead cont)
-  | Send p v cont =>
-      Send (@Build_SendPath (Node name (x :: xs)) (inl p.(sendPath)) p.(sendPathPf)) v
-           (stagedLiftHead cont)
-  | Recv s p cont =>
-      Recv s (@Build_RecvPath (Node name (x :: xs)) (inl p.(recvPath)) p.(recvPathPf))
-           (fun v => stagedLiftHead (cont v))
-  | LetExp s e cont =>
-      LetExp s e (fun v => stagedLiftHead (cont v))
-  | LetAction s a' cont =>
-      LetAction s (stagedLiftHead a') (fun v => stagedLiftHead (cont v))
-  | NonDet s k' cont =>
-      NonDet s k' (fun v => stagedLiftHead (cont v))
-  | IfElse s p a1 a2 cont =>
-      IfElse s p (stagedLiftHead a1) (stagedLiftHead a2) (fun v => stagedLiftHead (cont v))
-  | System sys cont =>
-      System sys (stagedLiftHead cont)
-  | Return e =>
-      Return e
-  end.
+Lemma eq_rect_nat_refl : forall (n : nat) (P : nat -> Type) (v : P n) (pf : n = n),
+  eq_rect n P v n pf = v.
+Proof.
+  intros n P v pf.
+  rewrite (UIP_dec Nat.eq_dec pf eq_refl).
+  reflexivity.
+Qed.
 
-Fixpoint stagedLiftTail {ty : Kind -> Type} {name : string}
-  {x : Tree DomainElem} {xs : list (Tree DomainElem)} {k : Kind}
-  (a : Action ty (Node name xs) k) : Action ty (Node name (x :: xs)) k :=
-  match a with
-  | ReadReg s x_reg cont =>
-      ReadReg s (@Build_RegPath (Node name (x :: xs)) (inr x_reg.(regPath)) x_reg.(regPathPf))
-              (fun v => stagedLiftTail (cont v))
-  | WriteReg x_reg v cont =>
-      WriteReg (@Build_RegPath (Node name (x :: xs)) (inr x_reg.(regPath)) x_reg.(regPathPf)) v
-               (stagedLiftTail cont)
-  | ReadRqMem m i port cont =>
-      ReadRqMem (@Build_MemPath (Node name (x :: xs)) (inr m.(memPath)) m.(memPathPf)) i port
-                (stagedLiftTail cont)
-  | ReadRpMem s m port cont =>
-      ReadRpMem s (@Build_MemPath (Node name (x :: xs)) (inr m.(memPath)) m.(memPathPf)) port
-                (fun v => stagedLiftTail (cont v))
-  | WriteMem m i v cont =>
-      WriteMem (@Build_MemPath (Node name (x :: xs)) (inr m.(memPath)) m.(memPathPf)) i v
-               (stagedLiftTail cont)
-  | Send p v cont =>
-      Send (@Build_SendPath (Node name (x :: xs)) (inr p.(sendPath)) p.(sendPathPf)) v
-           (stagedLiftTail cont)
-  | Recv s p cont =>
-      Recv s (@Build_RecvPath (Node name (x :: xs)) (inr p.(recvPath)) p.(recvPathPf))
-           (fun v => stagedLiftTail (cont v))
-  | LetExp s e cont =>
-      LetExp s e (fun v => stagedLiftTail (cont v))
-  | LetAction s a' cont =>
-      LetAction s (stagedLiftTail a') (fun v => stagedLiftTail (cont v))
-  | NonDet s k' cont =>
-      NonDet s k' (fun v => stagedLiftTail (cont v))
-  | IfElse s p a1 a2 cont =>
-      IfElse s p (stagedLiftTail a1) (stagedLiftTail a2) (fun v => stagedLiftTail (cont v))
-  | System sys cont =>
-      System sys (stagedLiftTail cont)
-  | Return e =>
-      Return e
-  end.
+Lemma getRegFromElemTypeEq_irrel :
+  forall (e : Elem) (pf1 pf2 : Is_true (isRegElem e)),
+    getRegFromElemTypeEq e pf1 = getRegFromElemTypeEq e pf2.
+Proof.
+  intros [r | m | k | k] pf1 pf2; try contradiction; reflexivity.
+Qed.
+
+Lemma getMemFromElemTypeEq_irrel :
+  forall (e : Elem) (pf1 pf2 : Is_true (isMemElem e)),
+    getMemFromElemTypeEq e pf1 = getMemFromElemTypeEq e pf2.
+Proof.
+  intros [r | m | k | k] pf1 pf2; try contradiction; reflexivity.
+Qed.
+
+Lemma getSendFromElemTypeEq_irrel :
+  forall (e : Elem) (pf1 pf2 : Is_true (isSendElem e)),
+    getSendFromElemTypeEq e pf1 = getSendFromElemTypeEq e pf2.
+Proof.
+  intros [r | m | k | k] pf1 pf2; try contradiction; reflexivity.
+Qed.
+
+Lemma getRecvFromElemTypeEq_irrel :
+  forall (e : Elem) (pf1 pf2 : Is_true (isRecvElem e)),
+    getRecvFromElemTypeEq e pf1 = getRecvFromElemTypeEq e pf2.
+Proof.
+  intros [r | m | k | k] pf1 pf2; try contradiction; reflexivity.
+Qed.
 
 Lemma evalActionPropGen_toAction :
   forall {t k} (le : LetExpr type k) s P,
@@ -350,17 +308,27 @@ Proof.
   - destruct (evalExpr p); [rewrite IHle1 | rewrite IHle2]; apply H.
 Qed.
 
-Lemma evalActionPropGen_stagedLiftHead :
+Lemma evalActionPropGen_liftAction_child0Path :
   forall {name x xs k} (a : @Action type x k) sx sxs P,
-    evalActionPropGen (@stagedLiftHead type name x xs k a) (sx ,, sxs) P <->
+    evalActionPropGen (@liftAction type (Node name (x :: xs)) child0Path k a) (sx ,, sxs) P <->
     evalActionPropGen a sx (fun sx' r => P (sx' ,, sxs) r).
 Proof.
   intros name x xs k a.
   induction a; intros sx sxs P;
-    cbn -[castStateReg castStateRegInv castStateMem castStateMemInv
-          castStateSend castStateSendInv castStateRecv castStateRecvInv];
+    cbn -[getRegFromElemTypeEq getMemFromElemTypeEq getSendFromElemTypeEq getRecvFromElemTypeEq
+          regKind_embed memKind_embed memSize_embed memPort_embed sendKind_embed recvKind_embed];
+    unfold cast_reg, cast_reg_expr, cast_mem, cast_mem_expr, cast_mem_idx, cast_mem_port,
+           cast_send, cast_send_expr, cast_recv;
+    repeat rewrite eq_rect_Kind_refl;
+    repeat rewrite eq_rect_nat_refl;
+    try rewrite (getRegFromElemTypeEq_irrel _ _ x0.(regPathPf));
+    try rewrite (getMemFromElemTypeEq_irrel _ _ x0.(memPathPf));
+    try rewrite (getSendFromElemTypeEq_irrel _ _ x0.(sendPathPf));
+    try rewrite (getRecvFromElemTypeEq_irrel _ _ x0.(recvPathPf));
     try tauto; try apply H; try apply IHa.
-  - split; intros [v Hv]; exists v; apply H; exact Hv.
+  - split; intros [v Hv]; exists v;
+      try rewrite eq_rect_Kind_refl in Hv; try rewrite eq_rect_Kind_refl;
+      apply H; exact Hv.
   - rewrite IHa. split; intros Ha; (eapply evalActionPropGen_mono; [| exact Ha]);
       intros s1 r1 Hs1; apply H; exact Hs1.
   - split; intros [v Hv]; exists v; apply H; exact Hv.
@@ -371,17 +339,27 @@ Proof.
         intros s1 r1 Hs1; apply H; exact Hs1.
 Qed.
 
-Lemma evalActionPropGen_stagedLiftTail :
-  forall {name x xs k} (a : @Action type (Node name xs) k) sx sxs P,
-    evalActionPropGen (@stagedLiftTail type name x xs k a) (sx ,, sxs) P <->
-    evalActionPropGen a sxs (fun sxs' r => P (sx ,, sxs') r).
+Lemma evalActionPropGen_liftAction_child1Path :
+  forall {name c0 c1 cs k} (a : @Action type c1 k) sc0 sc1 scs P,
+    evalActionPropGen (@liftAction type (Node name (c0 :: c1 :: cs)) child1Path k a) (sc0 ,, (sc1 ,, scs)) P <->
+    evalActionPropGen a sc1 (fun sc1' r => P (sc0 ,, (sc1' ,, scs)) r).
 Proof.
-  intros name x xs k a.
-  induction a; intros sx sxs P;
-    cbn -[castStateReg castStateRegInv castStateMem castStateMemInv
-          castStateSend castStateSendInv castStateRecv castStateRecvInv];
+  intros name c0 c1 cs k a.
+  induction a; intros sc0 sc1 scs P;
+    cbn -[getRegFromElemTypeEq getMemFromElemTypeEq getSendFromElemTypeEq getRecvFromElemTypeEq
+          regKind_embed memKind_embed memSize_embed memPort_embed sendKind_embed recvKind_embed];
+    unfold cast_reg, cast_reg_expr, cast_mem, cast_mem_expr, cast_mem_idx, cast_mem_port,
+           cast_send, cast_send_expr, cast_recv;
+    repeat rewrite eq_rect_Kind_refl;
+    repeat rewrite eq_rect_nat_refl;
+    try rewrite (getRegFromElemTypeEq_irrel _ _ x.(regPathPf));
+    try rewrite (getMemFromElemTypeEq_irrel _ _ x.(memPathPf));
+    try rewrite (getSendFromElemTypeEq_irrel _ _ x.(sendPathPf));
+    try rewrite (getRecvFromElemTypeEq_irrel _ _ x.(recvPathPf));
     try tauto; try apply H; try apply IHa.
-  - split; intros [v Hv]; exists v; apply H; exact Hv.
+  - split; intros [v Hv]; exists v;
+      try rewrite eq_rect_Kind_refl in Hv; try rewrite eq_rect_Kind_refl;
+      apply H; exact Hv.
   - rewrite IHa. split; intros Ha; (eapply evalActionPropGen_mono; [| exact Ha]);
       intros s1 r1 Hs1; apply H; exact Hs1.
   - split; intros [v Hv]; exists v; apply H; exact Hv.
@@ -721,8 +699,8 @@ Section GenericPipelinedHardwareProof.
     (a : Action ty (fifoTree dom 1 StateK) k) :
     Action ty (stagedStagesTree n) k :=
     match n with
-    | 0%nat => stagedLiftHead a
-    | S m   => stagedLiftTail (stagedLiftHead (stagedLiftLastStage m a))
+    | 0%nat => liftAction child0Path a
+    | S m   => liftAction child1Path (stagedLiftLastStage m a)
     end.
 
   Lemma evalActionPropGen_stagedLiftLastStage :
@@ -737,34 +715,34 @@ Section GenericPipelinedHardwareProof.
       cbn [stagedLiftLastStage stagedLastFifo stagedUpdateLastFifo] in st, P |- *.
     - destruct st as [f0 []]; cbn [Fst Snd].
       unfold stagedStagesTree; cbn [stagedStagesTail].
-      rewrite evalActionPropGen_stagedLiftHead; reflexivity.
+      rewrite evalActionPropGen_liftAction_child0Path; reflexivity.
     - destruct st as [f_head [st_tail []]]; cbn [Fst Snd].
       unfold stagedStagesTree at 1; cbn [stagedStagesTail].
-      rewrite evalActionPropGen_stagedLiftTail, evalActionPropGen_stagedLiftHead.
+      rewrite evalActionPropGen_liftAction_child1Path.
       exact (IHm k a st_tail (fun f' v => P (f_head ,, (f' ,, tt)) v)).
   Qed.
 
   Definition stagedPipeCanEnq (ty : Kind -> Type) :
     Action ty stagedPipeTree Bool :=
-    LetA full0 : Bool <- stagedLiftHead (@isFull dom 1 StateK ty) ;
+    LetA full0 : Bool <- liftAction child0Path (@isFull dom 1 StateK ty) ;
     Return (Not #full0).
 
   Definition stagedPipeEnq (ty : Kind -> Type) (inp : ty InpK) :
     Action ty stagedPipeTree (Bit 0) :=
     LetL st0 : StateK <- initFn ty inp ;
-    stagedLiftHead (@enq dom 1 StateK ty st0).
+    liftAction child0Path (@enq dom 1 StateK ty st0).
 
   Definition stagedPipeStepAdjacent (ty : Kind -> Type) (m : nat) :
     Action ty (stagedStagesTree (S m)) (Bit 0) :=
-    LetA optIn : Option StateK <- stagedLiftHead (@first dom 1 StateK ty) ;
+    LetA optIn : Option StateK <- liftAction child0Path (@first dom 1 StateK ty) ;
     LetA nextFull : Bool <-
-      stagedLiftTail (stagedLiftHead (stagedLiftHead (@isFull dom 1 StateK ty))) ;
+      liftAction child1Path (liftAction child0Path (@isFull dom 1 StateK ty)) ;
     If (And [ #optIn`"valid" ; Not #nextFull ]) Then (
       Let curSt   : StateK <- #optIn`"data" ;
       LetL nextSt : StateK <- stepFn ty curSt ;
       LetA _ : Bit 0 <-
-        stagedLiftTail (stagedLiftHead (stagedLiftHead (@enq dom 1 StateK ty nextSt))) ;
-      LetA _ : Bit 0 <- stagedLiftHead (@deq dom 1 StateK ty) ;
+        liftAction child1Path (liftAction child0Path (@enq dom 1 StateK ty nextSt)) ;
+      LetA _ : Bit 0 <- liftAction child0Path (@deq dom 1 StateK ty) ;
       Retv
     ) Else (
       Retv
@@ -777,7 +755,7 @@ Section GenericPipelinedHardwareProof.
     | 0%nat => []
     | S m =>
         stagedPipeStepAdjacent ty m ::
-        map (fun r => stagedLiftTail (stagedLiftHead r))
+        map (fun r => liftAction child1Path r)
             (stagedPipeStageRulesChain ty m)
     end.
 
@@ -827,7 +805,7 @@ Section GenericPipelinedHardwareProof.
     pose proof (InversionActionPropGen Hsem) as Hinv; clear Hsem.
     unfold stagedPipeEnq, stagedPipeTree, stagedStagesTree, PipeStageAtStep in Hempty, Hinv |- *.
     revert Hinv; cbn [evalActionPropGen Fst] in Hempty |- *.
-    rewrite evalActionPropGen_toAction, evalActionPropGen_stagedLiftHead,
+    rewrite evalActionPropGen_toAction, evalActionPropGen_liftAction_child0Path,
             evalActionPropGen_fifo_enq, Hempty.
     cbn [negb Zmod.eqb]; intros [<- <-]; split; reflexivity.
   Qed.
@@ -869,11 +847,11 @@ Section GenericPipelinedHardwareProof.
     pose proof (InversionActionPropGen Hsem) as Hinv.
     unfold stagedPipeStepAdjacent, stagedStagesTree in Hinv.
     revert Hinv; cbn [stagedStagesTail evalActionPropGen].
-    rewrite evalActionPropGen_stagedLiftHead, (evalActionPropGen_fifo_first f_cur),
+    rewrite evalActionPropGen_liftAction_child0Path, (evalActionPropGen_fifo_first f_cur),
             Hcur_full, Hcur_val.
     change (Zmod.eqb (Zmod.of_Z 2 1) (Zmod.of_Z 2 0)) with false; cbn [evalActionPropGen].
-    rewrite evalActionPropGen_stagedLiftTail, evalActionPropGen_stagedLiftHead,
-            evalActionPropGen_stagedLiftHead, (evalActionPropGen_fifo_isFull f_next), Hnext_empty.
+    rewrite evalActionPropGen_liftAction_child1Path,
+            evalActionPropGen_liftAction_child0Path, (evalActionPropGen_fifo_isFull f_next), Hnext_empty.
     change (Zmod.eqb (Zmod.of_Z 2 0) (Zmod.of_Z 2 1)) with false.
     cbn [evalActionPropGen].
     rewrite evalExpr_And2_Not, evalExpr_mkSome_isSome.
@@ -881,11 +859,11 @@ Section GenericPipelinedHardwareProof.
     cbn [negb andb evalActionPropGen].
     rewrite evalExpr_mkSome_data; cbn [evalActionPropGen].
     rewrite evalActionPropGen_toAction; cbn [evalActionPropGen].
-    rewrite evalActionPropGen_stagedLiftTail, evalActionPropGen_stagedLiftHead,
-            evalActionPropGen_stagedLiftHead, evalActionPropGen_fifo_enq, Hnext_empty.
+    rewrite evalActionPropGen_liftAction_child1Path,
+            evalActionPropGen_liftAction_child0Path, evalActionPropGen_fifo_enq, Hnext_empty.
     change (Zmod.eqb (Zmod.of_Z 2 0) (Zmod.of_Z 2 1)) with false.
     cbn [negb evalActionPropGen].
-    rewrite evalActionPropGen_stagedLiftHead, evalActionPropGen_fifo_deq, Hcur_full.
+    rewrite evalActionPropGen_liftAction_child0Path, evalActionPropGen_fifo_deq, Hcur_full.
     change (Zmod.eqb (Zmod.of_Z 2 1) (Zmod.of_Z 2 0)) with false.
     cbn [negb evalActionPropGen]; intros [<- <-]; repeat split; reflexivity.
   Qed.

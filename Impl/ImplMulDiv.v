@@ -783,30 +783,30 @@ Section ModeParameterizedSubsystem.
     | PipelinedMul_IterDiv =>
         LetIf res : Bool <-
           If #isMul Then (
-            LetA c1 : Bool <- stagedLiftHead (stagedLiftHead (mulPipeCanEnq dom input_width mul_stages ty)) ;
-            LetA f2 : Bool <- stagedLiftHead (stagedLiftTail (stagedLiftHead (isFull dom MulDivFifoCapacity RegIdx ty))) ;
+            LetA c1 : Bool <- liftAction child0Path (liftAction child0Path (mulPipeCanEnq dom input_width mul_stages ty)) ;
+            LetA f2 : Bool <- liftAction child0Path (liftAction child1Path (isFull dom MulDivFifoCapacity RegIdx ty)) ;
             Return (And [ #c1 ; Not #f2 ])
           ) Else (
-            LetA c1 : Bool <- stagedLiftTail (stagedLiftHead (stagedLiftHead (divIterCanEnq dom input_width div_stages ty))) ;
-            LetA f2 : Bool <- stagedLiftTail (stagedLiftHead (stagedLiftTail (stagedLiftHead (isFull dom MulDivFifoCapacity RegIdx ty)))) ;
+            LetA c1 : Bool <- liftAction child1Path (liftAction child0Path (divIterCanEnq dom input_width div_stages ty)) ;
+            LetA f2 : Bool <- liftAction child1Path (liftAction child1Path (isFull dom MulDivFifoCapacity RegIdx ty)) ;
             Return (And [ #c1 ; Not #f2 ])
           ) ;
         Return #res
     | IterMul_SeparateIterDiv =>
         LetIf res : Bool <-
           If #isMul Then (
-            LetA c1 : Bool <- stagedLiftHead (stagedLiftHead (mulIterCanEnq dom input_width mul_stages ty)) ;
-            LetA f2 : Bool <- stagedLiftHead (stagedLiftTail (stagedLiftHead (isFull dom MulDivFifoCapacity RegIdx ty))) ;
+            LetA c1 : Bool <- liftAction child0Path (liftAction child0Path (mulIterCanEnq dom input_width mul_stages ty)) ;
+            LetA f2 : Bool <- liftAction child0Path (liftAction child1Path (isFull dom MulDivFifoCapacity RegIdx ty)) ;
             Return (And [ #c1 ; Not #f2 ])
           ) Else (
-            LetA c1 : Bool <- stagedLiftTail (stagedLiftHead (stagedLiftHead (divIterCanEnq dom input_width div_stages ty))) ;
-            LetA f2 : Bool <- stagedLiftTail (stagedLiftHead (stagedLiftTail (stagedLiftHead (isFull dom MulDivFifoCapacity RegIdx ty)))) ;
+            LetA c1 : Bool <- liftAction child1Path (liftAction child0Path (divIterCanEnq dom input_width div_stages ty)) ;
+            LetA f2 : Bool <- liftAction child1Path (liftAction child1Path (isFull dom MulDivFifoCapacity RegIdx ty)) ;
             Return (And [ #c1 ; Not #f2 ])
           ) ;
         Return #res
     | IterMul_SharedIterDiv =>
-        LetA c1 : Bool <- stagedLiftHead (sharedIterCanEnq dom input_width mul_stages div_stages ty) ;
-        LetA f2 : Bool <- stagedLiftTail (stagedLiftHead (isFull dom MulDivFifoCapacity RegIdx ty)) ;
+        LetA c1 : Bool <- liftAction child0Path (sharedIterCanEnq dom input_width mul_stages div_stages ty) ;
+        LetA f2 : Bool <- liftAction child1Path (isFull dom MulDivFifoCapacity RegIdx ty) ;
         Return (And [ #c1 ; Not #f2 ])
     end.
 
@@ -814,15 +814,15 @@ Section ModeParameterizedSubsystem.
     Action ty (mulDivTree mode) Bool :=
     match mode as m return Action ty (mulDivTree m) Bool with
     | PipelinedMul_IterDiv =>
-        LetA e1 : Bool <- stagedLiftHead (stagedLiftTail (stagedLiftHead (isEmpty dom MulDivFifoCapacity RegIdx ty))) ;
-        LetA e2 : Bool <- stagedLiftTail (stagedLiftHead (stagedLiftTail (stagedLiftHead (isEmpty dom MulDivFifoCapacity RegIdx ty)))) ;
+        LetA e1 : Bool <- liftAction child0Path (liftAction child1Path (isEmpty dom MulDivFifoCapacity RegIdx ty)) ;
+        LetA e2 : Bool <- liftAction child1Path (liftAction child1Path (isEmpty dom MulDivFifoCapacity RegIdx ty)) ;
         Return (And [ #e1 ; #e2 ])
     | IterMul_SeparateIterDiv =>
-        LetA e1 : Bool <- stagedLiftHead (stagedLiftTail (stagedLiftHead (isEmpty dom MulDivFifoCapacity RegIdx ty))) ;
-        LetA e2 : Bool <- stagedLiftTail (stagedLiftHead (stagedLiftTail (stagedLiftHead (isEmpty dom MulDivFifoCapacity RegIdx ty)))) ;
+        LetA e1 : Bool <- liftAction child0Path (liftAction child1Path (isEmpty dom MulDivFifoCapacity RegIdx ty)) ;
+        LetA e2 : Bool <- liftAction child1Path (liftAction child1Path (isEmpty dom MulDivFifoCapacity RegIdx ty)) ;
         Return (And [ #e1 ; #e2 ])
     | IterMul_SharedIterDiv =>
-        stagedLiftTail (stagedLiftHead (isEmpty dom MulDivFifoCapacity RegIdx ty))
+        liftAction child1Path (isEmpty dom MulDivFifoCapacity RegIdx ty)
     end.
 
   Definition mulDivEnqReq (mode : MulDivMode) (ty : Kind -> Type)
@@ -833,14 +833,14 @@ Section ModeParameterizedSubsystem.
         If (#mulDivOp `? "Mul") Then (
           Let mulOp  : MulOp      <- #mulDivOp `! "Mul" ;
           LetL mInp  : MulInput d <- decodeMulInput op1 mulOp ;
-          LetA _ : Bit 0 <- stagedLiftHead (stagedLiftHead (mulPipeEnq dom mul_stages mInp)) ;
-          LetA _ : Bit 0 <- stagedLiftHead (stagedLiftTail (stagedLiftHead (enq dom MulDivFifoCapacity dst))) ;
+          LetA _ : Bit 0 <- liftAction child0Path (liftAction child0Path (mulPipeEnq dom mul_stages mInp)) ;
+          LetA _ : Bit 0 <- liftAction child0Path (liftAction child1Path (enq dom MulDivFifoCapacity dst)) ;
           Retv
         ) Else (
           Let divOp  : DivOp      <- #mulDivOp `! "Div" ;
           LetL dInp  : DivInput d <- decodeDivInput op1 divOp ;
-          LetA _ : Bit 0 <- stagedLiftTail (stagedLiftHead (stagedLiftHead (divIterEnq dom div_stages dInp))) ;
-          LetA _ : Bit 0 <- stagedLiftTail (stagedLiftHead (stagedLiftTail (stagedLiftHead (enq dom MulDivFifoCapacity dst)))) ;
+          LetA _ : Bit 0 <- liftAction child1Path (liftAction child0Path (divIterEnq dom div_stages dInp)) ;
+          LetA _ : Bit 0 <- liftAction child1Path (liftAction child1Path (enq dom MulDivFifoCapacity dst)) ;
           Retv
         ) ;
         Retv
@@ -848,21 +848,21 @@ Section ModeParameterizedSubsystem.
         If (#mulDivOp `? "Mul") Then (
           Let mulOp  : MulOp      <- #mulDivOp `! "Mul" ;
           LetL mInp  : MulInput d <- decodeMulInput op1 mulOp ;
-          LetA _ : Bit 0 <- stagedLiftHead (stagedLiftHead (mulIterEnq dom mul_stages mInp)) ;
-          LetA _ : Bit 0 <- stagedLiftHead (stagedLiftTail (stagedLiftHead (enq dom MulDivFifoCapacity dst))) ;
+          LetA _ : Bit 0 <- liftAction child0Path (liftAction child0Path (mulIterEnq dom mul_stages mInp)) ;
+          LetA _ : Bit 0 <- liftAction child0Path (liftAction child1Path (enq dom MulDivFifoCapacity dst)) ;
           Retv
         ) Else (
           Let divOp  : DivOp      <- #mulDivOp `! "Div" ;
           LetL dInp  : DivInput d <- decodeDivInput op1 divOp ;
-          LetA _ : Bit 0 <- stagedLiftTail (stagedLiftHead (stagedLiftHead (divIterEnq dom div_stages dInp))) ;
-          LetA _ : Bit 0 <- stagedLiftTail (stagedLiftHead (stagedLiftTail (stagedLiftHead (enq dom MulDivFifoCapacity dst)))) ;
+          LetA _ : Bit 0 <- liftAction child1Path (liftAction child0Path (divIterEnq dom div_stages dInp)) ;
+          LetA _ : Bit 0 <- liftAction child1Path (liftAction child1Path (enq dom MulDivFifoCapacity dst)) ;
           Retv
         ) ;
         Retv
     | IterMul_SharedIterDiv =>
         LetL sInp : SharedInput d <- decodeSharedInput op1 mulDivOp ;
-        LetA _ : Bit 0 <- stagedLiftHead (sharedIterEnq dom mul_stages div_stages sInp) ;
-        LetA _ : Bit 0 <- stagedLiftTail (stagedLiftHead (enq dom MulDivFifoCapacity dst)) ;
+        LetA _ : Bit 0 <- liftAction child0Path (sharedIterEnq dom mul_stages div_stages sInp) ;
+        LetA _ : Bit 0 <- liftAction child1Path (enq dom MulDivFifoCapacity dst) ;
         Retv
     end.
 
@@ -870,13 +870,13 @@ Section ModeParameterizedSubsystem.
     list (Action ty (mulDivTree mode) (Bit 0)) :=
     match mode as m return list (Action ty (mulDivTree m) (Bit 0)) with
     | PipelinedMul_IterDiv =>
-        map (fun r => stagedLiftHead (stagedLiftHead r)) (mulPipeRules dom input_width mul_stages ty) ++
-        [ stagedLiftTail (stagedLiftHead (stagedLiftHead (divIterStepRule dom input_width div_stages ty))) ]
+        map (fun r => liftAction child0Path (liftAction child0Path r)) (mulPipeRules dom input_width mul_stages ty) ++
+        [ liftAction child1Path (liftAction child0Path (divIterStepRule dom input_width div_stages ty)) ]
     | IterMul_SeparateIterDiv =>
-        [ stagedLiftHead (stagedLiftHead (mulIterStepRule dom input_width mul_stages ty)) ;
-          stagedLiftTail (stagedLiftHead (stagedLiftHead (divIterStepRule dom input_width div_stages ty))) ]
+        [ liftAction child0Path (liftAction child0Path (mulIterStepRule dom input_width mul_stages ty)) ;
+          liftAction child1Path (liftAction child0Path (divIterStepRule dom input_width div_stages ty)) ]
     | IterMul_SharedIterDiv =>
-        [ stagedLiftHead (sharedIterStepRule dom input_width mul_stages div_stages ty) ]
+        [ liftAction child0Path (sharedIterStepRule dom input_width mul_stages div_stages ty) ]
     end.
 
   Definition MulDivWbResp : Kind :=
@@ -889,14 +889,14 @@ Section ModeParameterizedSubsystem.
     Action ty (mulDivTree mode) (Option MulDivWbResp) :=
     match mode as m return Action ty (mulDivTree m) (Option MulDivWbResp) with
     | PipelinedMul_IterDiv =>
-        LetA optOut : Option (MulOutput d) <- stagedLiftHead (stagedLiftHead (mulPipeFirst dom input_width mul_stages ty)) ;
-        LetA optDst : Option RegIdx         <- stagedLiftHead (stagedLiftTail (stagedLiftHead (first dom MulDivFifoCapacity RegIdx ty))) ;
+        LetA optOut : Option (MulOutput d) <- liftAction child0Path (liftAction child0Path (mulPipeFirst dom input_width mul_stages ty)) ;
+        LetA optDst : Option RegIdx         <- liftAction child0Path (liftAction child1Path (first dom MulDivFifoCapacity RegIdx ty)) ;
         LetIf resOpt : Option MulDivWbResp <-
           If (And [ #optOut`"valid" ; #optDst`"valid" ]) Then (
             Let out : MulOutput d <- #optOut`"data" ;
             Let dst : RegIdx       <- #optDst`"data" ;
-            LetA _ : Bit 0 <- stagedLiftHead (stagedLiftHead (mulPipeDeq dom input_width mul_stages ty)) ;
-            LetA _ : Bit 0 <- stagedLiftHead (stagedLiftTail (stagedLiftHead (deq dom MulDivFifoCapacity RegIdx ty))) ;
+            LetA _ : Bit 0 <- liftAction child0Path (liftAction child0Path (mulPipeDeq dom input_width mul_stages ty)) ;
+            LetA _ : Bit 0 <- liftAction child0Path (liftAction child1Path (deq dom MulDivFifoCapacity RegIdx ty)) ;
             Let wb : MulDivWbResp <- STRUCT {
               "dst" ::= #dst ;
               "res" ::= ##out`"res"
@@ -907,14 +907,14 @@ Section ModeParameterizedSubsystem.
           ) ;
         Return #resOpt
     | IterMul_SeparateIterDiv =>
-        LetA optOut : Option (MulOutput d) <- stagedLiftHead (stagedLiftHead (mulIterFirst dom input_width mul_stages ty)) ;
-        LetA optDst : Option RegIdx         <- stagedLiftHead (stagedLiftTail (stagedLiftHead (first dom MulDivFifoCapacity RegIdx ty))) ;
+        LetA optOut : Option (MulOutput d) <- liftAction child0Path (liftAction child0Path (mulIterFirst dom input_width mul_stages ty)) ;
+        LetA optDst : Option RegIdx         <- liftAction child0Path (liftAction child1Path (first dom MulDivFifoCapacity RegIdx ty)) ;
         LetIf resOpt : Option MulDivWbResp <-
           If (And [ #optOut`"valid" ; #optDst`"valid" ]) Then (
             Let out : MulOutput d <- #optOut`"data" ;
             Let dst : RegIdx       <- #optDst`"data" ;
-            LetA _ : Bit 0 <- stagedLiftHead (stagedLiftHead (mulIterDeq dom input_width mul_stages ty)) ;
-            LetA _ : Bit 0 <- stagedLiftHead (stagedLiftTail (stagedLiftHead (deq dom MulDivFifoCapacity RegIdx ty))) ;
+            LetA _ : Bit 0 <- liftAction child0Path (liftAction child0Path (mulIterDeq dom input_width mul_stages ty)) ;
+            LetA _ : Bit 0 <- liftAction child0Path (liftAction child1Path (deq dom MulDivFifoCapacity RegIdx ty)) ;
             Let wb : MulDivWbResp <- STRUCT {
               "dst" ::= #dst ;
               "res" ::= ##out`"res"
@@ -925,14 +925,14 @@ Section ModeParameterizedSubsystem.
           ) ;
         Return #resOpt
     | IterMul_SharedIterDiv =>
-        LetA optOut : Option (SharedOutput d) <- stagedLiftHead (sharedIterFirst dom input_width mul_stages div_stages ty) ;
-        LetA optDst : Option RegIdx            <- stagedLiftTail (stagedLiftHead (first dom MulDivFifoCapacity RegIdx ty)) ;
+        LetA optOut : Option (SharedOutput d) <- liftAction child0Path (sharedIterFirst dom input_width mul_stages div_stages ty) ;
+        LetA optDst : Option RegIdx            <- liftAction child1Path (first dom MulDivFifoCapacity RegIdx ty) ;
         LetIf resOpt : Option MulDivWbResp <-
           If (And [ #optOut`"valid" ; #optDst`"valid" ]) Then (
             Let out : SharedOutput d <- #optOut`"data" ;
             Let dst : RegIdx          <- #optDst`"data" ;
-            LetA _ : Bit 0 <- stagedLiftHead (sharedIterDeq dom input_width mul_stages div_stages ty) ;
-            LetA _ : Bit 0 <- stagedLiftTail (stagedLiftHead (deq dom MulDivFifoCapacity RegIdx ty)) ;
+            LetA _ : Bit 0 <- liftAction child0Path (sharedIterDeq dom input_width mul_stages div_stages ty) ;
+            LetA _ : Bit 0 <- liftAction child1Path (deq dom MulDivFifoCapacity RegIdx ty) ;
             Let wb : MulDivWbResp <- STRUCT {
               "dst" ::= #dst ;
               "res" ::= ##out`"res"
@@ -948,14 +948,14 @@ Section ModeParameterizedSubsystem.
     Action ty (mulDivTree mode) (Option MulDivWbResp) :=
     match mode as m return Action ty (mulDivTree m) (Option MulDivWbResp) with
     | PipelinedMul_IterDiv =>
-        LetA optOut : Option (DivOutput d) <- stagedLiftTail (stagedLiftHead (stagedLiftHead (divIterFirst dom input_width div_stages ty))) ;
-        LetA optDst : Option RegIdx         <- stagedLiftTail (stagedLiftHead (stagedLiftTail (stagedLiftHead (first dom MulDivFifoCapacity RegIdx ty)))) ;
+        LetA optOut : Option (DivOutput d) <- liftAction child1Path (liftAction child0Path (divIterFirst dom input_width div_stages ty)) ;
+        LetA optDst : Option RegIdx         <- liftAction child1Path (liftAction child1Path (first dom MulDivFifoCapacity RegIdx ty)) ;
         LetIf resOpt : Option MulDivWbResp <-
           If (And [ #optOut`"valid" ; #optDst`"valid" ]) Then (
             Let out : DivOutput d <- #optOut`"data" ;
             Let dst : RegIdx       <- #optDst`"data" ;
-            LetA _ : Bit 0 <- stagedLiftTail (stagedLiftHead (stagedLiftHead (divIterDeq dom input_width div_stages ty))) ;
-            LetA _ : Bit 0 <- stagedLiftTail (stagedLiftHead (stagedLiftTail (stagedLiftHead (deq dom MulDivFifoCapacity RegIdx ty)))) ;
+            LetA _ : Bit 0 <- liftAction child1Path (liftAction child0Path (divIterDeq dom input_width div_stages ty)) ;
+            LetA _ : Bit 0 <- liftAction child1Path (liftAction child1Path (deq dom MulDivFifoCapacity RegIdx ty)) ;
             Let wb : MulDivWbResp <- STRUCT {
               "dst" ::= #dst ;
               "res" ::= ##out`"res"
@@ -966,14 +966,14 @@ Section ModeParameterizedSubsystem.
           ) ;
         Return #resOpt
     | IterMul_SeparateIterDiv =>
-        LetA optOut : Option (DivOutput d) <- stagedLiftTail (stagedLiftHead (stagedLiftHead (divIterFirst dom input_width div_stages ty))) ;
-        LetA optDst : Option RegIdx         <- stagedLiftTail (stagedLiftHead (stagedLiftTail (stagedLiftHead (first dom MulDivFifoCapacity RegIdx ty)))) ;
+        LetA optOut : Option (DivOutput d) <- liftAction child1Path (liftAction child0Path (divIterFirst dom input_width div_stages ty)) ;
+        LetA optDst : Option RegIdx         <- liftAction child1Path (liftAction child1Path (first dom MulDivFifoCapacity RegIdx ty)) ;
         LetIf resOpt : Option MulDivWbResp <-
           If (And [ #optOut`"valid" ; #optDst`"valid" ]) Then (
             Let out : DivOutput d <- #optOut`"data" ;
             Let dst : RegIdx       <- #optDst`"data" ;
-            LetA _ : Bit 0 <- stagedLiftTail (stagedLiftHead (stagedLiftHead (divIterDeq dom input_width div_stages ty))) ;
-            LetA _ : Bit 0 <- stagedLiftTail (stagedLiftHead (stagedLiftTail (stagedLiftHead (deq dom MulDivFifoCapacity RegIdx ty)))) ;
+            LetA _ : Bit 0 <- liftAction child1Path (liftAction child0Path (divIterDeq dom input_width div_stages ty)) ;
+            LetA _ : Bit 0 <- liftAction child1Path (liftAction child1Path (deq dom MulDivFifoCapacity RegIdx ty)) ;
             Let wb : MulDivWbResp <- STRUCT {
               "dst" ::= #dst ;
               "res" ::= ##out`"res"
