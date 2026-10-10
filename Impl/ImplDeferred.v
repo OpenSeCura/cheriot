@@ -42,7 +42,7 @@ Section DeferredStages.
   Variable capacity : nat.
 
   Definition deferredTree : Tree DomainElem :=
-    Node "deferred" [
+    Node "" [
       Node "inputBuf" [ fifoTree dom capacity DeferredReq ] ;
       Leaf "state"    (dom, EReg (Build_Reg DeferredState (Some (getDefault _)) false)) ;
       mulDivTree dom (Z.to_nat Xlen) ImplMulStages ImplDivStages ImplMulDivMode
@@ -58,10 +58,10 @@ Section DeferredStages.
     WriteReg pState val Retv.
 
   Definition np_defInputFifo : NodePath deferredTree :=
-    Eval cbn in (getNodePath deferredTree "deferred.inputBuf.fifo").
+    Eval cbn in (getNodePath deferredTree ".inputBuf.fifo").
 
   Definition np_defMulDiv : NodePath deferredTree :=
-    Eval cbn in (getNodePath deferredTree "deferred.mulDiv").
+    Eval cbn in (getNodePath deferredTree ".mulDiv").
 
   Definition deferredIsEmpty (ty : Kind -> Type) : Action ty deferredTree Bool :=
     LetA inEmpty : Bool          <- liftAction np_defInputFifo (@isEmpty dom capacity DeferredReq ty) ;
@@ -81,22 +81,22 @@ Section DeferredStages.
   Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.rf").
+    Eval cbn in (getNodePath coreTree "core.rf.").
 
   Definition np_waitBits : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.waitBits").
+    Eval cbn in (getNodePath coreTree "core.waitBits.").
 
   Definition np_mem : NodePath coreTree :=
     Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.mem") singletonChildPath).
 
   Definition np_deferred : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.deferred.deferred").
+    Eval cbn in (getNodePath coreTree "core.deferred.").
 
   Definition np_inputFifo : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.deferred.deferred.inputBuf.fifo").
+    Eval cbn in (getNodePath coreTree "core.deferred..inputBuf.fifo").
 
   Definition np_mulDiv : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.deferred.deferred.mulDiv").
+    Eval cbn in (getNodePath coreTree "core.deferred..mulDiv").
 
   Local Definition commitWb (dstIdx : ty (Bit RegIdxSzReal)) (dstVal : ty FullECapWithTag) : Action ty coreTree (Bit 0) :=
     If (isNotZero #dstIdx) Then (

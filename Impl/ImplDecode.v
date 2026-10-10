@@ -33,7 +33,7 @@ Section DecodeStage.
   Variable capacity : nat.
 
   Definition decodeTree : Tree DomainElem :=
-    Node "decode" [
+    Node "" [
       Leaf "decodePc"        (dom, EReg (Build_Reg Addr (Some (Zmod.of_Z _ pcAddrInit)) false)) ;
       Node "decodeToAluBuf" [ fifoTree dom capacity DecodeToAluEntry ]
     ].
@@ -63,10 +63,10 @@ Section DecodeStage.
   Local Abbreviation regRead := (regRead dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.rf").
+    Eval cbn in (getNodePath coreTree "core.rf.").
 
   Definition np_waitBits : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.waitBits").
+    Eval cbn in (getNodePath coreTree "core.waitBits.").
 
   Definition np_bp : NodePath coreTree :=
     Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.bp") singletonChildPath).
@@ -75,19 +75,19 @@ Section DecodeStage.
     Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.mem") singletonChildPath).
 
   Definition np_fetch : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.fetch.fetch").
+    Eval cbn in (getNodePath coreTree "core.fetch.").
 
   Definition np_fetchFifo : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.fetch.fetch.fetchBuf.fifo").
+    Eval cbn in (getNodePath coreTree "core.fetch..fetchBuf.fifo").
 
   Definition np_decode : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.decode.decode").
+    Eval cbn in (getNodePath coreTree "core.decode.").
 
   Definition np_decodeToAluFifo : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.decode.decode.decodeToAluBuf.fifo").
+    Eval cbn in (getNodePath coreTree "core.decode..decodeToAluBuf.fifo").
 
   Definition np_deferred : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.deferred.deferred").
+    Eval cbn in (getNodePath coreTree "core.deferred.").
 
   (* =========================================================================
    * STAGE 2: decodeAndRegRead

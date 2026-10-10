@@ -59,10 +59,10 @@ Section SpecDom.
         Eval cbn in (getNodePath sysTree "sys.core").
 
       Definition np_rf : NodePath sysTree :=
-        Eval cbn in (getNodePath sysTree "sys.core.rf").
+        Eval cbn in (getNodePath sysTree "sys.core.rf.").
 
       Definition np_mem : NodePath sysTree :=
-        Eval cbn in (getNodePath sysTree "sys.core.mem").
+        Eval cbn in (getNodePath sysTree "sys.core.mem.").
 
       (* ===========================================================================
        * Peripheral Background Rules & Interrupt Polling

@@ -67,10 +67,10 @@ Section ImplDom.
         Eval cbn in (getNodePath sysTree "sys.core").
 
       Definition np_rf : NodePath sysTree :=
-        Eval cbn in (getNodePath sysTree "sys.core.rf").
+        Eval cbn in (getNodePath sysTree "sys.core.rf.").
 
       Definition np_mem : NodePath sysTree :=
-        Eval cbn in (embedNodeIntoPath (getNodePath sysTree "sys.core.mem") singletonChildPath).
+        Eval cbn in (getNodePath sysTree "sys.core.mem.").
 
       (* =====================================================================
        * Peripheral Background Rules & Interrupt Polling on implMemTree

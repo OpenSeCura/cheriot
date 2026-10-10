@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.PHONY: all rtl rtlexe simrtl simrtlexe force
+.PHONY: all rtl_bin rtl rtlexe simrtl simrtlexe force
 
 .DEFAULT_GOAL = all
 
@@ -28,14 +28,17 @@ coq: Makefile.coq.all
 all: coq
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/ $(CURR_DIR)/Clut/"
 
-rtl: coq
+rtl_bin: coq
+	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/ $(CURR_DIR)/Clut/" $(CURR_DIR)/Rtl $(CURR_DIR)/Impl/Rtl $(CURR_DIR)/Clut/Rtl
+
+rtl: rtl_bin
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Impl/ $(CURR_DIR)/Clut/" rtl
 
 rtlexe: rtl
 	verilator -Wno-CMPCONST --top Tb --binary -I../Guru/Verilog -I./Impl -I. --Mdir Impl/obj_dir Impl/Tb.sv
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" rtlexe
 
-simrtl: coq
+simrtl: rtl_bin
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/ $(CURR_DIR)/Clut/" simrtl
 
 simrtlexe: simrtl

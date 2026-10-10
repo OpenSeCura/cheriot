@@ -993,11 +993,11 @@ Arguments memRegionWrite r [ty] addr stVal memSize.
 Fixpoint specMemChildren (regions : list MemRegion) : list (Tree DomainElem) :=
   match regions with
   | [] => []
-  | r :: rs => [ memRegionTree r ; Node "mem" (specMemChildren rs) ]
+  | r :: rs => [ memRegionTree r ; Node "" (specMemChildren rs) ]
   end.
 
 Definition specMemTree (regions : list MemRegion) : Tree DomainElem :=
-  Node "mem" (specMemChildren regions).
+  Node "" (specMemChildren regions).
 
 Definition none_neq_some {A} {x : A} (pf : None = Some x) : False :=
   match pf in (_ = y) return match y with Some _ => False | None => True end with

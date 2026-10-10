@@ -1285,15 +1285,15 @@ Section RfTree.
     ) PhysicalCsrTable.
 
   Definition rfTree : Tree DomainElem :=
-    Node "rf" [
+    Node "" [
       Node "gprs" gprLeaves ;
       Node "scrs" scrLeaves ;
       Node "csrs" csrLeaves
     ].
 
-  Definition np_gprs : NodePath rfTree := Eval cbn in (getNodePath rfTree "rf.gprs").
-  Definition np_scrs : NodePath rfTree := Eval cbn in (getNodePath rfTree "rf.scrs").
-  Definition np_csrs : NodePath rfTree := Eval cbn in (getNodePath rfTree "rf.csrs").
+  Definition np_gprs : NodePath rfTree := Eval cbn in (getNodePath rfTree ".gprs").
+  Definition np_scrs : NodePath rfTree := Eval cbn in (getNodePath rfTree ".scrs").
+  Definition np_csrs : NodePath rfTree := Eval cbn in (getNodePath rfTree ".csrs").
 
   Definition gprPaths : list (RegPath rfTree) :=
     Eval cbn in (map (embedRegPath np_gprs)

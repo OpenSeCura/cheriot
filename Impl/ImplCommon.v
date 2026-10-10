@@ -155,15 +155,15 @@ Section ImplCommon.
     ) waitCsrEntries.
 
   Definition waitBitsTree : Tree DomainElem :=
-    Node "waitBits" [
+    Node "" [
       Node "gprs" gprWaitLeaves ;
       Node "scrs" scrWaitLeaves ;
       Node "csrs" csrWaitLeaves
     ].
 
-  Definition np_waitGprs : NodePath waitBitsTree := Eval cbn in (getNodePath waitBitsTree "waitBits.gprs").
-  Definition np_waitScrs : NodePath waitBitsTree := Eval cbn in (getNodePath waitBitsTree "waitBits.scrs").
-  Definition np_waitCsrs : NodePath waitBitsTree := Eval cbn in (getNodePath waitBitsTree "waitBits.csrs").
+  Definition np_waitGprs : NodePath waitBitsTree := Eval cbn in (getNodePath waitBitsTree ".gprs").
+  Definition np_waitScrs : NodePath waitBitsTree := Eval cbn in (getNodePath waitBitsTree ".scrs").
+  Definition np_waitCsrs : NodePath waitBitsTree := Eval cbn in (getNodePath waitBitsTree ".csrs").
 
   Definition gprWaitPathsWithKind : list (RegOfKind (t:=waitBitsTree) Bool) :=
     Eval cbn in (map (embedRegOfKind np_waitGprs)
@@ -225,8 +225,8 @@ Section ImplCommon.
   (* 2. Core Tree *)
   Definition coreTree (bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) : Tree DomainElem :=
     Node "core" [
-      rfTree dom pcAddrInit ;
-      waitBitsTree ;
+      Node "rf"       [ rfTree dom pcAddrInit ] ;
+      Node "waitBits" [ waitBitsTree ] ;
       Node "bp"       [ bpTree ] ;
       Leaf "currEpoch" (dom, EReg (Build_Reg Epoch (Some Zmod.zero) false)) ;
       Node "mem"      [ memTree ] ;

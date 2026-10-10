@@ -48,10 +48,10 @@ Section ExecuteStage.
   Local Abbreviation executeNonDeferred := (executeNonDeferred dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.rf").
+    Eval cbn in (getNodePath coreTree "core.rf.").
 
   Definition np_waitBits : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.waitBits").
+    Eval cbn in (getNodePath coreTree "core.waitBits.").
 
   Definition np_bp : NodePath coreTree :=
     Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.bp") singletonChildPath).
@@ -60,19 +60,19 @@ Section ExecuteStage.
     Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.mem") singletonChildPath).
 
   Definition np_fetch : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.fetch.fetch").
+    Eval cbn in (getNodePath coreTree "core.fetch.").
 
   Definition np_decode : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.decode.decode").
+    Eval cbn in (getNodePath coreTree "core.decode.").
 
   Definition np_decodeToAluFifo : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.decode.decode.decodeToAluBuf.fifo").
+    Eval cbn in (getNodePath coreTree "core.decode..decodeToAluBuf.fifo").
 
   Definition np_deferred : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.deferred.deferred").
+    Eval cbn in (getNodePath coreTree "core.deferred.").
 
   Definition np_deferredInFifo : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.deferred.deferred.inputBuf.fifo").
+    Eval cbn in (getNodePath coreTree "core.deferred..inputBuf.fifo").
 
   (* =========================================================================
    * STAGE 3: aluAndExecuteNonDeferred

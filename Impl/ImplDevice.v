@@ -1167,11 +1167,11 @@ Definition implMemRegionTargetPortRpActions
 Fixpoint implRegionsChildren (regions : list MemRegion) : list (Tree DomainElem) :=
   match regions with
   | [] => []
-  | r :: rs => [ implMemRegionTree r ; Node "mem" (implRegionsChildren rs) ]
+  | r :: rs => [ implMemRegionTree r ; Node "" (implRegionsChildren rs) ]
   end.
 
 Definition implRegionsTree (regions : list MemRegion) : Tree DomainElem :=
-  Node "mem" (implRegionsChildren regions).
+  Node "" (implRegionsChildren regions).
 
 Section ImplNthRegionAction.
   Variable ty : Kind -> Type.

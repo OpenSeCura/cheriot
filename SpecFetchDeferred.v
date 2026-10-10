@@ -256,8 +256,8 @@ Section SpecCoreTree.
 
   Definition specCoreTree (regions : list MemRegion) : Tree DomainElem :=
     Node "core" [
-      rfTree dom pcAddrInit ;
-      specMemTree regions
+      Node "rf"  [ rfTree dom pcAddrInit ] ;
+      Node "mem" [ specMemTree regions ]
     ].
 
   Section SpecFetchDeferred.
@@ -269,10 +269,10 @@ Section SpecCoreTree.
     Local Abbreviation coreTree := (specCoreTree regions).
 
     Definition np_rf : NodePath coreTree :=
-      Eval cbn in (getNodePath coreTree "core.rf").
+      Eval cbn in (getNodePath coreTree "core.rf.").
 
     Definition np_mem : NodePath coreTree :=
-      Eval cbn in (getNodePath coreTree "core.mem").
+      Eval cbn in (getNodePath coreTree "core.mem.").
 
     Local Abbreviation readRevBit := (readRevBit config regions).
 

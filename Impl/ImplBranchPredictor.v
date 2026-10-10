@@ -47,7 +47,7 @@ Record NoInstPredIfc {ty : Kind -> Type} := {
 }.
 
 Definition bpTree (noInstTree withInstTree : Tree DomainElem) : Tree DomainElem :=
-  Node "bp" [
+  Node "" [
     Node "noInst"   [ noInstTree ] ;
     Node "withInst" [ withInstTree ]
   ].
@@ -66,7 +66,7 @@ Section ImplBranchPredictor.
    * ========================================================================= *)
 
   Definition implNoInstTree : Tree DomainElem :=
-    Node "noInstImpl" [].
+    Node "" [].
 
   Section NoInstTy.
     Variable ty : Kind -> Type.
@@ -104,7 +104,7 @@ Section ImplBranchPredictor.
     Variable noInstIfc : forall ty, @NoInstPredIfc ty.
 
     Definition implWithInstTree : Tree DomainElem :=
-      Node "withInstImpl" [].
+      Node "" [].
 
     Section WithInstTy.
       Variable ty : Kind -> Type.
@@ -113,7 +113,7 @@ Section ImplBranchPredictor.
       Local Abbreviation tree := (bpTree noInstTree implWithInstTree).
 
       Local Definition np_noInst : NodePath tree :=
-        Eval cbn in (embedNodeIntoPath (getNodePath tree "bp.noInst") singletonChildPath).
+        Eval cbn in (embedNodeIntoPath (getNodePath tree ".noInst") singletonChildPath).
 
       Definition implWithInst_getPred (pc predPc : ty Addr) (inst : ty Inst) (decodeOut : ty DecodeOut) : Action ty tree Addr :=
         Let instGroup    : InstGroup       <- ##decodeOut`"instGroup" ;

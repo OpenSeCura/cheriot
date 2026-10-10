@@ -33,7 +33,7 @@ Section FetchStage.
   Variable capacity : nat.
 
   Definition fetchTree : Tree DomainElem :=
-    Node "fetch" [
+    Node "" [
       Leaf "fetchPc"  (dom, EReg (Build_Reg Addr (Some (Zmod.of_Z _ pcAddrInit)) false)) ;
       Node "fetchBuf" [ fifoTree dom capacity FetchBufEntry ]
     ].
@@ -59,19 +59,19 @@ Section FetchStage.
   Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.rf").
+    Eval cbn in (getNodePath coreTree "core.rf.").
 
   Definition np_noInst : NodePath coreTree :=
-    Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.bp.bp.noInst") singletonChildPath).
+    Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.bp..noInst") singletonChildPath).
 
   Definition np_mem : NodePath coreTree :=
     Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.mem") singletonChildPath).
 
   Definition np_fetch : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.fetch.fetch").
+    Eval cbn in (getNodePath coreTree "core.fetch.").
 
   Definition np_fetchFifo : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.fetch.fetch.fetchBuf.fifo").
+    Eval cbn in (getNodePath coreTree "core.fetch..fetchBuf.fifo").
 
   (* =========================================================================
    * STAGE 1: fetchRq
