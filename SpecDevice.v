@@ -597,7 +597,7 @@ Section InternalMemRegionActions.
     exact I.
   Qed.
 
-  Local Definition memBankPath (i : FinType lBytes) : MemPath tInt.
+  Definition memBankPath (i : FinType lBytes) : MemPath tInt.
   Proof.
     refine (Build_MemPath tInt (inl (leaf_list_path_mem i)) _).
     exact (leaf_list_path_mem_is_mem i).
@@ -627,7 +627,7 @@ Section InternalMemRegionActions.
     reflexivity.
   Qed.
 
-  Local Definition memPortCast (i : FinType lBytes) (p : FinType (regionNumReadPorts r)) : FinType (memPort (getMemFromPath (memBankPath i))) :=
+  Definition memPortCast (i : FinType lBytes) (p : FinType (regionNumReadPorts r)) : FinType (memPort (getMemFromPath (memBankPath i))) :=
     match eq_sym (f_equal memPort (memBankEq i)) in _ = Y return FinType Y with
     | eq_refl => p
     end.
@@ -637,7 +637,7 @@ Section InternalMemRegionActions.
     | eq_refl => p
     end.
 
-  Local Definition memSizeCast (i : FinType lBytes) (e : Expr ty (Bit (Z.log2_up (Z.of_nat numLines)))) :
+  Definition memSizeCast (i : FinType lBytes) (e : Expr ty (Bit (Z.log2_up (Z.of_nat numLines)))) :
     Expr ty (Bit (Z.log2_up (Z.of_nat (memSize (getMemFromPath (memBankPath i)))))) :=
     match eq_sym (f_equal memSize (memBankEq i)) in _ = Y return Expr ty (Bit (Z.log2_up (Z.of_nat Y))) with
     | eq_refl => e
@@ -655,7 +655,7 @@ Section InternalMemRegionActions.
     | eq_refl => e
     end.
 
-  Local Definition memKindCastInv (i : FinType lBytes) (e : Expr ty (memKind (getMemFromPath (memBankPath i)))) :
+  Definition memKindCastInv (i : FinType lBytes) (e : Expr ty (memKind (getMemFromPath (memBankPath i)))) :
     Expr ty (Bit 8) :=
     match f_equal memKind (memBankEq i) in _ = Y return Expr ty Y with
     | eq_refl => e
