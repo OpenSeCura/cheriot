@@ -567,13 +567,17 @@ Section AluRF.
                                     If (##addrOnlyOp `? "Branch") Then
                                       (
                                         Let isTaken   : Bool            <- #addrOnlyOp `! "Branch" ;
-                                        Let targetPcc : FullECapWithTag <- #currPcc `{ "addr" <- ##newPcc`"addr" } ;
+                                        Let targetPcc : FullECapWithTag <- #currPcc
+                                                                             `{ "tag" <- ##newPcc`"tag"}
+                                                                             `{ "addr" <- ##newPcc`"addr" } ;
                                         Let nextPcc   : FullECapWithTag <- ITE #isTaken #targetPcc #seqPcc ;
                                         Return #nextPcc
                                       )
                                     Else
                                       (
-                                        Let targetPcc : FullECapWithTag <- #currPcc `{ "addr" <- ##newPcc`"addr" } ;
+                                        Let targetPcc : FullECapWithTag <- #currPcc
+                                                                             `{ "tag" <- ##newPcc`"tag" }
+                                                                             `{ "addr" <- ##newPcc`"addr" } ;
                                         Return #targetPcc
                                       ) ;
                                   Return #nextPccAO
