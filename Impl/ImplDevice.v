@@ -608,10 +608,10 @@ Section ImplInternalMemTargetPortActions.
     ReadReg "rpValid" (@pIntRpValid r true) (fun rpValid =>
     Let rdy : Bool <- And [ ##state `? "Idle" ; Not #rpValid ; Not (##portRq`"valid") ] ;
     If #rdy Then (
-      Act (liftAction child2Path (Send pTargetPortLineReadRqReady ($0 : Expr ty (Bit 0)) Retv)) ;
       LetA valid : Bool <- liftAction child0Path (liftAction child2Path (Recv "valid" pTargetPortLineReadRqValid (fun valid => Return #valid))) ;
       If #valid Then (
         LetA addr : Addr <- liftAction child0Path (liftAction child2Path (Recv "addr" pTargetPortLineReadRq (fun addr => Return #addr))) ;
+        Act (liftAction child2Path (Send pTargetPortLineReadRqReady ($0 : Expr ty (Bit 0)) Retv)) ;
         Act (implInternalMemRegionDataLineReadRq r true ReqTarget addr) ;
         Retv
       ) ;
@@ -641,10 +641,10 @@ Section ImplInternalMemTargetPortActions.
       else
         And [ ##state `? "Idle" ; Not (##portRq`"valid") ] ;
     If #rdy Then (
-      Act (liftAction child2Path (Send pTargetPortLineWriteRqReady ($0 : Expr ty (Bit 0)) Retv)) ;
       LetA valid : Bool <- liftAction child0Path (liftAction child2Path (Recv "valid" pTargetPortLineWriteRqValid (fun valid => Return #valid))) ;
       If #valid Then (
         LetA rq : LineWriteRq r.(regionLineCfg) true <- liftAction child0Path (liftAction child2Path (Recv "rq" pTargetPortLineWriteRq (fun rq => Return #rq))) ;
+        Act (liftAction child2Path (Send pTargetPortLineWriteRqReady ($0 : Expr ty (Bit 0)) Retv)) ;
         Act (implInternalMemRegionPortWriteRq r true rq) ;
         Retv
       ) ;
@@ -721,11 +721,11 @@ Section ImplExternalMemRegionActions.
   Definition implExternalMemRegionPortReadRq (addr : ty Addr)
              : Action ty tImplExt Bool :=
     ReadReg "portRq" pExtPortRq (fun portRq =>
-    If (Not (##portRq`"valid")) Then (
-      WriteReg pExtPortRq (mkSome (UNION (PortRqList r.(regionLineCfg) false, "Read" ::= #addr))) Retv
-    ) ;
-    Recv "extRdy" pLineReadRqReady (fun extRdy =>
-    Return (And [ #extRdy ; Not (##portRq`"valid") ]))).
+    LetIf extRdy <- If (Not (##portRq`"valid")) Then (
+      WriteReg pExtPortRq (mkSome (UNION (PortRqList r.(regionLineCfg) false, "Read" ::= #addr))) (
+      Recv "extRdy" pLineReadRqReady (fun extRdy => Return #extRdy )
+    )) ;
+    Return (And [ #extRdy ; Not (##portRq`"valid") ])).
 
   Definition implExternalMemRegionPortReadRp
              : Action ty tImplExt (Option (LineReadRp r.(regionLineCfg) false)) :=
@@ -742,11 +742,11 @@ Section ImplExternalMemRegionActions.
       Return (ConstBool true)
     ) else (
       ReadReg "portRq" pExtPortRq (fun portRq =>
-      If (Not (##portRq`"valid")) Then (
-        WriteReg pExtPortRq (mkSome (UNION (PortRqList r.(regionLineCfg) false, "Write" ::= #rq))) Retv
-      ) ;
-      Recv "extRdy" pLineWriteRqReady (fun extRdy =>
-      Return (And [ #extRdy ; Not (##portRq`"valid") ])))
+      LetIf extRdy <- If (Not (##portRq`"valid")) Then (
+        WriteReg pExtPortRq (mkSome (UNION (PortRqList r.(regionLineCfg) false, "Write" ::= #rq))) (
+        Recv "extRdy" pLineWriteRqReady (fun extRdy => Return #extRdy)
+      )) ;
+      Return (And [ #extRdy ; Not (##portRq`"valid") ]))
     ).
 
   Definition implExternalMemRegionResponsePort
