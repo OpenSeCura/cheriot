@@ -34,17 +34,36 @@ Local Open Scope guru_scope.
 Definition EpochSz : Z := 1.
 Definition Epoch   : Kind := Bit EpochSz.
 
+Definition NumFetchParcels : nat  := Eval compute in Z.to_nat (FullCapSz / CompInstSz).
+Definition LgFetchParcels  : Z    := Eval compute in Z.log2_up (FullCapSz / CompInstSz).
+Definition FetchPacket     : Kind := Array NumFetchParcels (Bit CompInstSz).
+
+Definition PreBranchInfo := STRUCT_TYPE {
+  "isCompressed" :: Bool ;
+  "isCjal"       :: Bool ;
+  "isBranch"     :: Bool ;
+  "isOtherCf"    :: Bool
+}.
+
 Definition FetchBufEntry := STRUCT_TYPE {
-  "pcAddr"   :: Addr ;
-  "predPc"   :: Addr ;
-  "epoch"    :: Epoch ;
-  "fetchExc" :: FetchException
+  "pcAddr"     :: Addr ;
+  "predPc"     :: Addr ;
+  "exitParcel" :: Bit LgFetchParcels ;
+  "execEpoch"  :: Epoch ;
+  "predEpoch"  :: Epoch ;
+  "fetchExc"   :: FetchException
+}.
+
+Definition AssembledInst := STRUCT_TYPE {
+  "fetchOut"  :: FetchOut ;
+  "predPc"    :: Addr ;
+  "execEpoch" :: Epoch
 }.
 
 Definition DecodeToAluEntry := STRUCT_TYPE {
-  "aluIn"  :: AluInInstGroup ;
-  "predPc" :: Addr ;
-  "epoch"  :: Epoch
+  "aluIn"     :: AluInInstGroup ;
+  "predPc"    :: Addr ;
+  "execEpoch" :: Epoch
 }.
 
 (* ===========================================================================
@@ -85,25 +104,25 @@ Definition stallUntilEmptyCsrIndices : list Z :=
   Eval cbn in (map snd (filter (fun '(e, _) => inStringList e.(csrName) stallUntilEmptyCsrNames)
                                (enumerate CsrTable))).
 
-Definition isStallUntilEmptyScr (ty : Kind -> Type) (idx : Expr ty (Bit ScrIdxSz)) : Expr ty Bool :=
-  Or (map (fun i => Eq idx $i) stallUntilEmptyScrIndices).
+Definition isStallUntilEmptyScr (ty : Kind -> Type) (idx : ty (Bit ScrIdxSz)) : Expr ty Bool :=
+  Or (map (fun i => Eq #idx $i) stallUntilEmptyScrIndices).
 
-Definition isStallUntilEmptyCsr (ty : Kind -> Type) (idx : Expr ty (Bit CsrIdxSz)) : Expr ty Bool :=
-  Or (map (fun i => Eq idx $i) stallUntilEmptyCsrIndices).
+Definition isStallUntilEmptyCsr (ty : Kind -> Type) (idx : ty (Bit CsrIdxSz)) : Expr ty Bool :=
+  Or (map (fun i => Eq #idx $i) stallUntilEmptyCsrIndices).
 
 Section IndexedWaitBitHelpers.
   Variable ty : Kind -> Type.
 
   Fixpoint readIndexedWaitBitHelper (acc : list (Expr ty Bool)) {sz : Z} {t : Tree DomainElem}
     (indexedPaths : list (Z * RegOfKind (t:=t) Bool))
-    (idx : Expr ty (Bit sz)) : Action ty t Bool :=
+    (idx : ty (Bit sz)) : Action ty t Bool :=
     match indexedPaths with
     | [] => Return (Or acc)
     | (regIdx, rk) :: rest =>
         ReadReg "" rk.(rk_path) (fun val_ty =>
           let pf_eq := Kind_eqb_eq _ _ rk.(rk_pf) in
           let casted_ty := eq_rect (regKind (getRegFromPath rk.(rk_path))) (fun K => ty K) val_ty _ pf_eq in
-          let iteVal := ITE0 (Eq idx $regIdx) (Var _ _ casted_ty) in
+          let iteVal := ITE0 (Eq #idx $regIdx) (Var _ _ casted_ty) in
           readIndexedWaitBitHelper (iteVal :: acc) rest idx
         )
     end.
@@ -113,14 +132,14 @@ Section IndexedWaitBitHelpers.
 
   Fixpoint writeIndexedWaitBit {sz : Z} {t : Tree DomainElem}
     (indexedPaths : list (Z * RegOfKind (t:=t) Bool))
-    (idx : Expr ty (Bit sz))
-    (newVal : Expr ty Bool) : Action ty t (Bit 0) :=
+    (idx : ty (Bit sz))
+    (newVal : ty Bool) : Action ty t (Bit 0) :=
     match indexedPaths with
     | [] => Retv
     | (regIdx, rk) :: rest =>
         let pf_eq := Kind_eqb_eq _ _ rk.(rk_pf) in
-        let castedVal := eq_rect Bool (fun K => Expr ty K) newVal _ (eq_sym pf_eq) in
-        IfElse EmptyString (Eq idx $regIdx)
+        let castedVal := eq_rect Bool (fun K => Expr ty K) #newVal _ (eq_sym pf_eq) in
+        IfElse EmptyString (Eq #idx $regIdx)
           (WriteReg rk.(rk_path) castedVal Retv)
           Retv
           (fun _ => writeIndexedWaitBit rest idx newVal)
@@ -133,7 +152,6 @@ End IndexedWaitBitHelpers.
 
 Section ImplCommon.
   Variable dom : string.
-  Variable pcAddrInit : Z.
 
   (* 1. Scoreboard (waitBits) *)
   Definition gprWaitLeaves : list (Tree DomainElem) :=
@@ -183,68 +201,70 @@ Section ImplCommon.
   Definition csrWaitIndexedPaths : list (Z * RegOfKind (t:=waitBitsTree) Bool) :=
     Eval cbn in (combine (map snd waitCsrEntries) csrWaitPathsWithKind).
 
-  Definition readGprWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit RegIdxSzReal))
+  Definition readGprWaitBit (ty : Kind -> Type) (idx : ty (Bit RegIdxSzReal))
     : Action ty waitBitsTree Bool :=
-    readRegsList gprWaitPathsWithKind idx.
+    readRegsList gprWaitPathsWithKind #idx.
 
-  Definition writeGprWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit RegIdxSzReal)) (val : Expr ty Bool)
+  Definition writeGprWaitBit (ty : Kind -> Type) (idx : ty (Bit RegIdxSzReal)) (val : ty Bool)
     : Action ty waitBitsTree (Bit 0) :=
-    writeRegsList gprWaitPathsWithKind idx val.
+    writeRegsList gprWaitPathsWithKind #idx #val.
 
-  Definition readScrWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit ScrIdxSz))
+  Definition readScrWaitBit (ty : Kind -> Type) (idx : ty (Bit ScrIdxSz))
     : Action ty waitBitsTree Bool :=
     readIndexedWaitBit scrWaitIndexedPaths idx.
 
-  Definition writeScrWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit ScrIdxSz)) (val : Expr ty Bool)
+  Definition writeScrWaitBit (ty : Kind -> Type) (idx : ty (Bit ScrIdxSz)) (val : ty Bool)
     : Action ty waitBitsTree (Bit 0) :=
     writeIndexedWaitBit scrWaitIndexedPaths idx val.
 
-  Definition readCsrWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit CsrIdxSz))
+  Definition readCsrWaitBit (ty : Kind -> Type) (idx : ty (Bit CsrIdxSz))
     : Action ty waitBitsTree Bool :=
     readIndexedWaitBit csrWaitIndexedPaths idx.
 
-  Definition writeCsrWaitBit (ty : Kind -> Type) (idx : Expr ty (Bit CsrIdxSz)) (val : Expr ty Bool)
+  Definition writeCsrWaitBit (ty : Kind -> Type) (idx : ty (Bit CsrIdxSz)) (val : ty Bool)
     : Action ty waitBitsTree (Bit 0) :=
     writeIndexedWaitBit csrWaitIndexedPaths idx val.
 
   Definition setDstWaitBits (ty : Kind -> Type)
-    (writesGpr : Expr ty Bool) (gprIdx : Expr ty (Bit RegIdxSzReal))
+    (writesGpr : ty Bool) (gprIdx : ty (Bit RegIdxSzReal))
     (wInfo : ty WaitSpecialInfo)
-    (val : Expr ty Bool) : Action ty waitBitsTree (Bit 0) :=
-    If writesGpr Then (
+    (val : ty Bool) : Action ty waitBitsTree (Bit 0) :=
+    If #writesGpr Then (
       writeGprWaitBit gprIdx val
     ) ;
     If (##wInfo`"writesScr") Then (
-      writeScrWaitBit (##wInfo`"readWriteScrIdx") val
+      Let scrIdx : Bit ScrIdxSz <- ##wInfo`"readWriteScrIdx" ;
+      writeScrWaitBit scrIdx val
     ) ;
     If (##wInfo`"writesCsr") Then (
-      writeCsrWaitBit (##wInfo`"writeCsrIdx") val
+      Let csrIdx : Bit CsrIdxSz <- ##wInfo`"writeCsrIdx" ;
+      writeCsrWaitBit csrIdx val
     ) ;
     Retv.
 
   (* 2. Core Tree *)
-  Definition coreTree (bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) : Tree DomainElem :=
+  Definition coreTree (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) : Tree DomainElem :=
     Node "core" [
-      Node "rf"       [ rfTree dom pcAddrInit ] ;
-      Node "waitBits" [ waitBitsTree ] ;
-      Node "bp"       [ bpTree ] ;
-      Leaf "currEpoch" (dom, EReg (Build_Reg Epoch (Some Zmod.zero) false)) ;
-      Node "mem"      [ memTree ] ;
-      Node "fetch"    [ fetchTree ] ;
-      Node "decode"   [ decodeTree ] ;
-      Node "deferred" [ deferredTree ]
+      Node "rf"        [ rfTree ] ;
+      Node "waitBits"  [ waitBitsTree ] ;
+      Node "bp"        [ bpTree ] ;
+      Leaf "execEpoch" (dom, EReg (Build_Reg Epoch (Some Zmod.zero) false)) ;
+      Node "mem"       [ memTree ] ;
+      Node "fetch"     [ fetchTree ] ;
+      Node "decode"    [ decodeTree ] ;
+      Node "deferred"  [ deferredTree ]
     ].
 
-  Definition pCurrEpoch (bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem)
-    : RegPath (coreTree bpTree memTree fetchTree decodeTree deferredTree) :=
-    Eval cbn in (getChildRegPathTree (coreTree bpTree memTree fetchTree decodeTree deferredTree) "currEpoch").
+  Definition pExecEpoch (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem)
+    : RegPath (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) :=
+    Eval cbn in (getChildRegPathTree (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) "execEpoch").
 
-  Definition readCurrEpoch (bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) (ty : Kind -> Type)
-    : Action ty (coreTree bpTree memTree fetchTree decodeTree deferredTree) Epoch :=
-    ReadReg "currEpoch" (pCurrEpoch bpTree memTree fetchTree decodeTree deferredTree) (fun v => Return #v).
+  Definition readExecEpoch (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) (ty : Kind -> Type)
+    : Action ty (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) Epoch :=
+    ReadReg "execEpoch" (pExecEpoch rfTree bpTree memTree fetchTree decodeTree deferredTree) (fun v => Return #v).
 
-  Definition writeCurrEpoch (bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) (ty : Kind -> Type)
-    (val : Expr ty Epoch) : Action ty (coreTree bpTree memTree fetchTree decodeTree deferredTree) (Bit 0) :=
-    WriteReg (pCurrEpoch bpTree memTree fetchTree decodeTree deferredTree) val Retv.
+  Definition writeExecEpoch (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) (ty : Kind -> Type)
+    (val : ty Epoch) : Action ty (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) (Bit 0) :=
+    WriteReg (pExecEpoch rfTree bpTree memTree fetchTree decodeTree deferredTree) #val Retv.
 
 End ImplCommon.

@@ -158,6 +158,14 @@
           end
         end
       end
+    end else if (has_suffix(name, "_lineReadRpReady")) begin
+      if (has_substr(name, "_fetch_")) begin
+        ramFetchReadRpValid = 1'b0;
+      end else if (has_substr(name, "_ram_")) begin
+        ramDataReadRpValid = 1'b0;
+      end else if (has_substr(name, "_uart_")) begin
+        uartReadRpValid = 1'b0;
+      end
     end
   endfunction
 
@@ -180,11 +188,9 @@
         logic [31 : 0]              addr;
         logic [LineIdxBits - 1 : 0] idx;
         if (has_substr(name, "_fetch_")) begin
-          addr                = ramFetchReadAddr;
-          ramFetchReadRpValid = 1'b0;
+          addr = ramFetchReadAddr;
         end else begin
-          addr               = ramDataReadAddr;
-          ramDataReadRpValid = 1'b0;
+          addr = ramDataReadAddr;
         end
         idx       = addr[LineIdxBits + 2 : 3];
         rp.data   = ramData[idx];
@@ -192,8 +198,7 @@
         return tb_io_val_t'(rp);
       end else begin
         uartReadRp_t rp;
-        rp              = '0;
-        uartReadRpValid = 1'b0;
+        rp = '0;
         if (uartReadAddr == 32'h1000_0000) begin
           rp.data[0] = rxBufValid ? rxBuf : 8'h00;
           if (rxBufValid) begin

@@ -29,37 +29,25 @@ Local Open Scope guru_scope.
 
 Section DecodeStage.
   Variable dom : string.
-  Variable pcAddrInit : Z.
   Variable capacity : nat.
 
   Definition decodeTree : Tree DomainElem :=
     Node "" [
-      Leaf "decodePc"        (dom, EReg (Build_Reg Addr (Some (Zmod.of_Z _ pcAddrInit)) false)) ;
       Node "decodeToAluBuf" [ fifoTree dom capacity DecodeToAluEntry ]
     ].
 
-  Definition pDecodePc : RegPath decodeTree :=
-    Eval cbn in (getChildRegPathTree decodeTree "decodePc").
-
-  Definition readDecodePc (ty : Kind -> Type) : Action ty decodeTree Addr :=
-    ReadReg "decodePc" pDecodePc (fun v => Return #v).
-
-  Definition writeDecodePc (ty : Kind -> Type) (val : Expr ty Addr) : Action ty decodeTree (Bit 0) :=
-    WriteReg pDecodePc val Retv.
-
+  Variable pcAddrInit : Z.
   Variable fetchCapacity deferredCapacity : nat.
-  Variable noInstTree : Tree DomainElem.
-  Variable withInstIfc : forall ty, @WithInstPredIfc noInstTree ty.
+  Variable bpTree : Tree DomainElem.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable ty : Kind -> Type.
   Variable meipAct mtipAct : Action ty (memIfc ty).(memTree) Bool.
 
-  Local Abbreviation bpTree := (bpTree noInstTree (withInstIfc ty).(withInstTree)).
+  Local Abbreviation rfTree := (rfTree dom pcAddrInit).
   Local Abbreviation memTree := (memIfc ty).(memTree).
   Local Abbreviation fTree := (fetchTree dom pcAddrInit fetchCapacity).
   Local Abbreviation dTree := (deferredTree dom deferredCapacity).
-  Local Abbreviation coreTree := (coreTree dom pcAddrInit bpTree memTree fTree decodeTree dTree).
-  Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
+  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fTree decodeTree dTree).
   Local Abbreviation regRead := (regRead dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
@@ -68,20 +56,11 @@ Section DecodeStage.
   Definition np_waitBits : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.waitBits.").
 
-  Definition np_bp : NodePath coreTree :=
-    Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.bp") singletonChildPath).
-
   Definition np_mem : NodePath coreTree :=
     Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.mem") singletonChildPath).
 
-  Definition np_fetch : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.fetch.").
-
-  Definition np_fetchFifo : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.fetch..fetchBuf.fifo").
-
-  Definition np_decode : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.decode.").
+  Definition np_instFifo : NodePath coreTree :=
+    Eval cbn in (getNodePath coreTree "core.fetch..instBuf.fifo").
 
   Definition np_decodeToAluFifo : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.decode..decodeToAluBuf.fifo").
@@ -90,144 +69,101 @@ Section DecodeStage.
     Eval cbn in (getNodePath coreTree "core.deferred.").
 
   (* =========================================================================
-   * STAGE 2: decodeAndRegRead
+   * STAGE 3: decodeAndRegRead
    *
-   * - Precondition: fetchBuf is non-empty and decodeToAluBuf is not full.
-   * - Action:       Obtain instruction response (or synthesize 0 on pre-fault),
-   *                 drop wrong-epoch or wrong-PC entries, decode instruction,
-   *                 check GPR/SCR/CSR scoreboard wait bits, read RF, set
-   *                 destination wait bits, query Level-2 branch predictor,
-   *                 and enqueue { aluIn, predPc, epoch } into decodeToAluBuf.
+   * - Precondition: instBuf is non-empty and decodeToAluBuf is not full.
+   * - Action:       Obtain assembled instruction from instBuf, drop entries
+   *                 with mismatched execEpoch, perform full uncompressed
+   *                 decode, check GPR/SCR/CSR scoreboard wait bits, read RF,
+   *                 set destination wait bits, and enqueue
+   *                 { aluIn, predPc, execEpoch } into decodeToAluBuf.
    * ========================================================================= *)
   Definition decodeAndRegRead : Action ty coreTree (Bit 0) :=
-    LetA fetchHead           : Option FetchBufEntry <- liftAction np_fetchFifo (@first dom fetchCapacity FetchBufEntry ty) ;
+    LetA instHead            : Option AssembledInst <- liftAction np_instFifo (@first dom fetchCapacity AssembledInst ty) ;
     LetA decodeToAlu_isFull  : Bool                 <- liftAction np_decodeToAluFifo (@isFull dom capacity DecodeToAluEntry ty) ;
     LetA decodeToAlu_isEmpty : Bool                 <- liftAction np_decodeToAluFifo (@isEmpty dom capacity DecodeToAluEntry ty) ;
     LetA deferred_isEmpty    : Bool                 <- liftAction np_deferred (@deferredIsEmpty dom deferredCapacity ty) ;
     Let  pipelineEmpty       : Bool                 <- And [ #decodeToAlu_isEmpty ; #deferred_isEmpty ] ;
 
-    If (##fetchHead`"valid") Then (
-      Let entry       : FetchBufEntry  <- ##fetchHead`"data" ;
-      Let pcAddr      : Addr           <- ##entry`"pcAddr" ;
-      Let predPc      : Addr           <- ##entry`"predPc" ;
-      Let epoch       : Epoch          <- ##entry`"epoch" ;
-      Let preExc      : FetchException <- ##entry`"fetchExc" ;
-      Let hasPreFault : Bool           <- Or [ ##preExc`"tag" ;
-                                               ##preExc`"seal" ;
-                                               ##preExc`"perm" ;
-                                               ##preExc`"bounds" ] ;
+    If (##instHead`"valid") Then (
+      Let  asmInst        : AssembledInst  <- ##instHead`"data" ;
+      Let  fetchOut       : FetchOut       <- ##asmInst`"fetchOut" ;
+      Let  inst           : Inst           <- ##fetchOut`"inst" ;
+      Let  predPc         : Addr           <- ##asmInst`"predPc" ;
+      Let  entryExecEpoch : Epoch          <- ##asmInst`"execEpoch" ;
 
-      LetIf instOpt : Option Inst <-
-        If #hasPreFault Then (
-          Return (mkSome ($0 : Expr ty Inst))
-        ) Else (
-          liftAction np_mem ((memIfc ty).(mem_getInstRp) pcAddr)
-        ) ;
+      LetA currExecEpoch  : Epoch          <- @readExecEpoch dom rfTree bpTree memTree fTree decodeTree dTree ty ;
 
-      If (##instOpt`"valid") Then (
-        Let  inst       : Inst        <- ##instOpt`"data" ;
-        LetA currEpoch  : Epoch       <- @readCurrEpoch dom pcAddrInit bpTree memTree fTree decodeTree dTree ty ;
-        LetA decodePc   : Addr        <- liftAction np_decode (@readDecodePc ty) ;
+      (* Wrong-execEpoch instructions are dropped here *)
+      If (Not (Eq #entryExecEpoch #currExecEpoch)) Then (
+        liftAction np_instFifo (@deq dom fetchCapacity AssembledInst ty)
+      ) Else (
+        LetL regReadIn : RegReadIn <- wrappedDecode fetchOut ;
+        Let  decodeOut : DecodeOut <- ##regReadIn`"decodeOut" ;
 
-        (* Bad epoch instructions need to be dropped here. Otherwise decode will redirect PC
-           even though it is in the wrong path *)
-        Let  isExpected : Bool        <- And [ Eq #epoch #currEpoch ;
-                                               Eq #pcAddr #decodePc ] ;
+        Let  instGroup : InstGroup             <- ##decodeOut`"instGroup" ;
+        Let  cs1Idx    : Bit RegIdxSzReal      <- ##decodeOut`"cs1Idx" ;
+        Let  cs2Source : TaggedUnion Cs2Source <- ##decodeOut`"cs2Idx" ;
+        Let  cs2IsReg  : Bool                  <- #cs2Source `? "Reg" ;
+        Let  cs2Idx    : Bit RegIdxSzReal      <- #cs2Source `! "Reg" ;
+        Let  writesCd  : Bool                  <- ##decodeOut`"writesCd" ;
+        Let  cdIdx     : Bit RegIdxSzReal      <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal (getCd inst) ;
 
-        If (Not #isExpected) Then (
-          Act (liftAction np_fetchFifo (@deq dom fetchCapacity FetchBufEntry ty)) ;
-          If (Not #hasPreFault) Then (
-            liftAction np_mem ((memIfc ty).(mem_deqInstRp) pcAddr)
-          ) ;
-          Retv
-        ) Else (
-          LetA pcc       : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
-          Let  pccECap   : ECap            <- ##pcc`"ecap" ;
-          Let  isComp    : Bool            <- isCompressed inst ;
-          Let  instBytes : Addr            <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
-          Let  topExc    : Bool            <- Ugt (ZeroExtendTo (AddrSz + 2) (Add [ #pcAddr ; #instBytes ])) (##pccECap`"top") ;
-          Let  fetchExc  : FetchException  <- #preExc `{ "bounds" <- Or [ ##preExc`"bounds" ; #topExc ] } ;
-          Let  fetchOut  : FetchOut        <- STRUCT {
-            "hasAsr"   ::= ##pccECap`"perms"`"SR" ;
-            "inst"     ::= #inst ;
-            "fetchExc" ::= #fetchExc
+        LetL wInfo           : WaitSpecialInfo <- getWaitSpecialInfo instGroup cs2Source ;
+        Let  readsScr        : Bool            <- ##wInfo`"readsScr" ;
+        Let  writesScr       : Bool            <- ##wInfo`"writesScr" ;
+        Let  readWriteScrIdx : Bit ScrIdxSz    <- ##wInfo`"readWriteScrIdx" ;
+        Let  readsCsr        : Bool            <- ##wInfo`"readsCsr" ;
+        Let  readCsrIdx      : Bit CsrIdxSz    <- ##wInfo`"readCsrIdx" ;
+        Let  writesCsr       : Bool            <- ##wInfo`"writesCsr" ;
+        Let  writeCsrIdx     : Bit CsrIdxSz    <- ##wInfo`"writeCsrIdx" ;
+
+        Let  mstatusIdx      : Bit CsrIdxSz <- $(getCsrPhysicalIdx "mstatus") ;
+        LetA cs1Wait         : Bool         <- liftAction np_waitBits (@readGprWaitBit dom ty cs1Idx) ;
+        LetA cs2Wait         : Bool         <- liftAction np_waitBits (@readGprWaitBit dom ty cs2Idx) ;
+        LetA cdWait          : Bool         <- liftAction np_waitBits (@readGprWaitBit dom ty cdIdx) ;
+        LetA scrWait         : Bool         <- liftAction np_waitBits (@readScrWaitBit dom ty readWriteScrIdx) ;
+        LetA csrReadWait     : Bool         <- liftAction np_waitBits (@readCsrWaitBit dom ty readCsrIdx) ;
+        LetA csrWriteWait    : Bool         <- liftAction np_waitBits (@readCsrWaitBit dom ty writeCsrIdx) ;
+        LetA mstatusWait     : Bool         <- liftAction np_waitBits (@readCsrWaitBit dom ty mstatusIdx) ;
+
+        Let  scrStallEmpty : Bool <- And [ #readsScr ; isStallUntilEmptyScr readWriteScrIdx ] ;
+        Let  csrStallEmpty : Bool <- And [ #readsCsr ; isStallUntilEmptyCsr readCsrIdx ] ;
+
+        (* cs1Idx and cs2Idx are set to 0 for instructions that don't read them *)
+        (* However, faulting instructions do not set them to 0 *)
+        Let  cs1Stall  : Bool <- And [ isNotZero #cs1Idx ; #cs1Wait ] ;
+        Let  cs2Stall  : Bool <- And [ #cs2IsReg ; isNotZero #cs2Idx ; #cs2Wait ] ;
+        Let  cdStall   : Bool <- And [ #writesCd ; #cdWait ] ;
+        Let  scrStall  : Bool <- Or [ And [ Or [#readsScr ; #writesScr ] ; #scrWait ] ;
+                                      And [ #scrStallEmpty ; Not #pipelineEmpty ] ] ;
+        Let  csrStall  : Bool <- Or [ #mstatusWait ;
+                                      And [ #readsCsr ; #csrReadWait ] ;
+                                      And [ #writesCsr ; #csrWriteWait ] ;
+                                      And [ #csrStallEmpty ; Not #pipelineEmpty ] ] ;
+        Let  canIssue  : Bool <- Not (Or [ #decodeToAlu_isFull ; #cs1Stall ; #cs2Stall ; #cdStall ; #scrStall ; #csrStall ]) ;
+
+        If #canIssue Then (
+          Act (liftAction np_instFifo (@deq dom fetchCapacity AssembledInst ty)) ;
+
+          LetA meip : Bool <- liftAction np_mem meipAct ;
+          LetA mtip : Bool <- liftAction np_mem mtipAct ;
+          LetA aluInInstGroup : AluInInstGroup <- liftAction np_rf (regRead meip mtip regReadIn) ;
+
+          (* Faulting instructions set random indices to wait, and unset them when the faults are handled *)
+          Let waitTrue : Bool <- ConstBool true ;
+          Act (liftAction np_waitBits
+                 (@setDstWaitBits dom ty
+                    writesCd cdIdx
+                    wInfo
+                    waitTrue)) ;
+
+          Let d2aEntry : DecodeToAluEntry <- STRUCT {
+            "aluIn"     ::= #aluInInstGroup ;
+            "predPc"    ::= #predPc ;
+            "execEpoch" ::= #currExecEpoch
           } ;
-
-          LetL regReadIn : RegReadIn <- wrappedDecode fetchOut ;
-          Let  decodeOut : DecodeOut <- ##regReadIn`"decodeOut" ;
-
-          Let  instGroup : InstGroup             <- ##decodeOut`"instGroup" ;
-          Let  cs1Idx    : Bit RegIdxSzReal      <- ##decodeOut`"cs1Idx" ;
-          Let  cs2Source : TaggedUnion Cs2Source <- ##decodeOut`"cs2Idx" ;
-          Let  cs2IsReg  : Bool                  <- #cs2Source `? "Reg" ;
-          Let  cs2Idx    : Bit RegIdxSzReal      <- #cs2Source `! "Reg" ;
-          Let  writesCd  : Bool                  <- ##decodeOut`"writesCd" ;
-          Let  cdIdx     : Bit RegIdxSzReal      <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal (getCd inst) ;
-
-          LetL wInfo           : WaitSpecialInfo <- getWaitSpecialInfo instGroup cs2Source ;
-          Let  readsScr        : Bool            <- ##wInfo`"readsScr" ;
-          Let  writesScr       : Bool            <- ##wInfo`"writesScr" ;
-          Let  readWriteScrIdx : Bit ScrIdxSz    <- ##wInfo`"readWriteScrIdx" ;
-          Let  readsCsr        : Bool            <- ##wInfo`"readsCsr" ;
-          Let  readCsrIdx      : Bit CsrIdxSz    <- ##wInfo`"readCsrIdx" ;
-          Let  writesCsr       : Bool            <- ##wInfo`"writesCsr" ;
-          Let  writeCsrIdx     : Bit CsrIdxSz    <- ##wInfo`"writeCsrIdx" ;
-
-          LetA cs1Wait      : Bool <- liftAction np_waitBits (@readGprWaitBit dom ty #cs1Idx) ;
-          LetA cs2Wait      : Bool <- liftAction np_waitBits (@readGprWaitBit dom ty #cs2Idx) ;
-          LetA cdWait       : Bool <- liftAction np_waitBits (@readGprWaitBit dom ty #cdIdx) ;
-          LetA scrWait      : Bool <- liftAction np_waitBits (@readScrWaitBit dom ty #readWriteScrIdx) ;
-          LetA csrReadWait  : Bool <- liftAction np_waitBits (@readCsrWaitBit dom ty #readCsrIdx) ;
-          LetA csrWriteWait : Bool <- liftAction np_waitBits (@readCsrWaitBit dom ty #writeCsrIdx) ;
-          LetA mstatusWait  : Bool <- liftAction np_waitBits (@readCsrWaitBit dom ty ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz))) ;
-
-          Let  scrStallEmpty : Bool <- And [ #readsScr ; isStallUntilEmptyScr #readWriteScrIdx ] ;
-          Let  csrStallEmpty : Bool <- And [ #readsCsr ; isStallUntilEmptyCsr #readCsrIdx ] ;
-
-          (* cs1Idx and cs2Idx are set to 0 for instructions that don't read them *)
-          (* However, faulting instructions do not set them to 0 *)
-          Let  cs1Stall  : Bool <- And [ isNotZero #cs1Idx ; #cs1Wait ] ;
-          Let  cs2Stall  : Bool <- And [ #cs2IsReg ; isNotZero #cs2Idx ; #cs2Wait ] ;
-          Let  cdStall   : Bool <- And [ #writesCd ; #cdWait ] ;
-          Let  scrStall  : Bool <- Or [ And [ Or [#readsScr ; #writesScr ] ; #scrWait ] ;
-                                        And [ #scrStallEmpty ; Not #pipelineEmpty ] ] ;
-          Let  csrStall  : Bool <- Or [ #mstatusWait ;
-                                        And [ #readsCsr ; #csrReadWait ] ;
-                                        And [ #writesCsr ; #csrWriteWait ] ;
-                                        And [ #csrStallEmpty ; Not #pipelineEmpty ] ] ;
-          Let  canIssue  : Bool <- Not (Or [ #decodeToAlu_isFull ; #cs1Stall ; #cs2Stall ; #cdStall ; #scrStall ; #csrStall ]) ;
-
-          If #canIssue Then (
-            Act (liftAction np_fetchFifo (@deq dom fetchCapacity FetchBufEntry ty)) ;
-            If (Not #hasPreFault) Then (
-              liftAction np_mem ((memIfc ty).(mem_deqInstRp) pcAddr)
-            ) ;
-
-            LetA meip : Bool <- liftAction np_mem meipAct ;
-            LetA mtip : Bool <- liftAction np_mem mtipAct ;
-            LetA aluInInstGroup : AluInInstGroup <- liftAction np_rf (regRead meip mtip regReadIn) ;
-
-            (* Faulting instructions set random indices to wait, and unset them when the faults are handled *)
-            Act (liftAction np_waitBits
-                   (@setDstWaitBits dom ty
-                      #writesCd #cdIdx
-                      wInfo
-                      (ConstBool true))) ;
-
-            LetA withInstPcPred : Addr <- liftAction np_bp ((withInstIfc ty).(withInst_getPred) pcAddr predPc inst decodeOut) ;
-            Act (liftAction np_decode (@writeDecodePc ty #withInstPcPred)) ;
-            If (Not (Eq #withInstPcPred #predPc)) Then (
-              liftAction np_fetch (@writeFetchPc dom pcAddrInit fetchCapacity ty #withInstPcPred)
-            ) ;
-
-            Let d2aEntry : DecodeToAluEntry <- STRUCT {
-              "aluIn"  ::= #aluInInstGroup ;
-              "predPc" ::= #withInstPcPred ;
-              "epoch"  ::= #currEpoch
-            } ;
-            liftAction np_decodeToAluFifo (@enq dom capacity DecodeToAluEntry ty d2aEntry)
-          ) ;
-          Retv
+          liftAction np_decodeToAluFifo (@enq dom capacity DecodeToAluEntry ty d2aEntry)
         ) ;
         Retv
       ) ;

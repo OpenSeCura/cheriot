@@ -707,20 +707,14 @@ Section InternalMemRegionActions.
              : Action ty tInt (LineReadRp r.(regionLineCfg) true) :=
     let port := selectReadPort r isFetch in
     LetA dataBytes : Array lBytes (Bit 8) <-
-      fold_right (fun memIdx acc =>
-                    ReadRpMem "readByteRp" (memBankPath memIdx) (memPortCast memIdx port)
-                      (fun val =>
-                         LetA rest : Array lBytes (Bit 8) <- acc ;
-                         Return (UpdateArrayConst #rest memIdx (memKindCastInv #val))))
-                 (Return ConstDef) (genFinType lBytes) ;
+      ArrayBuilderAction (fun memIdx cont =>
+        ReadRpMem "readByteRp" (memBankPath memIdx) (memPortCast memIdx port)
+          (fun val => cont (memKindCastInv #val))) ;
     LetA tagArr : Array nTags Bool <-
       if hasTags r then (
-        fold_right (fun tagIdx acc =>
-                      ReadRpMem "readTagRp" (tagBankPath tagIdx) (tagPortCast tagIdx port)
-                        (fun val =>
-                           LetA rest : Array nTags Bool <- acc ;
-                           Return (UpdateArrayConst #rest tagIdx (tagKindCastInv #val))))
-                   (Return ConstDef) (genFinType nTags)
+        ArrayBuilderAction (fun tagIdx cont =>
+          ReadRpMem "readTagRp" (tagBankPath tagIdx) (tagPortCast tagIdx port)
+            (fun val => cont (tagKindCastInv #val)))
       ) else (
         Return ConstDef
       ) ;

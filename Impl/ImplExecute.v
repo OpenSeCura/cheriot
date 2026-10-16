@@ -37,12 +37,13 @@ Section ExecuteStage.
   Variable ty : Kind -> Type.
   Variable meipAct mtipAct : Action ty (memIfc ty).(memTree) Bool.
 
+  Local Abbreviation rfTree := (rfTree dom pcAddrInit).
   Local Abbreviation bpTree := (bpTree noInstTree (withInstIfc ty).(withInstTree)).
   Local Abbreviation memTree := (memIfc ty).(memTree).
   Local Abbreviation fTree := (fetchTree dom pcAddrInit fetchCapacity).
-  Local Abbreviation decTree := (decodeTree dom pcAddrInit decodeCapacity).
+  Local Abbreviation decTree := (decodeTree dom decodeCapacity).
   Local Abbreviation dTree := (deferredTree dom deferredCapacity).
-  Local Abbreviation coreTree := (coreTree dom pcAddrInit bpTree memTree fTree decTree dTree).
+  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fTree decTree dTree).
   Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
   Local Abbreviation isInterruptPending := (isInterruptPending dom pcAddrInit).
   Local Abbreviation executeNonDeferred := (executeNonDeferred dom pcAddrInit).
@@ -62,9 +63,6 @@ Section ExecuteStage.
   Definition np_fetch : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.fetch.").
 
-  Definition np_decode : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.decode.").
-
   Definition np_decodeToAluFifo : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.decode..decodeToAluBuf.fifo").
 
@@ -75,21 +73,21 @@ Section ExecuteStage.
     Eval cbn in (getNodePath coreTree "core.deferred..inputBuf.fifo").
 
   (* =========================================================================
-   * STAGE 3: aluAndExecuteNonDeferred
+   * STAGE 4: aluAndExecuteNonDeferred
    *
    * - Precondition: decodeToAluBuf is non-empty, deferred inputBuf is not
    *                 full when the instruction is deferred, and if an enabled
    *                 interrupt is pending, the deferred pipeline is empty.
-   * - Action:       Dequeue d2aEntry { aluIn, predPc, epoch } from
+   * - Action:       Dequeue d2aEntry { aluIn, predPc, execEpoch } from
    *                 decodeToAluBuf.
-   *                 - If epoch != currEpoch: drop entry and clear its
+   *                 - If execEpoch != currExecEpoch: drop entry and clear its
    *                   destination GPR/SCR/CSR wait bits.
-   *                 - If epoch == currEpoch: run AluRouting, Alu, and
+   *                 - If execEpoch == currExecEpoch: run AluRouting, Alu, and
    *                   executeNonDeferred; update branch predictor; on
    *                   ControlFlowAddrECap or committedNextPc != predPc,
-   *                   advance currEpoch, update decodePc, and redirect fetchPc;
-   *                   clear destination SCR/CSR wait bits (and GPR wait bit
-   *                   when not deferred), or enqueue deferredReq into
+   *                   advance execEpoch, clear straddleOpt, and redirect
+   *                   fetchPc; clear destination SCR/CSR wait bits (and GPR
+   *                   wait bit when not deferred), or enqueue deferredReq into
    *                   deferred inputBuf.
    * ========================================================================= *)
   Definition aluAndExecuteNonDeferred : Action ty coreTree (Bit 0) :=
@@ -98,10 +96,10 @@ Section ExecuteStage.
     LetA deferred_isEmpty  : Bool                    <- liftAction np_deferred (@deferredIsEmpty dom deferredCapacity ty) ;
 
     If (##d2aHead`"valid") Then (
-      Let  d2aEntry : DecodeToAluEntry <- ##d2aHead`"data" ;
-      Let  pkg      : AluInInstGroup   <- ##d2aEntry`"aluIn" ;
-      Let  predPc   : Addr             <- ##d2aEntry`"predPc" ;
-      Let  epoch    : Epoch            <- ##d2aEntry`"epoch" ;
+      Let  d2aEntry       : DecodeToAluEntry <- ##d2aHead`"data" ;
+      Let  pkg            : AluInInstGroup   <- ##d2aEntry`"aluIn" ;
+      Let  predPc         : Addr             <- ##d2aEntry`"predPc" ;
+      Let  entryExecEpoch : Epoch            <- ##d2aEntry`"execEpoch" ;
 
       Let  instBits   : Inst                  <- ##pkg`"inst" ;
       Let  instGroup  : InstGroup             <- ##pkg`"instGroup" ;
@@ -111,15 +109,16 @@ Section ExecuteStage.
 
       LetL wInfo      : WaitSpecialInfo <- getWaitSpecialInfo instGroup cs2Source ;
 
-      LetA currEpoch  : Epoch <- @readCurrEpoch dom pcAddrInit bpTree memTree fTree decTree dTree ty ;
+      Let  waitFalse : Bool <- ConstBool false ;
+      LetA currExecEpoch : Epoch <- @readExecEpoch dom rfTree bpTree memTree fTree decTree dTree ty ;
 
-      If (Not (Eq #epoch #currEpoch)) Then (
+      If (Not (Eq #entryExecEpoch #currExecEpoch)) Then (
         Act (liftAction np_decodeToAluFifo (@deq dom decodeCapacity DecodeToAluEntry ty)) ;
         liftAction np_waitBits
           (@setDstWaitBits dom ty
-             #writesCd #dstIdxReal
+             writesCd dstIdxReal
              wInfo
-             (ConstBool false))
+             waitFalse)
       ) Else (
         LetA pcc           : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
         Let  pcAddr        : Addr            <- ##pcc`"addr" ;
@@ -147,15 +146,26 @@ Section ExecuteStage.
           Let  committedNextPc : Addr             <- ##execOut`"nextPc" ;
           Let  isAddrECap      : Bool             <- And [ #hasCf ; #cfOp `? "ControlFlowAddrECap" ] ;
 
+          Let  pb : PreBranchInfo <- STRUCT {
+            "isCompressed" ::= ##instGroup`"isCompressed" ;
+            "isCjal"       ::= ##instGroup`"Cjal" ;
+            "isBranch"     ::= ##instGroup`"Branch" ;
+            "isOtherCf"    ::= Or [ ##instGroup`"Cjalr" ;
+                                    ##instGroup`"ECall" ;
+                                    ##instGroup`"EBreak" ;
+                                    ##instGroup`"Mret" ]
+          } ;
+
           If #hasCf Then (
-            liftAction np_bp ((withInstIfc ty).(withInst_updCf) pcAddr cf)
+            liftAction np_bp ((withInstIfc ty).(withInst_updCf) pcAddr cf pb)
           ) ;
 
           If (Or [ #isAddrECap ; Not (Eq #committedNextPc #predPc) ]) Then (
-            Let nextEpoch : Epoch <- Add [ #currEpoch ; $1 ] ;
-            Act (@writeCurrEpoch dom pcAddrInit bpTree memTree fTree decTree dTree ty #nextEpoch) ;
-            Act (liftAction np_decode (@writeDecodePc dom pcAddrInit decodeCapacity ty #committedNextPc)) ;
-            liftAction np_fetch (@writeFetchPc dom pcAddrInit fetchCapacity ty #committedNextPc)
+            Let nextExecEpoch : Epoch               <- Add [ #currExecEpoch ; $1 ] ;
+            Let noneStraddle  : Option StraddleHalf <- ConstDef ;
+            Act (@writeExecEpoch dom rfTree bpTree memTree fTree decTree dTree ty nextExecEpoch) ;
+            Act (liftAction np_fetch (@writeStraddleOpt dom pcAddrInit fetchCapacity ty noneStraddle)) ;
+            liftAction np_fetch (@writeFetchPc dom pcAddrInit fetchCapacity ty committedNextPc)
           ) ;
 
           If (##execOut`"isFenceIRq") Then (
@@ -171,9 +181,9 @@ Section ExecuteStage.
           ) Else (
             liftAction np_waitBits
               (@setDstWaitBits dom ty
-                 #writesCd #dstIdxReal
+                 writesCd dstIdxReal
                  wInfo
-                 (ConstBool false))
+                 waitFalse)
           ) ;
           Retv
         ) ;

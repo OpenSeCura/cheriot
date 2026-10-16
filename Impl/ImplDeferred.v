@@ -33,6 +33,7 @@ Definition ImplMulDivMode : MulDivMode := IterMul_SharedIterDiv.
 Definition DeferredStateList : list (string * Kind) :=
   [ ("LoadRq", Bit 0) ;
     ("LoadRp", LoadCmd) ;
+    ("RevRq",  RevCmd) ;
     ("RevRp",  RevCmd) ].
 
 Definition DeferredState : Kind := TaggedUnion DeferredStateList.
@@ -54,8 +55,8 @@ Section DeferredStages.
   Definition readState (ty : Kind -> Type) : Action ty deferredTree DeferredState :=
     ReadReg "state" pState (fun v => Return #v).
 
-  Definition writeState (ty : Kind -> Type) (val : Expr ty DeferredState) : Action ty deferredTree (Bit 0) :=
-    WriteReg pState val Retv.
+  Definition writeState (ty : Kind -> Type) (val : ty DeferredState) : Action ty deferredTree (Bit 0) :=
+    WriteReg pState #val Retv.
 
   Definition np_defInputFifo : NodePath deferredTree :=
     Eval cbn in (getNodePath deferredTree ".inputBuf.fifo").
@@ -76,8 +77,9 @@ Section DeferredStages.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable ty : Kind -> Type.
 
+  Local Abbreviation rfTree := (rfTree dom pcAddrInit).
   Local Abbreviation memTree := (memIfc ty).(memTree).
-  Local Abbreviation coreTree := (coreTree dom pcAddrInit bpTree memTree fetchTree decodeTree deferredTree).
+  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree decodeTree deferredTree).
   Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
@@ -100,8 +102,9 @@ Section DeferredStages.
 
   Local Definition commitWb (dstIdx : ty (Bit RegIdxSzReal)) (dstVal : ty FullECapWithTag) : Action ty coreTree (Bit 0) :=
     If (isNotZero #dstIdx) Then (
+      Let waitFalse : Bool <- ConstBool false ;
       Act (liftAction np_rf (writeRegsList gprPathsWithKind #dstIdx #dstVal)) ;
-      liftAction np_waitBits (@writeGprWaitBit dom ty #dstIdx (ConstBool false))
+      liftAction np_waitBits (@writeGprWaitBit dom ty dstIdx waitFalse)
     ) ;
     Retv.
 
@@ -142,13 +145,14 @@ Section DeferredStages.
             ) ;
             Retv
           ) Else (
-            Let  ld       : LoadCmd                   <- ##memAct `! "Load" ;
-            Let  ldAddr   : Addr                      <- ##ld`"addr" ;
-            Let  pending  : PendingLoad               <- ##ld`"pending" ;
-            Let  memSize  : Bit LgLgNumBytesFullCapSz <- ##pending`"memSize" ;
-            LetA accepted : Bool                      <- liftAction np_mem ((memIfc ty).(mem_readMemRq) ldAddr memSize) ;
+            Let  ld        : LoadCmd                   <- ##memAct `! "Load" ;
+            Let  ldAddr    : Addr                      <- ##ld`"addr" ;
+            Let  pending   : PendingLoad               <- ##ld`"pending" ;
+            Let  memSize   : Bit LgLgNumBytesFullCapSz <- ##pending`"memSize" ;
+            LetA accepted  : Bool                      <- liftAction np_mem ((memIfc ty).(mem_readMemRq) ldAddr memSize) ;
             If #accepted Then (
-              Act (liftAction np_deferred (@writeState ty (UNION (DeferredStateList, "LoadRp" ::= #ld)))) ;
+              Let nextState : DeferredState <- UNION (DeferredStateList, "LoadRp" ::= #ld) ;
+              Act (liftAction np_deferred (@writeState ty nextState)) ;
               liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
             ) ;
             Retv
@@ -179,16 +183,16 @@ Section DeferredStages.
     Retv.
 
   (* =========================================================================
-   * STAGE 2: loadRpAndWritebackOrIssueRevRq
+   * STAGE 2a: loadRpAndWriteback
    *
    * - Active when state is "LoadRp". Peeks load response via mem_getMemRp.
-   * - Uses dispatchLoadResponse:
-   *   - RevLookup: when mem_readRevBitRq is accepted, dequeues mem_deqMemRp
-   *                and transitions state to "RevRp".
-   *   - Writeback: dequeues mem_deqMemRp, writes back to RF, clears
-   *                waitBit[dstIdx], and transitions state to "LoadRq".
+   * - Unconditionally dequeues mem_deqMemRp when valid, and uses
+   *   dispatchLoadResponse:
+   *   - RevLookup: transitions state to "RevRq".
+   *   - Writeback: writes back to RF, clears waitBit[dstIdx], and transitions
+   *                state to "LoadRq".
    * ========================================================================= *)
-  Definition loadRpAndWritebackOrIssueRevRq (config : RevConfig) : Action ty coreTree (Bit 0) :=
+  Definition loadRpAndWriteback (config : RevConfig) : Action ty coreTree (Bit 0) :=
     LetA state : DeferredState <- liftAction np_deferred (@readState ty) ;
 
     If (#state `? "LoadRp") Then (
@@ -199,31 +203,57 @@ Section DeferredStages.
       LetA memValOpt : Option FullCapWithTag     <- liftAction np_mem ((memIfc ty).(mem_getMemRp) ldAddr memSize) ;
 
       If (##memValOpt`"valid") Then (
+        Act (liftAction np_mem ((memIfc ty).(mem_deqMemRp) ldAddr)) ;
         Let  memVal  : FullCapWithTag <- ##memValOpt`"data" ;
         LetL outcome : LoadOutcome    <- dispatchLoadResponse config pl memVal ;
 
         If (#outcome `? "RevLookup") Then (
-          Let  revInfo  : RevCmd           <- #outcome `! "RevLookup" ;
-          Let  revBase  : Bit (AddrSz + 1) <- ##revInfo`"base" ;
-          LetA accepted : Bool             <- liftAction np_mem ((memIfc ty).(mem_readRevBitRq) revBase) ;
-          If #accepted Then (
-            Act (liftAction np_mem ((memIfc ty).(mem_deqMemRp) ldAddr)) ;
-            liftAction np_deferred (@writeState ty (UNION (DeferredStateList, "RevRp" ::= #revInfo)))
-          ) ;
-          Retv
+          Let revInfo   : RevCmd        <- #outcome `! "RevLookup" ;
+          Let nextState : DeferredState <- UNION (DeferredStateList, "RevRq" ::= #revInfo) ;
+          liftAction np_deferred (@writeState ty nextState)
         ) Else (
-          Let wbInfo  : WbCmd            <- #outcome `! "Writeback" ;
-          Let dstIdxV : Bit RegIdxSzReal <- ##wbInfo`"dstIdx" ;
-          Let dstValV : FullECapWithTag  <- ##wbInfo`"dstVal" ;
-          Act (liftAction np_mem ((memIfc ty).(mem_deqMemRp) ldAddr)) ;
+          Let wbInfo    : WbCmd            <- #outcome `! "Writeback" ;
+          Let dstIdxV   : Bit RegIdxSzReal <- ##wbInfo`"dstIdx" ;
+          Let dstValV   : FullECapWithTag  <- ##wbInfo`"dstVal" ;
+          Let nextState : DeferredState    <- UNION (DeferredStateList, "LoadRq" ::= ($0 : Expr ty (Bit 0))) ;
           Act (commitWb dstIdxV dstValV) ;
-          liftAction np_deferred (@writeState ty (UNION (DeferredStateList, "LoadRq" ::= ($0 : Expr ty (Bit 0)))))
+          liftAction np_deferred (@writeState ty nextState)
         ) ;
         Retv
       ) ;
       Retv
     ) ;
     Retv.
+
+  (* =========================================================================
+   * STAGE 2b: issueRevRq
+   *
+   * - Active when state is "RevRq". Issues mem_readRevBitRq; when accepted,
+   *   transitions state to "RevRp".
+   * ========================================================================= *)
+  Definition issueRevRq : Action ty coreTree (Bit 0) :=
+    LetA state : DeferredState <- liftAction np_deferred (@readState ty) ;
+
+    If (#state `? "RevRq") Then (
+      Let  revInfo  : RevCmd           <- #state `! "RevRq" ;
+      Let  revBase  : Bit (AddrSz + 1) <- ##revInfo`"base" ;
+      LetA accepted : Bool             <- liftAction np_mem ((memIfc ty).(mem_readRevBitRq) revBase) ;
+      If #accepted Then (
+        Let nextState : DeferredState <- UNION (DeferredStateList, "RevRp" ::= #revInfo) ;
+        liftAction np_deferred (@writeState ty nextState)
+      ) ;
+      Retv
+    ) ;
+    Retv.
+
+  (* =========================================================================
+   * STAGE 2: loadRpAndIssueRevRq
+   *
+   * - Linearly combines loadRpAndWriteback and issueRevRq.
+   * ========================================================================= *)
+  Definition loadRpAndIssueRevRq (config : RevConfig) : Action ty coreTree (Bit 0) :=
+    Act (loadRpAndWriteback config) ;
+    issueRevRq.
 
   (* =========================================================================
    * STAGE 3: revRpAndWriteBack
@@ -242,12 +272,13 @@ Section DeferredStages.
       LetA revBitOpt : Option Bool      <- liftAction np_mem ((memIfc ty).(mem_getDeqRevBitRp) revBase) ;
 
       If (##revBitOpt`"valid") Then (
-        Let  revBit  : Bool             <- ##revBitOpt`"data" ;
-        LetL wbInfo  : WbCmd            <- dispatchRevResponse pr revBit ;
-        Let  dstIdxV : Bit RegIdxSzReal <- ##wbInfo`"dstIdx" ;
-        Let  dstValV : FullECapWithTag  <- ##wbInfo`"dstVal" ;
+        Let  revBit    : Bool             <- ##revBitOpt`"data" ;
+        LetL wbInfo    : WbCmd            <- dispatchRevResponse pr revBit ;
+        Let  dstIdxV   : Bit RegIdxSzReal <- ##wbInfo`"dstIdx" ;
+        Let  dstValV   : FullECapWithTag  <- ##wbInfo`"dstVal" ;
+        Let  nextState : DeferredState    <- UNION (DeferredStateList, "LoadRq" ::= ($0 : Expr ty (Bit 0))) ;
         Act (commitWb dstIdxV dstValV) ;
-        liftAction np_deferred (@writeState ty (UNION (DeferredStateList, "LoadRq" ::= ($0 : Expr ty (Bit 0)))))
+        liftAction np_deferred (@writeState ty nextState)
       ) ;
       Retv
     ) ;

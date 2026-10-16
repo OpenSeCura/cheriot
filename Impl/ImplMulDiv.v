@@ -694,15 +694,16 @@ Section ModeParameterizedSubsystem.
   Local Lemma xlen_to_d_cast : (Xlen = d + (Xlen - d))%Z.
   Proof. lia. Qed.
 
-  Definition addrToBitD (ty : Kind -> Type) (e : Expr ty Addr) : Expr ty (Bit d) :=
-    TruncLsb (Xlen - d) d (castBits xlen_to_d_cast e).
+  Definition addrToBitD (ty : Kind -> Type) (e : ty Addr) : Expr ty (Bit d) :=
+    TruncLsb (Xlen - d) d (castBits xlen_to_d_cast #e).
 
   Definition decodeMulInput (ty : Kind -> Type)
     (op1 : ty (Bit d)) (mulOp : ty MulOp) : LetExpr ty (MulInput d) :=
     LetE isHigh    : Bool  <- ##mulOp`"isHigh" ;
     LetE op1Signed : Bool  <- ##mulOp`"op1Signed" ;
     LetE op2Signed : Bool  <- ##mulOp`"op2Signed" ;
-    LetE op2       : Bit d <- addrToBitD (##mulOp`"op2") ;
+    LetE rawOp2    : Addr  <- ##mulOp`"op2" ;
+    LetE op2       : Bit d <- addrToBitD rawOp2 ;
     @RetE ty (MulInput d) (STRUCT {
       "isHigh"    ::= #isHigh ;
       "op1Signed" ::= #op1Signed ;
@@ -715,7 +716,8 @@ Section ModeParameterizedSubsystem.
     (op1 : ty (Bit d)) (divOp : ty DivOp) : LetExpr ty (DivInput d) :=
     LetE isUnsigned : Bool  <- ##divOp`"isUnsigned" ;
     LetE isRem      : Bool  <- ##divOp`"isRem" ;
-    LetE op2        : Bit d <- addrToBitD (##divOp`"op2") ;
+    LetE rawOp2     : Addr  <- ##divOp`"op2" ;
+    LetE op2        : Bit d <- addrToBitD rawOp2 ;
     @RetE ty (DivInput d) (STRUCT {
       "isUnsigned" ::= #isUnsigned ;
       "isRem"      ::= #isRem ;
@@ -734,7 +736,7 @@ Section ModeParameterizedSubsystem.
     LetE isUnsigned : Bool  <- ##divOp`"isUnsigned" ;
     LetE isRem      : Bool  <- ##divOp`"isRem" ;
     LetE rawOp2     : Addr  <- ITE #isMul (##mulOp`"op2") (##divOp`"op2") ;
-    LetE op2        : Bit d <- addrToBitD #rawOp2 ;
+    LetE op2        : Bit d <- addrToBitD rawOp2 ;
     @RetE ty (SharedInput d) (STRUCT {
       "isMul"      ::= #isMul ;
       "isHigh"     ::= #isHigh ;

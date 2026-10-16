@@ -36,13 +36,14 @@ Section ImplDom.
   Variable pcAddrInit : Z.
   Variable fetchCapacity decodeCapacity deferredCapacity : nat.
 
+  Local Abbreviation rTree := (rfTree core pcAddrInit).
   Local Abbreviation fTree := (fetchTree core pcAddrInit fetchCapacity).
-  Local Abbreviation decTree := (decodeTree core pcAddrInit decodeCapacity).
+  Local Abbreviation decTree := (decodeTree core decodeCapacity).
   Local Abbreviation dTree := (deferredTree core deferredCapacity).
 
   Definition implSysTree (config : RevConfig) (regions : list MemRegion) : Tree DomainElem :=
     Node "sys" [
-      coreTree core pcAddrInit implBpTree (implMemTree regions) fTree decTree dTree
+      coreTree core rTree implBpTree (implMemTree regions) fTree decTree dTree
     ].
 
   Section Impl.
@@ -157,21 +158,28 @@ Section ImplDom.
        * ===================================================================== *)
 
       Definition fetchRqStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@fetchRq core pcAddrInit fetchCapacity noInstIfc implWithInstTree memIfc decTree dTree ty).
+        liftAction np_core (@fetchRq core pcAddrInit fetchCapacity noInstIfc withInstIfc memIfc decTree dTree ty).
 
       (* =====================================================================
-       * STAGE 2: Decode & Register Read with Two-Level Predictor & Scoreboard
+       * STAGE 2: Fetch Assemble, Pre-Decode & Level-2 Branch Prediction
+       * ===================================================================== *)
+
+      Definition fetchAssembleStage : Action ty sysTree (Bit 0) :=
+        liftAction np_core (@fetchAssemble core pcAddrInit fetchCapacity noInstIfc withInstIfc memIfc decTree dTree ty).
+
+      (* =====================================================================
+       * STAGE 3: Decode & Register Read with Scoreboard
        * ===================================================================== *)
 
       Definition decodeAndRegReadStage : Action ty sysTree (Bit 0) :=
         liftAction np_core
-          (@decodeAndRegRead core pcAddrInit decodeCapacity fetchCapacity deferredCapacity
-                             implNoInstTree withInstIfc memIfc ty
+          (@decodeAndRegRead core decodeCapacity pcAddrInit fetchCapacity deferredCapacity
+                             bpTree memIfc ty
                              (implPlicAction (@plicMeip core nIrq ty))
                              (implClintAction (readClintMtip core ty))).
 
       (* =====================================================================
-       * STAGE 3: Combined ALU + Execute Non-Deferred Stage
+       * STAGE 4: Combined ALU + Execute Non-Deferred Stage
        * ===================================================================== *)
 
       Definition aluAndExecuteNonDeferredStage : Action ty sysTree (Bit 0) :=
@@ -182,14 +190,20 @@ Section ImplDom.
                                      (implClintAction (readClintMtip core ty))).
 
       (* =====================================================================
-       * STAGE 4: Execute Deferred Stages (Load / Store / Fence / MulDiv / Rev)
+       * STAGE 5: Execute Deferred Stages (Load / Store / Fence / MulDiv / Rev)
        * ===================================================================== *)
 
       Definition loadRqOrStoreOrFenceStage : Action ty sysTree (Bit 0) :=
         liftAction np_core (@loadRqOrStoreOrFence core deferredCapacity pcAddrInit bpTree fTree decTree memIfc ty).
 
-      Definition loadRpAndWritebackOrIssueRevRqStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@loadRpAndWritebackOrIssueRevRq core deferredCapacity pcAddrInit bpTree fTree decTree memIfc ty config).
+      Definition loadRpAndWritebackStage : Action ty sysTree (Bit 0) :=
+        liftAction np_core (@loadRpAndWriteback core deferredCapacity pcAddrInit bpTree fTree decTree memIfc ty config).
+
+      Definition issueRevRqStage : Action ty sysTree (Bit 0) :=
+        liftAction np_core (@issueRevRq core deferredCapacity pcAddrInit bpTree fTree decTree memIfc ty).
+
+      Definition loadRpAndIssueRevRqStage : Action ty sysTree (Bit 0) :=
+        liftAction np_core (@loadRpAndIssueRevRq core deferredCapacity pcAddrInit bpTree fTree decTree memIfc ty config).
 
       Definition revRpAndWriteBackStage : Action ty sysTree (Bit 0) :=
         liftAction np_core (@revRpAndWriteBack core deferredCapacity pcAddrInit bpTree fTree decTree memIfc ty).
@@ -226,10 +240,6 @@ Section ImplDom.
         map (fun '(dom, act) => (dom, liftAction np_mem act))
             (@implMemCollectTargetPortRpActions regions ty).
 
-      Definition fetchCrossLineSteps : list (string * Action ty sysTree (Bit 0)) :=
-        map (fun '(dom, act) => (dom, liftAction np_mem act))
-            (@implMemCollectFetchCrossLineActions regions ty).
-
       Definition dataCrossLineSteps : list (string * Action ty sysTree (Bit 0)) :=
         map (fun '(dom, act) => (dom, liftAction np_mem act))
             (@implMemCollectDataCrossLineActions regions ty).
@@ -244,15 +254,14 @@ Section ImplDom.
       (map (fun a => (core, a)) (implPeripheralSteps ty)
        ++ [ (core, fetchRqStage ty) ]
        ++ fetchRqs ty ++ fetchRps ty
-       ++ fetchCrossLineSteps ty
-       ++ fetchRqs ty ++ fetchRps ty
-       ++ [ (core, decodeAndRegReadStage ty) ;
+       ++ [ (core, fetchAssembleStage ty) ;
+            (core, decodeAndRegReadStage ty) ;
             (core, aluAndExecuteNonDeferredStage ty) ;
             (core, loadRqOrStoreOrFenceStage ty) ]
        ++ dataWriteRqs ty ++ dataReadRqs ty ++ dataReadRps ty
        ++ dataCrossLineSteps ty
        ++ dataWriteRqs ty ++ dataReadRqs ty ++ dataReadRps ty
-       ++ [ (core, loadRpAndWritebackOrIssueRevRqStage ty) ]
+       ++ [ (core, loadRpAndIssueRevRqStage ty) ]
        ++ dataReadRqs ty ++ dataReadRps ty
        ++ [ (core, revRpAndWriteBackStage ty) ]
        ++ map (fun a => (core, a)) (mulDivStageActions ty)
@@ -273,13 +282,13 @@ Section ImplDom.
       (fetchRps ty ++ dataReadRps ty
        ++ targetPortRps ty
        ++ List.rev (
-            [ (core, fetchRqStage ty) ]
-            ++ fetchCrossLineSteps ty
-            ++ [ (core, decodeAndRegReadStage ty) ;
-                 (core, aluAndExecuteNonDeferredStage ty) ;
-                 (core, loadRqOrStoreOrFenceStage ty) ]
+            [ (core, fetchRqStage ty) ;
+              (core, fetchAssembleStage ty) ;
+              (core, decodeAndRegReadStage ty) ;
+              (core, aluAndExecuteNonDeferredStage ty) ;
+              (core, loadRqOrStoreOrFenceStage ty) ]
             ++ dataCrossLineSteps ty
-            ++ [ (core, loadRpAndWritebackOrIssueRevRqStage ty) ;
+            ++ [ (core, loadRpAndIssueRevRqStage ty) ;
                  (core, revRpAndWriteBackStage ty) ]
             ++ map (fun a => (core, a)) (mulDivStageActions ty)
           )

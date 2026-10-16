@@ -39,9 +39,11 @@ module Tb();
 
   logic Recv_sys_core_mem__ram_fetch_lineReadRqReady;
   logic Recv_sys_core_mem__ram_fetch_lineReadRpValid;
+  logic decl_SendEn_sys_core_mem__ram_fetch_lineReadRpReady;
   logic Recv_sys_core_mem__ram_lineReadRqReady;
   logic Recv_sys_core_mem__ram_lineWriteRqReady;
   logic Recv_sys_core_mem__ram_lineReadRpValid;
+  logic decl_SendEn_sys_core_mem__ram_lineReadRpReady;
 
   // =========================================================================
   // 2. PLIC UART Interrupt Signal (implConcreteRegions[4]: plicMemRegion)
@@ -59,6 +61,7 @@ module Tb();
   logic          Recv_sys_core_mem_______uart_lineReadRqReady;
   logic          Recv_sys_core_mem_______uart_lineWriteRqReady;
   logic          Recv_sys_core_mem_______uart_lineReadRpValid;
+  logic          decl_SendEn_sys_core_mem_______uart_lineReadRpReady;
 
   // =========================================================================
   // Instantiate Guru Generated Top Module
@@ -74,9 +77,11 @@ module Tb();
     .decl_SendEn_sys_core_mem__ram_ram_lineWriteRq(decl_SendEn_sys_core_mem__ram_ram_lineWriteRq),
     .Recv_sys_core_mem__ram_fetch_lineReadRqReady(Recv_sys_core_mem__ram_fetch_lineReadRqReady),
     .Recv_sys_core_mem__ram_fetch_lineReadRpValid(Recv_sys_core_mem__ram_fetch_lineReadRpValid),
+    .decl_SendEn_sys_core_mem__ram_fetch_lineReadRpReady(decl_SendEn_sys_core_mem__ram_fetch_lineReadRpReady),
     .Recv_sys_core_mem__ram_lineReadRqReady(Recv_sys_core_mem__ram_lineReadRqReady),
     .Recv_sys_core_mem__ram_lineWriteRqReady(Recv_sys_core_mem__ram_lineWriteRqReady),
     .Recv_sys_core_mem__ram_lineReadRpValid(Recv_sys_core_mem__ram_lineReadRpValid),
+    .decl_SendEn_sys_core_mem__ram_lineReadRpReady(decl_SendEn_sys_core_mem__ram_lineReadRpReady),
     .Recv_sys_core_mem______plic_plic_UartIrq(Recv_sys_core_mem______plic_plic_UartIrq),
     .decl_Send_sys_core_mem_______uart_uart_lineReadRq(decl_Send_sys_core_mem_______uart_uart_lineReadRq),
     .decl_SendEn_sys_core_mem_______uart_uart_lineReadRq(decl_SendEn_sys_core_mem_______uart_uart_lineReadRq),
@@ -86,6 +91,7 @@ module Tb();
     .Recv_sys_core_mem_______uart_lineReadRqReady(Recv_sys_core_mem_______uart_lineReadRqReady),
     .Recv_sys_core_mem_______uart_lineWriteRqReady(Recv_sys_core_mem_______uart_lineWriteRqReady),
     .Recv_sys_core_mem_______uart_lineReadRpValid(Recv_sys_core_mem_______uart_lineReadRpValid),
+    .decl_SendEn_sys_core_mem_______uart_lineReadRpReady(decl_SendEn_sys_core_mem_______uart_lineReadRpReady),
 
     .clk_core(clk_core),
     .rst_n_core(rst_n_core)
@@ -123,12 +129,20 @@ module Tb();
       end
       cycleCount <= cycleCount + 64'd1;
 
-      // 1. Process Send ports
-      if (decl_SendEn_sys_core_mem__ram_ram_fetch_lineReadRq) begin
+      // 1. Process Send ports (RpReady before ReadRq so freed buffer can accept new Rq)
+      if (decl_SendEn_sys_core_mem__ram_fetch_lineReadRpReady) begin
+        tb_send("decl_Send_sys_core_mem__ram_fetch_lineReadRpReady", '0);
+      end
+      if (decl_SendEn_sys_core_mem__ram_ram_fetch_lineReadRq &&
+          Recv_sys_core_mem__ram_fetch_lineReadRqReady) begin
         tb_send("decl_Send_sys_core_mem__ram_ram_fetch_lineReadRq",
                 tb_io_val_t'(decl_Send_sys_core_mem__ram_ram_fetch_lineReadRq));
       end
-      if (decl_SendEn_sys_core_mem__ram_ram_lineReadRq) begin
+      if (decl_SendEn_sys_core_mem__ram_lineReadRpReady) begin
+        tb_send("decl_Send_sys_core_mem__ram_lineReadRpReady", '0);
+      end
+      if (decl_SendEn_sys_core_mem__ram_ram_lineReadRq &&
+          Recv_sys_core_mem__ram_lineReadRqReady) begin
         tb_send("decl_Send_sys_core_mem__ram_ram_lineReadRq",
                 tb_io_val_t'(decl_Send_sys_core_mem__ram_ram_lineReadRq));
       end
@@ -136,7 +150,11 @@ module Tb();
         tb_send("decl_Send_sys_core_mem__ram_ram_lineWriteRq",
                 tb_io_val_t'(decl_Send_sys_core_mem__ram_ram_lineWriteRq));
       end
-      if (decl_SendEn_sys_core_mem_______uart_uart_lineReadRq) begin
+      if (decl_SendEn_sys_core_mem_______uart_lineReadRpReady) begin
+        tb_send("decl_Send_sys_core_mem_______uart_lineReadRpReady", '0);
+      end
+      if (decl_SendEn_sys_core_mem_______uart_uart_lineReadRq &&
+          Recv_sys_core_mem_______uart_lineReadRqReady) begin
         tb_send("decl_Send_sys_core_mem_______uart_uart_lineReadRq",
                 tb_io_val_t'(decl_Send_sys_core_mem_______uart_uart_lineReadRq));
       end

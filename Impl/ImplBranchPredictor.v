@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition.
-From Cheriot Require Import SpecDefines.
+From Cheriot Require Import SpecDefines ImplCommon.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -31,19 +31,38 @@ Local Open Scope guru_scope.
  * Two-Level Branch Predictor Interface & Implementation
  * =========================================================================== *)
 
-Definition Plus2OrPlus4Type := [
-  ("Plus2"%string, Bit 0) ;
-  ("Plus4"%string, Bit 0)
-].
-Definition Plus2OrPlus4 := TaggedUnion Plus2OrPlus4Type.
+Definition NoInstPredOut := STRUCT_TYPE {
+  "exitParcel" :: Bit LgFetchParcels ;
+  "predPc"     :: Addr
+}.
+
+Section PreDecodeBranch.
+  Variable ty : Kind -> Type.
+
+  Definition preDecodeBranch (inst : ty Inst) (hasFault : ty Bool) : LetExpr ty PreBranchInfo :=
+    LetE isComp   : Bool  <- isCompressed inst ;
+    LetE opcode   : Bit 5 <- #inst`[6:2] ;
+    LetE funct3   : Bit 3 <- #inst`[14:12] ;
+    LetE isCjal   : Bool  <- Eq #opcode $(Z.shiftr 0x6f 2) ;
+    LetE isBranch : Bool  <- And [ Eq #opcode $(Z.shiftr 0x63 2) ; Not (Eq (#funct3`[2:1]) $1) ] ;
+    LetE isCjalr  : Bool  <- And [ Eq #opcode $(Z.shiftr 0x67 2) ; isZero #funct3 ] ;
+    LetE isSystem : Bool  <- Eq #opcode $(Z.shiftr 0x73 2) ;
+    @RetE ty PreBranchInfo (STRUCT {
+      "isCompressed" ::= #isComp ;
+      "isCjal"       ::= And [ Not #hasFault ; #isCjal ] ;
+      "isBranch"     ::= And [ Not #hasFault ; #isBranch ] ;
+      "isOtherCf"    ::= Or [ #hasFault ; #isCjalr ; #isSystem ]
+    }).
+End PreDecodeBranch.
 
 Record NoInstPredIfc {ty : Kind -> Type} := {
-  noInstTree          : Tree DomainElem ;
-  noInst_getPred      : ty Addr -> Action ty noInstTree Addr ;
-  noInst_updNoCf      : ty Addr -> Action ty noInstTree (Bit 0) ;
-  noInst_updTarget    : ty Addr -> ty Addr -> Action ty noInstTree (Bit 0) ;
-  noInst_updInstSize  : ty Addr -> ty Plus2OrPlus4 -> Action ty noInstTree (Bit 0) ;
-  noInst_updException : ty Addr -> Action ty noInstTree (Bit 0)
+  noInstTree                : Tree DomainElem ;
+  noInst_getPred            : ty Addr -> Action ty noInstTree NoInstPredOut ;
+  noInst_updNoCf            : ty Addr -> Action ty noInstTree (Bit 0) ;
+  noInst_updTargetByFetch   : ty Addr -> ty Addr -> ty PreBranchInfo -> Action ty noInstTree (Bit 0) ;
+  noInst_updTargetByExecute : ty Addr -> ty Addr -> ty PreBranchInfo -> Action ty noInstTree (Bit 0) ;
+  noInst_updInstSize        : ty Addr -> ty Bool -> Action ty noInstTree (Bit 0) ;
+  noInst_updException       : ty Addr -> Action ty noInstTree (Bit 0)
 }.
 
 Definition bpTree (noInstTree withInstTree : Tree DomainElem) : Tree DomainElem :=
@@ -54,8 +73,8 @@ Definition bpTree (noInstTree withInstTree : Tree DomainElem) : Tree DomainElem 
 
 Record WithInstPredIfc (noInstTree : Tree DomainElem) {ty : Kind -> Type} := {
   withInstTree     : Tree DomainElem ;
-  withInst_getPred : ty Addr -> ty Addr -> ty Inst -> ty DecodeOut -> Action ty (bpTree noInstTree withInstTree) Addr ;
-  withInst_updCf   : ty Addr -> ty CfPayload -> Action ty (bpTree noInstTree withInstTree) (Bit 0)
+  withInst_getPred : ty Addr -> ty Addr -> ty Inst -> ty PreBranchInfo -> Action ty (bpTree noInstTree withInstTree) Addr ;
+  withInst_updCf   : ty Addr -> ty CfPayload -> ty PreBranchInfo -> Action ty (bpTree noInstTree withInstTree) (Bit 0)
 }.
 
 Section ImplBranchPredictor.
@@ -71,28 +90,39 @@ Section ImplBranchPredictor.
   Section NoInstTy.
     Variable ty : Kind -> Type.
 
-    Definition implNoInst_getPred (pc : ty Addr) : Action ty implNoInstTree Addr :=
-      Return (Add [ #pc ; $(InstSz / 8) ]).
+    Definition implNoInst_getPred (pc : ty Addr) : Action ty implNoInstTree NoInstPredOut :=
+      Let alignedPc  : Addr               <- {< TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz #pc,
+                                                Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
+      Let nextPktPc  : Addr               <- Add [ #alignedPc ; $NumBytesFullCapSz ] ;
+      Let exitParcel : Bit LgFetchParcels <- Const ty (Bit LgFetchParcels) (InvDefault _) ;
+      @Return ty _ NoInstPredOut (STRUCT {
+        "exitParcel" ::= #exitParcel ;
+        "predPc"     ::= #nextPktPc
+      }).
 
     Definition implNoInst_updNoCf (pc : ty Addr) : Action ty implNoInstTree (Bit 0) :=
       Retv.
 
-    Definition implNoInst_updTarget (pc target : ty Addr) : Action ty implNoInstTree (Bit 0) :=
+    Definition implNoInst_updTargetByFetch (pc target : ty Addr) (pb : ty PreBranchInfo) : Action ty implNoInstTree (Bit 0) :=
       Retv.
 
-    Definition implNoInst_updInstSize (pc : ty Addr) (sz : ty Plus2OrPlus4) : Action ty implNoInstTree (Bit 0) :=
+    Definition implNoInst_updTargetByExecute (pc target : ty Addr) (pb : ty PreBranchInfo) : Action ty implNoInstTree (Bit 0) :=
+      Retv.
+
+    Definition implNoInst_updInstSize (pc : ty Addr) (sz : ty Bool) : Action ty implNoInstTree (Bit 0) :=
       Retv.
 
     Definition implNoInst_updException (pc : ty Addr) : Action ty implNoInstTree (Bit 0) :=
       Retv.
 
     Definition implNoInstIfc : @NoInstPredIfc ty := {|
-      noInstTree          := implNoInstTree ;
-      noInst_getPred      := implNoInst_getPred ;
-      noInst_updNoCf      := implNoInst_updNoCf ;
-      noInst_updTarget    := implNoInst_updTarget ;
-      noInst_updInstSize  := implNoInst_updInstSize ;
-      noInst_updException := implNoInst_updException
+      noInstTree                := implNoInstTree ;
+      noInst_getPred            := implNoInst_getPred ;
+      noInst_updNoCf            := implNoInst_updNoCf ;
+      noInst_updTargetByFetch   := implNoInst_updTargetByFetch ;
+      noInst_updTargetByExecute := implNoInst_updTargetByExecute ;
+      noInst_updInstSize        := implNoInst_updInstSize ;
+      noInst_updException       := implNoInst_updException
     |}.
   End NoInstTy.
 
@@ -115,58 +145,46 @@ Section ImplBranchPredictor.
       Local Definition np_noInst : NodePath tree :=
         Eval cbn in (embedNodeIntoPath (getNodePath tree ".noInst") singletonChildPath).
 
-      Definition implWithInst_getPred (pc predPc : ty Addr) (inst : ty Inst) (decodeOut : ty DecodeOut) : Action ty tree Addr :=
-        Let instGroup    : InstGroup       <- ##decodeOut`"instGroup" ;
-        Let decodeExc    : DecodeException <- ##decodeOut`"decodeExc" ;
-        Let hasDecodeExc : Bool            <- Or [ ##decodeExc`"illegal" ; ##decodeExc`"asr" ] ;
+      Definition implWithInst_getPred
+        (pc predPc : ty Addr)
+        (inst : ty Inst)
+        (pb : ty PreBranchInfo)
+        : Action ty tree Addr :=
+        Let isComp       : Bool         <- ##pb`"isCompressed" ;
+        Let isCjal       : Bool         <- ##pb`"isCjal" ;
+        Let isBranch     : Bool         <- ##pb`"isBranch" ;
+        Let isOtherCf    : Bool         <- ##pb`"isOtherCf" ;
+        Let isNotCf      : Bool         <- Not (Or [ #isCjal ; #isBranch ; #isOtherCf ]) ;
 
-        Let isComp       : Bool            <- ##instGroup`"isCompressed" ;
-        Let instSize     : Plus2OrPlus4    <-
-          ITE #isComp
-            (UNION (Plus2OrPlus4Type, "Plus2" ::= Const ty (Bit 0) Zmod.zero))
-            (UNION (Plus2OrPlus4Type, "Plus4" ::= Const ty (Bit 0) Zmod.zero)) ;
-        Let stepBytes    : Addr            <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
-        Let seqPc        : Addr            <- Add [ #pc ; #stepBytes ] ;
+        Let stepBytes    : Addr         <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
+        Let seqPc        : Addr         <- Add [ #pc ; #stepBytes ] ;
 
-        Let isJump       : Bool            <- And [ Not #hasDecodeExc ; ##instGroup`"Cjal" ] ;
-        Let jOffset      : Addr            <- getJImm inst ;
-        Let jumpTarget   : Addr            <- Add [ #pc ; #jOffset ] ;
+        Let jOffset      : Addr         <- getJImm inst ;
+        Let jumpTarget   : Addr         <- Add [ #pc ; #jOffset ] ;
 
-        Let isBranch     : Bool            <- And [ Not #hasDecodeExc ; ##instGroup`"Branch" ] ;
-        Let bOffset      : Addr            <- getBImm inst ;
-        Let isPredTaken  : Bool            <- FromBit Bool (TruncMsb 1 (AddrSz - 1) #bOffset) ;
-        Let branchTarget : Addr            <- Add [ #pc ; #bOffset ] ;
+        Let bOffset      : Addr         <- getBImm inst ;
+        Let isPredTaken  : Bool         <- FromBit Bool (TruncMsb 1 (AddrSz - 1) #bOffset) ;
+        Let branchTarget : Addr         <- Add [ #pc ; #bOffset ] ;
+        Let isTakenBranch : Bool <- And [ #isBranch ; #isPredTaken ] ;
+        Let l2PredPc      : Addr <- caseDefault [
+                                        (#isCjal,        #jumpTarget) ;
+                                        (#isTakenBranch, #branchTarget) ;
+                                        (#isOtherCf,     #predPc)
+                                      ] #seqPc ;
 
-        Let isOtherCf    : Bool            <- Or [ #hasDecodeExc ;
-                                                   ##instGroup`"Cjalr" ;
-                                                   ##instGroup`"ECall" ;
-                                                   ##instGroup`"EBreak" ;
-                                                   ##instGroup`"Mret" ] ;
-        Let isNotCf      : Bool            <- Not (Or [ #isJump ; #isBranch ; #isOtherCf ]) ;
-
-        Let l2PredPc     : Addr            <- Or [
-          ITE0 #isJump      #jumpTarget ;
-          ITE0 #isBranch    (ITE #isPredTaken #branchTarget #seqPc) ;
-          ITE0 #isOtherCf   #predPc ;
-          ITE0 #isNotCf     #seqPc
-        ] ;
-
-        If (And [ Or [ #isJump ; #isBranch ] ; Not (Eq #predPc #l2PredPc) ]) Then (
-          liftAction np_noInst ((noInstIfc ty).(noInst_updTarget) pc l2PredPc)
+        If (And [ Or [ #isCjal ; #isBranch ] ; Not (Eq #predPc #l2PredPc) ]) Then (
+          liftAction np_noInst ((noInstIfc ty).(noInst_updTargetByFetch) pc l2PredPc pb)
         ) ;
 
         If (And [ #isNotCf ; Not (Eq #predPc #seqPc) ]) Then (
           liftAction np_noInst ((noInstIfc ty).(noInst_updNoCf) pc)
         ) ;
 
-        If (And [ Or [ #isNotCf ; And [ #isBranch ; Not #isPredTaken ] ] ;
-                  Not (Eq #predPc #seqPc) ]) Then (
-          liftAction np_noInst ((noInstIfc ty).(noInst_updInstSize) pc instSize)
-        ) ;
+        Act (liftAction np_noInst ((noInstIfc ty).(noInst_updInstSize) pc isComp)) ;
 
         Return #l2PredPc.
 
-      Definition implWithInst_updCf (pc : ty Addr) (cf : ty CfPayload) : Action ty tree (Bit 0) :=
+      Definition implWithInst_updCf (pc : ty Addr) (cf : ty CfPayload) (pb : ty PreBranchInfo) : Action ty tree (Bit 0) :=
         Let cfOp       : CfOp                  <- ##cf`"CfOp" ;
         Let target     : Addr                  <- ##cf`"NewPcc"`"addr" ;
         Let isAddrECap : Bool                  <- #cfOp `? "ControlFlowAddrECap" ;
@@ -177,7 +195,7 @@ Section ImplBranchPredictor.
         If #isTrap Then (
           liftAction np_noInst ((noInstIfc ty).(noInst_updException) pc)
         ) Else (
-          liftAction np_noInst ((noInstIfc ty).(noInst_updTarget) pc target)
+          liftAction np_noInst ((noInstIfc ty).(noInst_updTargetByExecute) pc target pb)
         ) ;
         Retv.
 
