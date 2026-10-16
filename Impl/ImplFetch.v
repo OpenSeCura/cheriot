@@ -276,10 +276,10 @@ Section FetchStage.
               ) ;
               Act (liftAction np_fetch (@writeCurParcelOpt ty noneParcel)) ;
               Act (liftAction np_fetch (@writeStraddleOpt ty someStraddle)) ;
+              Act (liftAction np_noInst ((noInstIfc ty).(noInst_updStraddle) instPcK)) ;
 
               If #stradMispred Then (
                 Let nextPredEpoch : Epoch <- Add [ #predEpoch ; $1 ] ;
-                Act (liftAction np_noInst ((noInstIfc ty).(noInst_updNoCf) instPcK)) ;
                 Act (liftAction np_fetch (@writePredEpoch ty nextPredEpoch)) ;
                 liftAction np_fetch (@writeFetchPc ty seqNextPktAddr)
               ) ;

@@ -59,6 +59,7 @@ Record NoInstPredIfc {ty : Kind -> Type} := {
   noInstTree                : Tree DomainElem ;
   noInst_getPred            : ty Addr -> Action ty noInstTree NoInstPredOut ;
   noInst_updNoCf            : ty Addr -> Action ty noInstTree (Bit 0) ;
+  noInst_updStraddle        : ty Addr -> Action ty noInstTree (Bit 0) ;
   noInst_updTargetByFetch   : ty Addr -> ty Addr -> ty PreBranchInfo -> Action ty noInstTree (Bit 0) ;
   noInst_updTargetByExecute : ty Addr -> ty Addr -> ty PreBranchInfo -> Action ty noInstTree (Bit 0) ;
   noInst_updInstSize        : ty Addr -> ty Bool -> Action ty noInstTree (Bit 0) ;
@@ -104,6 +105,9 @@ Section ImplBranchPredictor.
     Definition implNoInst_updNoCf (pc : ty Addr) : Action ty implNoInstTree (Bit 0) :=
       Retv.
 
+    Definition implNoInst_updStraddle (pc : ty Addr) : Action ty implNoInstTree (Bit 0) :=
+      Retv.
+
     Definition implNoInst_updTargetByFetch (pc target : ty Addr) (pb : ty PreBranchInfo) : Action ty implNoInstTree (Bit 0) :=
       Retv.
 
@@ -120,6 +124,7 @@ Section ImplBranchPredictor.
       noInstTree                := implNoInstTree ;
       noInst_getPred            := implNoInst_getPred ;
       noInst_updNoCf            := implNoInst_updNoCf ;
+      noInst_updStraddle        := implNoInst_updStraddle ;
       noInst_updTargetByFetch   := implNoInst_updTargetByFetch ;
       noInst_updTargetByExecute := implNoInst_updTargetByExecute ;
       noInst_updInstSize        := implNoInst_updInstSize ;
