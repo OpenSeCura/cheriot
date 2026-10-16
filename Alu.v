@@ -234,7 +234,7 @@ Section Alu.
     LetE cjalrIntStatus : Bool <- ##CjalrUnitOut`"interruptStatus" ;
     LETE ControlFlowResOut : ControlFlowRes <-
       ControlFlow isMret isCjal isCjalr isBranch isCond cs2 AdderBeforeBoundsCheckOut
-             AddrBoundsCheckOut cjalrTag cjalrEcap cjalrIntStatus pccTag inst currInterruptStatus ;
+             AddrBoundsCheckOut cjalrTag cjalrEcap cjalrIntStatus pccTag pccECap inst currInterruptStatus ;
     LetE ControlFlowOut : Option CfPayload <- ##ControlFlowResOut`"cfOut" ;
 
     LetE PccEcap_cOType : Bit CapcOTypeSz <- ITE0 (##aluControl`"CjalOrCjalr") (##ControlFlowResOut`"linkCOType") ;
@@ -588,7 +588,8 @@ Section AluRF.
                                   LetIf nextPccECap : FullECapWithTag <-
                                     If (##addrECapOp `? "Cjalr") Then
                                       (
-                                        Let  newMIE     : Bool     <- #addrECapOp `! "Cjalr" ;
+                                        Let  cjalrOp    : CjalrOp  <- #addrECapOp `! "Cjalr" ;
+                                        Let  newMIE     : Bool     <- ##cjalrOp`"interruptStatus" ;
                                         Let  newMstatus : Bit Xlen <- setMstatusMIE #mstatus #newMIE ;
                                         Act (writeRegsList csrPathsWithKind
                                                ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;

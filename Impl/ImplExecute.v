@@ -139,12 +139,17 @@ Section ExecuteStage.
 
           LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred pcc meip mtip aluOut) ;
 
-          Let  cfOpt           : Option CfPayload <- ##execOut`"cf" ;
-          Let  hasCf           : Bool             <- #cfOpt`"valid" ;
-          Let  cf              : CfPayload        <- #cfOpt`"data" ;
-          Let  cfOp            : CfOp             <- ##cf`"CfOp" ;
-          Let  committedNextPc : Addr             <- ##execOut`"nextPc" ;
-          Let  isAddrECap      : Bool             <- And [ #hasCf ; #cfOp `? "ControlFlowAddrECap" ] ;
+          Let  cfOpt           : Option CfPayload      <- ##execOut`"cf" ;
+          Let  hasCf           : Bool                  <- #cfOpt`"valid" ;
+          Let  cf              : CfPayload             <- #cfOpt`"data" ;
+          Let  cfOp            : CfOp                  <- ##cf`"CfOp" ;
+          Let  committedNextPc : Addr                  <- ##execOut`"nextPc" ;
+          Let  isAddrECap      : Bool                  <- And [ #hasCf ; #cfOp `? "ControlFlowAddrECap" ] ;
+          Let  addrECapOp      : ControlFlowAddrECapOp <- #cfOp `! "ControlFlowAddrECap" ;
+          Let  cjalrOp         : CjalrOp               <- #addrECapOp `! "Cjalr" ;
+          Let  capChanged      : Bool                  <- And [ #isAddrECap ;
+                                                                Or [ Not (#addrECapOp `? "Cjalr") ;
+                                                                     ##cjalrOp`"capChanged" ] ] ;
 
           Let  pb : PreBranchInfo <- STRUCT {
             "isCompressed" ::= ##instGroup`"isCompressed" ;
@@ -160,7 +165,7 @@ Section ExecuteStage.
             liftAction np_bp ((withInstIfc ty).(withInst_updCf) pcAddr cf pb)
           ) ;
 
-          If (Or [ #isAddrECap ; Not (Eq #committedNextPc #predPc) ]) Then (
+          If (Or [ #capChanged ; Not (Eq #committedNextPc #predPc) ]) Then (
             Let nextExecEpoch : Epoch               <- Add [ #currExecEpoch ; $1 ] ;
             Let noneStraddle  : Option StraddleHalf <- ConstDef ;
             Act (@writeExecEpoch dom rfTree bpTree memTree fTree decTree dTree ty nextExecEpoch) ;

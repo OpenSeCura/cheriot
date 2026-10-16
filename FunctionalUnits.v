@@ -566,7 +566,7 @@ FenceI:
 
 ControlFlow (Mux):
   Outputs: isCf, CfPayload {NewPcc, CfOp {ControlFlowAddrOnly {Branch {isTaken} OR Cjal} OR
-                                          ControlFlowAddrECap {Cjalr {newInterruptStatus} OR Mret}}},
+                                          ControlFlowAddrECap {Cjalr {interruptStatus, capChanged, isCall, isReturn} OR Mret}}},
            linkCOType
   - Mret   : Mret
   - Cjal   : Cjal
@@ -580,6 +580,7 @@ ControlFlow (Mux):
   cjalrEcap: CjalrUnit.ecap (Cjalr)
   cjalrIntStatus: CjalrUnit.interruptStatus (Cjalr)
   pccTag: pcc.tag (Branch, Cjal, Cjalr, Mret)
+  pccEcap: pcc.ecap (Cjalr)
   inst: inst (Cjal, Cjalr)
   currIntStatus: currInterruptStatus (Cjal, Cjalr)
 
@@ -1567,7 +1568,7 @@ Section FunctionalUnits.
                     (isCond : ty Bool)
                     (cs2 : ty FullECapWithTag) (addrIn : ty Addr)
                     (inBounds cjalrTag : ty Bool) (cjalrEcap : ty ECap) (cjalrIntStatus : ty Bool)
-                    (pccTag : ty Bool)
+                    (pccTag : ty Bool) (pccEcap : ty ECap)
                     (inst : ty Inst) (currIntStatus : ty Bool)
   : LetExpr ty ControlFlowRes :=
     LetE cs2Addr : Addr <- ##cs2`"addr" ;
@@ -1582,13 +1583,29 @@ Section FunctionalUnits.
       Or [ ITE0 #isMret ##cs2`"ecap" ;
            ITE0 #isCjalr #cjalrEcap ] ;
 
+    LetE cdNum      : Bit RegIdxSz <- getCd inst ;
+    LetE cs1Num     : Bit RegIdxSz <- getCs1 inst ;
+    LetE isCdZero   : Bool         <- isZero #cdNum ;
+    LetE isCs1Cra   : Bool         <- Eq #cs1Num $Cra ;
+    LetE isCdCra    : Bool         <- Eq #cdNum $Cra ;
+    LetE isReturn   : Bool         <- And [ #isCdZero ; #isCs1Cra ] ;
+    LetE isCall     : Bool         <- #isCdCra ;
+    LetE capChanged : Bool         <- Not (And [ Eq #cjalrTag #pccTag ; Eq #cjalrEcap #pccEcap ]) ;
+
+    LetE cjalrOp : CjalrOp <- STRUCT {
+      "interruptStatus" ::= #cjalrIntStatus ;
+      "capChanged"      ::= #capChanged ;
+      "isCall"          ::= #isCall ;
+      "isReturn"        ::= #isReturn
+    } ;
+
     LetE cfOpPayload : CfOp <-
       ITE (Or [#isBranch; #isCjal])
         (UNION (CfOpType, "ControlFlowAddrOnly" ::= ITE #isBranch
                                                    (UNION (ControlFlowAddrOnlyOpType, "Branch" ::= #isCond))
                                                    (UNION (ControlFlowAddrOnlyOpType, "Cjal" ::= Const ty (Bit 0) Zmod.zero))))
         (UNION (CfOpType, "ControlFlowAddrECap" ::= ITE #isCjalr
-                                                   (UNION (ControlFlowAddrECapOpType, "Cjalr" ::= #cjalrIntStatus))
+                                                   (UNION (ControlFlowAddrECapOpType, "Cjalr" ::= #cjalrOp))
                                                    (UNION (ControlFlowAddrECapOpType, "MretTrap" ::=
                                                      UNION (MretTrapOpType, "Mret" ::= Const ty (Bit 0) Zmod.zero))))) ;
 
@@ -1605,8 +1622,6 @@ Section FunctionalUnits.
     LetE isCf : Bool <- Or [ #isBranch ; #isCjal ; #isCjalr ; #isMret ] ;
     LetE cfPayloadOpt : Option CfPayload <- ITE0 #isCf (mkSome #cfPayload) ;
 
-    LetE cdNum : Bit RegIdxSz <- getCd inst ;
-    LetE isCdCra : Bool <- Eq #cdNum $Cra ;
     LetE linkCOType : Bit CapcOTypeSz <-
       ITE #isCdCra
           (ITE #currIntStatus $RetSentryIe $RetSentryId)

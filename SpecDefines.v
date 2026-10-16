@@ -1191,8 +1191,15 @@ Definition MretTrapOpType := [
 ].
 Definition MretTrapOp := TaggedUnion MretTrapOpType.
 
+Definition CjalrOp := STRUCT_TYPE {
+  "interruptStatus" :: Bool ;
+  "capChanged"      :: Bool ;
+  "isCall"          :: Bool ;
+  "isReturn"        :: Bool
+}.
+
 Definition ControlFlowAddrECapOpType := [
-  ("Cjalr"%string,    Bool) ;
+  ("Cjalr"%string,    CjalrOp) ;
   ("MretTrap"%string, MretTrapOp)
 ].
 Definition ControlFlowAddrECapOp := TaggedUnion ControlFlowAddrECapOpType.
