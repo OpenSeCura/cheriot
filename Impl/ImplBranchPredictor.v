@@ -72,9 +72,10 @@ Definition bpTree (noInstTree withInstTree : Tree DomainElem) : Tree DomainElem 
   ].
 
 Record WithInstPredIfc (noInstTree : Tree DomainElem) {ty : Kind -> Type} := {
-  withInstTree     : Tree DomainElem ;
-  withInst_getPred : ty Addr -> ty Addr -> ty Inst -> ty PreBranchInfo -> Action ty (bpTree noInstTree withInstTree) Addr ;
-  withInst_updCf   : ty Addr -> ty CfPayload -> ty PreBranchInfo -> Action ty (bpTree noInstTree withInstTree) (Bit 0)
+  withInstTree          : Tree DomainElem ;
+  withInst_getPred      : ty Addr -> ty Addr -> ty Inst -> ty PreBranchInfo -> Action ty (bpTree noInstTree withInstTree) Addr ;
+  withInst_updCf        : ty Addr -> ty CfPayload -> ty PreBranchInfo -> Action ty (bpTree noInstTree withInstTree) (Bit 0) ;
+  withInst_updException : ty Addr -> Action ty (bpTree noInstTree withInstTree) (Bit 0)
 }.
 
 Section ImplBranchPredictor.
@@ -188,10 +189,14 @@ Section ImplBranchPredictor.
         Let target : Addr <- ##cf`"NewPcc"`"addr" ;
         liftAction np_noInst ((noInstIfc ty).(noInst_updTargetByExecute) pc target pb).
 
+      Definition implWithInst_updException (pc : ty Addr) : Action ty tree (Bit 0) :=
+        liftAction np_noInst ((noInstIfc ty).(noInst_updException) pc).
+
       Definition implWithInstIfc : @WithInstPredIfc noInstTree ty := {|
-        withInstTree     := implWithInstTree ;
-        withInst_getPred := implWithInst_getPred ;
-        withInst_updCf   := implWithInst_updCf
+        withInstTree          := implWithInstTree ;
+        withInst_getPred      := implWithInst_getPred ;
+        withInst_updCf        := implWithInst_updCf ;
+        withInst_updException := implWithInst_updException
       |}.
 
     End WithInstTy.

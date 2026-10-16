@@ -167,6 +167,10 @@ Section ExecuteStage.
             liftAction np_bp ((withInstIfc ty).(withInst_updCf) pcAddr cf pb)
           ) ;
 
+          If #isExc Then (
+            liftAction np_bp ((withInstIfc ty).(withInst_updException) pcAddr)
+          ) ;
+
           If (Or [ #isTrap ; #capChanged ; Not (Eq #committedNextPc #predPc) ]) Then (
             Let nextExecEpoch : Epoch               <- Add [ #currExecEpoch ; $1 ] ;
             Let noneStraddle  : Option StraddleHalf <- ConstDef ;
