@@ -159,8 +159,7 @@ Lemma lgLineBytes_split (r : MemRegion) :
 Proof.
   pose proof (region_lgLineBytes_ge_cap r) as Hpf.
   unfold memLgLineBytesZ, memLgLinePacketsZ, lgLinePackets.
-  change (Z.to_nat LgNumBytesFullCapSz) with 3%nat in *.
-  change LgNumBytesFullCapSz with 3%Z.
+  unfold LgNumBytesFullCapSz in *.
   lia.
 Qed.
 
