@@ -1185,12 +1185,6 @@ Definition ControlFlowAddrOnlyOpType := [
 ].
 Definition ControlFlowAddrOnlyOp := TaggedUnion ControlFlowAddrOnlyOpType.
 
-Definition MretTrapOpType := [
-  ("Mret"%string, Bit 0) ;
-  ("Trap"%string, Bit 0)
-].
-Definition MretTrapOp := TaggedUnion MretTrapOpType.
-
 Definition CjalrOp := STRUCT_TYPE {
   "interruptStatus" :: Bool ;
   "capChanged"      :: Bool ;
@@ -1199,8 +1193,8 @@ Definition CjalrOp := STRUCT_TYPE {
 }.
 
 Definition ControlFlowAddrECapOpType := [
-  ("Cjalr"%string,    CjalrOp) ;
-  ("MretTrap"%string, MretTrapOp)
+  ("Cjalr"%string, CjalrOp) ;
+  ("Mret"%string,  Bit 0)
 ].
 Definition ControlFlowAddrECapOp := TaggedUnion ControlFlowAddrECapOpType.
 

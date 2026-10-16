@@ -1606,8 +1606,7 @@ Section FunctionalUnits.
                                                    (UNION (ControlFlowAddrOnlyOpType, "Cjal" ::= Const ty (Bit 0) Zmod.zero))))
         (UNION (CfOpType, "ControlFlowAddrECap" ::= ITE #isCjalr
                                                    (UNION (ControlFlowAddrECapOpType, "Cjalr" ::= #cjalrOp))
-                                                   (UNION (ControlFlowAddrECapOpType, "MretTrap" ::=
-                                                     UNION (MretTrapOpType, "Mret" ::= Const ty (Bit 0) Zmod.zero))))) ;
+                                                   (UNION (ControlFlowAddrECapOpType, "Mret" ::= Const ty (Bit 0) Zmod.zero)))) ;
 
     LetE newPcc : FullECapWithTag <- STRUCT {
       "tag"  ::= #pccTagOut ;

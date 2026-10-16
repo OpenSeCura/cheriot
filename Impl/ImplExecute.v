@@ -125,6 +125,7 @@ Section ExecuteStage.
         LetL aluOut        : AluOutUnion     <- wrappedAlu pcc pkg ;
 
         Let  aluOp         : AluOpUnion       <- ##aluOut`"Op" ;
+        Let  isExc         : Bool             <- #aluOp `? "Exception" ;
         Let  noExc         : NoExceptionUnion <- #aluOp `! "NoException" ;
         Let  isDeferredAlu : Bool             <- And [ #aluOp `? "NoException" ; #noExc `? "Deferred" ] ;
 
@@ -132,6 +133,7 @@ Section ExecuteStage.
         LetA mtip          : Bool                 <- liftAction np_mem mtipAct ;
         LetA intInfo       : InterruptPendingInfo <- liftAction np_rf (isInterruptPending meip mtip) ;
         Let  isInterrupt   : Bool                 <- ##intInfo`"isInterrupt" ;
+        Let  isTrap        : Bool                 <- Or [ #isInterrupt ; #isExc ] ;
         Let  intStall      : Bool                 <- And [ #isInterrupt ; Not #deferred_isEmpty ] ;
 
         If (And [ Not #intStall ; Or [ Not #isDeferredAlu ; Not #deferredIn_isFull ] ]) Then (
@@ -148,7 +150,7 @@ Section ExecuteStage.
           Let  addrECapOp      : ControlFlowAddrECapOp <- #cfOp `! "ControlFlowAddrECap" ;
           Let  cjalrOp         : CjalrOp               <- #addrECapOp `! "Cjalr" ;
           Let  capChanged      : Bool                  <- And [ #isAddrECap ;
-                                                                Or [ Not (#addrECapOp `? "Cjalr") ;
+                                                                Or [ #addrECapOp `? "Mret" ;
                                                                      ##cjalrOp`"capChanged" ] ] ;
 
           Let  pb : PreBranchInfo <- STRUCT {
@@ -165,7 +167,7 @@ Section ExecuteStage.
             liftAction np_bp ((withInstIfc ty).(withInst_updCf) pcAddr cf pb)
           ) ;
 
-          If (Or [ #capChanged ; Not (Eq #committedNextPc #predPc) ]) Then (
+          If (Or [ #isTrap ; #capChanged ; Not (Eq #committedNextPc #predPc) ]) Then (
             Let nextExecEpoch : Epoch               <- Add [ #currExecEpoch ; $1 ] ;
             Let noneStraddle  : Option StraddleHalf <- ConstDef ;
             Act (@writeExecEpoch dom rfTree bpTree memTree fTree decTree dTree ty nextExecEpoch) ;

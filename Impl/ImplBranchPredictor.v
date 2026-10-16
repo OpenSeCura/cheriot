@@ -185,19 +185,8 @@ Section ImplBranchPredictor.
         Return #l2PredPc.
 
       Definition implWithInst_updCf (pc : ty Addr) (cf : ty CfPayload) (pb : ty PreBranchInfo) : Action ty tree (Bit 0) :=
-        Let cfOp       : CfOp                  <- ##cf`"CfOp" ;
-        Let target     : Addr                  <- ##cf`"NewPcc"`"addr" ;
-        Let isAddrECap : Bool                  <- #cfOp `? "ControlFlowAddrECap" ;
-        Let addrECapOp : ControlFlowAddrECapOp <- #cfOp `! "ControlFlowAddrECap" ;
-        Let isMretTrap : Bool                  <- #addrECapOp `? "MretTrap" ;
-        Let mretTrapOp : MretTrapOp            <- #addrECapOp `! "MretTrap" ;
-        Let isTrap     : Bool                  <- And [ #isAddrECap ; #isMretTrap ; #mretTrapOp `? "Trap" ] ;
-        If #isTrap Then (
-          liftAction np_noInst ((noInstIfc ty).(noInst_updException) pc)
-        ) Else (
-          liftAction np_noInst ((noInstIfc ty).(noInst_updTargetByExecute) pc target pb)
-        ) ;
-        Retv.
+        Let target : Addr <- ##cf`"NewPcc"`"addr" ;
+        liftAction np_noInst ((noInstIfc ty).(noInst_updTargetByExecute) pc target pb).
 
       Definition implWithInstIfc : @WithInstPredIfc noInstTree ty := {|
         withInstTree     := implWithInstTree ;
