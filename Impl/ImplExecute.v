@@ -153,18 +153,8 @@ Section ExecuteStage.
                                                                 Or [ #addrECapOp `? "Mret" ;
                                                                      ##cjalrOp`"capChanged" ] ] ;
 
-          Let  pb : PreBranchInfo <- STRUCT {
-            "isCompressed" ::= ##instGroup`"isCompressed" ;
-            "isCjal"       ::= ##instGroup`"Cjal" ;
-            "isBranch"     ::= ##instGroup`"Branch" ;
-            "isOtherCf"    ::= Or [ ##instGroup`"Cjalr" ;
-                                    ##instGroup`"ECall" ;
-                                    ##instGroup`"EBreak" ;
-                                    ##instGroup`"Mret" ]
-          } ;
-
           If #hasCf Then (
-            liftAction np_bp ((withInstIfc ty).(withInst_updCf) pcAddr cf pb)
+            liftAction np_bp ((withInstIfc ty).(withInst_updCf) pcAddr cf)
           ) ;
 
           If #isExc Then (

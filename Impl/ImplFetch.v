@@ -319,7 +319,7 @@ Section FetchStage.
                 liftAction np_noInst ((noInstIfc ty).(noInst_updNoCf) instPc)
               ) ;
 
-              LetL pb               : PreBranchInfo      <- preDecodeBranch expInst hasCombFault ;
+              LetL pb               : PreBranchInfo      <- preDecodeBranch expInst ;
               LetA l2PredPc         : Addr               <- liftAction np_bp ((withInstIfc ty).(withInst_getPred) instPc instPred expInst pb) ;
 
               Let  mispred          : Bool               <- Not (Eq #l2PredPc #instPred) ;

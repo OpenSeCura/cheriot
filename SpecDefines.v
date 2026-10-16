@@ -1181,7 +1181,7 @@ Definition AluInInstGroup := STRUCT_TYPE {
 
 Definition ControlFlowAddrOnlyOpType := [
   ("Branch"%string, Bool) ;
-  ("Cjal"%string,   Bit 0)
+  ("Cjal"%string,   Bool)
 ].
 Definition ControlFlowAddrOnlyOp := TaggedUnion ControlFlowAddrOnlyOpType.
 

@@ -39,10 +39,11 @@ Definition LgFetchParcels  : Z    := Eval compute in Z.log2_up (FullCapSz / Comp
 Definition FetchPacket     : Kind := Array NumFetchParcels (Bit CompInstSz).
 
 Definition PreBranchInfo := STRUCT_TYPE {
-  "isCompressed" :: Bool ;
-  "isCjal"       :: Bool ;
-  "isBranch"     :: Bool ;
-  "isOtherCf"    :: Bool
+  "isCjal"   :: Bool ;
+  "isBranch" :: Bool ;
+  "isCjalr"  :: Bool ;
+  "isCall"   :: Bool ;
+  "isReturn" :: Bool
 }.
 
 Definition FetchBufEntry := STRUCT_TYPE {

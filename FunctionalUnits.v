@@ -1603,7 +1603,7 @@ Section FunctionalUnits.
       ITE (Or [#isBranch; #isCjal])
         (UNION (CfOpType, "ControlFlowAddrOnly" ::= ITE #isBranch
                                                    (UNION (ControlFlowAddrOnlyOpType, "Branch" ::= #isCond))
-                                                   (UNION (ControlFlowAddrOnlyOpType, "Cjal" ::= Const ty (Bit 0) Zmod.zero))))
+                                                   (UNION (ControlFlowAddrOnlyOpType, "Cjal" ::= #isCall))))
         (UNION (CfOpType, "ControlFlowAddrECap" ::= ITE #isCjalr
                                                    (UNION (ControlFlowAddrECapOpType, "Cjalr" ::= #cjalrOp))
                                                    (UNION (ControlFlowAddrECapOpType, "Mret" ::= Const ty (Bit 0) Zmod.zero)))) ;

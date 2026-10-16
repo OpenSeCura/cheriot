@@ -39,19 +39,22 @@ Definition NoInstPredOut := STRUCT_TYPE {
 Section PreDecodeBranch.
   Variable ty : Kind -> Type.
 
-  Definition preDecodeBranch (inst : ty Inst) (hasFault : ty Bool) : LetExpr ty PreBranchInfo :=
-    LetE isComp   : Bool  <- isCompressed inst ;
-    LetE opcode   : Bit 5 <- #inst`[6:2] ;
-    LetE funct3   : Bit 3 <- #inst`[14:12] ;
-    LetE isCjal   : Bool  <- Eq #opcode $(Z.shiftr 0x6f 2) ;
-    LetE isBranch : Bool  <- And [ Eq #opcode $(Z.shiftr 0x63 2) ; Not (Eq (#funct3`[2:1]) $1) ] ;
-    LetE isCjalr  : Bool  <- And [ Eq #opcode $(Z.shiftr 0x67 2) ; isZero #funct3 ] ;
-    LetE isSystem : Bool  <- Eq #opcode $(Z.shiftr 0x73 2) ;
+  Definition preDecodeBranch (inst : ty Inst) : LetExpr ty PreBranchInfo :=
+    LetE opcode   : Bit 5        <- #inst`[6:2] ;
+    LetE funct3   : Bit 3        <- #inst`[14:12] ;
+    LetE cd       : Bit RegIdxSz <- getCd inst ;
+    LetE cs1      : Bit RegIdxSz <- getCs1 inst ;
+    LetE isCjal   : Bool         <- Eq #opcode $(Z.shiftr 0x6f 2) ;
+    LetE isBranch : Bool         <- And [ Eq #opcode $(Z.shiftr 0x63 2) ; Not (Eq (#funct3`[2:1]) $1) ] ;
+    LetE isCjalr  : Bool         <- And [ Eq #opcode $(Z.shiftr 0x67 2) ; isZero #funct3 ] ;
+    LetE isCall   : Bool         <- And [ Or [ #isCjal ; #isCjalr ] ; Eq #cd $Cra ] ;
+    LetE isReturn : Bool         <- And [ #isCjalr ; isZero #cd ; Eq #cs1 $Cra ] ;
     @RetE ty PreBranchInfo (STRUCT {
-      "isCompressed" ::= #isComp ;
-      "isCjal"       ::= And [ Not #hasFault ; #isCjal ] ;
-      "isBranch"     ::= And [ Not #hasFault ; #isBranch ] ;
-      "isOtherCf"    ::= Or [ #hasFault ; #isCjalr ; #isSystem ]
+      "isCjal"   ::= #isCjal ;
+      "isBranch" ::= #isBranch ;
+      "isCjalr"  ::= #isCjalr ;
+      "isCall"   ::= #isCall ;
+      "isReturn" ::= #isReturn
     }).
 End PreDecodeBranch.
 
@@ -75,7 +78,7 @@ Definition bpTree (noInstTree withInstTree : Tree DomainElem) : Tree DomainElem 
 Record WithInstPredIfc (noInstTree : Tree DomainElem) {ty : Kind -> Type} := {
   withInstTree          : Tree DomainElem ;
   withInst_getPred      : ty Addr -> ty Addr -> ty Inst -> ty PreBranchInfo -> Action ty (bpTree noInstTree withInstTree) Addr ;
-  withInst_updCf        : ty Addr -> ty CfPayload -> ty PreBranchInfo -> Action ty (bpTree noInstTree withInstTree) (Bit 0) ;
+  withInst_updCf        : ty Addr -> ty CfPayload -> Action ty (bpTree noInstTree withInstTree) (Bit 0) ;
   withInst_updException : ty Addr -> Action ty (bpTree noInstTree withInstTree) (Bit 0)
 }.
 
@@ -156,11 +159,11 @@ Section ImplBranchPredictor.
         (inst : ty Inst)
         (pb : ty PreBranchInfo)
         : Action ty tree Addr :=
-        Let isComp       : Bool         <- ##pb`"isCompressed" ;
+        Let isComp       : Bool         <- isCompressed inst ;
         Let isCjal       : Bool         <- ##pb`"isCjal" ;
         Let isBranch     : Bool         <- ##pb`"isBranch" ;
-        Let isOtherCf    : Bool         <- ##pb`"isOtherCf" ;
-        Let isNotCf      : Bool         <- Not (Or [ #isCjal ; #isBranch ; #isOtherCf ]) ;
+        Let isCjalr      : Bool         <- ##pb`"isCjalr" ;
+        Let isNotCf      : Bool         <- Not (Or [ #isCjal ; #isBranch ; #isCjalr ]) ;
 
         Let stepBytes    : Addr         <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
         Let seqPc        : Addr         <- Add [ #pc ; #stepBytes ] ;
@@ -175,7 +178,7 @@ Section ImplBranchPredictor.
         Let l2PredPc      : Addr <- caseDefault [
                                         (#isCjal,        #jumpTarget) ;
                                         (#isTakenBranch, #branchTarget) ;
-                                        (#isOtherCf,     #predPc)
+                                        (#isCjalr,       #predPc)
                                       ] #seqPc ;
 
         If (And [ Or [ #isCjal ; #isBranch ] ; Not (Eq #predPc #l2PredPc) ]) Then (
@@ -190,8 +193,27 @@ Section ImplBranchPredictor.
 
         Return #l2PredPc.
 
-      Definition implWithInst_updCf (pc : ty Addr) (cf : ty CfPayload) (pb : ty PreBranchInfo) : Action ty tree (Bit 0) :=
-        Let target : Addr <- ##cf`"NewPcc"`"addr" ;
+      Definition implWithInst_updCf (pc : ty Addr) (cf : ty CfPayload) : Action ty tree (Bit 0) :=
+        Let target     : Addr                  <- ##cf`"NewPcc"`"addr" ;
+        Let cfOp       : CfOp                  <- ##cf`"CfOp" ;
+        Let isAddrOnly : Bool                  <- #cfOp `? "ControlFlowAddrOnly" ;
+        Let addrOnlyOp : ControlFlowAddrOnlyOp <- #cfOp `! "ControlFlowAddrOnly" ;
+        Let isAddrECap : Bool                  <- #cfOp `? "ControlFlowAddrECap" ;
+        Let addrECapOp : ControlFlowAddrECapOp <- #cfOp `! "ControlFlowAddrECap" ;
+        Let cjalrOp    : CjalrOp               <- #addrECapOp `! "Cjalr" ;
+        Let isCjal     : Bool                  <- And [ #isAddrOnly ; #addrOnlyOp `? "Cjal" ] ;
+        Let isBranch   : Bool                  <- And [ #isAddrOnly ; #addrOnlyOp `? "Branch" ] ;
+        Let isCjalr    : Bool                  <- And [ #isAddrECap ; #addrECapOp `? "Cjalr" ] ;
+        Let isCall     : Bool                  <- Or [ And [ #isCjal ; #addrOnlyOp `! "Cjal" ] ;
+                                                       And [ #isCjalr ; ##cjalrOp`"isCall" ] ] ;
+        Let isReturn   : Bool                  <- And [ #isCjalr ; ##cjalrOp`"isReturn" ] ;
+        Let pb         : PreBranchInfo         <- STRUCT {
+          "isCjal"   ::= #isCjal ;
+          "isBranch" ::= #isBranch ;
+          "isCjalr"  ::= #isCjalr ;
+          "isCall"   ::= #isCall ;
+          "isReturn" ::= #isReturn
+        } ;
         liftAction np_noInst ((noInstIfc ty).(noInst_updTargetByExecute) pc target pb).
 
       Definition implWithInst_updException (pc : ty Addr) : Action ty tree (Bit 0) :=
