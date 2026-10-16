@@ -56,14 +56,14 @@ Section PreDecodeBranch.
 End PreDecodeBranch.
 
 Record NoInstPredIfc {ty : Kind -> Type} := {
-  noInstTree              : Tree DomainElem ;
-  noInst_getPred          : ty Addr -> Action ty noInstTree NoInstPredOut ;
-  noInst_updNoCf          : ty Addr -> Action ty noInstTree (Bit 0) ;
-  noInst_updStraddle      : ty Addr -> Action ty noInstTree (Bit 0) ;
-  noInst_updTargetByFetch : ty Addr -> ty Addr -> ty PreBranchInfo -> Action ty noInstTree (Bit 0) ;
-  noInst_updCfByExecute   : ty Addr -> ty CfPayload -> ty PreBranchInfo -> Action ty noInstTree (Bit 0) ;
-  noInst_updInstSize      : ty Addr -> ty Bool -> Action ty noInstTree (Bit 0) ;
-  noInst_updException     : ty Addr -> Action ty noInstTree (Bit 0)
+  noInstTree                : Tree DomainElem ;
+  noInst_getPred            : ty Addr -> Action ty noInstTree NoInstPredOut ;
+  noInst_updNoCf            : ty Addr -> Action ty noInstTree (Bit 0) ;
+  noInst_updStraddle        : ty Addr -> Action ty noInstTree (Bit 0) ;
+  noInst_updTargetByFetch   : ty Addr -> ty Addr -> ty PreBranchInfo -> Action ty noInstTree (Bit 0) ;
+  noInst_updTargetByExecute : ty Addr -> ty Addr -> ty PreBranchInfo -> Action ty noInstTree (Bit 0) ;
+  noInst_updInstSize        : ty Addr -> ty Bool -> Action ty noInstTree (Bit 0) ;
+  noInst_updException       : ty Addr -> Action ty noInstTree (Bit 0)
 }.
 
 Definition bpTree (noInstTree withInstTree : Tree DomainElem) : Tree DomainElem :=
@@ -111,7 +111,7 @@ Section ImplBranchPredictor.
     Definition implNoInst_updTargetByFetch (pc target : ty Addr) (pb : ty PreBranchInfo) : Action ty implNoInstTree (Bit 0) :=
       Retv.
 
-    Definition implNoInst_updCfByExecute (pc : ty Addr) (cf : ty CfPayload) (pb : ty PreBranchInfo) : Action ty implNoInstTree (Bit 0) :=
+    Definition implNoInst_updTargetByExecute (pc target : ty Addr) (pb : ty PreBranchInfo) : Action ty implNoInstTree (Bit 0) :=
       Retv.
 
     Definition implNoInst_updInstSize (pc : ty Addr) (sz : ty Bool) : Action ty implNoInstTree (Bit 0) :=
@@ -121,14 +121,14 @@ Section ImplBranchPredictor.
       Retv.
 
     Definition implNoInstIfc : @NoInstPredIfc ty := {|
-      noInstTree              := implNoInstTree ;
-      noInst_getPred          := implNoInst_getPred ;
-      noInst_updNoCf          := implNoInst_updNoCf ;
-      noInst_updStraddle      := implNoInst_updStraddle ;
-      noInst_updTargetByFetch := implNoInst_updTargetByFetch ;
-      noInst_updCfByExecute   := implNoInst_updCfByExecute ;
-      noInst_updInstSize      := implNoInst_updInstSize ;
-      noInst_updException     := implNoInst_updException
+      noInstTree                := implNoInstTree ;
+      noInst_getPred            := implNoInst_getPred ;
+      noInst_updNoCf            := implNoInst_updNoCf ;
+      noInst_updStraddle        := implNoInst_updStraddle ;
+      noInst_updTargetByFetch   := implNoInst_updTargetByFetch ;
+      noInst_updTargetByExecute := implNoInst_updTargetByExecute ;
+      noInst_updInstSize        := implNoInst_updInstSize ;
+      noInst_updException       := implNoInst_updException
     |}.
   End NoInstTy.
 
@@ -191,7 +191,8 @@ Section ImplBranchPredictor.
         Return #l2PredPc.
 
       Definition implWithInst_updCf (pc : ty Addr) (cf : ty CfPayload) (pb : ty PreBranchInfo) : Action ty tree (Bit 0) :=
-        liftAction np_noInst ((noInstIfc ty).(noInst_updCfByExecute) pc cf pb).
+        Let target : Addr <- ##cf`"NewPcc"`"addr" ;
+        liftAction np_noInst ((noInstIfc ty).(noInst_updTargetByExecute) pc target pb).
 
       Definition implWithInst_updException (pc : ty Addr) : Action ty tree (Bit 0) :=
         liftAction np_noInst ((noInstIfc ty).(noInst_updException) pc).
