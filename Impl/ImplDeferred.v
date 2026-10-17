@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition.
-From Cheriot Require Import SpecDefines FunctionalUnits ImplCommon ImplDevice Fifo SpecFetchDeferred SpecMulDiv ImplStaged ImplMulDiv.
+From Cheriot Require Import SpecDefines FunctionalUnits ImplCommon ImplDevice SpecFetchDeferred SpecMulDiv ImplStaged ImplMulDiv ShiftFifo.
 
 Set Implicit Arguments.
 Unset Strict Implicit.

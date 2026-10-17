@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition.
-From Cheriot Require Import SpecDefines Decoder FunctionalUnits ImplCommon ImplBranchPredictor ImplDevice Alu Fifo.
+From Cheriot Require Import SpecDefines Decoder FunctionalUnits ImplCommon ImplBranchPredictor ImplDevice Alu ShiftFifo.
 
 Set Implicit Arguments.
 Unset Strict Implicit.

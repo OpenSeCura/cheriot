@@ -49,7 +49,7 @@
 
 From Stdlib Require Import String List ZArith Lia Bool Zmod.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition.
-From Cheriot Require Import SpecDefines FunctionalUnits Fifo SpecMulDiv ImplStaged.
+From Cheriot Require Import SpecDefines FunctionalUnits SpecMulDiv ImplStaged.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
