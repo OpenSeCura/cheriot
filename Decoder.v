@@ -262,15 +262,19 @@ Section DecodeUncompressed.
                                       #isECall; #isEBreak; #isMret; #isFence;
                                       #isCheriFunct0TwoArg;
                                       #isCsr; #isScr ]);
-    LetE actualCs2Real : Bit RegIdxSzReal <- ITE0 #readsRs2 #cs2Real;
-
-    LetE cs2SourceVal : TaggedUnion Cs2Source <-
-      ITE #isMret (mkCs2Scr $(getScrIdx "MePcc"%string))
-          (ITE #isScr (mkCs2Scr #scrMappedIdx)
-               (ITE #isCsr (mkCs2Csr #csrMappedIdx)
-                    (mkCs2Reg #actualCs2Real))) ;
+    LetE actualCs2Idx : Bit RegIdxSzReal <- ITE0 #readsRs2 #cs2Real;
 
     LetE writesCd : Bool <- And [ isNotZero #cdReal; Not (Or [ #isBranch; #isStore; #isFence; #isECall; #isEBreak; #isMret ]) ] ;
+
+    LetE readsScr        : Bool         <- Or [ #isScr ; #isMret ] ;
+    LetE writesScr       : Bool         <- #isScrWrite ;
+    LetE readWriteScrIdx : Bit ScrIdxSz <- ITE #isMret $(getScrIdx "MePcc"%string) #scrMappedIdx ;
+
+    LetE readsMstatus    : Bool         <- Or [ And [ #isCjal ; Eq #cdReal $Cra ] ; #isCjalr ; #isMret ] ;
+    LetE writesMstatus   : Bool         <- Or [ #isCjalr ; #isMret ] ;
+    LetE readsCsr        : Bool         <- Or [ #isCsr ; #readsMstatus ] ;
+    LetE writesCsr       : Bool         <- Or [ And [ #isCsr ; #isCsrWrite ] ; #writesMstatus ] ;
+    LetE readWriteCsrIdx : Bit CsrIdxSz <- ITE #isCsr #csrMappedIdx ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
 
     LetE decodeExcVal : DecodeException <- STRUCT {
       "illegal" ::= #isIllegalInst ;
@@ -278,11 +282,17 @@ Section DecodeUncompressed.
     } ;
 
     @RetE _ DecodeOut (STRUCT {
-      "instGroup" ::= #groupVal ;
-      "cs1Idx"    ::= #actualCs1Idx ;
-      "cs2Idx"    ::= #cs2SourceVal ;
-      "writesCd"  ::= #writesCd ;
-      "decodeExc" ::= #decodeExcVal
+      "instGroup"       ::= #groupVal ;
+      "cs1Idx"          ::= #actualCs1Idx ;
+      "cs2Idx"          ::= #actualCs2Idx ;
+      "writesCd"        ::= #writesCd ;
+      "readsScr"        ::= #readsScr ;
+      "writesScr"       ::= #writesScr ;
+      "readWriteScrIdx" ::= #readWriteScrIdx ;
+      "readsCsr"        ::= #readsCsr ;
+      "writesCsr"       ::= #writesCsr ;
+      "readWriteCsrIdx" ::= #readWriteCsrIdx ;
+      "decodeExc"       ::= #decodeExcVal
     }).
 End DecodeUncompressed.
 

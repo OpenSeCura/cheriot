@@ -56,7 +56,7 @@ Branch
 
 Cjal
 * CJAL cd, jimm20
-    Implicit Read : pcc
+    Implicit Read : pcc, interruptStatus (when cd = c1 / cra)
     Implicit Write: pcc.addr, pcc.tag
     Functional Units:
       a) AdderBeforeBoundsCheck (computing jump target address PC + jimm20)
@@ -66,7 +66,7 @@ Cjal
                              AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       e) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
       f) AddrBoundsCheck (ands the two comparator outputs correctly)
-      g) ControlFlow (creates CfPayload from AddrBoundsCheck and AdderBeforeBoundsCheck, and outputs linkCOType)
+      g) ControlFlow (creates CfPayload from AddrBoundsCheck and AdderBeforeBoundsCheck, and outputs linkCOType using currInterruptStatus)
       h) PccEcap (sets return link capability cOType to ControlFlow.linkCOType)
 
 AuiCgp/AuiPcc
@@ -355,11 +355,11 @@ EBreak
 
 Mret
 * MRET
-    Implicit Read : MEPCC, pcc.perms
-    Implicit Write: pcc
+    Implicit Read : MEPCC, pcc.perms, interruptStatus
+    Implicit Write: pcc, interruptStatus
     Note: Decoder will cause exceptions if no ASR
     Functional Units:
-      a) ControlFlow (creates CfPayload from cs2.tag, cs2.ecap and cs2.addr)
+      a) ControlFlow (creates CfPayload from cs2.tag, cs2.ecap, cs2.addr and currInterruptStatus)
 
 Fence
 * FENCE
@@ -566,7 +566,7 @@ FenceI:
 
 ControlFlow (Mux):
   Outputs: isCf, CfPayload {NewPcc, CfOp {ControlFlowAddrOnly {Branch {isTaken} OR Cjal} OR
-                                          ControlFlowAddrECap {Cjalr {interruptStatus, capChanged, isCall, isReturn} OR Mret}}},
+                                          ControlFlowAddrECap {interruptStatus, op {Cjalr {capChanged, isCall, isReturn} OR Mret}}}},
            linkCOType
   - Mret   : Mret
   - Cjal   : Cjal
@@ -582,14 +582,17 @@ ControlFlow (Mux):
   pccTag: pcc.tag (Branch, Cjal, Cjalr, Mret)
   pccEcap: pcc.ecap (Cjalr)
   inst: inst (Cjal, Cjalr)
-  currIntStatus: currInterruptStatus (Cjal, Cjalr)
+  currIntStatus: currInterruptStatus (Cjal, Cjalr, Mret)
 
 ScrCsr (Mux):
   Outputs: isScrCsr, SpecialDest, SpecialValue, isWrite
+  - Scr   : Scr
+  - Csr   : Csr
   - Set   : Csr_Set
   - Clear : Csr_Clear
   - Write : ScrCsr_Write
-  cs2Idx: cs2Idx (Csr, Scr)
+  scrIdx: readWriteScrIdx (Scr)
+  csrIdx: readWriteCsrIdx (Csr)
   newTag: ScrSanitizer (Scr)
   cs1Ecap: cs1.ecap (Scr)
   operand: zimm5 (Csr & isImm), cs1.addr (Csr & !isImm, Scr)
@@ -769,6 +772,8 @@ Section DecodeInstGroup.
       "ControlFlow_isCjalr" ::= ##group`"Cjalr" ;
       (* "ControlFlow_isBranch" ::= ##group`"Branch" ; *)
 
+      (* "ScrCsr_isScr" ::= ##group`"Scr" ; *)
+      "ScrCsr_isCsr" ::= ##group`"Csr" ;
       "ScrCsr_isSet" ::= ##group`"Csr_Set" ;
       "ScrCsr_isClear" ::= ##group`"Csr_Clear" ;
       "ScrCsr_isWrite" ::= ##group`"ScrCsr_Write" ;
@@ -859,7 +864,8 @@ Section ConstructAluIn.
     LetE group : InstGroup  <- ##aluInGroup`"instGroup" ;
     LETE ctrl  : AluControl <- decodeInstGroup group ;
     @RetE _ AluIn (STRUCT {
-      "cs2Idx"              ::= ##aluInGroup`"cs2Idx" ;
+      "readWriteScrIdx"     ::= ##aluInGroup`"readWriteScrIdx" ;
+      "readWriteCsrIdx"     ::= ##aluInGroup`"readWriteCsrIdx" ;
       "writesCd"            ::= ##aluInGroup`"writesCd" ;
       "inst"                ::= ##aluInGroup`"inst" ;
       "decodeExc"           ::= ##aluInGroup`"decodeExc" ;
@@ -1593,10 +1599,16 @@ Section FunctionalUnits.
     LetE capChanged : Bool         <- Not (And [ Eq #cjalrTag #pccTag ; Eq #cjalrEcap #pccEcap ]) ;
 
     LetE cjalrOp : CjalrOp <- STRUCT {
-      "interruptStatus" ::= #cjalrIntStatus ;
-      "capChanged"      ::= #capChanged ;
-      "isCall"          ::= #isCall ;
-      "isReturn"        ::= #isReturn
+      "capChanged" ::= #capChanged ;
+      "isCall"     ::= #isCall ;
+      "isReturn"   ::= #isReturn
+    } ;
+
+    LetE addrECap : ControlFlowAddrECap <- STRUCT {
+      "interruptStatus" ::= ITE #isMret #currIntStatus #cjalrIntStatus ;
+      "op"              ::= ITE #isCjalr
+                                (UNION (ControlFlowAddrECapOpType, "Cjalr" ::= #cjalrOp))
+                                (UNION (ControlFlowAddrECapOpType, "Mret" ::= Const ty (Bit 0) Zmod.zero))
     } ;
 
     LetE cfOpPayload : CfOp <-
@@ -1604,9 +1616,7 @@ Section FunctionalUnits.
         (UNION (CfOpType, "ControlFlowAddrOnly" ::= ITE #isBranch
                                                    (UNION (ControlFlowAddrOnlyOpType, "Branch" ::= #isCond))
                                                    (UNION (ControlFlowAddrOnlyOpType, "Cjal" ::= #isCall))))
-        (UNION (CfOpType, "ControlFlowAddrECap" ::= ITE #isCjalr
-                                                   (UNION (ControlFlowAddrECapOpType, "Cjalr" ::= #cjalrOp))
-                                                   (UNION (ControlFlowAddrECapOpType, "Mret" ::= Const ty (Bit 0) Zmod.zero)))) ;
+        (UNION (CfOpType, "ControlFlowAddrECap" ::= #addrECap)) ;
 
     LetE newPcc : FullECapWithTag <- STRUCT {
       "tag"  ::= #pccTagOut ;
@@ -1631,14 +1641,18 @@ Section FunctionalUnits.
       "linkCOType" ::= #linkCOType
     }).
 
-  Definition ScrCsr (isSet isClear isWrite : ty Bool)
-                    (cs2Idx : ty (TaggedUnion Cs2Source))
+  Definition ScrCsr (isScr isCsr isSet isClear isWrite : ty Bool)
+                    (scrIdx : ty (Bit ScrIdxSz))
+                    (csrIdx : ty (Bit CsrIdxSz))
                     (newTag : ty Bool)
                     (cs1Ecap : ty ECap)
                     (operand : ty Addr)
                     (oldVal : ty Addr) : LetExpr ty (Option ScrCsrPayload) :=
-    LetE isScrCsr : Bool <- #cs2Idx `? "ScrCsr" ;
-    LetE scrCsrIdx : (TaggedUnion ScrCsrIdx) <- #cs2Idx `! "ScrCsr" ;
+    LetE isScrCsr : Bool <- Or [ #isScr ; #isCsr ] ;
+    LetE scrCsrIdx : (TaggedUnion ScrCsrIdx) <-
+      ITE #isScr
+          (UNION (ScrCsrIdx, "Scr" ::= #scrIdx))
+          (UNION (ScrCsrIdx, "Csr" ::= #csrIdx)) ;
     (* isSet and isClear are false for Scr and for CSRRW[I], leaving newAddr = operand *)
     LetE newAddr : Addr <- caseDefault
                              [ (#isSet  , Or  [ #oldVal ; #operand ]) ;

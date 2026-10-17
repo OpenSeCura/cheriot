@@ -228,17 +228,16 @@ Section ImplCommon.
 
   Definition setDstWaitBits (ty : Kind -> Type)
     (writesGpr : ty Bool) (gprIdx : ty (Bit RegIdxSzReal))
-    (wInfo : ty WaitSpecialInfo)
+    (writesScr : ty Bool) (scrIdx : ty (Bit ScrIdxSz))
+    (writesCsr : ty Bool) (csrIdx : ty (Bit CsrIdxSz))
     (val : ty Bool) : Action ty waitBitsTree (Bit 0) :=
     If #writesGpr Then (
       writeGprWaitBit gprIdx val
     ) ;
-    If (##wInfo`"writesScr") Then (
-      Let scrIdx : Bit ScrIdxSz <- ##wInfo`"readWriteScrIdx" ;
+    If #writesScr Then (
       writeScrWaitBit scrIdx val
     ) ;
-    If (##wInfo`"writesCsr") Then (
-      Let csrIdx : Bit CsrIdxSz <- ##wInfo`"writeCsrIdx" ;
+    If #writesCsr Then (
       writeCsrWaitBit csrIdx val
     ) ;
     Retv.

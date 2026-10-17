@@ -183,7 +183,8 @@ Section ImplBranchPredictor.
         Let isAddrOnly : Bool                  <- #cfOp `? "ControlFlowAddrOnly" ;
         Let addrOnlyOp : ControlFlowAddrOnlyOp <- #cfOp `! "ControlFlowAddrOnly" ;
         Let isAddrECap : Bool                  <- #cfOp `? "ControlFlowAddrECap" ;
-        Let addrECapOp : ControlFlowAddrECapOp <- #cfOp `! "ControlFlowAddrECap" ;
+        Let addrECap   : ControlFlowAddrECap   <- #cfOp `! "ControlFlowAddrECap" ;
+        Let addrECapOp : ControlFlowAddrECapOp <- ##addrECap`"op" ;
         Let cjalrOp    : CjalrOp               <- #addrECapOp `! "Cjalr" ;
         Let isCjal     : Bool                  <- And [ #isAddrOnly ; #addrOnlyOp `? "Cjal" ] ;
         Let isBranch   : Bool                  <- And [ #isAddrOnly ; #addrOnlyOp `? "Branch" ] ;

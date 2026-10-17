@@ -722,23 +722,6 @@ Definition ScrCsrIdx := [
   ("Csr"%string, Bit CsrIdxSz)
 ].
 
-Definition Cs2Source := [
-  ("Reg"%string, Bit RegIdxSzReal) ;
-  ("ScrCsr"%string, TaggedUnion ScrCsrIdx)
-].
-
-Section Cs2Constructors.
-  Variable ty : Kind -> Type.
-  Definition mkCs2Reg (idx : Expr ty (Bit RegIdxSzReal)) : Expr ty (TaggedUnion Cs2Source) :=
-    UNION (Cs2Source, "Reg" ::= idx).
-
-  Definition mkCs2Csr (idx : Expr ty (Bit CsrIdxSz)) : Expr ty (TaggedUnion Cs2Source) :=
-    UNION (Cs2Source, "ScrCsr" ::= UNION (ScrCsrIdx, "Csr" ::= idx)).
-
-  Definition mkCs2Scr (idx : Expr ty (Bit ScrIdxSz)) : Expr ty (TaggedUnion Cs2Source) :=
-    UNION (Cs2Source, "ScrCsr" ::= UNION (ScrCsrIdx, "Scr" ::= idx)).
-End Cs2Constructors.
-
 
 (* ===========================================================================
  * RISC-V & CHERIoT Exception Constants & Info
@@ -928,11 +911,17 @@ Definition nonExOTypes ty (addr: ty Addr) : Expr ty Bool :=
  * =========================================================================== *)
 
 Definition DecodeOut := STRUCT_TYPE {
-  "instGroup" :: InstGroup ;
-  "cs1Idx"    :: Bit RegIdxSzReal ;
-  "cs2Idx"    :: TaggedUnion Cs2Source ;
-  "writesCd"  :: Bool ;
-  "decodeExc" :: DecodeException
+  "instGroup"       :: InstGroup ;
+  "cs1Idx"          :: Bit RegIdxSzReal ;
+  "cs2Idx"          :: Bit RegIdxSzReal ;
+  "writesCd"        :: Bool ;
+  "readsScr"        :: Bool ;
+  "writesScr"       :: Bool ;
+  "readWriteScrIdx" :: Bit ScrIdxSz ;
+  "readsCsr"        :: Bool ;
+  "writesCsr"       :: Bool ;
+  "readWriteCsrIdx" :: Bit CsrIdxSz ;
+  "decodeExc"       :: DecodeException
 }.
 
 Definition RegReadIn := STRUCT_TYPE {
@@ -940,45 +929,6 @@ Definition RegReadIn := STRUCT_TYPE {
   "decodeOut" :: DecodeOut ;
   "fetchExc"  :: FetchException
 }.
-
-Definition WaitSpecialInfo := STRUCT_TYPE {
-  "readsScr"        :: Bool ;
-  "writesScr"       :: Bool ;
-  "readWriteScrIdx" :: Bit ScrIdxSz ;
-  "readsCsr"        :: Bool ;
-  "readCsrIdx"      :: Bit CsrIdxSz ;
-  "writesCsr"       :: Bool ;
-  "writeCsrIdx"     :: Bit CsrIdxSz
-}.
-
-Section WaitSpecialHelper.
-  Variable ty : Kind -> Type.
-
-  Definition getWaitSpecialInfo (instGroup : ty InstGroup) (cs2Source : ty (TaggedUnion Cs2Source))
-    : LetExpr ty WaitSpecialInfo :=
-    LetE cs2IsSpecial    : Bool                  <- #cs2Source `? "ScrCsr" ;
-    LetE scrCsr          : TaggedUnion ScrCsrIdx <- #cs2Source `! "ScrCsr" ;
-    LetE readsScr        : Bool                  <- And [ #cs2IsSpecial ; #scrCsr `? "Scr" ] ;
-    LetE readWriteScrIdx : Bit ScrIdxSz          <- #scrCsr `! "Scr" ;
-    LetE readsCsr        : Bool                  <- And [ #cs2IsSpecial ; #scrCsr `? "Csr" ] ;
-    LetE readCsrIdx      : Bit CsrIdxSz          <- #scrCsr `! "Csr" ;
-    LetE writesScr       : Bool                  <- And [ ##instGroup`"Scr" ; ##instGroup`"ScrCsr_Write" ] ;
-    LetE isCsrWrite      : Bool                  <- And [ ##instGroup`"Csr" ; ##instGroup`"ScrCsr_Write" ] ;
-    LetE isMstatusWrite  : Bool                  <- Or [ ##instGroup`"Cjalr" ; ##instGroup`"Mret" ] ;
-    LetE writesCsr       : Bool                  <- Or [ #isCsrWrite ; #isMstatusWrite ] ;
-    LetE writeCsrIdx     : Bit CsrIdxSz          <- ITE #isCsrWrite
-                                                        #readCsrIdx
-                                                        ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-    @RetE ty WaitSpecialInfo (STRUCT {
-      "readsScr"        ::= #readsScr ;
-      "writesScr"       ::= #writesScr ;
-      "readWriteScrIdx" ::= #readWriteScrIdx ;
-      "readsCsr"        ::= #readsCsr ;
-      "readCsrIdx"      ::= #readCsrIdx ;
-      "writesCsr"       ::= #writesCsr ;
-      "writeCsrIdx"     ::= #writeCsrIdx
-    }).
-End WaitSpecialHelper.
 
 Definition AluControl := STRUCT_TYPE {
   (* AdderBeforeBoundsCheck *)
@@ -1092,6 +1042,8 @@ Definition AluControl := STRUCT_TYPE {
   (* ControlFlow_isBranch = Branch *)
 
   (* ScrCsr *)
+  (* ScrCsr_isScr = Scr *)
+  "ScrCsr_isCsr" :: Bool ;
   "ScrCsr_isSet" :: Bool ;
   "ScrCsr_isClear" :: Bool ;
   "ScrCsr_isWrite" :: Bool ;
@@ -1156,7 +1108,8 @@ Definition AluControl := STRUCT_TYPE {
 }.
 
 Definition AluIn := STRUCT_TYPE {
-  "cs2Idx"              :: TaggedUnion Cs2Source ;
+  "readWriteScrIdx"     :: Bit ScrIdxSz ;
+  "readWriteCsrIdx"     :: Bit CsrIdxSz ;
   "writesCd"            :: Bool ;
   "inst"                :: Inst ;
   "decodeExc"           :: DecodeException ;
@@ -1168,8 +1121,11 @@ Definition AluIn := STRUCT_TYPE {
 }.
 
 Definition AluInInstGroup := STRUCT_TYPE {
-  "cs2Idx"              :: TaggedUnion Cs2Source ;
   "writesCd"            :: Bool ;
+  "writesScr"           :: Bool ;
+  "readWriteScrIdx"     :: Bit ScrIdxSz ;
+  "writesCsr"           :: Bool ;
+  "readWriteCsrIdx"     :: Bit CsrIdxSz ;
   "inst"                :: Inst ;
   "decodeExc"           :: DecodeException ;
   "fetchExc"            :: FetchException ;
@@ -1186,10 +1142,9 @@ Definition ControlFlowAddrOnlyOpType := [
 Definition ControlFlowAddrOnlyOp := TaggedUnion ControlFlowAddrOnlyOpType.
 
 Definition CjalrOp := STRUCT_TYPE {
-  "interruptStatus" :: Bool ;
-  "capChanged"      :: Bool ;
-  "isCall"          :: Bool ;
-  "isReturn"        :: Bool
+  "capChanged" :: Bool ;
+  "isCall"     :: Bool ;
+  "isReturn"   :: Bool
 }.
 
 Definition ControlFlowAddrECapOpType := [
@@ -1198,9 +1153,14 @@ Definition ControlFlowAddrECapOpType := [
 ].
 Definition ControlFlowAddrECapOp := TaggedUnion ControlFlowAddrECapOpType.
 
+Definition ControlFlowAddrECap := STRUCT_TYPE {
+  "interruptStatus" :: Bool ;
+  "op"              :: ControlFlowAddrECapOp
+}.
+
 Definition CfOpType := [
      ("ControlFlowAddrOnly"%string, ControlFlowAddrOnlyOp) ;
-     ("ControlFlowAddrECap"%string, ControlFlowAddrECapOp)
+     ("ControlFlowAddrECap"%string, ControlFlowAddrECap)
 ].
 Definition CfOp := TaggedUnion CfOpType.
 

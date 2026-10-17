@@ -101,13 +101,13 @@ Section ExecuteStage.
       Let  predPc         : Addr             <- ##d2aEntry`"predPc" ;
       Let  entryExecEpoch : Epoch            <- ##d2aEntry`"execEpoch" ;
 
-      Let  instBits   : Inst                  <- ##pkg`"inst" ;
-      Let  instGroup  : InstGroup             <- ##pkg`"instGroup" ;
-      Let  cs2Source  : TaggedUnion Cs2Source <- ##pkg`"cs2Idx" ;
-      Let  writesCd   : Bool                  <- ##pkg`"writesCd" ;
-      Let  dstIdxReal : Bit RegIdxSzReal      <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal (getCd instBits) ;
-
-      LetL wInfo      : WaitSpecialInfo <- getWaitSpecialInfo instGroup cs2Source ;
+      Let  instBits        : Inst             <- ##pkg`"inst" ;
+      Let  writesCd        : Bool             <- ##pkg`"writesCd" ;
+      Let  dstIdxReal      : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal (getCd instBits) ;
+      Let  writesScr       : Bool             <- ##pkg`"writesScr" ;
+      Let  readWriteScrIdx : Bit ScrIdxSz     <- ##pkg`"readWriteScrIdx" ;
+      Let  writesCsr       : Bool             <- ##pkg`"writesCsr" ;
+      Let  readWriteCsrIdx : Bit CsrIdxSz     <- ##pkg`"readWriteCsrIdx" ;
 
       Let  waitFalse : Bool <- ConstBool false ;
       LetA currExecEpoch : Epoch <- @readExecEpoch dom rfTree bpTree memTree fTree decTree dTree ty ;
@@ -117,7 +117,8 @@ Section ExecuteStage.
         liftAction np_waitBits
           (@setDstWaitBits dom ty
              writesCd dstIdxReal
-             wInfo
+             writesScr readWriteScrIdx
+             writesCsr readWriteCsrIdx
              waitFalse)
       ) Else (
         LetA pcc           : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
@@ -147,7 +148,8 @@ Section ExecuteStage.
           Let  cfOp            : CfOp                  <- ##cf`"CfOp" ;
           Let  committedNextPc : Addr                  <- ##execOut`"nextPc" ;
           Let  isAddrECap      : Bool                  <- And [ #hasCf ; #cfOp `? "ControlFlowAddrECap" ] ;
-          Let  addrECapOp      : ControlFlowAddrECapOp <- #cfOp `! "ControlFlowAddrECap" ;
+          Let  addrECap        : ControlFlowAddrECap   <- #cfOp `! "ControlFlowAddrECap" ;
+          Let  addrECapOp      : ControlFlowAddrECapOp <- ##addrECap`"op" ;
           Let  cjalrOp         : CjalrOp               <- #addrECapOp `! "Cjalr" ;
           Let  capChanged      : Bool                  <- And [ #isAddrECap ;
                                                                 Or [ #addrECapOp `? "Mret" ;
@@ -183,7 +185,8 @@ Section ExecuteStage.
             liftAction np_waitBits
               (@setDstWaitBits dom ty
                  writesCd dstIdxReal
-                 wInfo
+                 writesScr readWriteScrIdx
+                 writesCsr readWriteCsrIdx
                  waitFalse)
           ) ;
           Retv

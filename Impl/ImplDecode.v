@@ -101,45 +101,34 @@ Section DecodeStage.
         LetL regReadIn : RegReadIn <- wrappedDecode fetchOut ;
         Let  decodeOut : DecodeOut <- ##regReadIn`"decodeOut" ;
 
-        Let  instGroup : InstGroup             <- ##decodeOut`"instGroup" ;
-        Let  cs1Idx    : Bit RegIdxSzReal      <- ##decodeOut`"cs1Idx" ;
-        Let  cs2Source : TaggedUnion Cs2Source <- ##decodeOut`"cs2Idx" ;
-        Let  cs2IsReg  : Bool                  <- #cs2Source `? "Reg" ;
-        Let  cs2Idx    : Bit RegIdxSzReal      <- #cs2Source `! "Reg" ;
-        Let  writesCd  : Bool                  <- ##decodeOut`"writesCd" ;
-        Let  cdIdx     : Bit RegIdxSzReal      <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal (getCd inst) ;
+        Let  cs1Idx          : Bit RegIdxSzReal <- ##decodeOut`"cs1Idx" ;
+        Let  cs2Idx          : Bit RegIdxSzReal <- ##decodeOut`"cs2Idx" ;
+        Let  writesCd        : Bool             <- ##decodeOut`"writesCd" ;
+        Let  cdIdx           : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal (getCd inst) ;
+        Let  readsScr        : Bool             <- ##decodeOut`"readsScr" ;
+        Let  writesScr       : Bool             <- ##decodeOut`"writesScr" ;
+        Let  readWriteScrIdx : Bit ScrIdxSz     <- ##decodeOut`"readWriteScrIdx" ;
+        Let  readsCsr        : Bool             <- ##decodeOut`"readsCsr" ;
+        Let  writesCsr       : Bool             <- ##decodeOut`"writesCsr" ;
+        Let  readWriteCsrIdx : Bit CsrIdxSz     <- ##decodeOut`"readWriteCsrIdx" ;
 
-        LetL wInfo           : WaitSpecialInfo <- getWaitSpecialInfo instGroup cs2Source ;
-        Let  readsScr        : Bool            <- ##wInfo`"readsScr" ;
-        Let  writesScr       : Bool            <- ##wInfo`"writesScr" ;
-        Let  readWriteScrIdx : Bit ScrIdxSz    <- ##wInfo`"readWriteScrIdx" ;
-        Let  readsCsr        : Bool            <- ##wInfo`"readsCsr" ;
-        Let  readCsrIdx      : Bit CsrIdxSz    <- ##wInfo`"readCsrIdx" ;
-        Let  writesCsr       : Bool            <- ##wInfo`"writesCsr" ;
-        Let  writeCsrIdx     : Bit CsrIdxSz    <- ##wInfo`"writeCsrIdx" ;
-
-        Let  mstatusIdx      : Bit CsrIdxSz <- $(getCsrPhysicalIdx "mstatus") ;
-        LetA cs1Wait         : Bool         <- liftAction np_waitBits (@readGprWaitBit dom ty cs1Idx) ;
-        LetA cs2Wait         : Bool         <- liftAction np_waitBits (@readGprWaitBit dom ty cs2Idx) ;
-        LetA cdWait          : Bool         <- liftAction np_waitBits (@readGprWaitBit dom ty cdIdx) ;
-        LetA scrWait         : Bool         <- liftAction np_waitBits (@readScrWaitBit dom ty readWriteScrIdx) ;
-        LetA csrReadWait     : Bool         <- liftAction np_waitBits (@readCsrWaitBit dom ty readCsrIdx) ;
-        LetA csrWriteWait    : Bool         <- liftAction np_waitBits (@readCsrWaitBit dom ty writeCsrIdx) ;
-        LetA mstatusWait     : Bool         <- liftAction np_waitBits (@readCsrWaitBit dom ty mstatusIdx) ;
+        LetA cs1Wait         : Bool <- liftAction np_waitBits (@readGprWaitBit dom ty cs1Idx) ;
+        LetA cs2Wait         : Bool <- liftAction np_waitBits (@readGprWaitBit dom ty cs2Idx) ;
+        LetA cdWait          : Bool <- liftAction np_waitBits (@readGprWaitBit dom ty cdIdx) ;
+        LetA scrWait         : Bool <- liftAction np_waitBits (@readScrWaitBit dom ty readWriteScrIdx) ;
+        LetA csrWait         : Bool <- liftAction np_waitBits (@readCsrWaitBit dom ty readWriteCsrIdx) ;
 
         Let  scrStallEmpty : Bool <- And [ #readsScr ; isStallUntilEmptyScr readWriteScrIdx ] ;
-        Let  csrStallEmpty : Bool <- And [ #readsCsr ; isStallUntilEmptyCsr readCsrIdx ] ;
+        Let  csrStallEmpty : Bool <- And [ #readsCsr ; isStallUntilEmptyCsr readWriteCsrIdx ] ;
 
         (* cs1Idx and cs2Idx are set to 0 for instructions that don't read them *)
         (* However, faulting instructions do not set them to 0 *)
         Let  cs1Stall  : Bool <- And [ isNotZero #cs1Idx ; #cs1Wait ] ;
-        Let  cs2Stall  : Bool <- And [ #cs2IsReg ; isNotZero #cs2Idx ; #cs2Wait ] ;
+        Let  cs2Stall  : Bool <- And [ isNotZero #cs2Idx ; #cs2Wait ] ;
         Let  cdStall   : Bool <- And [ #writesCd ; #cdWait ] ;
-        Let  scrStall  : Bool <- Or [ And [ Or [#readsScr ; #writesScr ] ; #scrWait ] ;
+        Let  scrStall  : Bool <- Or [ And [ Or [ #readsScr ; #writesScr ] ; #scrWait ] ;
                                       And [ #scrStallEmpty ; Not #pipelineEmpty ] ] ;
-        Let  csrStall  : Bool <- Or [ #mstatusWait ;
-                                      And [ #readsCsr ; #csrReadWait ] ;
-                                      And [ #writesCsr ; #csrWriteWait ] ;
+        Let  csrStall  : Bool <- Or [ And [ Or [ #readsCsr ; #writesCsr ] ; #csrWait ] ;
                                       And [ #csrStallEmpty ; Not #pipelineEmpty ] ] ;
         Let  canIssue  : Bool <- Not (Or [ #decodeToAlu_isFull ; #cs1Stall ; #cs2Stall ; #cdStall ; #scrStall ; #csrStall ]) ;
 
@@ -155,7 +144,8 @@ Section DecodeStage.
           Act (liftAction np_waitBits
                  (@setDstWaitBits dom ty
                     writesCd cdIdx
-                    wInfo
+                    writesScr readWriteScrIdx
+                    writesCsr readWriteCsrIdx
                     waitTrue)) ;
 
           Let d2aEntry : DecodeToAluEntry <- STRUCT {

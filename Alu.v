@@ -34,7 +34,8 @@ Section Alu.
  * =========================================================================== *)
 
   Definition AluRouting (pcc : ty FullECapWithTag) (aluIn : ty AluIn) : LetExpr ty AluOut :=
-    LetE cs2Idx : TaggedUnion Cs2Source <- ##aluIn`"cs2Idx" ;
+    LetE readWriteScrIdx : Bit ScrIdxSz <- ##aluIn`"readWriteScrIdx" ;
+    LetE readWriteCsrIdx : Bit CsrIdxSz <- ##aluIn`"readWriteCsrIdx" ;
     LetE inst : Inst <- ##aluIn`"inst" ;
     LetE decodeExc : DecodeException <- ##aluIn`"decodeExc" ;
     LetE fetchExc : FetchException <- ##aluIn`"fetchExc" ;
@@ -317,12 +318,14 @@ Section Alu.
   
     LetE ScrCsr_operand : Addr <-
       ITE (##aluControl`"ScrCsr_operand_isImm") (ZeroExtendTo Xlen #zimm5) #cs1Addr ;
+    LetE ScrCsr_isScr : Bool <- ##aluControl`"Scr" ;
+    LetE ScrCsr_isCsr : Bool <- ##aluControl`"ScrCsr_isCsr" ;
     LetE ScrCsr_isSet : Bool <- ##aluControl`"ScrCsr_isSet" ;
     LetE ScrCsr_isClear : Bool <- ##aluControl`"ScrCsr_isClear" ;
     LetE ScrCsr_isWrite : Bool <- ##aluControl`"ScrCsr_isWrite" ;
     LETE ScrCsrOut : Option ScrCsrPayload <-
-      ScrCsr ScrCsr_isSet ScrCsr_isClear ScrCsr_isWrite
-             cs2Idx ScrSanitizerOut cs1ECap ScrCsr_operand cs2Addr ;
+      ScrCsr ScrCsr_isScr ScrCsr_isCsr ScrCsr_isSet ScrCsr_isClear ScrCsr_isWrite
+             readWriteScrIdx readWriteCsrIdx ScrSanitizerOut cs1ECap ScrCsr_operand cs2Addr ;
 
     @RetE _ AluOut (STRUCT {
       "isComp"      ::= #isComp ;
@@ -577,26 +580,12 @@ Section AluRF.
                                 )
                               Else
                                 (
-                                  Let addrECapOp : ControlFlowAddrECapOp <- #cfOp `! "ControlFlowAddrECap" ;
-                                  LetIf nextPccECap : FullECapWithTag <-
-                                    If (##addrECapOp `? "Cjalr") Then
-                                      (
-                                        Let  cjalrOp    : CjalrOp  <- #addrECapOp `! "Cjalr" ;
-                                        Let  newMIE     : Bool     <- ##cjalrOp`"interruptStatus" ;
-                                        Let  newMstatus : Bit Xlen <- setMstatusMIE #mstatus #newMIE ;
-                                        Act (writeRegsList csrPathsWithKind
-                                               ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
-                                        Return #newPcc
-                                      )
-                                    Else
-                                      (
-                                        Let  currMPIE   : Bool     <- getMstatusMPIE #mstatus ;
-                                        Let  newMstatus : Bit Xlen <- setMstatusMIE #mstatus #currMPIE ;
-                                        Act (writeRegsList csrPathsWithKind
-                                               ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
-                                        Return #newPcc
-                                      ) ;
-                                  Return #nextPccECap
+                                  Let addrECap   : ControlFlowAddrECap <- #cfOp `! "ControlFlowAddrECap" ;
+                                  Let newMIE     : Bool                <- ##addrECap`"interruptStatus" ;
+                                  Let newMstatus : Bit Xlen            <- setMstatusMIE #mstatus #newMIE ;
+                                  Act (writeRegsList csrPathsWithKind
+                                         ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
+                                  Return #newPcc
                                 ) ;
                             Return #nextPccCf
                           ) ;
@@ -618,60 +607,64 @@ Section AluRF.
     Return #execOut.
 
   Definition regRead (meip mtip : ty Bool) (regReadIn : ty RegReadIn) : Action ty rfTree AluInInstGroup :=
-    Let  decodeOut  : DecodeOut             <- ##regReadIn`"decodeOut" ;
-    Let  fetchExc   : FetchException        <- ##regReadIn`"fetchExc" ;
-    Let  cs1Idx     : Bit RegIdxSzReal      <- ##decodeOut`"cs1Idx" ;
-    Let  cs2Source  : TaggedUnion Cs2Source <- ##decodeOut`"cs2Idx" ;
+    Let  decodeOut  : DecodeOut        <- ##regReadIn`"decodeOut" ;
+    Let  fetchExc   : FetchException   <- ##regReadIn`"fetchExc" ;
+    Let  cs1Idx     : Bit RegIdxSzReal <- ##decodeOut`"cs1Idx" ;
+    Let  readsScr   : Bool             <- ##decodeOut`"readsScr" ;
+    Let  readsCsr   : Bool             <- ##decodeOut`"readsCsr" ;
 
-    LetA cs1Raw     : FullECapWithTag       <- readRegsList gprPathsWithKind #cs1Idx ;
-    Let  cs1        : FullECapWithTag       <- ITE (isNotZero #cs1Idx) #cs1Raw (Const ty FullECapWithTag (getDefault _)) ;
+    LetA cs1Raw     : FullECapWithTag  <- readRegsList gprPathsWithKind #cs1Idx ;
+    Let  cs1        : FullECapWithTag  <- ITE0 (isNotZero #cs1Idx) #cs1Raw ;
 
     LetIf cs2 : FullECapWithTag <-
-      If (#cs2Source `? "Reg") Then
+      If #readsScr Then
         (
-          Let  cs2Idx : Bit RegIdxSzReal <- #cs2Source `! "Reg" ;
-          LetA cs2Raw : FullECapWithTag  <- readRegsList gprPathsWithKind #cs2Idx ;
-          Return (ITE (isNotZero #cs2Idx) #cs2Raw (Const ty FullECapWithTag (getDefault _)))
+          Let scrIdx : Bit ScrIdxSz <- ##decodeOut`"readWriteScrIdx" ;
+          readRegsList scrPathsWithKind #scrIdx
         )
       Else
         (
-          Let scrCsr : TaggedUnion ScrCsrIdx <- #cs2Source `! "ScrCsr" ;
-          LetIf scrCsrVal : FullECapWithTag <-
-            If (#scrCsr `? "Scr") Then
-              (
-                Let scrIdx : Bit ScrIdxSz <- #scrCsr `! "Scr" ;
-                readRegsList scrPathsWithKind #scrIdx
-              )
-            Else
-              (
-                Let  csrIdx  : Bit CsrIdxSz    <- #scrCsr `! "Csr" ;
-                (* Physical read yields 0 for a virtual CSR: its index is past the register list. *)
-                LetA csrPhys : Bit Xlen        <- readRegsList csrPathsWithKind #csrIdx ;
-                Let  csrVal  : Bit Xlen        <- Or [ #csrPhys ;
-                                                       ITE0 (Eq #csrIdx $(getCsrIdx "mip"))
-                                                            (createMip #meip #mtip) ] ;
-                Let  csrCap : FullECapWithTag <- STRUCT {
-                  "tag"  ::= Const ty Bool false ;
-                  "ecap" ::= Const ty ECap (getDefault _) ;
-                  "addr" ::= #csrVal
-                } ;
-                Return #csrCap
-              ) ;
-          Return #scrCsrVal
+          LetIf csrOrReg <- If #readsCsr Then
+            (
+              Let  csrIdx  : Bit CsrIdxSz    <- ##decodeOut`"readWriteCsrIdx" ;
+              (* Physical read yields 0 for a virtual CSR: its index is past the register list. *)
+              LetA csrPhys : Bit Xlen        <- readRegsList csrPathsWithKind #csrIdx ;
+              Let  csrVal  : Bit Xlen        <- Or [ #csrPhys ;
+                                                     ITE0 (Eq #csrIdx $(getCsrIdx "mip"))
+                                                       (createMip #meip #mtip) ] ;
+              Let  csrCap : FullECapWithTag <- STRUCT {
+                                                   "tag"  ::= Const ty Bool false ;
+                                                   "ecap" ::= Const ty ECap (getDefault _) ;
+                                                   "addr" ::= #csrVal
+                                                 } ;
+              Return #csrCap
+            )
+          Else
+            (
+              Let  cs2Idx : Bit RegIdxSzReal <- ##decodeOut`"cs2Idx" ;
+              LetA cs2Raw : FullECapWithTag  <- readRegsList gprPathsWithKind #cs2Idx ;
+              Return (ITE0 (isNotZero #cs2Idx) #cs2Raw)
+            ) ;
+          Return #csrOrReg
         ) ;
 
-    LetA mstatus  : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-    Let  currMIE  : Bool     <- getMstatusMIE #mstatus ;
+    LetA mstatus       : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+    Let  currIntStatus : Bool     <- ITE (##decodeOut`"instGroup"`"Mret")
+                                         (getMstatusMPIE #mstatus)
+                                         (getMstatusMIE #mstatus) ;
 
     @Return ty rfTree AluInInstGroup (STRUCT {
-      "cs2Idx"              ::= #cs2Source ;
       "writesCd"            ::= ##decodeOut`"writesCd" ;
+      "writesScr"           ::= ##decodeOut`"writesScr" ;
+      "readWriteScrIdx"     ::= ##decodeOut`"readWriteScrIdx" ;
+      "writesCsr"           ::= ##decodeOut`"writesCsr" ;
+      "readWriteCsrIdx"     ::= ##decodeOut`"readWriteCsrIdx" ;
       "inst"                ::= ##regReadIn`"inst" ;
       "decodeExc"           ::= ##decodeOut`"decodeExc" ;
       "fetchExc"            ::= #fetchExc ;
       "cs1"                 ::= #cs1 ;
       "cs2"                 ::= #cs2 ;
-      "currInterruptStatus" ::= #currMIE ;
+      "currInterruptStatus" ::= #currIntStatus ;
       "instGroup"           ::= ##decodeOut`"instGroup"
     }).
 End AluRF.
