@@ -565,8 +565,8 @@ FenceI:
   inst: inst (Fence)
 
 ControlFlow (Mux):
-  Outputs: isCf, CfPayload {NewPcc, CfOp {ControlFlowAddrOnly {Branch {isTaken} OR Cjal} OR
-                                          ControlFlowAddrECap {interruptStatus, op {Cjalr {capChanged, isCall, isReturn} OR Mret}}}},
+  Outputs: isCf, CfPayload {NewPcc, capChanged, CfOp {ControlFlowAddrOnly {Branch {isTaken} OR Cjal} OR
+                                                      ControlFlowAddrECap {interruptStatus, op {Cjalr {isCall, isReturn} OR Mret}}}},
            linkCOType
   - Mret   : Mret
   - Cjal   : Cjal
@@ -1596,10 +1596,12 @@ Section FunctionalUnits.
     LetE isCdCra    : Bool         <- Eq #cdNum $Cra ;
     LetE isReturn   : Bool         <- And [ #isCdZero ; #isCs1Cra ] ;
     LetE isCall     : Bool         <- #isCdCra ;
-    LetE capChanged : Bool         <- Not (And [ Eq #cjalrTag #pccTag ; Eq #cjalrEcap #pccEcap ]) ;
+    LetE isTakenCf   : Bool         <- Or [ And [ #isBranch ; #isCond ] ; #isCjal ; #isCjalr ; #isMret ] ;
+    LetE tagChanged  : Bool         <- And [ #isTakenCf ; Not (Eq #pccTagOut #pccTag) ] ;
+    LetE ecapChanged : Bool         <- And [ Or [ #isCjalr ; #isMret ] ; Not (Eq #pccEcapOut #pccEcap) ] ;
+    LetE capChanged  : Bool         <- Or [ #tagChanged ; #ecapChanged ] ;
 
     LetE cjalrOp : CjalrOp <- STRUCT {
-      "capChanged" ::= #capChanged ;
       "isCall"     ::= #isCall ;
       "isReturn"   ::= #isReturn
     } ;
@@ -1625,8 +1627,9 @@ Section FunctionalUnits.
     } ;
 
     LetE cfPayload : CfPayload <- STRUCT {
-      "NewPcc" ::= #newPcc ;
-      "CfOp"   ::= #cfOpPayload
+      "NewPcc"     ::= #newPcc ;
+      "capChanged" ::= #capChanged ;
+      "CfOp"       ::= #cfOpPayload
     } ;
     LetE isCf : Bool <- Or [ #isBranch ; #isCjal ; #isCjalr ; #isMret ] ;
     LetE cfPayloadOpt : Option CfPayload <- ITE0 #isCf (mkSome #cfPayload) ;

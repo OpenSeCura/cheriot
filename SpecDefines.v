@@ -1142,7 +1142,6 @@ Definition ControlFlowAddrOnlyOpType := [
 Definition ControlFlowAddrOnlyOp := TaggedUnion ControlFlowAddrOnlyOpType.
 
 Definition CjalrOp := STRUCT_TYPE {
-  "capChanged" :: Bool ;
   "isCall"     :: Bool ;
   "isReturn"   :: Bool
 }.
@@ -1165,8 +1164,9 @@ Definition CfOpType := [
 Definition CfOp := TaggedUnion CfOpType.
 
 Definition CfPayload := STRUCT_TYPE {
-  "NewPcc" :: FullECapWithTag ;
-  "CfOp"   :: CfOp
+  "NewPcc"     :: FullECapWithTag ;
+  "capChanged" :: Bool ;
+  "CfOp"       :: CfOp
 }.
 
 Definition ScrCsrPayload := STRUCT_TYPE {
