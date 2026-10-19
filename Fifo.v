@@ -46,9 +46,12 @@ Section Fifo.
         Leaf "size" (dom, EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat (capacity + 1)))) (Some (getDefault _)) false));
         Leaf "deq_idx" (dom, EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat capacity))) (Some (getDefault _)) false))].
 
+  Definition np_elems : NodePath fifoTree :=
+    Eval cbn in (getNodePath fifoTree "fifo.elems").
+
   Definition elemPathsWithKind : list (RegOfKind (t:=fifoTree) k) :=
-    map (embedRegOfKind (getNodePath fifoTree "fifo.elems"))
-        (getTreeRegsOfKind k (getNode (getNodePath fifoTree "fifo.elems"))).
+    map (embedRegOfKind np_elems)
+        (getTreeRegsOfKind k (getNode np_elems)).
 
   Section Ty.
     Variable ty: Kind -> Type.
