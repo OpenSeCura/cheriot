@@ -819,11 +819,11 @@ Section SpecDevice.
 
     Local Definition tIntTargetPort := internalMemRegionTree r true.
     Local Definition tTargetPort    := internalMemTargetPortTree r.
-    Local Definition pTargetPortLineReadRqValid  : RecvPath tTargetPort := getChildRecvPathTree tTargetPort "lineReadRqValid".
-    Local Definition pTargetPortLineReadRq       : RecvPath tTargetPort := getChildRecvPathTree tTargetPort "lineReadRq".
-    Local Definition pTargetPortLineReadRp       : SendPath tTargetPort := getChildSendPathTree tTargetPort "lineReadRp".
-    Local Definition pTargetPortLineWriteRqValid : RecvPath tTargetPort := getChildRecvPathTree tTargetPort "lineWriteRqValid".
-    Local Definition pTargetPortLineWriteRq      : RecvPath tTargetPort := getChildRecvPathTree tTargetPort "lineWriteRq".
+    Local Definition pTargetPortLineReadRqValid  : RecvPath tTargetPort := Eval cbn in (getChildRecvPathTree tTargetPort "lineReadRqValid").
+    Local Definition pTargetPortLineReadRq       : RecvPath tTargetPort := Eval cbn in (getChildRecvPathTree tTargetPort "lineReadRq").
+    Local Definition pTargetPortLineReadRp       : SendPath tTargetPort := Eval cbn in (getChildSendPathTree tTargetPort "lineReadRp").
+    Local Definition pTargetPortLineWriteRqValid : RecvPath tTargetPort := Eval cbn in (getChildRecvPathTree tTargetPort "lineWriteRqValid").
+    Local Definition pTargetPortLineWriteRq      : RecvPath tTargetPort := Eval cbn in (getChildRecvPathTree tTargetPort "lineWriteRq").
 
     Definition internalMemRegionTargetPortRead : Action ty tIntTargetPort (Bit 0) :=
       LetA valid : Bool <- liftAction child2Path (Recv "valid" pTargetPortLineReadRqValid (fun valid => Return #valid)) ;

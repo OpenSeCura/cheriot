@@ -1247,29 +1247,20 @@ Section RfTree.
   Definition np_scrs : NodePath rfTree := Eval cbn in (getNodePath rfTree ".scrs").
   Definition np_csrs : NodePath rfTree := Eval cbn in (getNodePath rfTree ".csrs").
 
-  Definition gprPaths : list (RegPath rfTree) :=
-    Eval cbn in (map (embedRegPath np_gprs)
-                     (getTreeRegPaths (getNode np_gprs))).
-
-  Definition scrPaths : list (RegPath rfTree) :=
-    Eval cbn in (map (embedRegPath np_scrs)
-                     (getTreeRegPaths (getNode np_scrs))).
-
-  Definition csrPaths : list (RegPath rfTree) :=
-    Eval cbn in (map (embedRegPath np_csrs)
-                     (getTreeRegPaths (getNode np_csrs))).
-
   Definition gprPathsWithKind : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
-    Eval cbn in (map (embedRegOfKind np_gprs)
-                     (getTreeRegsOfKind FullECapWithTag (getNode np_gprs))).
+    Eval cbv -[Zmod.of_Z Zmod.app Zmod.zero Zmod.one] in
+      (map (embedRegOfKind np_gprs)
+           (getTreeRegsOfKind FullECapWithTag (getNode np_gprs))).
 
   Definition scrPathsWithKind : list (RegOfKind (t:=rfTree) FullECapWithTag) :=
-    Eval cbn in (map (embedRegOfKind np_scrs)
-                     (getTreeRegsOfKind FullECapWithTag (getNode np_scrs))).
+    Eval cbv -[Zmod.of_Z Zmod.app Zmod.zero Zmod.one] in
+      (map (embedRegOfKind np_scrs)
+           (getTreeRegsOfKind FullECapWithTag (getNode np_scrs))).
 
   Definition csrPathsWithKind : list (RegOfKind (t:=rfTree) (Bit Xlen)) :=
-    Eval cbn in (map (embedRegOfKind np_csrs)
-                     (getTreeRegsOfKind (Bit Xlen) (getNode np_csrs))).
+    Eval cbv -[Zmod.of_Z Zmod.app Zmod.zero Zmod.one] in
+      (map (embedRegOfKind np_csrs)
+           (getTreeRegsOfKind (Bit Xlen) (getNode np_csrs))).
 
   Abbreviation incrementDXlenCsr lowCsr highCsr :=
     (LetA currLow  : Bit Xlen  <- readRegsList csrPathsWithKind ($(getCsrPhysicalIdx lowCsr) : Expr _ (Bit CsrIdxSz)) ;

@@ -49,10 +49,10 @@ Section Clint.
 
   Local Abbreviation tClint := (Node "clint" clintChildren).
 
-  Definition clintMtimePath       : RegPath tClint := getChildRegPathTree tClint "mtime".
-  Definition clintMtimecmpPath    : RegPath tClint := getChildRegPathTree tClint "mtimecmp".
-  Definition clintMtipPath        : RegPath tClint := getChildRegPathTree tClint "mtip".
-  Definition clintSampledMtipPath : RegPath tClint := getChildRegPathTree tClint "sampledMtip".
+  Definition clintMtimePath       : RegPath tClint := Eval cbn in (getChildRegPathTree tClint "mtime").
+  Definition clintMtimecmpPath    : RegPath tClint := Eval cbn in (getChildRegPathTree tClint "mtimecmp").
+  Definition clintMtipPath        : RegPath tClint := Eval cbn in (getChildRegPathTree tClint "mtip").
+  Definition clintSampledMtipPath : RegPath tClint := Eval cbn in (getChildRegPathTree tClint "sampledMtip").
 
   Definition ClintLineConfig : LineConfig := {|
     cfgLgLineBytes := Z.to_nat LgNumBytesFullCapSz ;

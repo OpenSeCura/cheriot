@@ -97,21 +97,21 @@ Section Plic.
     Local Abbreviation tPlic := (plicTree n).
 
     Definition plicPrioritiesNodePath : NodePath tPlic :=
-      getNodePath tPlic "plic.priorities".
+      Eval cbn in (getNodePath tPlic "plic.priorities").
     Definition plicPendingNodePath : NodePath tPlic :=
-      getNodePath tPlic "plic.pending".
+      Eval cbn in (getNodePath tPlic "plic.pending").
     Definition plicEnablesNodePath : NodePath tPlic :=
-      getNodePath tPlic "plic.enables".
+      Eval cbn in (getNodePath tPlic "plic.enables").
     Definition plicInServiceNodePath : NodePath tPlic :=
-      getNodePath tPlic "plic.in_service".
+      Eval cbn in (getNodePath tPlic "plic.in_service").
     Definition plicThresholdPath : RegPath tPlic :=
-      getChildRegPathTree tPlic "threshold".
+      Eval cbn in (getChildRegPathTree tPlic "threshold").
     Definition plicClaimPath : RegPath tPlic :=
-      getChildRegPathTree tPlic "claim".
+      Eval cbn in (getChildRegPathTree tPlic "claim").
     Definition plicMeipPath : RegPath tPlic :=
-      getChildRegPathTree tPlic "meip".
+      Eval cbn in (getChildRegPathTree tPlic "meip").
     Definition plicUartIrqPath : RecvPath tPlic :=
-      getChildRecvPathTree tPlic "UartIrq".
+      Eval cbn in (getChildRecvPathTree tPlic "UartIrq").
 
     Definition priorityPathsWithKind : list (RegOfKind (t:=tPlic) (Bit Xlen)) :=
       map (embedRegOfKind plicPrioritiesNodePath)

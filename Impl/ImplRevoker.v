@@ -54,17 +54,17 @@ Section ImplRevoker.
   Definition implRevokerTree : Tree DomainElem :=
     Node "revoker" (revokerChildren dom implRevokerExtraChildren).
 
-  Local Definition pBase               : RegPath implRevokerTree := Eval cbn in (revokerBasePath dom implRevokerExtraChildren).
-  Local Definition pTop                : RegPath implRevokerTree := Eval cbn in (revokerTopPath dom implRevokerExtraChildren).
-  Local Definition pControl            : RegPath implRevokerTree := Eval cbn in (revokerControlPath dom implRevokerExtraChildren).
-  Local Definition pEpoch              : RegPath implRevokerTree := Eval cbn in (revokerEpochPath dom implRevokerExtraChildren).
-  Local Definition pInterruptStatus    : RegPath implRevokerTree := Eval cbn in (revokerInterruptStatusPath dom implRevokerExtraChildren).
-  Local Definition pInterruptRequested : RegPath implRevokerTree := Eval cbn in (revokerInterruptRequestedPath dom implRevokerExtraChildren).
-  Local Definition pScanAddr           : RegPath implRevokerTree := Eval cbn in (revokerScanAddrPath dom implRevokerExtraChildren).
-  Local Definition pRevPhase           : RegPath implRevokerTree := Eval cbn in (getChildRegPathTree implRevokerTree "revPhase").
-  Local Definition pRevScanCap         : RegPath implRevokerTree := Eval cbn in (getChildRegPathTree implRevokerTree "revScanCap").
-  Local Definition pRevScanBase        : RegPath implRevokerTree := Eval cbn in (getChildRegPathTree implRevokerTree "revScanBase").
-  Local Definition pRevStoreSnoopHit   : RegPath implRevokerTree := Eval cbn in (getChildRegPathTree implRevokerTree "revStoreSnoopHit").
+  Local Definition pBase               : RegPath implRevokerTree := Eval cbv in (revokerBasePath dom implRevokerExtraChildren).
+  Local Definition pTop                : RegPath implRevokerTree := Eval cbv in (revokerTopPath dom implRevokerExtraChildren).
+  Local Definition pControl            : RegPath implRevokerTree := Eval cbv in (revokerControlPath dom implRevokerExtraChildren).
+  Local Definition pEpoch              : RegPath implRevokerTree := Eval cbv in (revokerEpochPath dom implRevokerExtraChildren).
+  Local Definition pInterruptStatus    : RegPath implRevokerTree := Eval cbv in (revokerInterruptStatusPath dom implRevokerExtraChildren).
+  Local Definition pInterruptRequested : RegPath implRevokerTree := Eval cbv in (revokerInterruptRequestedPath dom implRevokerExtraChildren).
+  Local Definition pScanAddr           : RegPath implRevokerTree := Eval cbv in (revokerScanAddrPath dom implRevokerExtraChildren).
+  Local Definition pRevPhase           : RegPath implRevokerTree := Eval cbv in (getChildRegPathTree implRevokerTree "revPhase").
+  Local Definition pRevScanCap         : RegPath implRevokerTree := Eval cbv in (getChildRegPathTree implRevokerTree "revScanCap").
+  Local Definition pRevScanBase        : RegPath implRevokerTree := Eval cbv in (getChildRegPathTree implRevokerTree "revScanBase").
+  Local Definition pRevStoreSnoopHit   : RegPath implRevokerTree := Eval cbv in (getChildRegPathTree implRevokerTree "revStoreSnoopHit").
 
   Section Ty.
     Variable ty : Kind -> Type.
