@@ -34,6 +34,8 @@ Local Open Scope guru_scope.
 Definition DefaultFetchCapacity    : nat := 1%nat.
 Definition DefaultDecodeCapacity   : nat := 1%nat.
 Definition DefaultDeferredCapacity : nat := 1%nat.
+Definition DefaultMulCapacity      : nat := 1%nat.
+Definition DefaultDivCapacity      : nat := 1%nat.
 
 Definition ImplMulStages  : nat := 2%nat.
 Definition ImplDivStages  : nat := 16%nat.
@@ -62,6 +64,8 @@ Definition implSysTreeInst : Tree DomainElem :=
               DefaultFetchCapacity
               DefaultDecodeCapacity
               DefaultDeferredCapacity
+              DefaultMulCapacity
+              DefaultDivCapacity
               ImplMulStages
               ImplDivStages
               ImplMulDivMode
@@ -74,6 +78,8 @@ Definition forwardDatapathModInst : Mod implSysTreeInst :=
                       DefaultFetchCapacity
                       DefaultDecodeCapacity
                       DefaultDeferredCapacity
+                      DefaultMulCapacity
+                      DefaultDivCapacity
                       ImplMulStages
                       ImplDivStages
                       ImplMulDivMode
@@ -89,6 +95,8 @@ Definition pipelinedModInst : Mod implSysTreeInst :=
                 DefaultFetchCapacity
                 DefaultDecodeCapacity
                 DefaultDeferredCapacity
+                DefaultMulCapacity
+                DefaultDivCapacity
                 ImplMulStages
                 ImplDivStages
                 ImplMulDivMode

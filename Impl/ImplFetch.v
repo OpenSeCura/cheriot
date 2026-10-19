@@ -123,14 +123,14 @@ Section FetchStage.
   Variable withInstIfc : forall ty, @WithInstPredIfc (noInstIfc ty).(noInstTree) ty.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable executeIfc : forall ty, @ExecuteIfc ty.
-  Variable decodeTree deferredTree : Tree DomainElem.
+  Variable decodeTree deferredTree mulDivTree : Tree DomainElem.
   Variable ty : Kind -> Type.
 
   Local Abbreviation rfTree := (rfTree dom pcAddrInit).
   Local Abbreviation bpTree := (bpTree (noInstIfc ty).(noInstTree) (withInstIfc ty).(withInstTree)).
   Local Abbreviation memTree := (memIfc ty).(memTree).
   Local Abbreviation executeTree := (executeIfc ty).(executeTree).
-  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree implFetchTree decodeTree executeTree deferredTree).
+  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree implFetchTree decodeTree executeTree deferredTree mulDivTree).
   Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=

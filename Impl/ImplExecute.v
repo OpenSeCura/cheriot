@@ -71,6 +71,7 @@ Section ExecuteStage.
   Variable fetchIfc : forall ty, @FetchIfc ty.
   Variable decodeIfc : forall ty, @DecodeIfc ty.
   Variable deferredIfc : forall ty, @DeferredIfc ty.
+  Variable mulDivIfc : forall ty, @MulDivIfc ty.
   Variable ty : Kind -> Type.
   Variable meipAct mtipAct : Action ty (memIfc ty).(memTree) Bool.
 
@@ -80,7 +81,8 @@ Section ExecuteStage.
   Local Abbreviation fetchTree := (fetchIfc ty).(fetchTree).
   Local Abbreviation decodeTree := (decodeIfc ty).(decodeTree).
   Local Abbreviation deferredTree := (deferredIfc ty).(deferredTree).
-  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree decodeTree implExecuteTree deferredTree).
+  Local Abbreviation mulDivTree := (mulDivIfc ty).(mulDivTree).
+  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree decodeTree implExecuteTree deferredTree mulDivTree).
   Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
   Local Abbreviation isInterruptPending := (isInterruptPending dom pcAddrInit).
   Local Abbreviation executeNonDeferred := (executeNonDeferred dom pcAddrInit).
@@ -109,12 +111,16 @@ Section ExecuteStage.
   Definition np_deferred : NodePath coreTree :=
     Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.deferred") singletonChildPath).
 
+  Definition np_mulDiv : NodePath coreTree :=
+    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.mulDiv") singletonChildPath).
+
   (* =========================================================================
    * STAGE 4: aluAndExecuteNonDeferred
    *
-   * - Precondition: decodeToAluBuf is non-empty, deferred inputBuf is not
-   *                 full when the instruction is deferred, and if an enabled
-   *                 interrupt is pending, the deferred pipeline is empty.
+   * - Precondition: decodeToAluBuf is non-empty, the target input FIFO
+   *                 (deferred / mul / div) is not full when applicable, and
+   *                 if an enabled interrupt is pending, the deferred (Mem/Fence)
+   *                 pipeline is empty.
    * - Action:       Dequeue d2aEntry { aluIn, predPc, execEpoch } from
    *                 decodeToAluBuf.
    *                 - If execEpoch != currExecEpoch: drop entry and clear its
@@ -124,13 +130,15 @@ Section ExecuteStage.
    *                   ControlFlowAddrECap or committedNextPc != predPc,
    *                   advance execEpoch, clear straddleOpt, and redirect
    *                   fetchPc; clear destination SCR/CSR wait bits (and GPR
-   *                   wait bit when not deferred), or enqueue deferredReq into
-   *                   deferred inputBuf.
+   *                   wait bit when not deferred), or enqueue MemFence into
+   *                   deferredIfc and Mul/Div into mulDivIfc.
    * ========================================================================= *)
   Definition aluAndExecuteNonDeferred : Action ty coreTree (Bit 0) :=
     LetA d2aHead           : Option DecodeToAluEntry <- liftAction np_decode (decodeIfc ty).(decode_first) ;
     LetA deferredIn_isFull : Bool                    <- liftAction np_deferred (deferredIfc ty).(deferred_isFull) ;
     LetA deferred_isEmpty  : Bool                    <- liftAction np_deferred (deferredIfc ty).(deferred_isEmpty) ;
+    LetA mulIn_isFull      : Bool                    <- liftAction np_mulDiv (mulDivIfc ty).(mulDiv_isFullMul) ;
+    LetA divIn_isFull      : Bool                    <- liftAction np_mulDiv (mulDivIfc ty).(mulDiv_isFullDiv) ;
 
     If (##d2aHead`"valid") Then (
       Let  d2aEntry       : DecodeToAluEntry <- ##d2aHead`"data" ;
@@ -166,6 +174,12 @@ Section ExecuteStage.
         Let  isExc         : Bool             <- #aluOp `? "Exception" ;
         Let  noExc         : NoExceptionUnion <- #aluOp `! "NoException" ;
         Let  isDeferredAlu : Bool             <- And [ #aluOp `? "NoException" ; #noExc `? "Deferred" ] ;
+        Let  defUnion      : DeferredUnion    <- #noExc `! "Deferred" ;
+        Let  isMemOrFence  : Bool             <- And [ #isDeferredAlu ; #defUnion `? "MemFence" ] ;
+        Let  isMulDiv      : Bool             <- And [ #isDeferredAlu ; #defUnion `? "MulDiv" ] ;
+        Let  mulDivOp      : MulDivUnion      <- #defUnion `! "MulDiv" ;
+        Let  isMul         : Bool             <- And [ #isMulDiv ; #mulDivOp `? "Mul" ] ;
+        Let  isDiv         : Bool             <- And [ #isMulDiv ; #mulDivOp `? "Div" ] ;
 
         LetA meip          : Bool                 <- liftAction np_mem meipAct ;
         LetA mtip          : Bool                 <- liftAction np_mem mtipAct ;
@@ -174,7 +188,10 @@ Section ExecuteStage.
         Let  isTrap        : Bool                 <- Or [ #isInterrupt ; #isExc ] ;
         Let  intStall      : Bool                 <- And [ #isInterrupt ; Not #deferred_isEmpty ] ;
 
-        If (And [ Not #intStall ; Or [ Not #isDeferredAlu ; Not #deferredIn_isFull ] ]) Then (
+        If (And [ Not #intStall ;
+                  Or [ Not #isMemOrFence ; Not #deferredIn_isFull ] ;
+                  Or [ Not #isMul ; Not #mulIn_isFull ] ;
+                  Or [ Not #isDiv ; Not #divIn_isFull ] ]) Then (
           Act (liftAction np_decode (decodeIfc ty).(decode_deq)) ;
 
           LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred pcc meip mtip aluOut) ;
@@ -208,8 +225,25 @@ Section ExecuteStage.
           Let isDeferred : Bool               <- #reqOpt`"valid" ;
 
           If #isDeferred Then (
-            Let req : DeferredReq <- #reqOpt`"data" ;
-            liftAction np_deferred ((deferredIfc ty).(deferred_enq) req)
+            Let req     : DeferredReq      <- #reqOpt`"data" ;
+            Let reqDst  : Bit RegIdxSzReal <- ##req`"dstIdx" ;
+            Let reqAddr : Addr             <- ##req`"addr" ;
+            Let reqOp   : DeferredUnion    <- ##req`"op" ;
+            If (#reqOp `? "MemFence") Then (
+              Let mfOp : MemFenceUnion <- #reqOp `! "MemFence" ;
+              liftAction np_deferred ((deferredIfc ty).(deferred_enq) reqDst reqAddr mfOp)
+            ) Else (
+              Let mdOp : MulDivUnion <- #reqOp `! "MulDiv" ;
+              If (#mdOp `? "Mul") Then (
+                Let mOp : MulOp <- #mdOp `! "Mul" ;
+                liftAction np_mulDiv ((mulDivIfc ty).(mulDiv_enqMul) reqDst reqAddr mOp)
+              ) Else (
+                Let dOp : DivOp <- #mdOp `! "Div" ;
+                liftAction np_mulDiv ((mulDivIfc ty).(mulDiv_enqDiv) reqDst reqAddr dOp)
+              ) ;
+              Retv
+            ) ;
+            Retv
           ) Else (
             liftAction np_waitBits
               (@setDstWaitBits dom ty

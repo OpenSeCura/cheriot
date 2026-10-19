@@ -52,7 +52,7 @@ Section DecodeStage.
   |}.
 
   Variable pcAddrInit : Z.
-  Variable bpTree : Tree DomainElem.
+  Variable bpTree mulDivTree : Tree DomainElem.
   Variable fetchIfc : forall ty, @FetchIfc ty.
   Variable executeIfc : forall ty, @ExecuteIfc ty.
   Variable deferredIfc : forall ty, @DeferredIfc ty.
@@ -65,7 +65,7 @@ Section DecodeStage.
   Local Abbreviation fetchTree := (fetchIfc ty).(fetchTree).
   Local Abbreviation executeTree := (executeIfc ty).(executeTree).
   Local Abbreviation deferredTree := (deferredIfc ty).(deferredTree).
-  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree implDecodeTree executeTree deferredTree).
+  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree implDecodeTree executeTree deferredTree mulDivTree).
   Local Abbreviation regRead := (regRead dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=

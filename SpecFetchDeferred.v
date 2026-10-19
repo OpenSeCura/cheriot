@@ -116,47 +116,52 @@ Section CombinationalDeferred.
           (ArraySignExtend #memSzBytes #rawBytes)
     )).
 
+  Definition dispatchMemFence (dstIdx : ty (Bit RegIdxSzReal)) (addr : ty Addr)
+                              (memFence : ty MemFenceUnion) : LetExpr ty MemFenceAction :=
+    LetIfE mfAct : MemFenceAction <-
+      IfE (##memFence `? "Mem") ThenE (
+        LetE memPayload : MemPayload                <- ##memFence `! "Mem" ;
+        LetE memSize    : Bit LgLgNumBytesFullCapSz <- ##memPayload`"memSize" ;
+        LetE memOp      : LoadOrStoreKind           <- ##memPayload`"memOp" ;
+        LetIfE memAct : MemAction <-
+          IfE (##memOp `? "Store") ThenE (
+            LetE stCapVal : FullCapWithTag <- ##memOp `! "Store" ;
+            LetE stCmd    : StoreCmd       <- STRUCT {
+              "addr"    ::= #addr ;
+              "stVal"   ::= #stCapVal ;
+              "memSize" ::= #memSize
+            } ;
+            @RetE _ MemAction (UNION (MemActionType, "Store" ::= #stCmd))
+          ) ElseE (
+            LetE ldOpVal : LoadOp <- ##memOp `! "Load" ;
+            LetE pending : PendingLoad <- STRUCT {
+              "dstIdx"     ::= #dstIdx ;
+              "memSize"    ::= #memSize ;
+              "isUnsigned" ::= ##ldOpVal`"isUnsigned" ;
+              "isLM"       ::= ##ldOpVal`"isLM" ;
+              "isLG"       ::= ##ldOpVal`"isLG"
+            } ;
+            LetE ldCmd : LoadCmd <- STRUCT {
+              "addr"    ::= #addr ;
+              "pending" ::= #pending
+            } ;
+            @RetE _ MemAction (UNION (MemActionType, "Load" ::= #ldCmd))
+          ) ;
+        @RetE _ MemFenceAction (UNION (MemFenceActionType, "Mem" ::= #memAct))
+      ) ElseE (
+        LetE fenceVal : FenceOp <- ##memFence `! "Fence" ;
+        @RetE _ MemFenceAction (UNION (MemFenceActionType, "Fence" ::= #fenceVal))
+      ) ;
+    @RetE _ MemFenceAction #mfAct.
+
   Definition dispatchDeferredReq (req : ty DeferredReq) : LetExpr ty DeferredAction :=
     LetE dstIdx     : Bit RegIdxSzReal <- ##req`"dstIdx" ;
     LetE addr       : Addr             <- ##req`"addr" ;
     LetE op         : DeferredUnion    <- ##req`"op" ;
     LetIfE action : DeferredAction <-
       IfE (##op `? "MemFence") ThenE (
-        LetE memFence   : MemFenceUnion <- ##op `! "MemFence" ;
-        LetIfE mfAct : MemFenceAction <-
-          IfE (##memFence `? "Mem") ThenE (
-            LetE memPayload : MemPayload                <- ##memFence `! "Mem" ;
-            LetE memSize    : Bit LgLgNumBytesFullCapSz <- ##memPayload`"memSize" ;
-            LetE memOp      : LoadOrStoreKind           <- ##memPayload`"memOp" ;
-            LetIfE memAct : MemAction <-
-              IfE (##memOp `? "Store") ThenE (
-                LetE stCapVal : FullCapWithTag <- ##memOp `! "Store" ;
-                LetE stCmd    : StoreCmd       <- STRUCT {
-                  "addr"    ::= #addr ;
-                  "stVal"   ::= #stCapVal ;
-                  "memSize" ::= #memSize
-                } ;
-                @RetE _ MemAction (UNION (MemActionType, "Store" ::= #stCmd))
-              ) ElseE (
-                LetE ldOpVal : LoadOp <- ##memOp `! "Load" ;
-                LetE pending : PendingLoad <- STRUCT {
-                  "dstIdx"     ::= #dstIdx ;
-                  "memSize"    ::= #memSize ;
-                  "isUnsigned" ::= ##ldOpVal`"isUnsigned" ;
-                  "isLM"       ::= ##ldOpVal`"isLM" ;
-                  "isLG"       ::= ##ldOpVal`"isLG"
-                } ;
-                LetE ldCmd : LoadCmd <- STRUCT {
-                  "addr"    ::= #addr ;
-                  "pending" ::= #pending
-                } ;
-                @RetE _ MemAction (UNION (MemActionType, "Load" ::= #ldCmd))
-              ) ;
-            @RetE _ MemFenceAction (UNION (MemFenceActionType, "Mem" ::= #memAct))
-          ) ElseE (
-            LetE fenceVal : FenceOp <- ##memFence `! "Fence" ;
-            @RetE _ MemFenceAction (UNION (MemFenceActionType, "Fence" ::= #fenceVal))
-          ) ;
+        LetE memFence : MemFenceUnion  <- ##op `! "MemFence" ;
+        LETE mfAct    : MemFenceAction <- dispatchMemFence dstIdx addr memFence ;
         @RetE _ DeferredAction (UNION (DeferredActionType, "MemFence" ::= #mfAct))
       ) ElseE (
         LetE mulDivOp : MulDivUnion <- ##op `! "MulDiv" ;

@@ -96,7 +96,15 @@ Record DeferredIfc {ty : Kind -> Type} := {
   deferredTree     : Tree DomainElem ;
   deferred_isEmpty : Action ty deferredTree Bool ;
   deferred_isFull  : Action ty deferredTree Bool ;
-  deferred_enq     : ty DeferredReq -> Action ty deferredTree (Bit 0)
+  deferred_enq     : ty (Bit RegIdxSzReal) -> ty Addr -> ty MemFenceUnion -> Action ty deferredTree (Bit 0)
+}.
+
+Record MulDivIfc {ty : Kind -> Type} := {
+  mulDivTree       : Tree DomainElem ;
+  mulDiv_isFullMul : Action ty mulDivTree Bool ;
+  mulDiv_isFullDiv : Action ty mulDivTree Bool ;
+  mulDiv_enqMul    : ty (Bit RegIdxSzReal) -> ty Addr -> ty MulOp -> Action ty mulDivTree (Bit 0) ;
+  mulDiv_enqDiv    : ty (Bit RegIdxSzReal) -> ty Addr -> ty DivOp -> Action ty mulDivTree (Bit 0)
 }.
 
 (* ===========================================================================
@@ -275,7 +283,7 @@ Section ImplCommon.
     Retv.
 
   (* 2. Core Tree *)
-  Definition coreTree (rfTree bpTree memTree fetchTree decodeTree executeTree deferredTree : Tree DomainElem) : Tree DomainElem :=
+  Definition coreTree (rfTree bpTree memTree fetchTree decodeTree executeTree deferredTree mulDivTree : Tree DomainElem) : Tree DomainElem :=
     Node "core" [
       Node "rf"       [ rfTree ] ;
       Node "waitBits" [ waitBitsTree ] ;
@@ -284,7 +292,8 @@ Section ImplCommon.
       Node "fetch"    [ fetchTree ] ;
       Node "decode"   [ decodeTree ] ;
       Node "execute"  [ executeTree ] ;
-      Node "deferred" [ deferredTree ]
+      Node "deferred" [ deferredTree ] ;
+      Node "mulDiv"   [ mulDivTree ]
     ].
 
 End ImplCommon.
