@@ -254,7 +254,7 @@ Section ImplDom.
      * Top-Level Implementation Modules (singleCycleMod / pipelinedMod)
      * ======================================================================= *)
 
-    Definition singleCycleList (ty : Kind -> Type) : list (string * Action ty sysTree (Bit 0)) :=
+    Definition forwardDatapathList (ty : Kind -> Type) : list (string * Action ty sysTree (Bit 0)) :=
       map (fun a => (core, a)) (
         implPeripheralSteps ty
         ++ [ fetchRqStage ty ]
@@ -281,8 +281,8 @@ Section ImplDom.
         ++ dataWriteRqs ty ++ dataReadRqs ty ++ dataReadRps ty
         ++ targetPortRps ty)%list.
 
-    Definition singleCycleMod : Mod sysTree :=
-      fun ty => singleCycleList ty.
+    Definition forwardDatapathMod : Mod sysTree :=
+      fun ty => forwardDatapathList ty.
 
     Definition pipelinedList (ty : Kind -> Type) : list (string * Action ty sysTree (Bit 0)) :=
       map (fun a => (core, a)) (

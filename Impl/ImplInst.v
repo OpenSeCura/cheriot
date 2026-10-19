@@ -56,17 +56,17 @@ Definition implConcretePlic : @PlicInstance "core" 3%nat implConcreteRegions :=
 Definition implSysTreeInst : Tree DomainElem :=
   implSysTree PcAddrInit DefaultFetchCapacity DefaultDecodeCapacity DefaultDeferredCapacity concreteRevConfig implConcreteRegions.
 
-Definition singleCycleModInst : Mod implSysTreeInst :=
-  @singleCycleMod "core"
-                  PcAddrInit
-                  DefaultFetchCapacity
-                  DefaultDecodeCapacity
-                  DefaultDeferredCapacity
-                  concreteRevConfig
-                  implConcreteRegions
-                  implConcreteClint
-                  implConcreteRevoker
-                  implConcretePlic.
+Definition forwardDatapathModInst : Mod implSysTreeInst :=
+  @forwardDatapathMod "core"
+                      PcAddrInit
+                      DefaultFetchCapacity
+                      DefaultDecodeCapacity
+                      DefaultDeferredCapacity
+                      concreteRevConfig
+                      implConcreteRegions
+                      implConcreteClint
+                      implConcreteRevoker
+                      implConcretePlic.
 
 Definition pipelinedModInst : Mod implSysTreeInst :=
   @pipelinedMod "core"

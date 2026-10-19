@@ -26,10 +26,6 @@ Import ListNotations.
 Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
-Definition ImplMulStages  : nat := 1%nat.
-Definition ImplDivStages  : nat := 1%nat.
-Definition ImplMulDivMode : MulDivMode := IterMul_SharedIterDiv.
-
 Definition DeferredStateList : list (string * Kind) :=
   [ ("LoadRq", Bit 0) ;
     ("LoadRp", LoadCmd) ;

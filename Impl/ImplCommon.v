@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition.
-From Cheriot Require Import SpecDefines ShiftFifo.
+From Cheriot Require Import SpecDefines ShiftFifo ImplMulDiv.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -37,6 +37,10 @@ Definition Epoch   : Kind := Bit EpochSz.
 Definition NumFetchParcels : nat  := Eval compute in Z.to_nat (FullCapSz / CompInstSz).
 Definition LgFetchParcels  : Z    := Eval compute in Z.log2_up (FullCapSz / CompInstSz).
 Definition FetchPacket     : Kind := Array NumFetchParcels (Bit CompInstSz).
+
+Definition ImplMulStages  : nat := 2%nat.
+Definition ImplDivStages  : nat := 16%nat.
+Definition ImplMulDivMode : MulDivMode := PipelinedMul_IterDiv.
 
 Definition PreBranchInfo := STRUCT_TYPE {
   "isCjal"   :: Bool ;
