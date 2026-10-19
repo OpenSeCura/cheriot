@@ -98,3 +98,10 @@ Definition pipelinedModInst : Mod implSysTreeInst :=
                 implConcreteRevoker
                 implConcretePlic.
 
+From Guru Require Import Extraction Compiler.
+Set Extraction Output Directory "./Impl".
+
+Definition compiledMod (sim : bool) :=
+  compile (if sim then forwardDatapathModInst else pipelinedModInst) sim.
+Extraction "Compile" kindSize Z.log2_up getDefault isEq compiledMod.
+

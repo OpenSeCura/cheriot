@@ -150,3 +150,9 @@ Definition specModInst : Mod specSysTreeInst :=
         concreteClint
         concreteRevoker
         concretePlic.
+
+From Guru Require Import Extraction Compiler.
+Set Extraction Output Directory ".".
+
+Local Definition compiledMod := compile specModInst.
+Extraction "Compile" kindSize Z.log2_up getDefault isEq compiledMod.
