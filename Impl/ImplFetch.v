@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition.
-From Cheriot Require Import SpecDefines Decoder FunctionalUnits ImplCommon ImplBranchPredictor ImplDevice Alu ShiftFifo.
+From Cheriot Require Import SpecDefines Decoder FunctionalUnits ImplCommon ImplBranchPredictor ImplDevice ShiftFifo.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -37,7 +37,7 @@ Section FetchStage.
     "fetchExc"  :: FetchException
   }.
 
-  Definition fetchTree : Tree DomainElem :=
+  Definition implFetchTree : Tree DomainElem :=
     Node "" [
       Leaf "fetchPc"      (dom, EReg (Build_Reg Addr (Some (Zmod.of_Z _ pcAddrInit)) false)) ;
       Leaf "predEpoch"    (dom, EReg (Build_Reg Epoch (Some Zmod.zero) false)) ;
@@ -47,41 +47,61 @@ Section FetchStage.
       Node "instBuf"      [ fifoTree dom capacity AssembledInst ]
     ].
 
-  Definition pFetchPc : RegPath fetchTree :=
-    Eval cbn in (getChildRegPathTree fetchTree "fetchPc").
+  Definition pFetchPc : RegPath implFetchTree :=
+    Eval cbn in (getChildRegPathTree implFetchTree "fetchPc").
 
-  Definition readFetchPc (ty : Kind -> Type) : Action ty fetchTree Addr :=
+  Definition readFetchPc (ty : Kind -> Type) : Action ty implFetchTree Addr :=
     ReadReg "fetchPc" pFetchPc (fun v => Return #v).
 
-  Definition writeFetchPc (ty : Kind -> Type) (val : ty Addr) : Action ty fetchTree (Bit 0) :=
+  Definition writeFetchPc (ty : Kind -> Type) (val : ty Addr) : Action ty implFetchTree (Bit 0) :=
     WriteReg pFetchPc #val Retv.
 
-  Definition pPredEpoch : RegPath fetchTree :=
-    Eval cbn in (getChildRegPathTree fetchTree "predEpoch").
+  Definition pPredEpoch : RegPath implFetchTree :=
+    Eval cbn in (getChildRegPathTree implFetchTree "predEpoch").
 
-  Definition readPredEpoch (ty : Kind -> Type) : Action ty fetchTree Epoch :=
+  Definition readPredEpoch (ty : Kind -> Type) : Action ty implFetchTree Epoch :=
     ReadReg "predEpoch" pPredEpoch (fun v => Return #v).
 
-  Definition writePredEpoch (ty : Kind -> Type) (val : ty Epoch) : Action ty fetchTree (Bit 0) :=
+  Definition writePredEpoch (ty : Kind -> Type) (val : ty Epoch) : Action ty implFetchTree (Bit 0) :=
     WriteReg pPredEpoch #val Retv.
 
-  Definition pCurParcelOpt : RegPath fetchTree :=
-    Eval cbn in (getChildRegPathTree fetchTree "curParcelOpt").
+  Definition pCurParcelOpt : RegPath implFetchTree :=
+    Eval cbn in (getChildRegPathTree implFetchTree "curParcelOpt").
 
-  Definition readCurParcelOpt (ty : Kind -> Type) : Action ty fetchTree (Option (Bit LgFetchParcels)) :=
+  Definition readCurParcelOpt (ty : Kind -> Type) : Action ty implFetchTree (Option (Bit LgFetchParcels)) :=
     ReadReg "curParcelOpt" pCurParcelOpt (fun v => Return #v).
 
-  Definition writeCurParcelOpt (ty : Kind -> Type) (val : ty (Option (Bit LgFetchParcels))) : Action ty fetchTree (Bit 0) :=
+  Definition writeCurParcelOpt (ty : Kind -> Type) (val : ty (Option (Bit LgFetchParcels))) : Action ty implFetchTree (Bit 0) :=
     WriteReg pCurParcelOpt #val Retv.
 
-  Definition pStraddleOpt : RegPath fetchTree :=
-    Eval cbn in (getChildRegPathTree fetchTree "straddleOpt").
+  Definition pStraddleOpt : RegPath implFetchTree :=
+    Eval cbn in (getChildRegPathTree implFetchTree "straddleOpt").
 
-  Definition readStraddleOpt (ty : Kind -> Type) : Action ty fetchTree (Option StraddleHalf) :=
+  Definition readStraddleOpt (ty : Kind -> Type) : Action ty implFetchTree (Option StraddleHalf) :=
     ReadReg "straddleOpt" pStraddleOpt (fun v => Return #v).
 
-  Definition writeStraddleOpt (ty : Kind -> Type) (val : ty (Option StraddleHalf)) : Action ty fetchTree (Bit 0) :=
+  Definition writeStraddleOpt (ty : Kind -> Type) (val : ty (Option StraddleHalf)) : Action ty implFetchTree (Bit 0) :=
     WriteReg pStraddleOpt #val Retv.
+
+  Definition clearStraddle (ty : Kind -> Type) : Action ty implFetchTree (Bit 0) :=
+    WriteReg pStraddleOpt ConstDef Retv.
+
+  Definition np_fetchInstFifo : NodePath implFetchTree :=
+    Eval cbn in (getNodePath implFetchTree ".instBuf.fifo").
+
+  Definition fetchInstFirst (ty : Kind -> Type) : Action ty implFetchTree (Option AssembledInst) :=
+    liftAction np_fetchInstFifo (@first dom capacity AssembledInst ty).
+
+  Definition fetchInstDeq (ty : Kind -> Type) : Action ty implFetchTree (Bit 0) :=
+    liftAction np_fetchInstFifo (@deq dom capacity AssembledInst ty).
+
+  Definition implFetchIfc (ty : Kind -> Type) : @FetchIfc ty := {|
+    fetchTree           := implFetchTree ;
+    fetch_instFirst     := @fetchInstFirst ty ;
+    fetch_instDeq       := @fetchInstDeq ty ;
+    fetch_clearStraddle := @clearStraddle ty ;
+    fetch_writeFetchPc  := @writeFetchPc ty
+  |}.
 
   Definition alignPacketAddr {ty : Kind -> Type} (addr : ty Addr) : Expr ty Addr :=
     {< TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz #addr,
@@ -102,26 +122,28 @@ Section FetchStage.
   Variable noInstIfc : forall ty, @NoInstPredIfc ty.
   Variable withInstIfc : forall ty, @WithInstPredIfc (noInstIfc ty).(noInstTree) ty.
   Variable memIfc : forall ty, @MemIfc ty.
+  Variable executeIfc : forall ty, @ExecuteIfc ty.
   Variable decodeTree deferredTree : Tree DomainElem.
   Variable ty : Kind -> Type.
 
   Local Abbreviation rfTree := (rfTree dom pcAddrInit).
   Local Abbreviation bpTree := (bpTree (noInstIfc ty).(noInstTree) (withInstIfc ty).(withInstTree)).
   Local Abbreviation memTree := (memIfc ty).(memTree).
-  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree decodeTree deferredTree).
+  Local Abbreviation executeTree := (executeIfc ty).(executeTree).
+  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree implFetchTree decodeTree executeTree deferredTree).
   Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.rf.").
 
   Definition np_bp : NodePath coreTree :=
-    Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.bp") singletonChildPath).
+    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.bp") singletonChildPath).
 
   Definition np_noInst : NodePath coreTree :=
-    Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.bp..noInst") singletonChildPath).
+    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.bp..noInst") singletonChildPath).
 
   Definition np_mem : NodePath coreTree :=
-    Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.mem") singletonChildPath).
+    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.mem") singletonChildPath).
 
   Definition np_fetch : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.fetch.").
@@ -131,6 +153,9 @@ Section FetchStage.
 
   Definition np_instFifo : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.fetch..instBuf.fifo").
+
+  Definition np_execute : NodePath coreTree :=
+    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.execute") singletonChildPath).
 
   (* =========================================================================
    * STAGE 1: fetchRq
@@ -146,12 +171,12 @@ Section FetchStage.
    * ========================================================================= *)
   Definition fetchRq : Action ty coreTree (Bit 0) :=
     LetA fetchBuf_isFull : Bool <- liftAction np_fetchFifo (@isFull dom capacity FetchBufEntry ty) ;
-    LetA fenceIPending   : Bool <- @readFenceIPending dom rfTree bpTree memTree fetchTree decodeTree deferredTree ty ;
+    LetA fenceIPending   : Bool <- liftAction np_execute (executeIfc ty).(execute_readFenceIPend) ;
     LetA fenceIWait      : Bool <- liftAction np_mem ((memIfc ty).(mem_readFenceIWait)) ;
 
     If (And [ Not #fetchBuf_isFull ; Not #fenceIPending ; Not #fenceIWait ]) Then (
       LetA fetchPc   : Addr            <- liftAction np_fetch (@readFetchPc ty) ;
-      LetA execEpoch : Epoch           <- @readExecEpoch dom rfTree bpTree memTree fetchTree decodeTree deferredTree ty ;
+      LetA execEpoch : Epoch           <- liftAction np_execute (executeIfc ty).(execute_readExecEpoch) ;
       LetA predEpoch : Epoch           <- liftAction np_fetch (@readPredEpoch ty) ;
       LetA pcc       : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
 
@@ -241,8 +266,7 @@ Section FetchStage.
       If (##pktOpt`"valid") Then (
         Let  pkt          : FetchPacket                 <- ##pktOpt`"data" ;
         Let  noneParcel   : Option (Bit LgFetchParcels) <- ConstDef ;
-        Let  noneStraddle : Option StraddleHalf         <- ConstDef ;
-        LetA execEpoch    : Epoch                       <- @readExecEpoch dom rfTree bpTree memTree fetchTree decodeTree deferredTree ty ;
+        LetA execEpoch    : Epoch                       <- liftAction np_execute (executeIfc ty).(execute_readExecEpoch) ;
         LetA predEpoch    : Epoch                       <- liftAction np_fetch (@readPredEpoch ty) ;
 
         Let  isEpochMatch : Bool                        <- And [ Eq (##entry`"execEpoch") #execEpoch ;
@@ -351,7 +375,7 @@ Section FetchStage.
                 "predPc"    ::= #l2PredPc ;
                 "execEpoch" ::= #execEpoch
               } ;
-              Act (liftAction np_fetch (@writeStraddleOpt ty noneStraddle)) ;
+              Act (liftAction np_fetch (@clearStraddle ty)) ;
               liftAction np_instFifo (@enq dom capacity AssembledInst ty asmInst)
             ) ;
             Retv

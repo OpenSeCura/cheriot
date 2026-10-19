@@ -763,35 +763,36 @@ Section ModeParameterizedSubsystem.
     }).
 
   Definition mulDivTree (mode : MulDivMode) : Tree DomainElem :=
-    match mode with
-    | PipelinedMul_IterDiv =>
-        Node "mulDiv" [
-          Node "mul" [
-            mulPipeTree dom input_width mul_stages ;
-            fifoTree dom MulDivFifoCapacity RegIdx
-          ] ;
-          Node "div" [
-            divIterTree dom input_width div_stages ;
+    Node "mulDiv" (
+      match mode with
+      | PipelinedMul_IterDiv =>
+          [
+            Node "mul" [
+              mulPipeTree dom input_width mul_stages ;
+              fifoTree dom MulDivFifoCapacity RegIdx
+            ] ;
+            Node "div" [
+              divIterTree dom input_width div_stages ;
+              fifoTree dom MulDivFifoCapacity RegIdx
+            ]
+          ]
+      | IterMul_SeparateIterDiv =>
+          [
+            Node "mul" [
+              mulIterTree dom input_width mul_stages ;
+              fifoTree dom MulDivFifoCapacity RegIdx
+            ] ;
+            Node "div" [
+              divIterTree dom input_width div_stages ;
+              fifoTree dom MulDivFifoCapacity RegIdx
+            ]
+          ]
+      | IterMul_SharedIterDiv =>
+          [
+            sharedIterTree dom input_width mul_stages div_stages ;
             fifoTree dom MulDivFifoCapacity RegIdx
           ]
-        ]
-    | IterMul_SeparateIterDiv =>
-        Node "mulDiv" [
-          Node "mul" [
-            mulIterTree dom input_width mul_stages ;
-            fifoTree dom MulDivFifoCapacity RegIdx
-          ] ;
-          Node "div" [
-            divIterTree dom input_width div_stages ;
-            fifoTree dom MulDivFifoCapacity RegIdx
-          ]
-        ]
-    | IterMul_SharedIterDiv =>
-        Node "mulDiv" [
-          sharedIterTree dom input_width mul_stages div_stages ;
-          fifoTree dom MulDivFifoCapacity RegIdx
-        ]
-    end.
+      end).
 
   Definition mulDivCanEnq (mode : MulDivMode) (ty : Kind -> Type) (isMul : ty Bool) :
     Action ty (mulDivTree mode) Bool :=

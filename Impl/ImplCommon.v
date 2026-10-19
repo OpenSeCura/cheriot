@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition.
-From Cheriot Require Import SpecDefines ShiftFifo ImplMulDiv.
+From Cheriot Require Import SpecDefines FunctionalUnits ShiftFifo.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -37,10 +37,6 @@ Definition Epoch   : Kind := Bit EpochSz.
 Definition NumFetchParcels : nat  := Eval compute in Z.to_nat (FullCapSz / CompInstSz).
 Definition LgFetchParcels  : Z    := Eval compute in Z.log2_up (FullCapSz / CompInstSz).
 Definition FetchPacket     : Kind := Array NumFetchParcels (Bit CompInstSz).
-
-Definition ImplMulStages  : nat := 2%nat.
-Definition ImplDivStages  : nat := 16%nat.
-Definition ImplMulDivMode : MulDivMode := PipelinedMul_IterDiv.
 
 Definition PreBranchInfo := STRUCT_TYPE {
   "isCjal"   :: Bool ;
@@ -69,6 +65,38 @@ Definition DecodeToAluEntry := STRUCT_TYPE {
   "aluIn"     :: AluInInstGroup ;
   "predPc"    :: Addr ;
   "execEpoch" :: Epoch
+}.
+
+(* ===========================================================================
+ * Pipeline Stage Interfaces
+ * =========================================================================== *)
+
+Record FetchIfc {ty : Kind -> Type} := {
+  fetchTree           : Tree DomainElem ;
+  fetch_instFirst     : Action ty fetchTree (Option AssembledInst) ;
+  fetch_instDeq       : Action ty fetchTree (Bit 0) ;
+  fetch_clearStraddle : Action ty fetchTree (Bit 0) ;
+  fetch_writeFetchPc  : ty Addr -> Action ty fetchTree (Bit 0)
+}.
+
+Record DecodeIfc {ty : Kind -> Type} := {
+  decodeTree   : Tree DomainElem ;
+  decode_first : Action ty decodeTree (Option DecodeToAluEntry) ;
+  decode_deq   : Action ty decodeTree (Bit 0)
+}.
+
+Record ExecuteIfc {ty : Kind -> Type} := {
+  executeTree             : Tree DomainElem ;
+  execute_readExecEpoch   : Action ty executeTree Epoch ;
+  execute_readFenceIPend  : Action ty executeTree Bool ;
+  execute_clearFenceIPend : Action ty executeTree (Bit 0)
+}.
+
+Record DeferredIfc {ty : Kind -> Type} := {
+  deferredTree     : Tree DomainElem ;
+  deferred_isEmpty : Action ty deferredTree Bool ;
+  deferred_isFull  : Action ty deferredTree Bool ;
+  deferred_enq     : ty DeferredReq -> Action ty deferredTree (Bit 0)
 }.
 
 (* ===========================================================================
@@ -189,22 +217,22 @@ Section ImplCommon.
   Definition np_waitCsrs : NodePath waitBitsTree := Eval cbn in (getNodePath waitBitsTree ".csrs").
 
   Definition gprWaitPathsWithKind : list (RegOfKind (t:=waitBitsTree) Bool) :=
-    Eval cbn in (map (embedRegOfKind np_waitGprs)
+    Eval cbv in (map (embedRegOfKind np_waitGprs)
                      (getTreeRegsOfKind Bool (getNode np_waitGprs))).
 
   Definition scrWaitPathsWithKind : list (RegOfKind (t:=waitBitsTree) Bool) :=
-    Eval cbn in (map (embedRegOfKind np_waitScrs)
+    Eval cbv in (map (embedRegOfKind np_waitScrs)
                      (getTreeRegsOfKind Bool (getNode np_waitScrs))).
 
   Definition csrWaitPathsWithKind : list (RegOfKind (t:=waitBitsTree) Bool) :=
-    Eval cbn in (map (embedRegOfKind np_waitCsrs)
+    Eval cbv in (map (embedRegOfKind np_waitCsrs)
                      (getTreeRegsOfKind Bool (getNode np_waitCsrs))).
 
   Definition scrWaitIndexedPaths : list (Z * RegOfKind (t:=waitBitsTree) Bool) :=
-    Eval cbn in (combine (map snd waitScrEntries) scrWaitPathsWithKind).
+    Eval cbv in (combine (map snd waitScrEntries) scrWaitPathsWithKind).
 
   Definition csrWaitIndexedPaths : list (Z * RegOfKind (t:=waitBitsTree) Bool) :=
-    Eval cbn in (combine (map snd waitCsrEntries) csrWaitPathsWithKind).
+    Eval cbv in (combine (map snd waitCsrEntries) csrWaitPathsWithKind).
 
   Definition readGprWaitBit (ty : Kind -> Type) (idx : ty (Bit RegIdxSzReal))
     : Action ty waitBitsTree Bool :=
@@ -247,41 +275,16 @@ Section ImplCommon.
     Retv.
 
   (* 2. Core Tree *)
-  Definition coreTree (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) : Tree DomainElem :=
+  Definition coreTree (rfTree bpTree memTree fetchTree decodeTree executeTree deferredTree : Tree DomainElem) : Tree DomainElem :=
     Node "core" [
-      Node "rf"            [ rfTree ] ;
-      Node "waitBits"      [ waitBitsTree ] ;
-      Node "bp"            [ bpTree ] ;
-      Leaf "execEpoch"     (dom, EReg (Build_Reg Epoch (Some Zmod.zero) false)) ;
-      Leaf "fenceIPending" (dom, EReg (Build_Reg Bool (Some false) false)) ;
-      Node "mem"           [ memTree ] ;
-      Node "fetch"         [ fetchTree ] ;
-      Node "decode"        [ decodeTree ] ;
-      Node "deferred"      [ deferredTree ]
+      Node "rf"       [ rfTree ] ;
+      Node "waitBits" [ waitBitsTree ] ;
+      Node "bp"       [ bpTree ] ;
+      Node "mem"      [ memTree ] ;
+      Node "fetch"    [ fetchTree ] ;
+      Node "decode"   [ decodeTree ] ;
+      Node "execute"  [ executeTree ] ;
+      Node "deferred" [ deferredTree ]
     ].
-
-  Definition pExecEpoch (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem)
-    : RegPath (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) :=
-    Eval cbn in (getChildRegPathTree (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) "execEpoch").
-
-  Definition readExecEpoch (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) (ty : Kind -> Type)
-    : Action ty (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) Epoch :=
-    ReadReg "execEpoch" (pExecEpoch rfTree bpTree memTree fetchTree decodeTree deferredTree) (fun v => Return #v).
-
-  Definition writeExecEpoch (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) (ty : Kind -> Type)
-    (val : ty Epoch) : Action ty (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) (Bit 0) :=
-    WriteReg (pExecEpoch rfTree bpTree memTree fetchTree decodeTree deferredTree) #val Retv.
-
-  Definition pFenceIPending (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem)
-    : RegPath (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) :=
-    Eval cbn in (getChildRegPathTree (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) "fenceIPending").
-
-  Definition readFenceIPending (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) (ty : Kind -> Type)
-    : Action ty (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) Bool :=
-    ReadReg "fenceIPending" (pFenceIPending rfTree bpTree memTree fetchTree decodeTree deferredTree) (fun v => Return #v).
-
-  Definition writeFenceIPending (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) (ty : Kind -> Type)
-    (val : Expr ty Bool) : Action ty (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) (Bit 0) :=
-    WriteReg (pFenceIPending rfTree bpTree memTree fetchTree decodeTree deferredTree) val Retv.
 
 End ImplCommon.

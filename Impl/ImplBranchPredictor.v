@@ -147,7 +147,7 @@ Section ImplBranchPredictor.
       Local Abbreviation tree := (bpTree noInstTree implWithInstTree).
 
       Local Definition np_noInst : NodePath tree :=
-        Eval cbn in (embedNodeIntoPath (getNodePath tree ".noInst") singletonChildPath).
+        Eval cbv in (embedNodeIntoPath (getNodePath tree ".noInst") singletonChildPath).
 
       Definition implWithInst_getPred
         (pc predPc : ty Addr)

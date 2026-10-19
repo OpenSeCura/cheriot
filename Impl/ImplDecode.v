@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition.
-From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu ShiftFifo ImplCommon ImplBranchPredictor ImplDevice ImplFetch ImplDeferred.
+From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu ShiftFifo ImplCommon ImplDevice.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -31,23 +31,41 @@ Section DecodeStage.
   Variable dom : string.
   Variable capacity : nat.
 
-  Definition decodeTree : Tree DomainElem :=
+  Definition implDecodeTree : Tree DomainElem :=
     Node "" [
       Node "decodeToAluBuf" [ fifoTree dom capacity DecodeToAluEntry ]
     ].
 
+  Definition np_decToAluFifo : NodePath implDecodeTree :=
+    Eval cbn in (getNodePath implDecodeTree ".decodeToAluBuf.fifo").
+
+  Definition decodeFirst (ty : Kind -> Type) : Action ty implDecodeTree (Option DecodeToAluEntry) :=
+    liftAction np_decToAluFifo (@first dom capacity DecodeToAluEntry ty).
+
+  Definition decodeDeq (ty : Kind -> Type) : Action ty implDecodeTree (Bit 0) :=
+    liftAction np_decToAluFifo (@deq dom capacity DecodeToAluEntry ty).
+
+  Definition implDecodeIfc (ty : Kind -> Type) : @DecodeIfc ty := {|
+    decodeTree   := implDecodeTree ;
+    decode_first := @decodeFirst ty ;
+    decode_deq   := @decodeDeq ty
+  |}.
+
   Variable pcAddrInit : Z.
-  Variable fetchCapacity deferredCapacity : nat.
   Variable bpTree : Tree DomainElem.
+  Variable fetchIfc : forall ty, @FetchIfc ty.
+  Variable executeIfc : forall ty, @ExecuteIfc ty.
+  Variable deferredIfc : forall ty, @DeferredIfc ty.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable ty : Kind -> Type.
   Variable meipAct mtipAct : Action ty (memIfc ty).(memTree) Bool.
 
   Local Abbreviation rfTree := (rfTree dom pcAddrInit).
   Local Abbreviation memTree := (memIfc ty).(memTree).
-  Local Abbreviation fTree := (fetchTree dom pcAddrInit fetchCapacity).
-  Local Abbreviation dTree := (deferredTree dom deferredCapacity).
-  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fTree decodeTree dTree).
+  Local Abbreviation fetchTree := (fetchIfc ty).(fetchTree).
+  Local Abbreviation executeTree := (executeIfc ty).(executeTree).
+  Local Abbreviation deferredTree := (deferredIfc ty).(deferredTree).
+  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree implDecodeTree executeTree deferredTree).
   Local Abbreviation regRead := (regRead dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
@@ -57,16 +75,19 @@ Section DecodeStage.
     Eval cbn in (getNodePath coreTree "core.waitBits.").
 
   Definition np_mem : NodePath coreTree :=
-    Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.mem") singletonChildPath).
+    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.mem") singletonChildPath).
 
-  Definition np_instFifo : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.fetch..instBuf.fifo").
+  Definition np_fetch : NodePath coreTree :=
+    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.fetch") singletonChildPath).
 
   Definition np_decodeToAluFifo : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.decode..decodeToAluBuf.fifo").
 
+  Definition np_execute : NodePath coreTree :=
+    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.execute") singletonChildPath).
+
   Definition np_deferred : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.deferred.").
+    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.deferred") singletonChildPath).
 
   (* =========================================================================
    * STAGE 3: decodeAndRegRead
@@ -79,10 +100,10 @@ Section DecodeStage.
    *                 { aluIn, predPc, execEpoch } into decodeToAluBuf.
    * ========================================================================= *)
   Definition decodeAndRegRead : Action ty coreTree (Bit 0) :=
-    LetA instHead            : Option AssembledInst <- liftAction np_instFifo (@first dom fetchCapacity AssembledInst ty) ;
+    LetA instHead            : Option AssembledInst <- liftAction np_fetch (fetchIfc ty).(fetch_instFirst) ;
     LetA decodeToAlu_isFull  : Bool                 <- liftAction np_decodeToAluFifo (@isFull dom capacity DecodeToAluEntry ty) ;
     LetA decodeToAlu_isEmpty : Bool                 <- liftAction np_decodeToAluFifo (@isEmpty dom capacity DecodeToAluEntry ty) ;
-    LetA deferred_isEmpty    : Bool                 <- liftAction np_deferred (@deferredIsEmpty dom deferredCapacity ty) ;
+    LetA deferred_isEmpty    : Bool                 <- liftAction np_deferred (deferredIfc ty).(deferred_isEmpty) ;
     Let  pipelineEmpty       : Bool                 <- And [ #decodeToAlu_isEmpty ; #deferred_isEmpty ] ;
 
     If (##instHead`"valid") Then (
@@ -92,11 +113,11 @@ Section DecodeStage.
       Let  predPc         : Addr           <- ##asmInst`"predPc" ;
       Let  entryExecEpoch : Epoch          <- ##asmInst`"execEpoch" ;
 
-      LetA currExecEpoch  : Epoch          <- @readExecEpoch dom rfTree bpTree memTree fTree decodeTree dTree ty ;
+      LetA currExecEpoch  : Epoch          <- liftAction np_execute (executeIfc ty).(execute_readExecEpoch) ;
 
       (* Wrong-execEpoch instructions are dropped here *)
       If (Not (Eq #entryExecEpoch #currExecEpoch)) Then (
-        liftAction np_instFifo (@deq dom fetchCapacity AssembledInst ty)
+        liftAction np_fetch (fetchIfc ty).(fetch_instDeq)
       ) Else (
         LetL regReadIn : RegReadIn <- wrappedDecode fetchOut ;
         Let  decodeOut : DecodeOut <- ##regReadIn`"decodeOut" ;
@@ -133,7 +154,7 @@ Section DecodeStage.
         Let  canIssue  : Bool <- Not (Or [ #decodeToAlu_isFull ; #cs1Stall ; #cs2Stall ; #cdStall ; #scrStall ; #csrStall ]) ;
 
         If #canIssue Then (
-          Act (liftAction np_instFifo (@deq dom fetchCapacity AssembledInst ty)) ;
+          Act (liftAction np_fetch (fetchIfc ty).(fetch_instDeq)) ;
 
           LetA meip : Bool <- liftAction np_mem meipAct ;
           LetA mtip : Bool <- liftAction np_mem mtipAct ;

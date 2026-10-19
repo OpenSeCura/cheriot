@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition.
-From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu ShiftFifo ImplCommon ImplBranchPredictor ImplDevice ImplFetch ImplDecode ImplDeferred.
+From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu ImplCommon ImplBranchPredictor ImplDevice.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -29,21 +29,58 @@ Local Open Scope guru_scope.
 
 Section ExecuteStage.
   Variable dom : string.
+
+  Definition implExecuteTree : Tree DomainElem :=
+    Node "" [
+      Leaf "execEpoch"     (dom, EReg (Build_Reg Epoch (Some Zmod.zero) false)) ;
+      Leaf "fenceIPending" (dom, EReg (Build_Reg Bool (Some false) false))
+    ].
+
+  Definition pExecEpoch : RegPath implExecuteTree :=
+    Eval cbn in (getChildRegPathTree implExecuteTree "execEpoch").
+
+  Definition readExecEpoch (ty : Kind -> Type) : Action ty implExecuteTree Epoch :=
+    ReadReg "execEpoch" pExecEpoch (fun v => Return #v).
+
+  Definition writeExecEpoch (ty : Kind -> Type) (val : ty Epoch) : Action ty implExecuteTree (Bit 0) :=
+    WriteReg pExecEpoch #val Retv.
+
+  Definition pFenceIPending : RegPath implExecuteTree :=
+    Eval cbn in (getChildRegPathTree implExecuteTree "fenceIPending").
+
+  Definition readFenceIPending (ty : Kind -> Type) : Action ty implExecuteTree Bool :=
+    ReadReg "fenceIPending" pFenceIPending (fun v => Return #v).
+
+  Definition setFenceIPending (ty : Kind -> Type) : Action ty implExecuteTree (Bit 0) :=
+    WriteReg pFenceIPending (ConstBool true) Retv.
+
+  Definition clearFenceIPending (ty : Kind -> Type) : Action ty implExecuteTree (Bit 0) :=
+    WriteReg pFenceIPending (ConstBool false) Retv.
+
+  Definition implExecuteIfc (ty : Kind -> Type) : @ExecuteIfc ty := {|
+    executeTree             := implExecuteTree ;
+    execute_readExecEpoch   := @readExecEpoch ty ;
+    execute_readFenceIPend  := @readFenceIPending ty ;
+    execute_clearFenceIPend := @clearFenceIPending ty
+  |}.
+
   Variable pcAddrInit : Z.
-  Variable fetchCapacity decodeCapacity deferredCapacity : nat.
   Variable noInstTree : Tree DomainElem.
   Variable withInstIfc : forall ty, @WithInstPredIfc noInstTree ty.
   Variable memIfc : forall ty, @MemIfc ty.
+  Variable fetchIfc : forall ty, @FetchIfc ty.
+  Variable decodeIfc : forall ty, @DecodeIfc ty.
+  Variable deferredIfc : forall ty, @DeferredIfc ty.
   Variable ty : Kind -> Type.
   Variable meipAct mtipAct : Action ty (memIfc ty).(memTree) Bool.
 
   Local Abbreviation rfTree := (rfTree dom pcAddrInit).
   Local Abbreviation bpTree := (bpTree noInstTree (withInstIfc ty).(withInstTree)).
   Local Abbreviation memTree := (memIfc ty).(memTree).
-  Local Abbreviation fTree := (fetchTree dom pcAddrInit fetchCapacity).
-  Local Abbreviation decTree := (decodeTree dom decodeCapacity).
-  Local Abbreviation dTree := (deferredTree dom deferredCapacity).
-  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fTree decTree dTree).
+  Local Abbreviation fetchTree := (fetchIfc ty).(fetchTree).
+  Local Abbreviation decodeTree := (decodeIfc ty).(decodeTree).
+  Local Abbreviation deferredTree := (deferredIfc ty).(deferredTree).
+  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree decodeTree implExecuteTree deferredTree).
   Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
   Local Abbreviation isInterruptPending := (isInterruptPending dom pcAddrInit).
   Local Abbreviation executeNonDeferred := (executeNonDeferred dom pcAddrInit).
@@ -55,22 +92,22 @@ Section ExecuteStage.
     Eval cbn in (getNodePath coreTree "core.waitBits.").
 
   Definition np_bp : NodePath coreTree :=
-    Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.bp") singletonChildPath).
+    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.bp") singletonChildPath).
 
   Definition np_mem : NodePath coreTree :=
-    Eval cbn in (embedNodeIntoPath (getNodePath coreTree "core.mem") singletonChildPath).
+    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.mem") singletonChildPath).
 
   Definition np_fetch : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.fetch.").
+    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.fetch") singletonChildPath).
 
-  Definition np_decodeToAluFifo : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.decode..decodeToAluBuf.fifo").
+  Definition np_decode : NodePath coreTree :=
+    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.decode") singletonChildPath).
+
+  Definition np_execute : NodePath coreTree :=
+    Eval cbn in (getNodePath coreTree "core.execute.").
 
   Definition np_deferred : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.deferred.").
-
-  Definition np_deferredInFifo : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.deferred..inputBuf.fifo").
+    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.deferred") singletonChildPath).
 
   (* =========================================================================
    * STAGE 4: aluAndExecuteNonDeferred
@@ -91,9 +128,9 @@ Section ExecuteStage.
    *                   deferred inputBuf.
    * ========================================================================= *)
   Definition aluAndExecuteNonDeferred : Action ty coreTree (Bit 0) :=
-    LetA d2aHead           : Option DecodeToAluEntry <- liftAction np_decodeToAluFifo (@first dom decodeCapacity DecodeToAluEntry ty) ;
-    LetA deferredIn_isFull : Bool                    <- liftAction np_deferredInFifo (@isFull dom deferredCapacity DeferredReq ty) ;
-    LetA deferred_isEmpty  : Bool                    <- liftAction np_deferred (@deferredIsEmpty dom deferredCapacity ty) ;
+    LetA d2aHead           : Option DecodeToAluEntry <- liftAction np_decode (decodeIfc ty).(decode_first) ;
+    LetA deferredIn_isFull : Bool                    <- liftAction np_deferred (deferredIfc ty).(deferred_isFull) ;
+    LetA deferred_isEmpty  : Bool                    <- liftAction np_deferred (deferredIfc ty).(deferred_isEmpty) ;
 
     If (##d2aHead`"valid") Then (
       Let  d2aEntry       : DecodeToAluEntry <- ##d2aHead`"data" ;
@@ -110,10 +147,10 @@ Section ExecuteStage.
       Let  readWriteCsrIdx : Bit CsrIdxSz     <- ##pkg`"readWriteCsrIdx" ;
 
       Let  waitFalse : Bool <- ConstBool false ;
-      LetA currExecEpoch : Epoch <- @readExecEpoch dom rfTree bpTree memTree fTree decTree dTree ty ;
+      LetA currExecEpoch : Epoch <- liftAction np_execute (@readExecEpoch ty) ;
 
       If (Not (Eq #entryExecEpoch #currExecEpoch)) Then (
-        Act (liftAction np_decodeToAluFifo (@deq dom decodeCapacity DecodeToAluEntry ty)) ;
+        Act (liftAction np_decode (decodeIfc ty).(decode_deq)) ;
         liftAction np_waitBits
           (@setDstWaitBits dom ty
              writesCd dstIdxReal
@@ -138,7 +175,7 @@ Section ExecuteStage.
         Let  intStall      : Bool                 <- And [ #isInterrupt ; Not #deferred_isEmpty ] ;
 
         If (And [ Not #intStall ; Or [ Not #isDeferredAlu ; Not #deferredIn_isFull ] ]) Then (
-          Act (liftAction np_decodeToAluFifo (@deq dom decodeCapacity DecodeToAluEntry ty)) ;
+          Act (liftAction np_decode (decodeIfc ty).(decode_deq)) ;
 
           LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred pcc meip mtip aluOut) ;
 
@@ -157,15 +194,14 @@ Section ExecuteStage.
           ) ;
 
           If (Or [ #isTrap ; #capChanged ; ##execOut`"isFenceIRq" ; Not (Eq #committedNextPc #predPc) ]) Then (
-            Let nextExecEpoch : Epoch               <- Add [ #currExecEpoch ; $1 ] ;
-            Let noneStraddle  : Option StraddleHalf <- ConstDef ;
-            Act (@writeExecEpoch dom rfTree bpTree memTree fTree decTree dTree ty nextExecEpoch) ;
-            Act (liftAction np_fetch (@writeStraddleOpt dom pcAddrInit fetchCapacity ty noneStraddle)) ;
-            liftAction np_fetch (@writeFetchPc dom pcAddrInit fetchCapacity ty committedNextPc)
+            Let nextExecEpoch : Epoch <- Add [ #currExecEpoch ; $1 ] ;
+            Act (liftAction np_execute (@writeExecEpoch ty nextExecEpoch)) ;
+            Act (liftAction np_fetch (fetchIfc ty).(fetch_clearStraddle)) ;
+            liftAction np_fetch ((fetchIfc ty).(fetch_writeFetchPc) committedNextPc)
           ) ;
 
           If (##execOut`"isFenceIRq") Then (
-            @writeFenceIPending dom rfTree bpTree memTree fTree decTree dTree ty (ConstBool true)
+            liftAction np_execute (@setFenceIPending ty)
           ) ;
 
           Let reqOpt     : Option DeferredReq <- ##execOut`"deferredReq" ;
@@ -173,7 +209,7 @@ Section ExecuteStage.
 
           If #isDeferred Then (
             Let req : DeferredReq <- #reqOpt`"data" ;
-            liftAction np_deferredInFifo (@enq dom deferredCapacity DeferredReq ty req)
+            liftAction np_deferred ((deferredIfc ty).(deferred_enq) req)
           ) Else (
             liftAction np_waitBits
               (@setDstWaitBits dom ty

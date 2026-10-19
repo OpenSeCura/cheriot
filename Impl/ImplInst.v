@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Bool Psatz Nat Arith.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics.
-From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic SpecInst ImplRevoker ImplDevice ImplCommon ImplBranchPredictor ImplFetch ImplDecode ImplExecute ImplDeferred Impl.
+From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic SpecInst ImplRevoker ImplDevice ImplMulDiv ImplCommon ImplBranchPredictor ImplFetch ImplDecode ImplExecute ImplDeferred Impl.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -34,6 +34,10 @@ Local Open Scope guru_scope.
 Definition DefaultFetchCapacity    : nat := 1%nat.
 Definition DefaultDecodeCapacity   : nat := 1%nat.
 Definition DefaultDeferredCapacity : nat := 1%nat.
+
+Definition ImplMulStages  : nat := 2%nat.
+Definition ImplDivStages  : nat := 16%nat.
+Definition ImplMulDivMode : MulDivMode := PipelinedMul_IterDiv.
 
 Definition implConcreteRegions : list (MemRegion "core") := [
   ramRegion ;
@@ -54,7 +58,15 @@ Definition implConcretePlic : @PlicInstance "core" 3%nat implConcreteRegions :=
   @Build_PlicInstance "core" 3%nat implConcreteRegions 4%nat PlicBaseAddr I I I eq_refl.
 
 Definition implSysTreeInst : Tree DomainElem :=
-  implSysTree PcAddrInit DefaultFetchCapacity DefaultDecodeCapacity DefaultDeferredCapacity concreteRevConfig implConcreteRegions.
+  implSysTree PcAddrInit
+              DefaultFetchCapacity
+              DefaultDecodeCapacity
+              DefaultDeferredCapacity
+              ImplMulStages
+              ImplDivStages
+              ImplMulDivMode
+              concreteRevConfig
+              implConcreteRegions.
 
 Definition forwardDatapathModInst : Mod implSysTreeInst :=
   @forwardDatapathMod "core"
@@ -62,6 +74,9 @@ Definition forwardDatapathModInst : Mod implSysTreeInst :=
                       DefaultFetchCapacity
                       DefaultDecodeCapacity
                       DefaultDeferredCapacity
+                      ImplMulStages
+                      ImplDivStages
+                      ImplMulDivMode
                       concreteRevConfig
                       implConcreteRegions
                       implConcreteClint
@@ -74,6 +89,9 @@ Definition pipelinedModInst : Mod implSysTreeInst :=
                 DefaultFetchCapacity
                 DefaultDecodeCapacity
                 DefaultDeferredCapacity
+                ImplMulStages
+                ImplDivStages
+                ImplMulDivMode
                 concreteRevConfig
                 implConcreteRegions
                 implConcreteClint
