@@ -103,7 +103,7 @@ Section Clint.
   Definition clintLineReadAction
              (base : Z)
              (ty : Kind -> Type)
-             (_ : ReadPortSel false)
+             (_ : ReadPortSel None)
              (addr : ty Addr)
              (_ : ty (Array (cfgLineBytes ClintLineConfig) Bool))
              : Action ty tClint (LineReadRp ClintLineConfig false) :=
@@ -156,15 +156,14 @@ Section Clint.
              (base : Z)
              (pfBound : Is_true ((0 <=? base) && (base + ClintSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
              (pfAligned : Is_true (base mod (2 ^ Z.of_nat (cfgLgLineBytes ClintLineConfig)) =? 0)%Z)
-             : MemRegion := {|
+             : MemRegion dom := {|
     regionName        := "clint" ;
-    regionDom         := dom ;
     regionBase        := base ;
     regionSize        := ClintSizeBytes ;
     regionLineCfg     := ClintLineConfig ;
     isReadOnly        := false ;
-    hasExtraFetchPort := false ;
-    regionKind        := @CustomMem "clint" ClintSizeBytes ClintLineConfig false clintChildren (@clintLineReadAction base) (@clintLineWriteAction base) None ;
+    hasExtraFetchPort := None ;
+    regionKind        := @CustomMem dom "clint" ClintSizeBytes ClintLineConfig None clintChildren (@clintLineReadAction base) (@clintLineWriteAction base) None tt ;
     regionInMemory    := pfBound ;
     regionBaseAligned := pfAligned ;
     regionSizeAligned := I
@@ -174,7 +173,7 @@ Section Clint.
    * System Integration Helpers
    * =========================================================================== *)
 
-  Record ClintInstance (regions : list MemRegion) := {
+  Record ClintInstance (regions : list (MemRegion dom)) := {
     clintIdx      : nat ;
     clintBaseAddr : Z ;
     pfBound       : Is_true ((0 <=? clintBaseAddr) && (clintBaseAddr + ClintSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
@@ -182,11 +181,11 @@ Section Clint.
     pfClint       : nth_error regions clintIdx = Some (@clintMemRegion clintBaseAddr pfBound pfAligned)
   }.
 
-  Definition clintRegion {regions} (clint : ClintInstance regions) : MemRegion :=
+  Definition clintRegion {regions} (clint : ClintInstance regions) : MemRegion dom :=
     @clintMemRegion clint.(clintBaseAddr) clint.(pfBound) clint.(pfAligned).
 
   Section ClintSystem.
-    Variable regions : list MemRegion.
+    Variable regions : list (MemRegion dom).
     Variable clint : ClintInstance regions.
     Variable ty : Kind -> Type.
 

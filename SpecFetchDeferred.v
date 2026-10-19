@@ -254,7 +254,7 @@ Section SpecCoreTree.
   Variable dom : string.
   Variable pcAddrInit : Z.
 
-  Definition specCoreTree (regions : list MemRegion) : Tree DomainElem :=
+  Definition specCoreTree (regions : list (MemRegion dom)) : Tree DomainElem :=
     Node "core" [
       Node "rf"  [ rfTree dom pcAddrInit ] ;
       Node "mem" [ specMemTree regions ]
@@ -262,7 +262,7 @@ Section SpecCoreTree.
 
   Section SpecFetchDeferred.
     Variable config : RevConfig.
-    Variable regions : list MemRegion.
+    Variable regions : list (MemRegion dom).
     Variable ty : Kind -> Type.
 
     Local Abbreviation memTree := (specMemTree regions).
@@ -366,6 +366,10 @@ Section SpecCoreTree.
           ) ;
           Retv
         ) Else (
+          Let fenceVal : FenceOp <- ##mfAct `! "Fence" ;
+          If (##fenceVal`"FenceI") Then (
+            liftAction np_mem (specMemSendFenceIRq regions)
+          ) ;
           Retv
         ) ;
         Retv

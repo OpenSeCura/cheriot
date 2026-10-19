@@ -156,7 +156,7 @@ Section ExecuteStage.
             liftAction np_bp ((withInstIfc ty).(withInst_updException) pcAddr)
           ) ;
 
-          If (Or [ #isTrap ; #capChanged ; Not (Eq #committedNextPc #predPc) ]) Then (
+          If (Or [ #isTrap ; #capChanged ; ##execOut`"isFenceIRq" ; Not (Eq #committedNextPc #predPc) ]) Then (
             Let nextExecEpoch : Epoch               <- Add [ #currExecEpoch ; $1 ] ;
             Let noneStraddle  : Option StraddleHalf <- ConstDef ;
             Act (@writeExecEpoch dom rfTree bpTree memTree fTree decTree dTree ty nextExecEpoch) ;
@@ -165,7 +165,7 @@ Section ExecuteStage.
           ) ;
 
           If (##execOut`"isFenceIRq") Then (
-            liftAction np_mem ((memIfc ty).(mem_fenceI_req))
+            @writeFenceIPending dom rfTree bpTree memTree fTree decTree dTree ty (ConstBool true)
           ) ;
 
           Let reqOpt     : Option DeferredReq <- ##execOut`"deferredReq" ;

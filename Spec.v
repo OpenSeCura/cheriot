@@ -34,21 +34,21 @@ Section SpecDom.
   Variable core : string.
   Variable pcAddrInit : Z.
 
-  Definition specSysTree (regions : list MemRegion) : Tree DomainElem :=
+  Definition specSysTree (regions : list (MemRegion core)) : Tree DomainElem :=
     Node "sys" [
-      specCoreTree core pcAddrInit regions
+      specCoreTree pcAddrInit regions
     ].
 
   Section Spec.
     Variable config : RevConfig.
-    Variable regions : list MemRegion.
+    Variable regions : list (MemRegion core).
     Variable clint : @ClintInstance core regions.
     Variable rev : @RevokerInstance core [] regions.
     Variable plic : @PlicInstance core (S (S (length (collectIrqActions regions)))) regions.
     Local Abbreviation sysTree := (specSysTree regions).
     Local Abbreviation incrementMcycle := (incrementMcycle core pcAddrInit).
-    Local Abbreviation specFetch := (specFetch core pcAddrInit).
-    Local Abbreviation specExecuteDeferred := (specExecuteDeferred core pcAddrInit).
+    Local Abbreviation specFetch := (specFetch pcAddrInit).
+    Local Abbreviation specExecuteDeferred := (specExecuteDeferred pcAddrInit).
     Local Abbreviation regRead := (regRead core pcAddrInit).
     Local Abbreviation executeNonDeferred := (executeNonDeferred core pcAddrInit).
 
@@ -92,37 +92,45 @@ Section SpecDom.
         liftAction np_mem (plicSampleMeipStep plic ty).
 
       (* Autonomous TargetPort steps for accessible InternalMem regions *)
-      Definition specInternalMemTargetPortSteps : list (string * Action ty sysTree (Bit 0)) :=
-        map (fun '(dom, act) => (dom, liftAction np_mem (act ty))) (collectTargetPortActions regions).
+      Definition specInternalMemTargetPortSteps : list (Action ty sysTree (Bit 0)) :=
+        map (fun act => liftAction np_mem (act ty)) (collectTargetPortActions regions).
+
+      (* Autonomous Fence.I ack steps for fenceI-enabled regions *)
+      Definition specFenceIAckSteps : list (Action ty sysTree (Bit 0)) :=
+        map (fun act => liftAction np_mem (act ty)) (collectFenceIAckActions regions).
 
       (* ===========================================================================
        * Atomic Core Pipeline Step (specStep)
        * =========================================================================== *)
 
       Definition specStep : Action ty sysTree (Bit 0) :=
-        (* MEIP and MTIP are sampled from PLIC and CLINT here, where both domains are reachable. *)
-        LetA meip : Bool <- liftAction np_mem (plicMeipSystem plic ty) ;
-        LetA mtip : Bool <- liftAction np_mem (readClintMtipAction clint ty) ;
+        LetA fenceIWait : Bool <- liftAction np_mem (specMemReadFenceIWait regions) ;
+        If (Not #fenceIWait) Then (
+          (* MEIP and MTIP are sampled from PLIC and CLINT here, where both domains are reachable. *)
+          LetA meip : Bool <- liftAction np_mem (plicMeipSystem plic ty) ;
+          LetA mtip : Bool <- liftAction np_mem (readClintMtipAction clint ty) ;
 
-        (* 1. Fetch & Pre-Decode *)
-        LetA fetchOut : FetchOut <- liftAction np_core (specFetch regions ty) ;
+          (* 1. Fetch & Pre-Decode *)
+          LetA fetchOut : FetchOut <- liftAction np_core (specFetch regions ty) ;
 
-        (* 2. Decode *)
-        LetL regReadIn : RegReadIn <- wrappedDecode fetchOut ;
+          (* 2. Decode *)
+          LetL regReadIn : RegReadIn <- wrappedDecode fetchOut ;
 
-        (* 3. Register Read (GPRs, SCRs, CSRs, mstatus) *)
-        LetA aluInInstGroup : AluInInstGroup <- liftAction np_rf (regRead meip mtip regReadIn) ;
+          (* 3. Register Read (GPRs, SCRs, CSRs, mstatus) *)
+          LetA aluInInstGroup : AluInInstGroup <- liftAction np_rf (regRead meip mtip regReadIn) ;
 
-        (* 4. Alu Control, Routing, and Execution *)
-        LetA pcc    : FullECapWithTag <- liftAction np_rf (readRegsList (gprPathsWithKind core pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal))) ;
-        LetL aluOut : AluOutUnion     <- wrappedAlu pcc aluInInstGroup ;
+          (* 4. Alu Control, Routing, and Execution *)
+          LetA pcc    : FullECapWithTag <- liftAction np_rf (readRegsList (gprPathsWithKind core pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal))) ;
+          LetL aluOut : AluOutUnion     <- wrappedAlu pcc aluInInstGroup ;
 
-        (* 5. Commit Non-Deferred (GPRs, SCRs, CSRs, PCC, Traps) *)
-        LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred pcc meip mtip aluOut) ;
+          (* 5. Commit Non-Deferred (GPRs, SCRs, CSRs, PCC, Traps) *)
+          LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred pcc meip mtip aluOut) ;
 
-        (* 6. Commit Deferred (Memory Loads, Stores, Fences) *)
-        Let  reqOpt  : Option DeferredReq <- ##execOut`"deferredReq" ;
-        Act (liftAction np_core (specExecuteDeferred config regions reqOpt)) ;
+          (* 6. Commit Deferred (Memory Loads, Stores, Fences) *)
+          Let  reqOpt  : Option DeferredReq <- ##execOut`"deferredReq" ;
+          Act (liftAction np_core (specExecuteDeferred config regions reqOpt)) ;
+          Retv
+        ) ;
         Retv.
 
     End Ty.
@@ -132,18 +140,21 @@ Section SpecDom.
      * =========================================================================== *)
 
     Definition spec : Mod sysTree :=
-      fun ty => (
-        specInternalMemTargetPortSteps ty
-        ++ [ (core, specRevokerStep ty) ]
-        ++ map (fun a => (core, a)) (specPlicPendingsSteps ty)
-        ++ [
-          (core, specPlicClaimStep ty) ;
-          (core, specPlicSampleMeipStep ty) ;
-          (core, specTickCycle ty) ;
-          (core, specTickTimer ty) ;
-          (core, specSampleMtipStep ty) ;
-          (core, specStep ty)
-        ])%list.
+      fun ty =>
+        map (fun a => (core, a)) (
+          [ specRevokerStep ty ]
+          ++ specPlicPendingsSteps ty
+          ++ [
+            specPlicClaimStep ty ;
+            specPlicSampleMeipStep ty ;
+            specTickCycle ty ;
+            specTickTimer ty ;
+            specSampleMtipStep ty ;
+            specStep ty
+          ]
+          ++ specFenceIAckSteps ty
+          ++ specInternalMemTargetPortSteps ty
+        )%list.
 
   End Spec.
 

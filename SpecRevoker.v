@@ -109,7 +109,7 @@ Section Revoker.
   Definition revokerLineReadAction
              (base : Z)
              (ty : Kind -> Type)
-             (_ : ReadPortSel false)
+             (_ : ReadPortSel None)
              (addr : ty Addr)
              (_ : ty (Array (cfgLineBytes RevokerLineConfig) Bool))
              : Action ty tRev (LineReadRp RevokerLineConfig false) :=
@@ -174,24 +174,24 @@ Section Revoker.
              (base : Z)
              (pfBound : Is_true ((0 <=? base) && (base + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
              (pfAligned : Is_true (base mod (2 ^ Z.of_nat (cfgLgLineBytes RevokerLineConfig)) =? 0)%Z)
-             : MemRegion := {|
+             : MemRegion dom := {|
     regionName        := "revoker" ;
-    regionDom         := dom ;
     regionBase        := base ;
     regionSize        := RevokerSizeBytes ;
     regionLineCfg     := RevokerLineConfig ;
     isReadOnly        := false ;
-    hasExtraFetchPort := false ;
-    regionKind        := @CustomMem "revoker" RevokerSizeBytes RevokerLineConfig false revokerChildren
+    hasExtraFetchPort := None ;
+    regionKind        := @CustomMem dom "revoker" RevokerSizeBytes RevokerLineConfig None revokerChildren
                                     (@revokerLineReadAction base)
                                     (@revokerLineWriteAction base)
-                                    (Some (fun ty => revokerLocalInterrupt)) ;
+                                    (Some (fun ty => revokerLocalInterrupt))
+                                    tt ;
     regionInMemory    := pfBound ;
     regionBaseAligned := pfAligned ;
     regionSizeAligned := I
   |}.
 
-  Record RevokerInstance (regions : list MemRegion) := {
+  Record RevokerInstance (regions : list (MemRegion dom)) := {
     revokerIdx      : nat ;
     revokerBaseAddr : Z ;
     pfBound         : Is_true ((0 <=? revokerBaseAddr) && (revokerBaseAddr + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
@@ -199,7 +199,7 @@ Section Revoker.
     pfRevoker       : nth_error regions revokerIdx = Some (@revokerMemRegion revokerBaseAddr pfBound pfAligned)
   }.
 
-  Definition revokerRegion {regions} (rev : RevokerInstance regions) : MemRegion :=
+  Definition revokerRegion {regions} (rev : RevokerInstance regions) : MemRegion dom :=
     @revokerMemRegion rev.(revokerBaseAddr) rev.(pfBound) rev.(pfAligned).
 
   (* ===========================================================================
@@ -207,7 +207,7 @@ Section Revoker.
    * =========================================================================== *)
 
   Section RevokerAction.
-    Variable regions : list MemRegion.
+    Variable regions : list (MemRegion dom).
     Variable rev : RevokerInstance regions.
     Variable config : RevConfig.
     Variable ty : Kind -> Type.

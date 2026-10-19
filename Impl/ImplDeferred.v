@@ -159,7 +159,21 @@ Section DeferredStages.
           ) ;
           Retv
         ) Else (
-          liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
+          Let fenceVal : FenceOp <- ##mfAct `! "Fence" ;
+          Let isFenceI : Bool    <- ##fenceVal`"FenceI" ;
+          LetIf accepted : Bool <-
+            If #isFenceI Then (
+              liftAction np_mem ((memIfc ty).(mem_fenceI_req))
+            ) Else (
+              liftAction np_mem ((memIfc ty).(mem_fence_req) fenceVal)
+            ) ;
+          If #accepted Then (
+            Act (If #isFenceI Then (
+              @writeFenceIPending dom rfTree bpTree memTree fetchTree decodeTree deferredTree ty (ConstBool false)
+            ) ; Retv) ;
+            liftAction np_inputFifo (@deq dom capacity DeferredReq ty)
+          ) ;
+          Retv
         ) ;
         Retv
       ) Else (

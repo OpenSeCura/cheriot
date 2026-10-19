@@ -309,8 +309,6 @@ Section Alu.
     LETE DeferredOpRes : Option DeferredUnion <-
       Deferred isLoad isStore isFence isMulDiv cs1Perms cs2Perms inst storeTag encodedCap storeData ;
 
-    LETE isFenceIOut : Bool <- FenceI isFence inst ;
-
     LetE RegVal : FullECapWithTag <-
       STRUCT { "tag" ::= #Reg_tag; "ecap" ::= #Reg_ecap; "addr" ::= #Reg_addr } ;
 
@@ -334,8 +332,7 @@ Section Alu.
       "Exception"   ::= #ExceptionRes ;
       "Deferred"    ::= #DeferredOpRes ;
       "ControlFlow" ::= #cfPayload ;
-      "ScrCsr"      ::= #ScrCsrOut ;
-      "isFenceI"    ::= #isFenceIOut
+      "ScrCsr"      ::= #ScrCsrOut
     }).
 
 (* ===========================================================================
@@ -347,7 +344,6 @@ Section Alu.
     LetE deferredOpt : Option DeferredUnion <- ##routingOut`"Deferred" ;
     LetE cfOpt       : Option CfPayload <- ##routingOut`"ControlFlow" ;
     LetE scrCsrOpt   : Option ScrCsrPayload <- ##routingOut`"ScrCsr" ;
-    LetE isFenceI    : Bool <- ##routingOut`"isFenceI" ;
 
     LetE isExc : Bool <- #excOpt`"valid" ;
     LetE excVal : ExceptionInfo <- #excOpt`"data" ;
@@ -366,15 +362,10 @@ Section Alu.
           (UNION (CfScrCsrType, "ControlFlow" ::= #cfVal))
           (UNION (CfScrCsrType, "ScrCsr" ::= #scrCsrVal)) ;
 
-    LetE normalFenceIUnion : NormalFenceIUnion <-
-      ITE #isFenceI
-          (UNION (NormalFenceIType, "FenceI" ::= Const ty (Bit 0) Zmod.zero))
-          (UNION (NormalFenceIType, "Normal" ::= Const ty (Bit 0) Zmod.zero)) ;
-
     LetE notDeferredUnion : NotDeferredUnion <-
       ITE (Or [ #isCf ; #isScrCsr ])
           (UNION (NotDeferredUnionType, "CfScrCsr" ::= #cfScrCsrUnion))
-          (UNION (NotDeferredUnionType, "NormalFenceI" ::= #normalFenceIUnion)) ;
+          (UNION (NotDeferredUnionType, "Normal" ::= Const ty (Bit 0) Zmod.zero)) ;
 
     LetE noExcUnion : NoExceptionUnion <-
       ITE #isDeferred
@@ -464,12 +455,13 @@ Section AluRF.
       "op"     ::= #deferredVal
     } ;
 
+    Let  memFence       : MemFenceUnion              <- #deferredVal `! "MemFence" ;
+    Let  fenceOp        : FenceOp                    <- #memFence `! "Fence" ;
+    Let  isFenceI       : Bool                       <- And [ #isDeferred ;
+                                                              ##deferredVal `? "MemFence" ;
+                                                              ##memFence `? "Fence" ;
+                                                              ##fenceOp`"FenceI" ] ;
     Let  notDeferredVal : NotDeferredUnion           <- #noExc `! "NotDeferred" ;
-    Let  normFence      : NormalFenceIUnion          <- #notDeferredVal `! "NormalFenceI" ;
-    Let  isFenceI       : Bool                       <- And [ Not #isTrap ;
-                                                              ##noExc `? "NotDeferred" ;
-                                                              ##notDeferredVal `? "NormalFenceI" ;
-                                                              ##normFence `? "FenceI" ] ;
     LetA mtcc           : FullECapWithTag            <- readRegsList scrPathsWithKind ($(getScrIdx "Mtcc") : Expr ty (Bit ScrIdxSz)) ;
     Let  cfScrCsr       : CfScrCsrUnion              <- #notDeferredVal `! "CfScrCsr" ;
     Let  cfVal          : CfPayload                  <- #cfScrCsr `! "ControlFlow" ;
@@ -502,7 +494,6 @@ Section AluRF.
           LetIf nextPccNonTrap : FullECapWithTag <-
             If (#noExc `? "Deferred") Then
               (
-                Let memFence   : MemFenceUnion   <- #deferredVal `! "MemFence" ;
                 Let memPayload : MemPayload      <- #memFence `! "Mem" ;
                 Let memOp      : LoadOrStoreKind <- ##memPayload`"memOp" ;
                 Let stAddr     : Addr            <- ##dstVal`"addr" ;
@@ -520,7 +511,7 @@ Section AluRF.
                   (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
 
                 LetIf nextPccNotDef : FullECapWithTag <-
-                  If (##notDeferredVal `? "NormalFenceI") Then
+                  If (##notDeferredVal `? "Normal") Then
                     (
                       Return #seqPcc
                     )

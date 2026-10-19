@@ -35,7 +35,7 @@ Definition DefaultFetchCapacity    : nat := 1%nat.
 Definition DefaultDecodeCapacity   : nat := 1%nat.
 Definition DefaultDeferredCapacity : nat := 1%nat.
 
-Definition implConcreteRegions : list MemRegion := [
+Definition implConcreteRegions : list (MemRegion "core") := [
   ramRegion ;
   revTableRegion ;
   @clintMemRegion "core" ClintBaseAddr I I ;
@@ -54,7 +54,7 @@ Definition implConcretePlic : @PlicInstance "core" 3%nat implConcreteRegions :=
   @Build_PlicInstance "core" 3%nat implConcreteRegions 4%nat PlicBaseAddr I I I eq_refl.
 
 Definition implSysTreeInst : Tree DomainElem :=
-  implSysTree "core" PcAddrInit DefaultFetchCapacity DefaultDecodeCapacity DefaultDeferredCapacity concreteRevConfig implConcreteRegions.
+  implSysTree PcAddrInit DefaultFetchCapacity DefaultDecodeCapacity DefaultDeferredCapacity concreteRevConfig implConcreteRegions.
 
 Definition singleCycleModInst : Mod implSysTreeInst :=
   @singleCycleMod "core"

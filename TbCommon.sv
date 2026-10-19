@@ -172,7 +172,8 @@
   function automatic tb_io_val_t tb_recv(string name);
     if (has_suffix(name, "_lineReadRqReady") ||
         has_suffix(name, "_lineWriteRqReady") ||
-        has_suffix(name, "_lineReadRpReady")) begin
+        has_suffix(name, "_lineReadRpReady") ||
+        has_suffix(name, "_fenceIAck")) begin
       return tb_io_val_t'(1'b1);
     end else if (has_suffix(name, "_lineReadRpValid")) begin
       if (has_substr(name, "_fetch_")) begin

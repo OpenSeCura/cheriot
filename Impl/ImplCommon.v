@@ -245,14 +245,15 @@ Section ImplCommon.
   (* 2. Core Tree *)
   Definition coreTree (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) : Tree DomainElem :=
     Node "core" [
-      Node "rf"        [ rfTree ] ;
-      Node "waitBits"  [ waitBitsTree ] ;
-      Node "bp"        [ bpTree ] ;
-      Leaf "execEpoch" (dom, EReg (Build_Reg Epoch (Some Zmod.zero) false)) ;
-      Node "mem"       [ memTree ] ;
-      Node "fetch"     [ fetchTree ] ;
-      Node "decode"    [ decodeTree ] ;
-      Node "deferred"  [ deferredTree ]
+      Node "rf"            [ rfTree ] ;
+      Node "waitBits"      [ waitBitsTree ] ;
+      Node "bp"            [ bpTree ] ;
+      Leaf "execEpoch"     (dom, EReg (Build_Reg Epoch (Some Zmod.zero) false)) ;
+      Leaf "fenceIPending" (dom, EReg (Build_Reg Bool (Some false) false)) ;
+      Node "mem"           [ memTree ] ;
+      Node "fetch"         [ fetchTree ] ;
+      Node "decode"        [ decodeTree ] ;
+      Node "deferred"      [ deferredTree ]
     ].
 
   Definition pExecEpoch (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem)
@@ -266,5 +267,17 @@ Section ImplCommon.
   Definition writeExecEpoch (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) (ty : Kind -> Type)
     (val : ty Epoch) : Action ty (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) (Bit 0) :=
     WriteReg (pExecEpoch rfTree bpTree memTree fetchTree decodeTree deferredTree) #val Retv.
+
+  Definition pFenceIPending (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem)
+    : RegPath (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) :=
+    Eval cbn in (getChildRegPathTree (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) "fenceIPending").
+
+  Definition readFenceIPending (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) (ty : Kind -> Type)
+    : Action ty (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) Bool :=
+    ReadReg "fenceIPending" (pFenceIPending rfTree bpTree memTree fetchTree decodeTree deferredTree) (fun v => Return #v).
+
+  Definition writeFenceIPending (rfTree bpTree memTree fetchTree decodeTree deferredTree : Tree DomainElem) (ty : Kind -> Type)
+    (val : Expr ty Bool) : Action ty (coreTree rfTree bpTree memTree fetchTree decodeTree deferredTree) (Bit 0) :=
+    WriteReg (pFenceIPending rfTree bpTree memTree fetchTree decodeTree deferredTree) val Retv.
 
 End ImplCommon.

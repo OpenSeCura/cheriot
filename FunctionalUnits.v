@@ -545,7 +545,7 @@ Exception (Mux):
 
 Deferred (Mux):
   Outputs: isDeferred, (MemFence {Mem {memSize, LoadOp {isUnsigned, isLM, isLG} OR Store {tag, cap, addr}} OR
-                                  Fence {RR, RW, WR, WW}} OR
+                                  Fence {RR, RW, WR, WW, FenceI}} OR
                         MulDiv {Mul {op2, isHigh, op1Signed, op2Signed} OR
                                 Div {op2, isUnsigned, isRem}})
   - Load   : Load
@@ -558,11 +558,6 @@ Deferred (Mux):
   storeTag: cs2.tag (Store)
   storeCap: EncodeCap (Store)
   cs2Addr: cs2.addr (Store, MulDiv)
-
-FenceI:
-  Outputs: isFenceI
-  - FenceI : Fence
-  inst: inst (Fence)
 
 ControlFlow (Mux):
   Outputs: isCf, CfPayload {NewPcc, capChanged, CfOp {ControlFlowAddrOnly {Branch {isTaken} OR Cjal} OR
@@ -600,7 +595,6 @@ ScrCsr (Mux):
 
 Exception
 Deferred
-FenceI
 ControlFlow
 ScrCsr
 
@@ -765,8 +759,6 @@ Section DecodeInstGroup.
       (* "Deferred_isFence" ::= ##group`"Fence" ; *)
       "Deferred_isMulDiv" ::= ##group`"MulDiv" ;
 
-      (* "FenceI_isFence" ::= ##group`"Fence" ; *)
-
       "ControlFlow_isMret" ::= ##group`"Mret" ;
       (* "ControlFlow_isCjal" ::= ##group`"Cjal" ; *)
       "ControlFlow_isCjalr" ::= ##group`"Cjalr" ;
@@ -922,7 +914,6 @@ Section GetFunctionalUnits.
       "PccEcap" ::= Or [ ##group`"AuiPcc"; ##group`"Cjal"; ##group`"Cjalr" ] ;
       "Exception" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"ECall"; ##group`"EBreak" ] ;
       "Deferred" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"Fence"; ##group`"MulDiv" ] ;
-      "FenceI" ::= ##group`"Fence" ;
       "ControlFlow" ::= Or [ ##group`"Mret"; ##group`"Cjal"; ##group`"Cjalr"; ##group`"Branch" ] ;
       "ScrCsr" ::= Or [ ##group`"Scr"; ##group`"Csr" ]
     }).
@@ -1428,12 +1419,13 @@ Section FunctionalUnits.
       "RR"       ::= #rr ;
       "RW"       ::= #rw ;
       "WR"       ::= #wr ;
-      "WW"       ::= #ww
+      "WW"       ::= #ww ;
+      "FenceI"   ::= #isFenceI
     } ;
     LETE memOpOpt : Option MemFenceUnion <- LoadStore cs1Perms cs2Perms memSize loadIsUnsigned isLoad isStore storeTag storeCap cs2Addr ;
     LetE memFenceOpt : Option MemFenceUnion <-
-      Or [ ITE0 (And [ #isFence ; Not #isFenceI ]) (mkSome (UNION (MemFenceType, "Fence" ::= #fenceVal))) ;
-            #memOpOpt ] ;
+      Or [ ITE0 #isFence (mkSome (UNION (MemFenceType, "Fence" ::= #fenceVal))) ;
+           #memOpOpt ] ;
     LetE isMemFence : Bool <- #memFenceOpt`"valid" ;
     LetE memFenceVal : MemFenceUnion <- #memFenceOpt`"data" ;
 
@@ -1670,8 +1662,5 @@ Section FunctionalUnits.
     } ;
     LetE scrCsr : Option ScrCsrPayload <- ITE0 #isScrCsr (mkSome #scrCsrPayload) ;
     RetE #scrCsr.
-
-  Definition FenceI (isFence : ty Bool) (inst : ty Inst) : LetExpr ty Bool :=
-    RetE (And [ #isFence ; isNotZero (#inst`[12:12]) ]).
 
 End FunctionalUnits.

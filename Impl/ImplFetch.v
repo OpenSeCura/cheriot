@@ -146,8 +146,10 @@ Section FetchStage.
    * ========================================================================= *)
   Definition fetchRq : Action ty coreTree (Bit 0) :=
     LetA fetchBuf_isFull : Bool <- liftAction np_fetchFifo (@isFull dom capacity FetchBufEntry ty) ;
+    LetA fenceIPending   : Bool <- @readFenceIPending dom rfTree bpTree memTree fetchTree decodeTree deferredTree ty ;
+    LetA fenceIWait      : Bool <- liftAction np_mem ((memIfc ty).(mem_readFenceIWait)) ;
 
-    If (Not #fetchBuf_isFull) Then (
+    If (And [ Not #fetchBuf_isFull ; Not #fenceIPending ; Not #fenceIWait ]) Then (
       LetA fetchPc   : Addr            <- liftAction np_fetch (@readFetchPc ty) ;
       LetA execEpoch : Epoch           <- @readExecEpoch dom rfTree bpTree memTree fetchTree decodeTree deferredTree ty ;
       LetA predEpoch : Epoch           <- liftAction np_fetch (@readPredEpoch ty) ;

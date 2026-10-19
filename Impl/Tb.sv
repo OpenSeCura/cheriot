@@ -44,6 +44,8 @@ module Tb();
   logic Recv_sys_core_mem__ram_lineWriteRqReady;
   logic Recv_sys_core_mem__ram_lineReadRpValid;
   logic decl_SendEn_sys_core_mem__ram_lineReadRpReady;
+  logic decl_SendEn_sys_core_mem__ram_ram_fenceI_fenceIRq;
+  logic Recv_sys_core_mem__ram_ram_fenceI_fenceIAck;
 
   // =========================================================================
   // 2. PLIC UART Interrupt Signal (implConcreteRegions[4]: plicMemRegion)
@@ -70,6 +72,8 @@ module Tb();
     .decl_Send_sys_core_mem__ram_ram_fetch_lineReadRq(decl_Send_sys_core_mem__ram_ram_fetch_lineReadRq),
     .decl_SendEn_sys_core_mem__ram_ram_fetch_lineReadRq(decl_SendEn_sys_core_mem__ram_ram_fetch_lineReadRq),
     .Recv_sys_core_mem__ram_ram_fetch_lineReadRp(Recv_sys_core_mem__ram_ram_fetch_lineReadRp),
+    .decl_SendEn_sys_core_mem__ram_ram_fenceI_fenceIRq(decl_SendEn_sys_core_mem__ram_ram_fenceI_fenceIRq),
+    .Recv_sys_core_mem__ram_ram_fenceI_fenceIAck(Recv_sys_core_mem__ram_ram_fenceI_fenceIAck),
     .decl_Send_sys_core_mem__ram_ram_lineReadRq(decl_Send_sys_core_mem__ram_ram_lineReadRq),
     .decl_SendEn_sys_core_mem__ram_ram_lineReadRq(decl_SendEn_sys_core_mem__ram_ram_lineReadRq),
     .Recv_sys_core_mem__ram_ram_lineReadRp(Recv_sys_core_mem__ram_ram_lineReadRp),
@@ -106,6 +110,7 @@ module Tb();
       Recv_sys_core_mem__ram_fetch_lineReadRqReady   <= 1'b1;
       Recv_sys_core_mem__ram_fetch_lineReadRpValid   <= 1'b0;
       Recv_sys_core_mem__ram_ram_fetch_lineReadRp    <= '0;
+      Recv_sys_core_mem__ram_ram_fenceI_fenceIAck    <= 1'b0;
       Recv_sys_core_mem__ram_lineReadRqReady         <= 1'b1;
       Recv_sys_core_mem__ram_lineWriteRqReady        <= 1'b1;
       Recv_sys_core_mem__ram_lineReadRpValid         <= 1'b0;
@@ -150,6 +155,9 @@ module Tb();
         tb_send("decl_Send_sys_core_mem__ram_ram_lineWriteRq",
                 tb_io_val_t'(decl_Send_sys_core_mem__ram_ram_lineWriteRq));
       end
+      if (decl_SendEn_sys_core_mem__ram_ram_fenceI_fenceIRq) begin
+        tb_send("decl_Send_sys_core_mem__ram_ram_fenceI_fenceIRq", '0);
+      end
       if (decl_SendEn_sys_core_mem_______uart_lineReadRpReady) begin
         tb_send("decl_Send_sys_core_mem_______uart_lineReadRpReady", '0);
       end
@@ -173,6 +181,9 @@ module Tb();
         Recv_sys_core_mem__ram_ram_fetch_lineReadRp <=
           verilog_bits#(TbIoWidth, $bits(ramReadRp_t) - 1, 0)::extract(tb_recv("Recv_sys_core_mem__ram_ram_fetch_lineReadRp"));
       end
+
+      Recv_sys_core_mem__ram_ram_fenceI_fenceIAck <=
+        verilog_bits#(TbIoWidth, 0, 0)::extract(tb_recv("Recv_sys_core_mem__ram_ram_fenceI_fenceIAck"));
 
       Recv_sys_core_mem__ram_lineReadRqReady <=
         verilog_bits#(TbIoWidth, 0, 0)::extract(tb_recv("Recv_sys_core_mem__ram_lineReadRqReady"));

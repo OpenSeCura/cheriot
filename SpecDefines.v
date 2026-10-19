@@ -195,7 +195,6 @@ Definition FunctionalUnits := STRUCT_TYPE {
   "PccEcap" :: Bool ;
   "Exception" :: Bool ;
   "Deferred" :: Bool ;
-  "FenceI" :: Bool ;
   "ControlFlow" :: Bool ;
   "ScrCsr" :: Bool
 }.
@@ -251,10 +250,11 @@ Definition MemPayload := STRUCT_TYPE {
 }.
 
 Definition FenceOp := STRUCT_TYPE {
-  "RR" :: Bool ;
-  "RW" :: Bool ;
-  "WR" :: Bool ;
-  "WW" :: Bool
+  "RR"     :: Bool ;
+  "RW"     :: Bool ;
+  "WR"     :: Bool ;
+  "WW"     :: Bool ;
+  "FenceI" :: Bool
 }.
 
 Definition MemFenceType := [
@@ -294,12 +294,13 @@ Definition DeferredUnion := TaggedUnion DeferredUnionType.
 Section DeferredConstructors.
   Variable ty : Kind -> Type.
 
-  Definition mkFenceData (rr rw wr ww : ty Bool) : LetExpr ty (TaggedUnion DeferredUnionType) :=
+  Definition mkFenceData (rr rw wr ww fenceI : ty Bool) : LetExpr ty (TaggedUnion DeferredUnionType) :=
     LetE fenceVal : FenceOp <- STRUCT {
-      "RR" ::= #rr ;
-      "RW" ::= #rw ;
-      "WR" ::= #wr ;
-      "WW" ::= #ww
+      "RR"     ::= #rr ;
+      "RW"     ::= #rw ;
+      "WR"     ::= #wr ;
+      "WW"     ::= #ww ;
+      "FenceI" ::= #fenceI
     } ;
     LetE memFenceVal : MemFenceUnion <- UNION (MemFenceType, "Fence" ::= #fenceVal) ;
     RetE (UNION (DeferredUnionType, "MemFence" ::= #memFenceVal)).
@@ -1032,9 +1033,6 @@ Definition AluControl := STRUCT_TYPE {
   (* Deferred_isFence = Fence *)
   "Deferred_isMulDiv" :: Bool ;
 
-  (* FenceI *)
-  (* FenceI_isFence = Fence *)
-
   (* ControlFlow *)
   "ControlFlow_isMret" :: Bool ;
   (* ControlFlow_isCjal = Cjal *)
@@ -1182,15 +1180,8 @@ Definition AluOut := STRUCT_TYPE {
   "Exception"   :: Option ExceptionInfo ;
   "Deferred"    :: Option DeferredUnion ;
   "ControlFlow" :: Option CfPayload ;
-  "ScrCsr"      :: Option ScrCsrPayload ;
-  "isFenceI"    :: Bool
+  "ScrCsr"      :: Option ScrCsrPayload
 }.
-
-Definition NormalFenceIType := [
-  ("Normal"%string, Bit 0) ;
-  ("FenceI"%string, Bit 0)
-].
-Definition NormalFenceIUnion := TaggedUnion NormalFenceIType.
 
 Definition CfScrCsrType := [
   ("ControlFlow"%string, CfPayload) ;
@@ -1199,8 +1190,8 @@ Definition CfScrCsrType := [
 Definition CfScrCsrUnion := TaggedUnion CfScrCsrType.
 
 Definition NotDeferredUnionType := [
-  ("NormalFenceI"%string, NormalFenceIUnion) ;
-  ("CfScrCsr"%string,     CfScrCsrUnion)
+  ("Normal"%string,   Bit 0) ;
+  ("CfScrCsr"%string, CfScrCsrUnion)
 ].
 Definition NotDeferredUnion := TaggedUnion NotDeferredUnionType.
 

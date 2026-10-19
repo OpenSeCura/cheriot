@@ -440,7 +440,7 @@ Section Plic.
                     ITE0 d.(dec_isThreshClaim) threshClaimVal ]).
 
     Definition plicLineReadAction
-               (_ : ReadPortSel false)
+               (_ : ReadPortSel None)
                (addr : ty Addr)
                (dataMask : ty (Array (cfgLineBytes PlicLineConfig) Bool))
                : Action ty tPlic (LineReadRp PlicLineConfig false) :=
@@ -510,19 +510,19 @@ Section Plic.
              (base : Z)
              (pfBound : Is_true ((0 <=? base) && (base + PlicSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
              (pfAligned : Is_true (base mod (2 ^ Z.of_nat (cfgLgLineBytes PlicLineConfig)) =? 0)%Z)
-             : MemRegion := {|
+             : MemRegion dom := {|
     regionName        := "plic" ;
-    regionDom         := dom ;
     regionBase        := base ;
     regionSize        := PlicSizeBytes ;
     regionLineCfg     := PlicLineConfig ;
     isReadOnly        := false ;
-    hasExtraFetchPort := false ;
-    regionKind        := @CustomMem "plic" PlicSizeBytes PlicLineConfig false
+    hasExtraFetchPort := None ;
+    regionKind        := @CustomMem dom "plic" PlicSizeBytes PlicLineConfig None
                                     (plicChildren n)
                                     (@plicLineReadAction n base)
                                     (@plicLineWriteAction n base)
-                                    None ;
+                                    None
+                                    tt ;
     regionInMemory    := pfBound ;
     regionBaseAligned := pfAligned ;
     regionSizeAligned := I
@@ -532,7 +532,7 @@ Section Plic.
    * System Integration Helpers
    * =========================================================================== *)
 
-  Record PlicInstance (n : nat) (regions : list MemRegion) := {
+  Record PlicInstance (n : nat) (regions : list (MemRegion dom)) := {
     plicIdx      : nat ;
     plicBaseAddr : Z ;
     pfBound      : Is_true ((0 <=? plicBaseAddr) && (plicBaseAddr + PlicSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
@@ -541,12 +541,12 @@ Section Plic.
     pfPlic       : nth_error regions plicIdx = Some (@plicMemRegion n plicBaseAddr pfBound pfAligned)
   }.
 
-  Definition plicRegion {n regions} (plic : PlicInstance n regions) : MemRegion :=
+  Definition plicRegion {n regions} (plic : PlicInstance n regions) : MemRegion dom :=
     @plicMemRegion n plic.(plicBaseAddr) plic.(pfBound) plic.(pfAligned).
 
   Section PlicSystem.
     Variable n : nat.
-    Variable regions : list MemRegion.
+    Variable regions : list (MemRegion dom).
     Variable plic : PlicInstance n regions.
     Variable ty : Kind -> Type.
 
