@@ -62,7 +62,7 @@ Record MemIfc {ty : Kind -> Type} := {
  * =========================================================================== *)
 
 Inductive MemRequester :=
-| ReqDeferred
+| ReqDataMem
 | ReqRevoker
 | ReqFetch
 | ReqTarget.
@@ -74,20 +74,20 @@ Definition isFetchRequester (req : MemRequester) : bool :=
   end.
 
 Definition RequesterList : list (string * Kind) :=
-  [ ("Deferred", Bit 0) ;
-    ("Revoker",  Bit 0) ;
-    ("Fetch",    Bit 0) ;
-    ("Target",   Bit 0) ].
+  [ ("DataMem", Bit 0) ;
+    ("Revoker", Bit 0) ;
+    ("Fetch",   Bit 0) ;
+    ("Target",  Bit 0) ].
 
 Definition Requester : Kind :=
   TaggedUnion RequesterList.
 
 Definition mkRequester {ty : Kind -> Type} (req : MemRequester) : Expr ty Requester :=
   match req with
-  | ReqDeferred => UNION (RequesterList, "Deferred" ::= ($0 : Expr ty (Bit 0)))
-  | ReqRevoker  => UNION (RequesterList, "Revoker"  ::= ($0 : Expr ty (Bit 0)))
-  | ReqFetch    => UNION (RequesterList, "Fetch"    ::= ($0 : Expr ty (Bit 0)))
-  | ReqTarget   => UNION (RequesterList, "Target"   ::= ($0 : Expr ty (Bit 0)))
+  | ReqDataMem => UNION (RequesterList, "DataMem" ::= ($0 : Expr ty (Bit 0)))
+  | ReqRevoker => UNION (RequesterList, "Revoker" ::= ($0 : Expr ty (Bit 0)))
+  | ReqFetch   => UNION (RequesterList, "Fetch"   ::= ($0 : Expr ty (Bit 0)))
+  | ReqTarget  => UNION (RequesterList, "Target"  ::= ($0 : Expr ty (Bit 0)))
   end.
 
 Definition mkRequesterOpt {ty : Kind -> Type} (req : MemRequester) : Expr ty (Option Requester) :=
@@ -95,10 +95,10 @@ Definition mkRequesterOpt {ty : Kind -> Type} (req : MemRequester) : Expr ty (Op
 
 Definition isRequesterMatch {ty : Kind -> Type} (r : ty Requester) (req : MemRequester) : Expr ty Bool :=
   match req with
-  | ReqDeferred => #r `? "Deferred"
-  | ReqRevoker  => #r `? "Revoker"
-  | ReqFetch    => #r `? "Fetch"
-  | ReqTarget   => #r `? "Target"
+  | ReqDataMem => #r `? "DataMem"
+  | ReqRevoker => #r `? "Revoker"
+  | ReqFetch   => #r `? "Fetch"
+  | ReqTarget  => #r `? "Target"
   end.
 
 Definition IntRegionStateList : list (string * Kind) :=
@@ -1818,13 +1818,13 @@ Section ImplDevice.
   
       (* 2. Data Load Channel *)
       Definition implReadMemRq (addr : ty Addr) (memSize : ty (Bit LgLgNumBytesFullCapSz)) : Action ty implMemTree Bool :=
-        implRegionsReadRq regions ReqDeferred addr memSize.
+        implRegionsReadRq regions ReqDataMem addr memSize.
   
       Definition implGetMemRp (addr : ty Addr) (memSize : ty (Bit LgLgNumBytesFullCapSz)) : Action ty implMemTree (Option FullCapWithTag) :=
-        implRegionsReadRp regions ReqDeferred addr memSize.
+        implRegionsReadRp regions ReqDataMem addr memSize.
   
       Definition implDeqMemRp (addr : ty Addr) : Action ty implMemTree (Bit 0) :=
-        implRegionsDeqRp regions ReqDeferred addr.
+        implRegionsDeqRp regions ReqDataMem addr.
   
       (* 3. Revocation Bit Memory Channel *)
       Definition implReadRevBitRqFor (req : MemRequester) (base : ty (Bit (AddrSz + 1))) : Action ty implMemTree Bool :=
@@ -1851,10 +1851,10 @@ Section ImplDevice.
         Return #rOpt.
   
       Definition implReadRevBitRq (base : ty (Bit (AddrSz + 1))) : Action ty implMemTree Bool :=
-        implReadRevBitRqFor ReqDeferred base.
+        implReadRevBitRqFor ReqDataMem base.
   
       Definition implGetDeqRevBitRp (base : ty (Bit (AddrSz + 1))) : Action ty implMemTree (Option Bool) :=
-        implGetDeqRevBitRpFor ReqDeferred base.
+        implGetDeqRevBitRpFor ReqDataMem base.
   
       (* 4. Memory Write Channel (with store-address snooping for split-phase revoker) *)
       Definition implWriteMem (rev : @RevokerInstance dom (implRevokerExtraChildren dom) regions)

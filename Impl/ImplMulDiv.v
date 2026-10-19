@@ -1130,12 +1130,12 @@ Section MulDivCoreRules.
   Variable mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
   Variable pcAddrInit : Z.
-  Variable bpTree memTree fetchTree decodeTree executeTree deferredTree : Tree DomainElem.
+  Variable bpTree memTree fetchTree decodeTree executeTree dataMemTree : Tree DomainElem.
   Variable ty : Kind -> Type.
 
   Local Abbreviation rfTree := (rfTree dom pcAddrInit).
   Local Abbreviation mdTree := (implMulDivTree dom mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode).
-  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree decodeTree executeTree deferredTree mdTree).
+  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree decodeTree executeTree dataMemTree mdTree).
   Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
 
   Definition np_mulDiv_rf : NodePath coreTree :=

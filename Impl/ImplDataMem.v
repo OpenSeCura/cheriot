@@ -32,59 +32,59 @@ Definition MemFenceReq : Kind := STRUCT_TYPE {
   "op"     :: MemFenceUnion
 }.
 
-Definition DeferredStateList : list (string * Kind) :=
+Definition DataMemStateList : list (string * Kind) :=
   [ ("LoadRq", Bit 0) ;
     ("LoadRp", LoadCmd) ;
     ("RevRq",  RevCmd) ;
     ("RevRp",  RevCmd) ].
 
-Definition DeferredState : Kind := TaggedUnion DeferredStateList.
+Definition DataMemState : Kind := TaggedUnion DataMemStateList.
 
-Section DeferredStages.
+Section DataMemStages.
   Variable dom : string.
   Variable capacity : nat.
 
-  Definition implDeferredTree : Tree DomainElem :=
+  Definition implDataMemTree : Tree DomainElem :=
     Node "" [
       Node "inputBuf" [ fifoTree dom capacity MemFenceReq ] ;
-      Leaf "state"    (dom, EReg (Build_Reg DeferredState (Some (getDefault _)) false))
+      Leaf "state"    (dom, EReg (Build_Reg DataMemState (Some (getDefault _)) false))
     ].
 
-  Definition pState : RegPath implDeferredTree :=
-    Eval cbn in (getChildRegPathTree implDeferredTree "state").
+  Definition pState : RegPath implDataMemTree :=
+    Eval cbn in (getChildRegPathTree implDataMemTree "state").
 
-  Definition readState (ty : Kind -> Type) : Action ty implDeferredTree DeferredState :=
+  Definition readState (ty : Kind -> Type) : Action ty implDataMemTree DataMemState :=
     ReadReg "state" pState (fun v => Return #v).
 
-  Definition writeState (ty : Kind -> Type) (val : ty DeferredState) : Action ty implDeferredTree (Bit 0) :=
+  Definition writeState (ty : Kind -> Type) (val : ty DataMemState) : Action ty implDataMemTree (Bit 0) :=
     WriteReg pState #val Retv.
 
-  Definition np_defInputFifo : NodePath implDeferredTree :=
-    Eval cbn in (getNodePath implDeferredTree ".inputBuf.fifo").
+  Definition np_dmInputFifo : NodePath implDataMemTree :=
+    Eval cbn in (getNodePath implDataMemTree ".inputBuf.fifo").
 
-  Definition deferredIsEmpty (ty : Kind -> Type) : Action ty implDeferredTree Bool :=
-    LetA inEmpty : Bool          <- liftAction np_defInputFifo (@isEmpty dom capacity MemFenceReq ty) ;
-    LetA state   : DeferredState <- @readState ty ;
+  Definition dataMemIsEmpty (ty : Kind -> Type) : Action ty implDataMemTree Bool :=
+    LetA inEmpty : Bool         <- liftAction np_dmInputFifo (@isEmpty dom capacity MemFenceReq ty) ;
+    LetA state   : DataMemState <- @readState ty ;
     Return (And [ #inEmpty ; #state `? "LoadRq" ]).
 
-  Definition deferredIsFull (ty : Kind -> Type) : Action ty implDeferredTree Bool :=
-    liftAction np_defInputFifo (@isFull dom capacity MemFenceReq ty).
+  Definition dataMemIsFull (ty : Kind -> Type) : Action ty implDataMemTree Bool :=
+    liftAction np_dmInputFifo (@isFull dom capacity MemFenceReq ty).
 
-  Definition deferredEnq (ty : Kind -> Type)
+  Definition dataMemEnq (ty : Kind -> Type)
     (dstIdx : ty (Bit RegIdxSzReal)) (addr : ty Addr) (op : ty MemFenceUnion) :
-    Action ty implDeferredTree (Bit 0) :=
+    Action ty implDataMemTree (Bit 0) :=
     Let req : MemFenceReq <- STRUCT {
       "dstIdx" ::= #dstIdx ;
       "addr"   ::= #addr ;
       "op"     ::= #op
     } ;
-    liftAction np_defInputFifo (@enq dom capacity MemFenceReq ty req).
+    liftAction np_dmInputFifo (@enq dom capacity MemFenceReq ty req).
 
-  Definition implDeferredIfc (ty : Kind -> Type) : @DeferredIfc ty := {|
-    deferredTree     := implDeferredTree ;
-    deferred_isEmpty := @deferredIsEmpty ty ;
-    deferred_isFull  := @deferredIsFull ty ;
-    deferred_enq     := @deferredEnq ty
+  Definition implDataMemIfc (ty : Kind -> Type) : @DataMemIfc ty := {|
+    dataMemTree     := implDataMemTree ;
+    dataMem_isEmpty := @dataMemIsEmpty ty ;
+    dataMem_isFull  := @dataMemIsFull ty ;
+    dataMem_enq     := @dataMemEnq ty
   |}.
 
   Variable pcAddrInit : Z.
@@ -96,7 +96,7 @@ Section DeferredStages.
   Local Abbreviation rfTree := (rfTree dom pcAddrInit).
   Local Abbreviation memTree := (memIfc ty).(memTree).
   Local Abbreviation executeTree := (executeIfc ty).(executeTree).
-  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree decodeTree executeTree implDeferredTree mulDivTree).
+  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree decodeTree executeTree implDataMemTree mulDivTree).
   Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
@@ -111,11 +111,11 @@ Section DeferredStages.
   Definition np_execute : NodePath coreTree :=
     Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.execute") singletonChildPath).
 
-  Definition np_deferred : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.deferred.").
+  Definition np_dataMem : NodePath coreTree :=
+    Eval cbn in (getNodePath coreTree "core.dataMem.").
 
   Definition np_inputFifo : NodePath coreTree :=
-    Eval cbn in (getNodePath coreTree "core.deferred..inputBuf.fifo").
+    Eval cbn in (getNodePath coreTree "core.dataMem..inputBuf.fifo").
 
   Local Definition commitWb (dstIdx : ty (Bit RegIdxSzReal)) (dstVal : ty FullECapWithTag) : Action ty coreTree (Bit 0) :=
     If (isNotZero #dstIdx) Then (
@@ -137,7 +137,7 @@ Section DeferredStages.
    *             inputFifo.
    * ========================================================================= *)
   Definition loadRqOrStoreOrFence : Action ty coreTree (Bit 0) :=
-    LetA state     : DeferredState      <- liftAction np_deferred (@readState ty) ;
+    LetA state     : DataMemState       <- liftAction np_dataMem (@readState ty) ;
     LetA inputHead : Option MemFenceReq <- liftAction np_inputFifo (@first dom capacity MemFenceReq ty) ;
 
     If (And [ #state `? "LoadRq" ; #inputHead`"valid" ]) Then (
@@ -167,8 +167,8 @@ Section DeferredStages.
           Let  memSize   : Bit LgLgNumBytesFullCapSz <- ##pending`"memSize" ;
           LetA accepted  : Bool                      <- liftAction np_mem ((memIfc ty).(mem_readMemRq) ldAddr memSize) ;
           If #accepted Then (
-            Let nextState : DeferredState <- UNION (DeferredStateList, "LoadRp" ::= #ld) ;
-            Act (liftAction np_deferred (@writeState ty nextState)) ;
+            Let nextState : DataMemState <- UNION (DataMemStateList, "LoadRp" ::= #ld) ;
+            Act (liftAction np_dataMem (@writeState ty nextState)) ;
             liftAction np_inputFifo (@deq dom capacity MemFenceReq ty)
           ) ;
           Retv
@@ -206,7 +206,7 @@ Section DeferredStages.
    *                state to "LoadRq".
    * ========================================================================= *)
   Definition loadRpAndWriteback (config : RevConfig) : Action ty coreTree (Bit 0) :=
-    LetA state : DeferredState <- liftAction np_deferred (@readState ty) ;
+    LetA state : DataMemState <- liftAction np_dataMem (@readState ty) ;
 
     If (#state `? "LoadRp") Then (
       Let  ld        : LoadCmd                   <- #state `! "LoadRp" ;
@@ -221,16 +221,16 @@ Section DeferredStages.
         LetL outcome : LoadOutcome    <- dispatchLoadResponse config pl memVal ;
 
         If (#outcome `? "RevLookup") Then (
-          Let revInfo   : RevCmd        <- #outcome `! "RevLookup" ;
-          Let nextState : DeferredState <- UNION (DeferredStateList, "RevRq" ::= #revInfo) ;
-          liftAction np_deferred (@writeState ty nextState)
+          Let revInfo   : RevCmd       <- #outcome `! "RevLookup" ;
+          Let nextState : DataMemState <- UNION (DataMemStateList, "RevRq" ::= #revInfo) ;
+          liftAction np_dataMem (@writeState ty nextState)
         ) Else (
           Let wbInfo    : WbCmd            <- #outcome `! "Writeback" ;
           Let dstIdxV   : Bit RegIdxSzReal <- ##wbInfo`"dstIdx" ;
           Let dstValV   : FullECapWithTag  <- ##wbInfo`"dstVal" ;
-          Let nextState : DeferredState    <- UNION (DeferredStateList, "LoadRq" ::= ($0 : Expr ty (Bit 0))) ;
+          Let nextState : DataMemState     <- UNION (DataMemStateList, "LoadRq" ::= ($0 : Expr ty (Bit 0))) ;
           Act (commitWb dstIdxV dstValV) ;
-          liftAction np_deferred (@writeState ty nextState)
+          liftAction np_dataMem (@writeState ty nextState)
         ) ;
         Retv
       ) ;
@@ -245,15 +245,15 @@ Section DeferredStages.
    *   transitions state to "RevRp".
    * ========================================================================= *)
   Definition issueRevRq : Action ty coreTree (Bit 0) :=
-    LetA state : DeferredState <- liftAction np_deferred (@readState ty) ;
+    LetA state : DataMemState <- liftAction np_dataMem (@readState ty) ;
 
     If (#state `? "RevRq") Then (
       Let  revInfo  : RevCmd           <- #state `! "RevRq" ;
       Let  revBase  : Bit (AddrSz + 1) <- ##revInfo`"base" ;
       LetA accepted : Bool             <- liftAction np_mem ((memIfc ty).(mem_readRevBitRq) revBase) ;
       If #accepted Then (
-        Let nextState : DeferredState <- UNION (DeferredStateList, "RevRp" ::= #revInfo) ;
-        liftAction np_deferred (@writeState ty nextState)
+        Let nextState : DataMemState <- UNION (DataMemStateList, "RevRp" ::= #revInfo) ;
+        liftAction np_dataMem (@writeState ty nextState)
       ) ;
       Retv
     ) ;
@@ -276,7 +276,7 @@ Section DeferredStages.
    *   waitBit[dstIdx], and transitions state to "LoadRq".
    * ========================================================================= *)
   Definition revRpAndWriteBack : Action ty coreTree (Bit 0) :=
-    LetA state : DeferredState <- liftAction np_deferred (@readState ty) ;
+    LetA state : DataMemState <- liftAction np_dataMem (@readState ty) ;
 
     If (#state `? "RevRp") Then (
       Let  revInfo   : RevCmd           <- #state `! "RevRp" ;
@@ -289,12 +289,12 @@ Section DeferredStages.
         LetL wbInfo    : WbCmd            <- dispatchRevResponse pr revBit ;
         Let  dstIdxV   : Bit RegIdxSzReal <- ##wbInfo`"dstIdx" ;
         Let  dstValV   : FullECapWithTag  <- ##wbInfo`"dstVal" ;
-        Let  nextState : DeferredState    <- UNION (DeferredStateList, "LoadRq" ::= ($0 : Expr ty (Bit 0))) ;
+        Let  nextState : DataMemState     <- UNION (DataMemStateList, "LoadRq" ::= ($0 : Expr ty (Bit 0))) ;
         Act (commitWb dstIdxV dstValV) ;
-        liftAction np_deferred (@writeState ty nextState)
+        liftAction np_dataMem (@writeState ty nextState)
       ) ;
       Retv
     ) ;
     Retv.
 
-End DeferredStages.
+End DataMemStages.

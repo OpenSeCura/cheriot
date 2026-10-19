@@ -55,7 +55,7 @@ Section DecodeStage.
   Variable bpTree mulDivTree : Tree DomainElem.
   Variable fetchIfc : forall ty, @FetchIfc ty.
   Variable executeIfc : forall ty, @ExecuteIfc ty.
-  Variable deferredIfc : forall ty, @DeferredIfc ty.
+  Variable dataMemIfc : forall ty, @DataMemIfc ty.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable ty : Kind -> Type.
   Variable meipAct mtipAct : Action ty (memIfc ty).(memTree) Bool.
@@ -64,8 +64,8 @@ Section DecodeStage.
   Local Abbreviation memTree := (memIfc ty).(memTree).
   Local Abbreviation fetchTree := (fetchIfc ty).(fetchTree).
   Local Abbreviation executeTree := (executeIfc ty).(executeTree).
-  Local Abbreviation deferredTree := (deferredIfc ty).(deferredTree).
-  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree implDecodeTree executeTree deferredTree mulDivTree).
+  Local Abbreviation dataMemTree := (dataMemIfc ty).(dataMemTree).
+  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree implDecodeTree executeTree dataMemTree mulDivTree).
   Local Abbreviation regRead := (regRead dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
@@ -86,8 +86,8 @@ Section DecodeStage.
   Definition np_execute : NodePath coreTree :=
     Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.execute") singletonChildPath).
 
-  Definition np_deferred : NodePath coreTree :=
-    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.deferred") singletonChildPath).
+  Definition np_dataMem : NodePath coreTree :=
+    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.dataMem") singletonChildPath).
 
   (* =========================================================================
    * STAGE 3: decodeAndRegRead
@@ -103,8 +103,8 @@ Section DecodeStage.
     LetA instHead            : Option AssembledInst <- liftAction np_fetch (fetchIfc ty).(fetch_instFirst) ;
     LetA decodeToAlu_isFull  : Bool                 <- liftAction np_decodeToAluFifo (@isFull dom capacity DecodeToAluEntry ty) ;
     LetA decodeToAlu_isEmpty : Bool                 <- liftAction np_decodeToAluFifo (@isEmpty dom capacity DecodeToAluEntry ty) ;
-    LetA deferred_isEmpty    : Bool                 <- liftAction np_deferred (deferredIfc ty).(deferred_isEmpty) ;
-    Let  pipelineEmpty       : Bool                 <- And [ #decodeToAlu_isEmpty ; #deferred_isEmpty ] ;
+    LetA dataMem_isEmpty     : Bool                 <- liftAction np_dataMem (dataMemIfc ty).(dataMem_isEmpty) ;
+    Let  pipelineEmpty       : Bool                 <- And [ #decodeToAlu_isEmpty ; #dataMem_isEmpty ] ;
 
     If (##instHead`"valid") Then (
       Let  asmInst        : AssembledInst  <- ##instHead`"data" ;

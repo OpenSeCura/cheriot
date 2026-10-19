@@ -92,11 +92,11 @@ Record ExecuteIfc {ty : Kind -> Type} := {
   execute_clearFenceIPend : Action ty executeTree (Bit 0)
 }.
 
-Record DeferredIfc {ty : Kind -> Type} := {
-  deferredTree     : Tree DomainElem ;
-  deferred_isEmpty : Action ty deferredTree Bool ;
-  deferred_isFull  : Action ty deferredTree Bool ;
-  deferred_enq     : ty (Bit RegIdxSzReal) -> ty Addr -> ty MemFenceUnion -> Action ty deferredTree (Bit 0)
+Record DataMemIfc {ty : Kind -> Type} := {
+  dataMemTree     : Tree DomainElem ;
+  dataMem_isEmpty : Action ty dataMemTree Bool ;
+  dataMem_isFull  : Action ty dataMemTree Bool ;
+  dataMem_enq     : ty (Bit RegIdxSzReal) -> ty Addr -> ty MemFenceUnion -> Action ty dataMemTree (Bit 0)
 }.
 
 Record MulDivIfc {ty : Kind -> Type} := {
@@ -283,7 +283,7 @@ Section ImplCommon.
     Retv.
 
   (* 2. Core Tree *)
-  Definition coreTree (rfTree bpTree memTree fetchTree decodeTree executeTree deferredTree mulDivTree : Tree DomainElem) : Tree DomainElem :=
+  Definition coreTree (rfTree bpTree memTree fetchTree decodeTree executeTree dataMemTree mulDivTree : Tree DomainElem) : Tree DomainElem :=
     Node "core" [
       Node "rf"       [ rfTree ] ;
       Node "waitBits" [ waitBitsTree ] ;
@@ -292,7 +292,7 @@ Section ImplCommon.
       Node "fetch"    [ fetchTree ] ;
       Node "decode"   [ decodeTree ] ;
       Node "execute"  [ executeTree ] ;
-      Node "deferred" [ deferredTree ] ;
+      Node "dataMem"  [ dataMemTree ] ;
       Node "mulDiv"   [ mulDivTree ]
     ].
 

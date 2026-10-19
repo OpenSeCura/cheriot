@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Bool Psatz Nat Arith.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics.
-From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic SpecInst ImplRevoker ImplDevice ImplMulDiv ImplCommon ImplBranchPredictor ImplFetch ImplDecode ImplExecute ImplDeferred Impl.
+From Cheriot Require Import SpecDefines SpecDevice Clint SpecRevoker Plic SpecInst ImplRevoker ImplDevice ImplMulDiv ImplCommon ImplBranchPredictor ImplFetch ImplDecode ImplExecute ImplDataMem Impl.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -31,11 +31,11 @@ Local Open Scope guru_scope.
  * Fully Instantiated System Tree and Implementation Mod
  * =========================================================================== *)
 
-Definition DefaultFetchCapacity    : nat := 1%nat.
-Definition DefaultDecodeCapacity   : nat := 1%nat.
-Definition DefaultDeferredCapacity : nat := 1%nat.
-Definition DefaultMulCapacity      : nat := 1%nat.
-Definition DefaultDivCapacity      : nat := 1%nat.
+Definition DefaultFetchCapacity   : nat := 1%nat.
+Definition DefaultDecodeCapacity  : nat := 1%nat.
+Definition DefaultDataMemCapacity : nat := 1%nat.
+Definition DefaultMulCapacity     : nat := 1%nat.
+Definition DefaultDivCapacity     : nat := 1%nat.
 
 Definition ImplMulStages  : nat := 2%nat.
 Definition ImplDivStages  : nat := 16%nat.
@@ -63,7 +63,7 @@ Definition implSysTreeInst : Tree DomainElem :=
   implSysTree PcAddrInit
               DefaultFetchCapacity
               DefaultDecodeCapacity
-              DefaultDeferredCapacity
+              DefaultDataMemCapacity
               DefaultMulCapacity
               DefaultDivCapacity
               ImplMulStages
@@ -77,7 +77,7 @@ Definition forwardDatapathModInst : Mod implSysTreeInst :=
                       PcAddrInit
                       DefaultFetchCapacity
                       DefaultDecodeCapacity
-                      DefaultDeferredCapacity
+                      DefaultDataMemCapacity
                       DefaultMulCapacity
                       DefaultDivCapacity
                       ImplMulStages
@@ -94,7 +94,7 @@ Definition pipelinedModInst : Mod implSysTreeInst :=
                 PcAddrInit
                 DefaultFetchCapacity
                 DefaultDecodeCapacity
-                DefaultDeferredCapacity
+                DefaultDataMemCapacity
                 DefaultMulCapacity
                 DefaultDivCapacity
                 ImplMulStages
