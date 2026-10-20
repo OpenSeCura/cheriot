@@ -85,7 +85,9 @@ Section ExecuteStage.
   Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree decodeTree implExecuteTree dataMemTree mulDivTree).
   Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
   Local Abbreviation isInterruptPending := (isInterruptPending dom pcAddrInit).
-  Local Abbreviation executeNonDeferred := (executeNonDeferred dom pcAddrInit).
+  Local Abbreviation executeInterrupt := (executeInterrupt dom pcAddrInit).
+  Local Abbreviation executeSequential := (executeSequential dom pcAddrInit).
+  Local Abbreviation executeNonSequential := (executeNonSequential dom pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.rf.").
@@ -126,7 +128,8 @@ Section ExecuteStage.
    *                 - If execEpoch != currExecEpoch: drop entry and clear its
    *                   destination GPR/SCR/CSR wait bits.
    *                 - If execEpoch == currExecEpoch: run AluRouting, Alu, and
-   *                   executeNonDeferred; update branch predictor; on
+   *                   dispatch to executeInterrupt, executeSequential, or
+   *                   executeNonSequential; update branch predictor; on
    *                   ControlFlowAddrECap or committedNextPc != predPc,
    *                   advance execEpoch, clear straddleOpt, and redirect
    *                   fetchPc; clear destination SCR/CSR wait bits (and GPR
@@ -166,95 +169,131 @@ Section ExecuteStage.
              writesCsr readWriteCsrIdx
              waitFalse)
       ) Else (
-        LetA pcc           : FullECapWithTag      <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
-        Let  pcAddr        : Addr                 <- ##pcc`"addr" ;
-        LetL aluOut        : AluOutUnion          <- wrappedAlu pcc pkg ;
-                                                  
-        Let  aluOp         : AluOpUnion           <- ##aluOut`"Op" ;
-        Let  isSeq         : Bool                 <- #aluOp `? "Sequential" ;
-        Let  seqOp         : SequentialUnion      <- #aluOp `! "Sequential" ;
-        Let  isMulDiv      : Bool                 <- And [ #isSeq ; #seqOp `? "MulDiv" ] ;
-        Let  mulDivOp      : MulDivUnion          <- #seqOp `! "MulDiv" ;
-        Let  isMul         : Bool                 <- And [ #isMulDiv ; #mulDivOp `? "Mul" ] ;
-        Let  isDiv         : Bool                 <- And [ #isMulDiv ; #mulDivOp `? "Div" ] ;
-                                                  
-        Let  nonSeqOp      : NonSequentialUnion   <- #aluOp `! "NonSequential" ;
-        Let  isNonSeq      : Bool                 <- #aluOp `? "NonSequential" ;
-        Let  isExc         : Bool                 <- And [ #isNonSeq ; #nonSeqOp `? "Exception" ] ;
-        Let  isNoExc       : Bool                 <- And [ #isNonSeq ; #nonSeqOp `? "NoException" ] ;
-        Let  noExc         : NoExceptionUnion     <- #nonSeqOp `! "NoException" ;
-        Let  isMemOrFence  : Bool                 <- And [ #isNoExc ; #noExc `? "DataMem" ] ;
+        LetA pcc           : FullECapWithTag    <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
+        Let  pcAddr        : Addr               <- ##pcc`"addr" ;
+        LetL aluOut        : AluOutUnion        <- wrappedAlu pcc pkg ;
 
-        LetA meip          : Bool                 <- liftAction np_mem meipAct ;
-        LetA mtip          : Bool                 <- liftAction np_mem mtipAct ;
-        LetA intInfo       : InterruptPendingInfo <- liftAction np_rf (isInterruptPending meip mtip) ;
-        Let  isInterrupt   : Bool                 <- ##intInfo`"isInterrupt" ;
-        Let  isTrap        : Bool                 <- Or [ #isInterrupt ; #isExc ] ;
-        Let  intStall      : Bool                 <- And [ #isInterrupt ; Not #dataMem_isEmpty ] ;
+        Let  aluOp         : AluOpUnion         <- ##aluOut`"Op" ;
+        Let  isSeq         : Bool               <- #aluOp `? "Sequential" ;
+        Let  seqOp         : SequentialUnion    <- #aluOp `! "Sequential" ;
+        Let  isMulDiv      : Bool               <- And [ #isSeq ; #seqOp `? "MulDiv" ] ;
+        Let  mulDivOp      : MulDivUnion        <- #seqOp `! "MulDiv" ;
+        Let  isMul         : Bool               <- And [ #isMulDiv ; #mulDivOp `? "Mul" ] ;
+        Let  isDiv         : Bool               <- And [ #isMulDiv ; #mulDivOp `? "Div" ] ;
 
-        If (And [ Not #intStall ;
-                  Or [ Not #isMemOrFence ; Not #dataMemIn_isFull ] ;
-                  Or [ Not #isMul ; Not #mulIn_isFull ] ;
-                  Or [ Not #isDiv ; Not #divIn_isFull ] ]) Then (
-          Act (liftAction np_decode (decodeIfc ty).(decode_deq)) ;
+        Let  nonSeqOp      : NonSequentialUnion <- #aluOp `! "NonSequential" ;
+        Let  isNonSeq      : Bool               <- #aluOp `? "NonSequential" ;
+        Let  isExc         : Bool               <- And [ #isNonSeq ; #nonSeqOp `? "Exception" ] ;
+        Let  isNoExc       : Bool               <- And [ #isNonSeq ; #nonSeqOp `? "NoException" ] ;
+        Let  noExc         : NoExceptionUnion   <- #nonSeqOp `! "NoException" ;
+        Let  isMemOrFence  : Bool               <- And [ #isNoExc ; #noExc `? "DataMem" ] ;
 
-          LetA execOut         : ExecuteOut      <- liftAction np_rf (executeNonDeferred pcc meip mtip aluOut) ;
-          Let  nextPcc         : FullECapWithTag <- ##execOut`"nextPcc" ;
-          Act (liftAction np_rf (writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #nextPcc)) ;
+        LetA meip          : Bool               <- liftAction np_mem meipAct ;
+        LetA mtip          : Bool               <- liftAction np_mem mtipAct ;
+        LetA isInterrupt   : Bool               <- liftAction np_rf (isInterruptPending meip mtip) ;
 
-          Let  cfOpt           : Option CfPayload <- ##execOut`"cf" ;
-          Let  hasCf           : Bool             <- #cfOpt`"valid" ;
-          Let  cf              : CfPayload        <- #cfOpt`"data" ;
-          Let  committedNextPc : Addr             <- ##nextPcc`"addr" ;
-          Let  capChanged      : Bool             <- And [ #hasCf ; ##cf`"capChanged" ] ;
+        Let  dstVal        : FullECapWithTag    <- ##aluOut`"dstValue" ;
+        Let  reqDst        : Bit RegIdxSzReal   <- ##aluOut`"dstIdx" ;
+        Let  reqAddr       : Addr               <- ##dstVal`"addr" ;
 
-          If #hasCf Then (
-            liftAction np_bp ((withInstIfc ty).(withInst_updCf) pcAddr cf)
-          ) ;
+        If #isInterrupt Then (
+          If #dataMem_isEmpty Then (
+            Act (liftAction np_decode (decodeIfc ty).(decode_deq)) ;
+            LetA execOut         : ExecuteOut      <- liftAction np_rf (executeInterrupt pcc meip mtip) ;
+            Let  nextPcc         : FullECapWithTag <- ##execOut`"nextPcc" ;
+            Let  committedNextPc : Addr            <- ##nextPcc`"addr" ;
+            Act (liftAction np_rf (writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #nextPcc)) ;
 
-          If #isExc Then (
-            liftAction np_bp ((withInstIfc ty).(withInst_updException) pcAddr)
-          ) ;
-
-          If (Or [ #isTrap ; #capChanged ; ##execOut`"isFenceIRq" ; Not (Eq #committedNextPc #predPc) ]) Then (
             Let nextExecEpoch : Epoch <- Add [ #currExecEpoch ; $1 ] ;
             Act (liftAction np_execute (@writeExecEpoch ty nextExecEpoch)) ;
             Act (liftAction np_fetch (fetchIfc ty).(fetch_clearStraddle)) ;
-            liftAction np_fetch ((fetchIfc ty).(fetch_writeFetchPc) committedNextPc)
-          ) ;
+            Act (liftAction np_fetch ((fetchIfc ty).(fetch_writeFetchPc) committedNextPc)) ;
 
-          If (##execOut`"isFenceIRq") Then (
-            liftAction np_execute (@setFenceIPending ty)
-          ) ;
-
-          Let dstVal     : FullECapWithTag      <- ##aluOut`"dstValue" ;
-          Let reqDst     : Bit RegIdxSzReal     <- ##aluOut`"dstIdx" ;
-          Let reqAddr    : Addr                 <- ##dstVal`"addr" ;
-          Let dataMemOpt : Option MemFenceUnion <- ##execOut`"dataMem" ;
-          Let mulDivOpt  : Option MulDivUnion   <- ##execOut`"mulDiv" ;
-
-          If (#dataMemOpt`"valid") Then (
-            Let mfOp : MemFenceUnion <- #dataMemOpt`"data" ;
-            liftAction np_dataMem ((dataMemIfc ty).(dataMem_enq) reqDst reqAddr mfOp)
-          ) ;
-          If (#mulDivOpt`"valid") Then (
-            Let mdOp : MulDivUnion <- #mulDivOpt`"data" ;
-            If (#mdOp `? "Mul") Then (
-              Let mOp : MulOp <- #mdOp `! "Mul" ;
-              liftAction np_mulDiv ((mulDivIfc ty).(mulDiv_enqMul) reqDst reqAddr mOp)
-            ) Else (
-              Let dOp : DivOp <- #mdOp `! "Div" ;
-              liftAction np_mulDiv ((mulDivIfc ty).(mulDiv_enqDiv) reqDst reqAddr dOp)
-            ) ;
-            Retv
-          ) ;
-          If (Not (Or [#dataMemOpt`"valid" ; #mulDivOpt`"valid"])) Then (
             liftAction np_waitBits
               (@setDstWaitBits dom ty
                  writesCd dstIdxReal
                  writesScr readWriteScrIdx
                  writesCsr readWriteCsrIdx
                  waitFalse)
+          ) ;
+          Retv
+        ) Else (
+          If #isSeq Then (
+            If (And [ Or [ Not #isMul ; Not #mulIn_isFull ] ;
+                      Or [ Not #isDiv ; Not #divIn_isFull ] ]) Then (
+              Act (liftAction np_decode (decodeIfc ty).(decode_deq)) ;
+              LetA mulDivOpt : Option MulDivUnion <- liftAction np_rf (executeSequential pcc aluOut) ;
+              Let  nextPcc   : FullECapWithTag    <- #pcc `{ "addr" <- #predPc } ;
+              Act (liftAction np_rf (writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #nextPcc)) ;
+
+              If (#mulDivOpt`"valid") Then (
+                Let mdOp : MulDivUnion <- #mulDivOpt`"data" ;
+                If (#mdOp `? "Mul") Then (
+                  Let mOp : MulOp <- #mdOp `! "Mul" ;
+                  liftAction np_mulDiv ((mulDivIfc ty).(mulDiv_enqMul) reqDst reqAddr mOp)
+                ) Else (
+                  Let dOp : DivOp <- #mdOp `! "Div" ;
+                  liftAction np_mulDiv ((mulDivIfc ty).(mulDiv_enqDiv) reqDst reqAddr dOp)
+                ) ;
+                Retv
+              ) Else (
+                liftAction np_waitBits
+                  (@setDstWaitBits dom ty
+                     writesCd dstIdxReal
+                     writesScr readWriteScrIdx
+                     writesCsr readWriteCsrIdx
+                     waitFalse)
+              ) ;
+              Retv
+            ) ;
+            Retv
+          ) Else (
+            If (Or [ Not #isMemOrFence ; Not #dataMemIn_isFull ]) Then (
+              Act (liftAction np_decode (decodeIfc ty).(decode_deq)) ;
+              LetA execOut         : ExecuteOut      <- liftAction np_rf (executeNonSequential pcc aluOut) ;
+              Let  nextPcc         : FullECapWithTag <- ##execOut`"nextPcc" ;
+              Act (liftAction np_rf (writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #nextPcc)) ;
+
+              Let  cfOpt           : Option CfPayload <- ##execOut`"cf" ;
+              Let  hasCf           : Bool             <- #cfOpt`"valid" ;
+              Let  cf              : CfPayload        <- #cfOpt`"data" ;
+              Let  committedNextPc : Addr             <- ##nextPcc`"addr" ;
+              Let  capChanged      : Bool             <- And [ #hasCf ; ##cf`"capChanged" ] ;
+
+              If #hasCf Then (
+                liftAction np_bp ((withInstIfc ty).(withInst_updCf) pcAddr cf)
+              ) ;
+
+              If #isExc Then (
+                liftAction np_bp ((withInstIfc ty).(withInst_updException) pcAddr)
+              ) ;
+
+              If (Or [ #isExc ; #capChanged ; ##execOut`"isFenceIRq" ; Not (Eq #committedNextPc #predPc) ]) Then (
+                Let nextExecEpoch : Epoch <- Add [ #currExecEpoch ; $1 ] ;
+                Act (liftAction np_execute (@writeExecEpoch ty nextExecEpoch)) ;
+                Act (liftAction np_fetch (fetchIfc ty).(fetch_clearStraddle)) ;
+                liftAction np_fetch ((fetchIfc ty).(fetch_writeFetchPc) committedNextPc)
+              ) ;
+
+              If (##execOut`"isFenceIRq") Then (
+                liftAction np_execute (@setFenceIPending ty)
+              ) ;
+
+              Let dataMemOpt : Option MemFenceUnion <- ##execOut`"dataMem" ;
+              If (#dataMemOpt`"valid") Then (
+                Let mfOp : MemFenceUnion <- #dataMemOpt`"data" ;
+                liftAction np_dataMem ((dataMemIfc ty).(dataMem_enq) reqDst reqAddr mfOp)
+              ) Else (
+                liftAction np_waitBits
+                  (@setDstWaitBits dom ty
+                     writesCd dstIdxReal
+                     writesScr readWriteScrIdx
+                     writesCsr readWriteCsrIdx
+                     waitFalse)
+              ) ;
+              Retv
+            ) ;
+            Retv
           ) ;
           Retv
         ) ;

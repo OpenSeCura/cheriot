@@ -417,25 +417,20 @@ Section AluRF.
   Local Abbreviation incrementMcycle := (incrementMcycle dom pcAddrInit).
   Local Abbreviation updateMshwmOnStore := (updateMshwmOnStore dom pcAddrInit).
 
-  Definition isInterruptPending (meip mtip : ty Bool) : Action ty rfTree InterruptPendingInfo :=
-    LetA mstatus     : Bit Xlen       <- readRegsList csrPathsWithKind
-                                           ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-    LetA mie         : Bit Xlen       <- readRegsList csrPathsWithKind
-                                           ($(getCsrPhysicalIdx "mie") : Expr ty (Bit CsrIdxSz)) ;
-    Let  currMIE     : Bool           <- getMstatusMIE #mstatus ;
-    Let  meie        : Bool           <- getMieMEIE #mie ;
-    Let  mtie        : Bool           <- getMieMTIE #mie ;
-    Let  meipPending : Bool           <- And [ #meip ; #meie ] ;
-    Let  mtipPending : Bool           <- And [ #mtip ; #mtie ] ;
-    Let  isInterrupt : Bool           <- And [ #currMIE ; Or [ #meipPending ; #mtipPending ] ] ;
-    (* Cause number, not the bitmask; external outranks timer.  ITE not caseDefault,
-       which would OR the two when both are pending. *)
-    Let  intCauseNo  : Bit (Xlen - 1) <- ITE #meipPending $MEIP_Bit (ITE0 #mtipPending $MTIP_Bit) ;
-    Let  intMcause   : Bit Xlen       <- {< Const ty (Bit 1) (bits.of_Z 1 1), #intCauseNo >} ;
-    @Return ty rfTree InterruptPendingInfo (STRUCT {
-      "isInterrupt" ::= #isInterrupt ;
-      "intMcause"   ::= #intMcause
-    }).
+  Definition isInterruptPending (meip mtip : ty Bool) : Action ty rfTree Bool :=
+    LetA mstatus     : Bit Xlen <- readRegsList csrPathsWithKind
+                                     ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+    LetA mie         : Bit Xlen <- readRegsList csrPathsWithKind
+                                     ($(getCsrPhysicalIdx "mie") : Expr ty (Bit CsrIdxSz)) ;
+    Let  currMIE     : Bool     <- getMstatusMIE #mstatus ;
+    Let  meie        : Bool     <- getMieMEIE #mie ;
+    Let  mtie        : Bool     <- getMieMTIE #mie ;
+    Let  meipPending : Bool     <- And [ #meip ; #meie ] ;
+    Let  mtipPending : Bool     <- And [ #mtip ; #mtie ] ;
+    Return (And [ #currMIE ; Or [ #meipPending ; #mtipPending ] ]).
+
+  Local Definition getSeqPcc (currPcc : ty FullECapWithTag) (isComp : ty Bool) : Expr ty FullECapWithTag :=
+    #currPcc `{ "addr" <- Add [ ##currPcc`"addr" ; ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ] }.
 
   Definition handleTrap (currPcc : ty FullECapWithTag)
                         (newMcause newMtval : ty (Bit Xlen))
@@ -457,39 +452,119 @@ Section AluRF.
       "nextPcc"    ::= #mtcc
     }).
 
-  Definition executeNonDeferred (currPcc : ty FullECapWithTag) (meip mtip : ty Bool) (aluOut : ty AluOutUnion)
+  Definition executeInterrupt (currPcc : ty FullECapWithTag) (meip mtip : ty Bool)
     : Action ty rfTree ExecuteOut :=
-    Let  isComp      : Bool                 <- ##aluOut`"isComp" ;
-    Let  dstIdx      : Bit RegIdxSzReal     <- ##aluOut`"dstIdx" ;
-    Let  dstVal      : FullECapWithTag      <- ##aluOut`"dstValue" ;
-    Let  aluOp       : AluOpUnion           <- ##aluOut`"Op" ;
-    Let  pcStep      : Addr                 <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
-    Let  seqPc       : Addr                 <- Add [ ##currPcc`"addr" ; #pcStep ] ;
-    Let  seqPcc      : FullECapWithTag      <- #currPcc `{ "addr" <- #seqPc } ;
+    LetA mie         : Bit Xlen       <- readRegsList csrPathsWithKind
+                                           ($(getCsrPhysicalIdx "mie") : Expr ty (Bit CsrIdxSz)) ;
+    Let  meie        : Bool           <- getMieMEIE #mie ;
+    Let  mtie        : Bool           <- getMieMTIE #mie ;
+    Let  meipPending : Bool           <- And [ #meip ; #meie ] ;
+    Let  mtipPending : Bool           <- And [ #mtip ; #mtie ] ;
+    (* Cause number, not the bitmask; external outranks timer.  ITE not caseDefault,
+       which would OR the two when both are pending. *)
+    Let  intCauseNo  : Bit (Xlen - 1) <- ITE #meipPending $MEIP_Bit (ITE0 #mtipPending $MTIP_Bit) ;
+    Let  intMcause   : Bit Xlen       <- {< Const ty (Bit 1) (bits.of_Z 1 1), #intCauseNo >} ;
+    Let  intMtval    : Bit Xlen       <- $0 ;
+    handleTrap currPcc intMcause intMtval.
 
-    LetA intInfo     : InterruptPendingInfo <- isInterruptPending meip mtip ;
-    Let  isInterrupt : Bool                 <- ##intInfo`"isInterrupt" ;
-    Let  intMcause   : Bit Xlen             <- ##intInfo`"intMcause" ;
-
-    LetIf branchRes : ExecuteOut <-
-      If #isInterrupt Then
+  Definition executeSequential (currPcc : ty FullECapWithTag) (aluOut : ty AluOutUnion)
+    : Action ty rfTree (Option MulDivUnion) :=
+    Let dstIdx : Bit RegIdxSzReal <- ##aluOut`"dstIdx" ;
+    Let dstVal : FullECapWithTag  <- ##aluOut`"dstValue" ;
+    Let aluOp  : AluOpUnion       <- ##aluOut`"Op" ;
+    Let seqOp  : SequentialUnion  <- #aluOp `! "Sequential" ;
+    Act incrementMinstret ;
+    Act (writeRegsList scrPathsWithKind ($(getScrIdx "MePrevPcc") : Expr ty (Bit ScrIdxSz)) #currPcc) ;
+    LetIf mulDivOpt : Option MulDivUnion <-
+      If (#seqOp `? "Normal") Then
         (
-          Let intMtval : Bit Xlen <- $0 ;
-          handleTrap currPcc intMcause intMtval
+          If (isNotZero #dstIdx) Then
+            (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
+          @Return ty rfTree (Option MulDivUnion) (@mkNone ty MulDivUnion)
         )
       Else
         (
-          LetIf resSeqOrNonSeq : ExecuteOut <-
-            If (#aluOp `? "Sequential") Then
+          Let mulDivVal : MulDivUnion <- #seqOp `! "MulDiv" ;
+          @Return ty rfTree (Option MulDivUnion) (mkSome #mulDivVal)
+        ) ;
+    Return #mulDivOpt.
+
+  Definition executeNonSequential (currPcc : ty FullECapWithTag) (aluOut : ty AluOutUnion)
+    : Action ty rfTree ExecuteOut :=
+    Let isComp : Bool               <- ##aluOut`"isComp" ;
+    Let dstIdx : Bit RegIdxSzReal   <- ##aluOut`"dstIdx" ;
+    Let dstVal : FullECapWithTag    <- ##aluOut`"dstValue" ;
+    Let aluOp  : AluOpUnion         <- ##aluOut`"Op" ;
+    Let nonSeq : NonSequentialUnion <- #aluOp `! "NonSequential" ;
+    Let seqPcc : FullECapWithTag    <- getSeqPcc currPcc isComp ;
+    LetIf resNonSeq : ExecuteOut <-
+      If (#nonSeq `? "Exception") Then
+        (
+          Let excVal    : ExceptionInfo <- #nonSeq `! "Exception" ;
+          Let excMcause : Bit Xlen      <- encodeMcause ##excVal`"mcause" ;
+          Let excMtval  : Bit Xlen      <- encodeCheriMtval ##excVal`"mtval" ;
+          handleTrap currPcc excMcause excMtval
+        )
+      Else
+        (
+          Act incrementMinstret ;
+          Act (writeRegsList scrPathsWithKind ($(getScrIdx "MePrevPcc") : Expr ty (Bit ScrIdxSz)) #currPcc) ;
+          Let noExc : NoExceptionUnion <- #nonSeq `! "NoException" ;
+          LetIf resNoExc : ExecuteOut <-
+            If (#noExc `? "DataMem") Then
               (
-                Act incrementMinstret ;
-                Act (writeRegsList scrPathsWithKind ($(getScrIdx "MePrevPcc") : Expr ty (Bit ScrIdxSz)) #currPcc) ;
-                Let seqOp : SequentialUnion <- #aluOp `! "Sequential" ;
-                LetIf execOut : ExecuteOut <-
-                  If (#seqOp `? "Normal") Then
+                Let dataMemVal : MemFenceUnion <- #noExc `! "DataMem" ;
+                LetIf isFenceI : Bool <-
+                  If (#dataMemVal `? "Mem") Then
                     (
-                      If (isNotZero #dstIdx) Then
-                        (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
+                      Let memPayload : MemPayload      <- #dataMemVal `! "Mem" ;
+                      Let memOp      : LoadOrStoreKind <- ##memPayload`"memOp" ;
+                      Let stAddr     : Addr            <- ##dstVal`"addr" ;
+                      If (#memOp `? "Store") Then
+                        (updateMshwmOnStore stAddr) ;
+                      Let fFalse : Bool <- ConstBool false ;
+                      Return #fFalse
+                    )
+                  Else
+                    (
+                      Let fenceOp : FenceOp <- #dataMemVal `! "Fence" ;
+                      Let fVal    : Bool    <- ##fenceOp`"FenceI" ;
+                      Return #fVal
+                    ) ;
+                @Return ty rfTree ExecuteOut (STRUCT {
+                  "mulDiv"     ::= @mkNone ty MulDivUnion ;
+                  "dataMem"    ::= mkSome #dataMemVal ;
+                  "cf"         ::= @mkNone ty CfPayload ;
+                  "isFenceIRq" ::= #isFenceI ;
+                  "nextPcc"    ::= #seqPcc
+                })
+              )
+            Else
+              (
+                If (isNotZero #dstIdx) Then
+                  (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
+
+                Let cfScrCsr : CfScrCsrUnion <- #noExc `! "CfScrCsr" ;
+                LetIf resCfScrCsr : ExecuteOut <-
+                  If (#cfScrCsr `? "ScrCsr") Then
+                    (
+                      Let scrCsr : ScrCsrPayload        <- #cfScrCsr `! "ScrCsr" ;
+                      Let sDest  : TaggedUnion ScrCsrIdx <- ##scrCsr`"SpecialDest" ;
+                      Let sVal   : FullECapWithTag      <- ##scrCsr`"SpecialValue" ;
+
+                      If ##scrCsr`"isWrite" Then (
+                        If (#sDest `? "Scr") Then
+                          (
+                            Let scrIdx : Bit ScrIdxSz <- #sDest `! "Scr" ;
+                            writeRegsList scrPathsWithKind #scrIdx #sVal
+                          )
+                        Else
+                          (
+                            Let csrIdx : Bit CsrIdxSz <- #sDest `! "Csr" ;
+                            writeRegsList csrPathsWithKind #csrIdx ##sVal`"addr"
+                          ) ;
+                        Retv
+                      ) ;
                       @Return ty rfTree ExecuteOut (STRUCT {
                         "mulDiv"     ::= @mkNone ty MulDivUnion ;
                         "dataMem"    ::= @mkNone ty MemFenceUnion ;
@@ -500,150 +575,83 @@ Section AluRF.
                     )
                   Else
                     (
-                      Let mulDivVal : MulDivUnion <- #seqOp `! "MulDiv" ;
-                      @Return ty rfTree ExecuteOut (STRUCT {
-                        "mulDiv"     ::= mkSome #mulDivVal ;
-                        "dataMem"    ::= @mkNone ty MemFenceUnion ;
-                        "cf"         ::= @mkNone ty CfPayload ;
-                        "isFenceIRq" ::= Const ty Bool false ;
-                        "nextPcc"    ::= #seqPcc
-                      })
-                    ) ;
-                Return #execOut
-              )
-            Else
-              (
-                Let nonSeq : NonSequentialUnion <- #aluOp `! "NonSequential" ;
-                LetIf resNonSeq : ExecuteOut <-
-                  If (#nonSeq `? "Exception") Then
-                    (
-                      Let excVal    : ExceptionInfo <- #nonSeq `! "Exception" ;
-                      Let excMcause : Bit Xlen      <- encodeMcause ##excVal`"mcause" ;
-                      Let excMtval  : Bit Xlen      <- encodeCheriMtval ##excVal`"mtval" ;
-                      handleTrap currPcc excMcause excMtval
-                    )
-                  Else
-                    (
-                      Act incrementMinstret ;
-                      Act (writeRegsList scrPathsWithKind ($(getScrIdx "MePrevPcc") : Expr ty (Bit ScrIdxSz)) #currPcc) ;
-                      Let noExc : NoExceptionUnion <- #nonSeq `! "NoException" ;
-                      LetIf resNoExc : ExecuteOut <-
-                        If (#noExc `? "DataMem") Then
+                      Let cf     : CfPayload       <- #cfScrCsr `! "ControlFlow" ;
+                      Let newPcc : FullECapWithTag <- ##cf`"NewPcc" ;
+                      Let cfOp   : CfOp            <- ##cf`"CfOp" ;
+
+                      LetIf nextPccCf : FullECapWithTag <-
+                        If (#cfOp `? "ControlFlowAddrOnly") Then
                           (
-                            Let dataMemVal : MemFenceUnion <- #noExc `! "DataMem" ;
-                            LetIf isFenceI : Bool <-
-                              If (#dataMemVal `? "Mem") Then
+                            Let addrOnlyOp : ControlFlowAddrOnlyOp <- #cfOp `! "ControlFlowAddrOnly" ;
+                            LetIf nextPccAO : FullECapWithTag <-
+                              If (##addrOnlyOp `? "Branch") Then
                                 (
-                                  Let memPayload : MemPayload      <- #dataMemVal `! "Mem" ;
-                                  Let memOp      : LoadOrStoreKind <- ##memPayload`"memOp" ;
-                                  Let stAddr     : Addr            <- ##dstVal`"addr" ;
-                                  If (#memOp `? "Store") Then
-                                    (updateMshwmOnStore stAddr) ;
-                                  Let fFalse : Bool <- ConstBool false ;
-                                  Return #fFalse
+                                  Let isTaken   : Bool            <- #addrOnlyOp `! "Branch" ;
+                                  Let targetPcc : FullECapWithTag <- #currPcc
+                                                                       `{ "tag" <- ##newPcc`"tag"}
+                                                                       `{ "addr" <- ##newPcc`"addr" } ;
+                                  Let nextPcc   : FullECapWithTag <- ITE #isTaken #targetPcc #seqPcc ;
+                                  Return #nextPcc
                                 )
                               Else
                                 (
-                                  Let fenceOp : FenceOp <- #dataMemVal `! "Fence" ;
-                                  Let fVal    : Bool    <- ##fenceOp`"FenceI" ;
-                                  Return #fVal
+                                  Let targetPcc : FullECapWithTag <- #currPcc
+                                                                       `{ "tag" <- ##newPcc`"tag" }
+                                                                       `{ "addr" <- ##newPcc`"addr" } ;
+                                  Return #targetPcc
                                 ) ;
-                            @Return ty rfTree ExecuteOut (STRUCT {
-                              "mulDiv"     ::= @mkNone ty MulDivUnion ;
-                              "dataMem"    ::= mkSome #dataMemVal ;
-                              "cf"         ::= @mkNone ty CfPayload ;
-                              "isFenceIRq" ::= #isFenceI ;
-                              "nextPcc"    ::= #seqPcc
-                            })
+                            Return #nextPccAO
                           )
                         Else
                           (
-                            If (isNotZero #dstIdx) Then
-                              (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
-
-                            Let cfScrCsr : CfScrCsrUnion <- #noExc `! "CfScrCsr" ;
-                            LetIf resCfScrCsr : ExecuteOut <-
-                              If (#cfScrCsr `? "ScrCsr") Then
-                                (
-                                  Let scrCsr : ScrCsrPayload        <- #cfScrCsr `! "ScrCsr" ;
-                                  Let sDest  : TaggedUnion ScrCsrIdx <- ##scrCsr`"SpecialDest" ;
-                                  Let sVal   : FullECapWithTag      <- ##scrCsr`"SpecialValue" ;
-
-                                  If ##scrCsr`"isWrite" Then (
-                                    If (#sDest `? "Scr") Then
-                                      (
-                                        Let scrIdx : Bit ScrIdxSz <- #sDest `! "Scr" ;
-                                        writeRegsList scrPathsWithKind #scrIdx #sVal
-                                      )
-                                    Else
-                                      (
-                                        Let csrIdx : Bit CsrIdxSz <- #sDest `! "Csr" ;
-                                        writeRegsList csrPathsWithKind #csrIdx ##sVal`"addr"
-                                      ) ;
-                                    Retv
-                                  ) ;
-                                  @Return ty rfTree ExecuteOut (STRUCT {
-                                    "mulDiv"     ::= @mkNone ty MulDivUnion ;
-                                    "dataMem"    ::= @mkNone ty MemFenceUnion ;
-                                    "cf"         ::= @mkNone ty CfPayload ;
-                                    "isFenceIRq" ::= Const ty Bool false ;
-                                    "nextPcc"    ::= #seqPcc
-                                  })
-                                )
-                              Else
-                                (
-                                  Let cf     : CfPayload       <- #cfScrCsr `! "ControlFlow" ;
-                                  Let newPcc : FullECapWithTag <- ##cf`"NewPcc" ;
-                                  Let cfOp   : CfOp            <- ##cf`"CfOp" ;
-
-                                  LetIf nextPccCf : FullECapWithTag <-
-                                    If (#cfOp `? "ControlFlowAddrOnly") Then
-                                      (
-                                        Let addrOnlyOp : ControlFlowAddrOnlyOp <- #cfOp `! "ControlFlowAddrOnly" ;
-                                        LetIf nextPccAO : FullECapWithTag <-
-                                          If (##addrOnlyOp `? "Branch") Then
-                                            (
-                                              Let isTaken   : Bool            <- #addrOnlyOp `! "Branch" ;
-                                              Let targetPcc : FullECapWithTag <- #currPcc
-                                                                                   `{ "tag" <- ##newPcc`"tag"}
-                                                                                   `{ "addr" <- ##newPcc`"addr" } ;
-                                              Let nextPcc   : FullECapWithTag <- ITE #isTaken #targetPcc #seqPcc ;
-                                              Return #nextPcc
-                                            )
-                                          Else
-                                            (
-                                              Let targetPcc : FullECapWithTag <- #currPcc
-                                                                                   `{ "tag" <- ##newPcc`"tag" }
-                                                                                   `{ "addr" <- ##newPcc`"addr" } ;
-                                              Return #targetPcc
-                                            ) ;
-                                        Return #nextPccAO
-                                      )
-                                    Else
-                                      (
-                                        Let  addrECap   : ControlFlowAddrECap <- #cfOp `! "ControlFlowAddrECap" ;
-                                        Let  newMIE     : Bool                <- ##addrECap`"interruptStatus" ;
-                                        LetA mstatus    : Bit Xlen            <- readRegsList csrPathsWithKind
-                                                                                   ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-                                        Let  newMstatus : Bit Xlen            <- setMstatusMIE #mstatus #newMIE ;
-                                        Act (writeRegsList csrPathsWithKind
-                                               ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
-                                        Return #newPcc
-                                      ) ;
-                                  @Return ty rfTree ExecuteOut (STRUCT {
-                                    "mulDiv"     ::= @mkNone ty MulDivUnion ;
-                                    "dataMem"    ::= @mkNone ty MemFenceUnion ;
-                                    "cf"         ::= mkSome #cf ;
-                                    "isFenceIRq" ::= Const ty Bool false ;
-                                    "nextPcc"    ::= #nextPccCf
-                                  })
-                                ) ;
-                            Return #resCfScrCsr
+                            Let  addrECap   : ControlFlowAddrECap <- #cfOp `! "ControlFlowAddrECap" ;
+                            Let  newMIE     : Bool                <- ##addrECap`"interruptStatus" ;
+                            LetA mstatus    : Bit Xlen            <- readRegsList csrPathsWithKind
+                                                                       ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+                            Let  newMstatus : Bit Xlen            <- setMstatusMIE #mstatus #newMIE ;
+                            Act (writeRegsList csrPathsWithKind
+                                   ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
+                            Return #newPcc
                           ) ;
-                      Return #resNoExc
+                      @Return ty rfTree ExecuteOut (STRUCT {
+                        "mulDiv"     ::= @mkNone ty MulDivUnion ;
+                        "dataMem"    ::= @mkNone ty MemFenceUnion ;
+                        "cf"         ::= mkSome #cf ;
+                        "isFenceIRq" ::= Const ty Bool false ;
+                        "nextPcc"    ::= #nextPccCf
+                      })
                     ) ;
-                Return #resNonSeq
+                Return #resCfScrCsr
               ) ;
+          Return #resNoExc
+        ) ;
+    Return #resNonSeq.
+
+  Definition executeNonDeferred (currPcc : ty FullECapWithTag) (meip mtip : ty Bool) (aluOut : ty AluOutUnion)
+    : Action ty rfTree ExecuteOut :=
+    Let  aluOp       : AluOpUnion <- ##aluOut`"Op" ;
+    LetA isInterrupt : Bool       <- isInterruptPending meip mtip ;
+    LetIf branchRes : ExecuteOut <-
+      If #isInterrupt Then
+        (executeInterrupt currPcc meip mtip)
+      Else
+        (
+          LetIf resSeqOrNonSeq : ExecuteOut <-
+            If (#aluOp `? "Sequential") Then
+              (
+                Let  isComp    : Bool               <- ##aluOut`"isComp" ;
+                Let  seqPcc    : FullECapWithTag    <- getSeqPcc currPcc isComp ;
+                LetA mulDivOpt : Option MulDivUnion <- executeSequential currPcc aluOut ;
+                @Return ty rfTree ExecuteOut (STRUCT {
+                  "mulDiv"     ::= #mulDivOpt ;
+                  "dataMem"    ::= @mkNone ty MemFenceUnion ;
+                  "cf"         ::= @mkNone ty CfPayload ;
+                  "isFenceIRq" ::= Const ty Bool false ;
+                  "nextPcc"    ::= #seqPcc
+                })
+              )
+            Else
+              (executeNonSequential currPcc aluOut) ;
           Return #resSeqOrNonSeq
         ) ;
     Return #branchRes.

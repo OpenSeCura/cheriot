@@ -1285,11 +1285,6 @@ Arguments incrementMinstret dom pcAddrInit {ty}.
 Arguments incrementMcycle dom pcAddrInit {ty}.
 Arguments updateMshwmOnStore dom pcAddrInit {ty} stAddr.
 
-Definition InterruptPendingInfo := STRUCT_TYPE {
-  "isInterrupt" :: Bool ;
-  "intMcause"   :: Bit Xlen
-}.
-
 Definition ExecuteOut := STRUCT_TYPE {
   "mulDiv"     :: Option MulDivUnion ;
   "dataMem"    :: Option MemFenceUnion ;
