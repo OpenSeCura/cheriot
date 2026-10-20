@@ -31,8 +31,10 @@ Local Open Scope guru_scope.
  * Fully Instantiated System Tree and Implementation Mod
  * =========================================================================== *)
 
+Definition DefaultIssueWidth      : nat := 2%nat.
 Definition DefaultFetchCapacity   : nat := 1%nat.
-Definition DefaultDecodeCapacity  : nat := 1%nat.
+Definition DefaultInstCapacity    : nat := DefaultIssueWidth.
+Definition DefaultDecodeCapacity  : nat := DefaultIssueWidth.
 Definition DefaultDataMemCapacity : nat := 1%nat.
 Definition DefaultMulCapacity     : nat := 1%nat.
 Definition DefaultDivCapacity     : nat := 1%nat.
@@ -62,6 +64,7 @@ Definition implConcretePlic : @PlicInstance "core" 3%nat implConcreteRegions :=
 Definition implSysTreeInst : Tree DomainElem :=
   implSysTree PcAddrInit
               DefaultFetchCapacity
+              DefaultInstCapacity
               DefaultDecodeCapacity
               DefaultDataMemCapacity
               DefaultMulCapacity
@@ -76,6 +79,7 @@ Definition forwardDatapathModInst : Mod implSysTreeInst :=
   @forwardDatapathMod "core"
                       PcAddrInit
                       DefaultFetchCapacity
+                      DefaultInstCapacity
                       DefaultDecodeCapacity
                       DefaultDataMemCapacity
                       DefaultMulCapacity
@@ -92,7 +96,9 @@ Definition forwardDatapathModInst : Mod implSysTreeInst :=
 Definition pipelinedModInst : Mod implSysTreeInst :=
   @pipelinedMod "core"
                 PcAddrInit
+                DefaultIssueWidth
                 DefaultFetchCapacity
+                DefaultInstCapacity
                 DefaultDecodeCapacity
                 DefaultDataMemCapacity
                 DefaultMulCapacity

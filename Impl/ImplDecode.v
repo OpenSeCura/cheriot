@@ -33,8 +33,21 @@ Section DecodeStage.
 
   Definition implDecodeTree : Tree DomainElem :=
     Node "" [
+      Leaf "canProceed"      (dom, EReg (Build_Reg Bool (Some true) false)) ;
       Node "decodeToAluBuf" [ fifoTree dom capacity DecodeToAluEntry ]
     ].
+
+  Definition pDecodeCanProceed : RegPath implDecodeTree :=
+    Eval cbn in (getChildRegPathTree implDecodeTree "canProceed").
+
+  Definition readDecodeCanProceed (ty : Kind -> Type) : Action ty implDecodeTree Bool :=
+    ReadReg "canProceed" pDecodeCanProceed (fun v => Return #v).
+
+  Definition setDecodeCanProceed (ty : Kind -> Type) : Action ty implDecodeTree (Bit 0) :=
+    WriteReg pDecodeCanProceed (ConstBool true) Retv.
+
+  Definition clearDecodeCanProceed (ty : Kind -> Type) : Action ty implDecodeTree (Bit 0) :=
+    WriteReg pDecodeCanProceed (ConstBool false) Retv.
 
   Definition np_decToAluFifo : NodePath implDecodeTree :=
     Eval cbn in (getNodePath implDecodeTree ".decodeToAluBuf.fifo").
@@ -80,6 +93,9 @@ Section DecodeStage.
   Definition np_fetch : NodePath coreTree :=
     Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.fetch") singletonChildPath).
 
+  Definition np_decode : NodePath coreTree :=
+    Eval cbn in (getNodePath coreTree "core.decode.").
+
   Definition np_decodeToAluFifo : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.decode..decodeToAluBuf.fifo").
 
@@ -100,6 +116,7 @@ Section DecodeStage.
    *                 { aluIn, predPc, execEpoch } into decodeToAluBuf.
    * ========================================================================= *)
   Definition decodeAndRegRead : Action ty coreTree (Bit 0) :=
+    LetA canProceed          : Bool                 <- liftAction np_decode (@readDecodeCanProceed ty) ;
     LetA instHead            : Option AssembledInst <- liftAction np_fetch (fetchIfc ty).(fetch_instFirst) ;
     LetA decodeToAlu_isFull  : Bool                 <- liftAction np_decodeToAluFifo (@isFull dom capacity DecodeToAluEntry ty) ;
     LetA decodeToAlu_isEmpty : Bool                 <- liftAction np_decodeToAluFifo (@isEmpty dom capacity DecodeToAluEntry ty) ;
@@ -136,43 +153,48 @@ Section DecodeStage.
     LetA scrWait          : Bool <- liftAction np_waitBits (@readScrWaitBit dom ty readWriteScrIdx) ;
     LetA csrWait          : Bool <- liftAction np_waitBits (@readCsrWaitBit dom ty readWriteCsrIdx) ;
 
-    If (##instHead`"valid") Then (
-      (* Wrong-execEpoch instructions are dropped here *)
-      If (Not (Eq #entryExecEpoch #currExecEpoch)) Then (
-        liftAction np_fetch (fetchIfc ty).(fetch_instDeq)
-      ) Else (
-        Let  scrStallEmpty : Bool <- And [ #readsScr ; isStallUntilEmptyScr readWriteScrIdx ] ;
-        Let  csrStallEmpty : Bool <- And [ #readsCsr ; isStallUntilEmptyCsr readWriteCsrIdx ] ;
+    If #canProceed Then (
+      Act (liftAction np_decode (@clearDecodeCanProceed ty)) ;
+      If (##instHead`"valid") Then (
+        (* Wrong-execEpoch instructions are dropped here *)
+        If (Not (Eq #entryExecEpoch #currExecEpoch)) Then (
+          liftAction np_fetch (fetchIfc ty).(fetch_instDeq)
+        ) Else (
+          Let  scrStallEmpty : Bool <- And [ #readsScr ; isStallUntilEmptyScr readWriteScrIdx ] ;
+          Let  csrStallEmpty : Bool <- And [ #readsCsr ; isStallUntilEmptyCsr readWriteCsrIdx ] ;
 
-        (* cs1Idx and cs2Idx are set to 0 for instructions that don't read them *)
-        (* However, faulting instructions do not set them to 0 *)
-        Let  cs1Stall  : Bool <- And [ isNotZero #cs1Idx ; #cs1Wait ] ;
-        Let  cs2Stall  : Bool <- And [ isNotZero #cs2Idx ; #cs2Wait ] ;
-        Let  cdStall   : Bool <- And [ #writesCd ; #cdWait ] ;
-        Let  scrStall  : Bool <- Or [ And [ Or [ #readsScr ; #writesScr ] ; #scrWait ] ;
-                                      And [ #scrStallEmpty ; Not #pipelineEmpty ] ] ;
-        Let  csrStall  : Bool <- Or [ And [ Or [ #readsCsr ; #writesCsr ] ; #csrWait ] ;
-                                      And [ #csrStallEmpty ; Not #pipelineEmpty ] ] ;
-        Let  canIssue  : Bool <- Not (Or [ #decodeToAlu_isFull ; #cs1Stall ; #cs2Stall ; #cdStall ; #scrStall ; #csrStall ]) ;
+          (* cs1Idx and cs2Idx are set to 0 for instructions that don't read them *)
+          (* However, faulting instructions do not set them to 0 *)
+          Let  cs1Stall  : Bool <- And [ isNotZero #cs1Idx ; #cs1Wait ] ;
+          Let  cs2Stall  : Bool <- And [ isNotZero #cs2Idx ; #cs2Wait ] ;
+          Let  cdStall   : Bool <- And [ #writesCd ; #cdWait ] ;
+          Let  scrStall  : Bool <- Or [ And [ Or [ #readsScr ; #writesScr ] ; #scrWait ] ;
+                                        And [ #scrStallEmpty ; Not #pipelineEmpty ] ] ;
+          Let  csrStall  : Bool <- Or [ And [ Or [ #readsCsr ; #writesCsr ] ; #csrWait ] ;
+                                        And [ #csrStallEmpty ; Not #pipelineEmpty ] ] ;
+          Let  canIssue  : Bool <- Not (Or [ #decodeToAlu_isFull ; #cs1Stall ; #cs2Stall ; #cdStall ; #scrStall ; #csrStall ]) ;
 
-        If #canIssue Then (
-          Act (liftAction np_fetch (fetchIfc ty).(fetch_instDeq)) ;
+          If #canIssue Then (
+            Act (liftAction np_decode (@setDecodeCanProceed ty)) ;
+            Act (liftAction np_fetch (fetchIfc ty).(fetch_instDeq)) ;
 
-          (* Faulting instructions set random indices to wait, and unset them when the faults are handled *)
-          Let waitTrue : Bool <- ConstBool true ;
-          Act (liftAction np_waitBits
-                 (@setDstWaitBits dom ty
-                    writesCd cdIdx
-                    writesScr readWriteScrIdx
-                    writesCsr readWriteCsrIdx
-                    waitTrue)) ;
+            (* Faulting instructions set random indices to wait, and unset them when the faults are handled *)
+            Let waitTrue : Bool <- ConstBool true ;
+            Act (liftAction np_waitBits
+                   (@setDstWaitBits dom ty
+                      writesCd cdIdx
+                      writesScr readWriteScrIdx
+                      writesCsr readWriteCsrIdx
+                      waitTrue)) ;
 
-          Let d2aEntry : DecodeToAluEntry <- STRUCT {
-            "aluIn"     ::= #aluInInstGroup ;
-            "predPc"    ::= #predPc ;
-            "execEpoch" ::= #currExecEpoch
-          } ;
-          liftAction np_decodeToAluFifo (@enq dom capacity DecodeToAluEntry ty d2aEntry)
+            Let d2aEntry : DecodeToAluEntry <- STRUCT {
+              "aluIn"     ::= #aluInInstGroup ;
+              "predPc"    ::= #predPc ;
+              "execEpoch" ::= #currExecEpoch
+            } ;
+            liftAction np_decodeToAluFifo (@enq dom capacity DecodeToAluEntry ty d2aEntry)
+          ) ;
+          Retv
         ) ;
         Retv
       ) ;

@@ -30,7 +30,7 @@ Local Open Scope guru_scope.
 Section FetchStage.
   Variable dom : string.
   Variable pcAddrInit : Z.
-  Variable capacity : nat.
+  Variable fetchCapacity instCapacity : nat.
 
   Definition StraddleHalf := STRUCT_TYPE {
     "lowParcel" :: Bit CompInstSz ;
@@ -43,8 +43,9 @@ Section FetchStage.
       Leaf "predEpoch"    (dom, EReg (Build_Reg Epoch (Some Zmod.zero) false)) ;
       Leaf "curParcelOpt" (dom, EReg (Build_Reg (Option (Bit LgFetchParcels)) (Some (getDefault _)) false)) ;
       Leaf "straddleOpt"  (dom, EReg (Build_Reg (Option StraddleHalf) (Some (getDefault _)) false)) ;
-      Node "fetchBuf"     [ fifoTree dom capacity FetchBufEntry ] ;
-      Node "instBuf"      [ fifoTree dom capacity AssembledInst ]
+      Leaf "canProceed"   (dom, EReg (Build_Reg Bool (Some true) false)) ;
+      Node "fetchBuf"     [ fifoTree dom fetchCapacity FetchBufEntry ] ;
+      Node "instBuf"      [ fifoTree dom instCapacity AssembledInst ]
     ].
 
   Definition pFetchPc : RegPath implFetchTree :=
@@ -86,14 +87,26 @@ Section FetchStage.
   Definition clearStraddle (ty : Kind -> Type) : Action ty implFetchTree (Bit 0) :=
     WriteReg pStraddleOpt ConstDef Retv.
 
+  Definition pFetchCanProceed : RegPath implFetchTree :=
+    Eval cbn in (getChildRegPathTree implFetchTree "canProceed").
+
+  Definition readFetchCanProceed (ty : Kind -> Type) : Action ty implFetchTree Bool :=
+    ReadReg "canProceed" pFetchCanProceed (fun v => Return #v).
+
+  Definition setFetchCanProceed (ty : Kind -> Type) : Action ty implFetchTree (Bit 0) :=
+    WriteReg pFetchCanProceed (ConstBool true) Retv.
+
+  Definition clearFetchCanProceed (ty : Kind -> Type) : Action ty implFetchTree (Bit 0) :=
+    WriteReg pFetchCanProceed (ConstBool false) Retv.
+
   Definition np_fetchInstFifo : NodePath implFetchTree :=
     Eval cbn in (getNodePath implFetchTree ".instBuf.fifo").
 
   Definition fetchInstFirst (ty : Kind -> Type) : Action ty implFetchTree (Option AssembledInst) :=
-    liftAction np_fetchInstFifo (@first dom capacity AssembledInst ty).
+    liftAction np_fetchInstFifo (@first dom instCapacity AssembledInst ty).
 
   Definition fetchInstDeq (ty : Kind -> Type) : Action ty implFetchTree (Bit 0) :=
-    liftAction np_fetchInstFifo (@deq dom capacity AssembledInst ty).
+    liftAction np_fetchInstFifo (@deq dom instCapacity AssembledInst ty).
 
   Definition implFetchIfc (ty : Kind -> Type) : @FetchIfc ty := {|
     fetchTree           := implFetchTree ;
@@ -170,7 +183,7 @@ Section FetchStage.
    *                 FetchBufEntry into fetchBuf, and advance fetchPc to predPc.
    * ========================================================================= *)
   Definition fetchRq : Action ty coreTree (Bit 0) :=
-    LetA fetchBuf_isFull : Bool            <- liftAction np_fetchFifo (@isFull dom capacity FetchBufEntry ty) ;
+    LetA fetchBuf_isFull : Bool            <- liftAction np_fetchFifo (@isFull dom fetchCapacity FetchBufEntry ty) ;
     LetA fenceIPending   : Bool            <- liftAction np_execute (executeIfc ty).(execute_readFenceIPend) ;
     LetA fenceIWait      : Bool            <- liftAction np_mem ((memIfc ty).(mem_readFenceIWait)) ;
     LetA fetchPc         : Addr            <- liftAction np_fetch (@readFetchPc ty) ;
@@ -221,7 +234,7 @@ Section FetchStage.
           "predEpoch"  ::= #predEpoch ;
           "fetchExc"   ::= #preFetchExc
         } ;
-        Act (liftAction np_fetchFifo (@enq dom capacity FetchBufEntry ty entry)) ;
+        Act (liftAction np_fetchFifo (@enq dom fetchCapacity FetchBufEntry ty entry)) ;
         liftAction np_fetch (@writeFetchPc ty predPc)
       ) ;
       Retv
@@ -240,8 +253,9 @@ Section FetchStage.
    *                 noInst and redirecting on predEpoch if predPc != l2PredPc.
    * ========================================================================= *)
   Definition fetchAssemble : Action ty coreTree (Bit 0) :=
-    LetA fetchHead          : Option FetchBufEntry       <- liftAction np_fetchFifo (@first dom capacity FetchBufEntry ty) ;
-    LetA instBuf_isFull     : Bool                       <- liftAction np_instFifo (@isFull dom capacity AssembledInst ty) ;
+    LetA canProceed         : Bool                       <- liftAction np_fetch (@readFetchCanProceed ty) ;
+    LetA fetchHead          : Option FetchBufEntry       <- liftAction np_fetchFifo (@first dom fetchCapacity FetchBufEntry ty) ;
+    LetA instBuf_isFull     : Bool                       <- liftAction np_instFifo (@isFull dom instCapacity AssembledInst ty) ;
     LetA execEpoch          : Epoch                      <- liftAction np_execute (executeIfc ty).(execute_readExecEpoch) ;
     LetA predEpoch          : Epoch                      <- liftAction np_fetch (@readPredEpoch ty) ;
     LetA curParcelOpt       : Option (Bit LgFetchParcels) <- liftAction np_fetch (@readCurParcelOpt ty) ;
@@ -319,79 +333,84 @@ Section FetchStage.
       "fetchExc" ::= #combExc
     } ;
 
-    If (##fetchHead`"valid") Then (
-      If (##pktOpt`"valid") Then (
-        If (Not #isEpochMatch) Then (
-          Act (liftAction np_fetchFifo (@deq dom capacity FetchBufEntry ty)) ;
-          If (Not #hasPreFault) Then (
-            liftAction np_mem ((memIfc ty).(mem_deqInstRp) alignedPc)
-          ) ;
-          liftAction np_fetch (@writeCurParcelOpt ty noneParcel)
-        ) Else (
-          If (Not #instBuf_isFull) Then (
-            If #isSeqParcel Then (
-              Act (liftAction np_fetch (@writeCurParcelOpt ty someNextK)) ;
-              Act (liftAction np_fetch (@clearStraddle ty)) ;
-              Let asmInst : AssembledInst <- STRUCT {
-                "fetchOut"  ::= #fetchOut ;
-                "predPc"    ::= #seqPc ;
-                "execEpoch" ::= #execEpoch
-              } ;
-              liftAction np_instFifo (@enq dom capacity AssembledInst ty asmInst)
-            ) Else (
-              Let  instPred       : Addr <- ITE (Eq #currInstLastParcel #exitParcel) (##entry`"predPc") #seqPc ;
-              Let  seqNextPktAddr : Addr <- Add [ #alignedPc ; $NumBytesFullCapSz ] ;
-              Let  defaultPredPc  : Addr <- ITE #initStraddle #seqNextPktAddr #instPred ;
-
-              LetIf l2PredPc : Addr <-
-                If (And [ Not #initStraddle ; Not #hasCombFault ]) Then (
-                  LetIf predPc <- If #needsPred Then
-                                    liftAction np_bp ((withInstIfc ty).(withInst_getPred) instPc instPred expInst pb)
-                                  Else Return #seqPc ;
-                  Return #predPc
-                ) Else (
-                  Return #defaultPredPc
-                ) ;
-
-              Let  isEndOfLine    : Bool <- Or [ Not (Eq #l2PredPc #seqPc) ; isAllOnes #currInstLastParcel ] ;
-
-              If #isEndOfLine Then (
-                Let exitMismatch   : Bool <- Not (Eq #exitParcel #currInstLastParcel) ;
-                Let predPcMismatch : Bool <- Not (Eq (##entry`"predPc") #l2PredPc) ;
-
-                Act (liftAction np_fetchFifo (@deq dom capacity FetchBufEntry ty)) ;
-                If (Not #hasPreFault) Then (
-                  liftAction np_mem ((memIfc ty).(mem_deqInstRp) alignedPc)
-                ) ;
-                Act (liftAction np_fetch (@writeCurParcelOpt ty noneParcel)) ;
-                Act (liftAction np_noInst ((noInstIfc ty).(noInst_updByFetch)
-                       entryPc currInstLastParcel exitMismatch l2PredPc predPcMismatch pb initStraddle)) ;
-
-                If #predPcMismatch Then (
-                  Let nextPredEpoch : Epoch <- Add [ #predEpoch ; $1 ] ;
-                  Act (liftAction np_fetch (@writePredEpoch ty nextPredEpoch)) ;
-                  liftAction np_fetch (@writeFetchPc ty l2PredPc)
-                ) ;
-                Retv
-              ) Else (
-                liftAction np_fetch (@writeCurParcelOpt ty someNextK)
-              ) ;
-
-              If #initStraddle Then (
-                Let newStraddle : StraddleHalf <- STRUCT {
-                  "lowParcel" ::= #parcelK ;
-                  "fetchExc"  ::= #preExc
-                } ;
-                Let someStraddle : Option StraddleHalf <- mkSome #newStraddle ;
-                liftAction np_fetch (@writeStraddleOpt ty someStraddle)
-              ) Else (
+    If #canProceed Then (
+      Act (liftAction np_fetch (@clearFetchCanProceed ty)) ;
+      If (##fetchHead`"valid") Then (
+        If (##pktOpt`"valid") Then (
+          If (Not #isEpochMatch) Then (
+            Act (liftAction np_fetchFifo (@deq dom fetchCapacity FetchBufEntry ty)) ;
+            If (Not #hasPreFault) Then (
+              liftAction np_mem ((memIfc ty).(mem_deqInstRp) alignedPc)
+            ) ;
+            liftAction np_fetch (@writeCurParcelOpt ty noneParcel)
+          ) Else (
+            If (Not #instBuf_isFull) Then (
+              If #isSeqParcel Then (
+                Act (liftAction np_fetch (@setFetchCanProceed ty)) ;
+                Act (liftAction np_fetch (@writeCurParcelOpt ty someNextK)) ;
+                Act (liftAction np_fetch (@clearStraddle ty)) ;
                 Let asmInst : AssembledInst <- STRUCT {
                   "fetchOut"  ::= #fetchOut ;
-                  "predPc"    ::= #l2PredPc ;
+                  "predPc"    ::= #seqPc ;
                   "execEpoch" ::= #execEpoch
                 } ;
-                Act (liftAction np_fetch (@clearStraddle ty)) ;
-                liftAction np_instFifo (@enq dom capacity AssembledInst ty asmInst)
+                liftAction np_instFifo (@enq dom instCapacity AssembledInst ty asmInst)
+              ) Else (
+                Let  instPred       : Addr <- ITE (Eq #currInstLastParcel #exitParcel) (##entry`"predPc") #seqPc ;
+                Let  seqNextPktAddr : Addr <- Add [ #alignedPc ; $NumBytesFullCapSz ] ;
+                Let  defaultPredPc  : Addr <- ITE #initStraddle #seqNextPktAddr #instPred ;
+
+                LetIf l2PredPc : Addr <-
+                  If (And [ Not #initStraddle ; Not #hasCombFault ]) Then (
+                    LetIf predPc <- If #needsPred Then
+                                      liftAction np_bp ((withInstIfc ty).(withInst_getPred) instPc instPred expInst pb)
+                                    Else Return #seqPc ;
+                    Return #predPc
+                  ) Else (
+                    Return #defaultPredPc
+                  ) ;
+
+                Let  isEndOfLine    : Bool <- Or [ Not (Eq #l2PredPc #seqPc) ; isAllOnes #currInstLastParcel ] ;
+
+                If #isEndOfLine Then (
+                  Let exitMismatch   : Bool <- Not (Eq #exitParcel #currInstLastParcel) ;
+                  Let predPcMismatch : Bool <- Not (Eq (##entry`"predPc") #l2PredPc) ;
+
+                  Act (liftAction np_fetchFifo (@deq dom fetchCapacity FetchBufEntry ty)) ;
+                  If (Not #hasPreFault) Then (
+                    liftAction np_mem ((memIfc ty).(mem_deqInstRp) alignedPc)
+                  ) ;
+                  Act (liftAction np_fetch (@writeCurParcelOpt ty noneParcel)) ;
+                  Act (liftAction np_noInst ((noInstIfc ty).(noInst_updByFetch)
+                         entryPc currInstLastParcel exitMismatch l2PredPc predPcMismatch pb initStraddle)) ;
+
+                  If #predPcMismatch Then (
+                    Let nextPredEpoch : Epoch <- Add [ #predEpoch ; $1 ] ;
+                    Act (liftAction np_fetch (@writePredEpoch ty nextPredEpoch)) ;
+                    liftAction np_fetch (@writeFetchPc ty l2PredPc)
+                  ) ;
+                  Retv
+                ) Else (
+                  liftAction np_fetch (@writeCurParcelOpt ty someNextK)
+                ) ;
+
+                If #initStraddle Then (
+                  Let newStraddle : StraddleHalf <- STRUCT {
+                    "lowParcel" ::= #parcelK ;
+                    "fetchExc"  ::= #preExc
+                  } ;
+                  Let someStraddle : Option StraddleHalf <- mkSome #newStraddle ;
+                  liftAction np_fetch (@writeStraddleOpt ty someStraddle)
+                ) Else (
+                  Let asmInst : AssembledInst <- STRUCT {
+                    "fetchOut"  ::= #fetchOut ;
+                    "predPc"    ::= #l2PredPc ;
+                    "execEpoch" ::= #execEpoch
+                  } ;
+                  Act (liftAction np_fetch (@clearStraddle ty)) ;
+                  liftAction np_instFifo (@enq dom instCapacity AssembledInst ty asmInst)
+                ) ;
+                Retv
               ) ;
               Retv
             ) ;

@@ -34,12 +34,13 @@ Local Open Scope guru_scope.
 Section ImplDom.
   Variable core : string.
   Variable pcAddrInit : Z.
-  Variable fetchCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity : nat.
+  Variable issueWidth : nat.
+  Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity : nat.
   Variable mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
 
   Local Abbreviation rTree := (rfTree core pcAddrInit).
-  Local Abbreviation fTree := (implFetchTree core pcAddrInit fetchCapacity).
+  Local Abbreviation fTree := (implFetchTree core pcAddrInit fetchCapacity instCapacity).
   Local Abbreviation decTree := (implDecodeTree core decodeCapacity).
   Local Abbreviation eTree := (implExecuteTree core).
   Local Abbreviation dmTree := (implDataMemTree core dataMemCapacity).
@@ -62,7 +63,7 @@ Section ImplDom.
     Local Abbreviation withInstIfc := (fun ty => @implWithInstIfc noInstIfc ty).
     Local Abbreviation memTree := (implMemTree regions).
     Local Abbreviation memIfc := (fun ty => @implMemIfc core config regions ty rev).
-    Local Abbreviation fetchIfc := (fun ty => @implFetchIfc core pcAddrInit fetchCapacity ty).
+    Local Abbreviation fetchIfc := (fun ty => @implFetchIfc core pcAddrInit fetchCapacity instCapacity ty).
     Local Abbreviation decodeIfc := (fun ty => @implDecodeIfc core decodeCapacity ty).
     Local Abbreviation executeIfc := (fun ty => @implExecuteIfc core ty).
     Local Abbreviation dataMemIfc := (fun ty => @implDataMemIfc core dataMemCapacity ty).
@@ -81,6 +82,15 @@ Section ImplDom.
 
       Definition np_mem : NodePath sysTree :=
         Eval cbn in (getNodePath sysTree "sys.core.mem.").
+
+      Definition np_fetch : NodePath sysTree :=
+        Eval cbn in (getNodePath sysTree "sys.core.fetch.").
+
+      Definition np_decode : NodePath sysTree :=
+        Eval cbn in (getNodePath sysTree "sys.core.decode.").
+
+      Definition np_execute : NodePath sysTree :=
+        Eval cbn in (getNodePath sysTree "sys.core.execute.").
 
       (* =====================================================================
        * Peripheral Background Rules & Interrupt Polling on implMemTree
@@ -167,14 +177,17 @@ Section ImplDom.
        * ===================================================================== *)
 
       Definition fetchRqStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@fetchRq core pcAddrInit fetchCapacity noInstIfc withInstIfc memIfc executeIfc decTree dmTree mdTree ty).
+        liftAction np_core (@fetchRq core pcAddrInit fetchCapacity instCapacity noInstIfc withInstIfc memIfc executeIfc decTree dmTree mdTree ty).
 
       (* =====================================================================
        * STAGE 2: Fetch Assemble, Pre-Decode & Level-2 Branch Prediction
        * ===================================================================== *)
 
       Definition fetchAssembleStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@fetchAssemble core pcAddrInit fetchCapacity noInstIfc withInstIfc memIfc executeIfc decTree dmTree mdTree ty).
+        liftAction np_core (@fetchAssemble core pcAddrInit fetchCapacity instCapacity noInstIfc withInstIfc memIfc executeIfc decTree dmTree mdTree ty).
+
+      Definition setFetchCanProceedStage : Action ty sysTree (Bit 0) :=
+        liftAction np_fetch (@setFetchCanProceed core pcAddrInit fetchCapacity instCapacity ty).
 
       (* =====================================================================
        * STAGE 3: Decode & Register Read with Scoreboard
@@ -187,6 +200,9 @@ Section ImplDom.
                              (implPlicAction (@plicMeip core nIrq ty))
                              (implClintAction (readClintMtip core ty))).
 
+      Definition setDecodeCanProceedStage : Action ty sysTree (Bit 0) :=
+        liftAction np_decode (@setDecodeCanProceed core decodeCapacity ty).
+
       (* =====================================================================
        * STAGE 4: Combined ALU + Execute Non-Deferred Stage
        * ===================================================================== *)
@@ -198,6 +214,14 @@ Section ImplDom.
                                      fetchIfc decodeIfc dataMemIfc mulDivIfc ty
                                      (implPlicAction (@plicMeip core nIrq ty))
                                      (implClintAction (readClintMtip core ty))).
+
+      Definition setExecuteCanProceedStage : Action ty sysTree (Bit 0) :=
+        liftAction np_execute (@setExecuteCanProceed core ty).
+
+      Definition setCanProceedSteps : list (Action ty sysTree (Bit 0)) :=
+        [ setFetchCanProceedStage ;
+          setDecodeCanProceedStage ;
+          setExecuteCanProceedStage ].
 
       (* =====================================================================
        * STAGE 5: Execute DataMem Stages (Load / Store / Fence / Rev) & MulDiv
@@ -289,7 +313,8 @@ Section ImplDom.
         ++ fenceIAcks ty
         ++ targetPortRqs ty
         ++ dataWriteRqs ty ++ dataReadRqs ty ++ dataReadRps ty
-        ++ targetPortRps ty)%list.
+        ++ targetPortRps ty
+        ++ setCanProceedSteps ty)%list.
 
     Definition forwardDatapathMod : Mod sysTree :=
       fun ty => forwardDatapathList ty.
@@ -299,11 +324,11 @@ Section ImplDom.
         fetchRps ty ++ dataReadRps ty
         ++ targetPortRps ty
         ++ List.rev (
-             [ fetchRqStage ty ;
-               fetchAssembleStage ty ;
-               decodeAndRegReadStage ty ;
-               aluAndExecuteNonDeferredStage ty ;
-               loadRqOrStoreOrFenceStage ty ]
+             [ fetchRqStage ty ]
+             ++ repeat (fetchAssembleStage ty) issueWidth
+             ++ repeat (decodeAndRegReadStage ty) issueWidth
+             ++ repeat (aluAndExecuteNonDeferredStage ty) issueWidth
+             ++ [ loadRqOrStoreOrFenceStage ty ]
              ++ dataCrossLineSteps ty
              ++ [ loadRpAndIssueRevRqStage ty ;
                   revRpAndWriteBackStage ty ]
@@ -313,7 +338,8 @@ Section ImplDom.
         ++ List.rev (implRevokerStepsSys ty)
         ++ fenceIAcks ty
         ++ targetPortRqs ty
-        ++ fetchRqs ty ++ dataReadRqs ty ++ dataWriteRqs ty)%list.
+        ++ fetchRqs ty ++ dataReadRqs ty ++ dataWriteRqs ty
+        ++ setCanProceedSteps ty)%list.
 
     Definition pipelinedMod : Mod sysTree :=
       fun ty => pipelinedList ty.
