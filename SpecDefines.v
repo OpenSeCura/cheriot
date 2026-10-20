@@ -1295,7 +1295,7 @@ Definition ExecuteOut := STRUCT_TYPE {
   "dataMem"    :: Option MemFenceUnion ;
   "cf"         :: Option CfPayload ;
   "isFenceIRq" :: Bool ;
-  "nextPc"     :: Addr
+  "nextPcc"    :: FullECapWithTag
 }.
 
 Definition FetchOut := STRUCT_TYPE {

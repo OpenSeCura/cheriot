@@ -198,12 +198,14 @@ Section ExecuteStage.
                   Or [ Not #isDiv ; Not #divIn_isFull ] ]) Then (
           Act (liftAction np_decode (decodeIfc ty).(decode_deq)) ;
 
-          LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred pcc meip mtip aluOut) ;
+          LetA execOut         : ExecuteOut      <- liftAction np_rf (executeNonDeferred pcc meip mtip aluOut) ;
+          Let  nextPcc         : FullECapWithTag <- ##execOut`"nextPcc" ;
+          Act (liftAction np_rf (writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #nextPcc)) ;
 
           Let  cfOpt           : Option CfPayload <- ##execOut`"cf" ;
           Let  hasCf           : Bool             <- #cfOpt`"valid" ;
           Let  cf              : CfPayload        <- #cfOpt`"data" ;
-          Let  committedNextPc : Addr             <- ##execOut`"nextPc" ;
+          Let  committedNextPc : Addr             <- ##nextPcc`"addr" ;
           Let  capChanged      : Bool             <- And [ #hasCf ; ##cf`"capChanged" ] ;
 
           If #hasCf Then (

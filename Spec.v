@@ -125,6 +125,7 @@ Section SpecDom.
 
           (* 5. Commit Non-Deferred (GPRs, SCRs, CSRs, PCC, Traps) *)
           LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred pcc meip mtip aluOut) ;
+          Act (liftAction np_rf (writeRegsList (gprPathsWithKind core pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal)) (##execOut`"nextPcc"))) ;
 
           (* 6. Commit Deferred (Memory Loads, Stores, Fences, MulDiv) *)
           Let  dstIdx     : Bit RegIdxSzReal     <- ##aluOut`"dstIdx" ;

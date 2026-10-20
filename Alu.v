@@ -405,11 +405,6 @@ Section Alu.
     RetE #aluOut.
 End Alu.
 
-Local Definition ExecBranchRes := STRUCT_TYPE {
-  "nextPcc" :: FullECapWithTag ;
-  "execOut" :: ExecuteOut
-}.
-
 Section AluRF.
   Variable dom : string.
   Variable pcAddrInit : Z.
@@ -442,24 +437,9 @@ Section AluRF.
       "intMcause"   ::= #intMcause
     }).
 
-  Local Definition defaultExecuteOut (nextPc : Expr ty Addr) : Expr ty ExecuteOut :=
-    STRUCT {
-      "mulDiv"     ::= @mkNone ty MulDivUnion ;
-      "dataMem"    ::= @mkNone ty MemFenceUnion ;
-      "cf"         ::= @mkNone ty CfPayload ;
-      "isFenceIRq" ::= Const ty Bool false ;
-      "nextPc"     ::= nextPc
-    }.
-
-  Local Definition mkExecBranchRes (nextPcc : ty FullECapWithTag) (execOut : ty ExecuteOut) : Expr ty ExecBranchRes :=
-    STRUCT {
-      "nextPcc" ::= #nextPcc ;
-      "execOut" ::= #execOut
-    }.
-
   Definition handleTrap (currPcc : ty FullECapWithTag)
                         (newMcause newMtval : ty (Bit Xlen))
-    : Action ty rfTree ExecBranchRes :=
+    : Action ty rfTree ExecuteOut :=
     LetA mstatus    : Bit Xlen        <- readRegsList csrPathsWithKind
                                            ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
     Let  mstatus1   : Bit Xlen        <- setMstatusMPIE #mstatus (getMstatusMIE #mstatus) ;
@@ -469,8 +449,13 @@ Section AluRF.
     Act (writeRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mcause") : Expr ty (Bit CsrIdxSz)) #newMcause) ;
     Act (writeRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mtval") : Expr ty (Bit CsrIdxSz)) #newMtval) ;
     Act (writeRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
-    Let  execOut    : ExecuteOut      <- defaultExecuteOut (##mtcc`"addr") ;
-    Return (mkExecBranchRes mtcc execOut).
+    @Return ty rfTree ExecuteOut (STRUCT {
+      "mulDiv"     ::= @mkNone ty MulDivUnion ;
+      "dataMem"    ::= @mkNone ty MemFenceUnion ;
+      "cf"         ::= @mkNone ty CfPayload ;
+      "isFenceIRq" ::= Const ty Bool false ;
+      "nextPcc"    ::= #mtcc
+    }).
 
   Definition executeNonDeferred (currPcc : ty FullECapWithTag) (meip mtip : ty Bool) (aluOut : ty AluOutUnion)
     : Action ty rfTree ExecuteOut :=
@@ -486,7 +471,7 @@ Section AluRF.
     Let  isInterrupt : Bool                 <- ##intInfo`"isInterrupt" ;
     Let  intMcause   : Bit Xlen             <- ##intInfo`"intMcause" ;
 
-    LetIf branchRes : ExecBranchRes <-
+    LetIf branchRes : ExecuteOut <-
       If #isInterrupt Then
         (
           Let intMtval : Bit Xlen <- $0 ;
@@ -494,7 +479,7 @@ Section AluRF.
         )
       Else
         (
-          LetIf resSeqOrNonSeq : ExecBranchRes <-
+          LetIf resSeqOrNonSeq : ExecuteOut <-
             If (#aluOp `? "Sequential") Then
               (
                 Act incrementMinstret ;
@@ -505,22 +490,31 @@ Section AluRF.
                     (
                       If (isNotZero #dstIdx) Then
                         (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
-                      Let out : ExecuteOut <- defaultExecuteOut #seqPc ;
-                      Return #out
+                      @Return ty rfTree ExecuteOut (STRUCT {
+                        "mulDiv"     ::= @mkNone ty MulDivUnion ;
+                        "dataMem"    ::= @mkNone ty MemFenceUnion ;
+                        "cf"         ::= @mkNone ty CfPayload ;
+                        "isFenceIRq" ::= Const ty Bool false ;
+                        "nextPcc"    ::= #seqPcc
+                      })
                     )
                   Else
                     (
                       Let mulDivVal : MulDivUnion <- #seqOp `! "MulDiv" ;
-                      Let out       : ExecuteOut  <- (defaultExecuteOut #seqPc)
-                                                       `{ "mulDiv" <- mkSome #mulDivVal } ;
-                      Return #out
+                      @Return ty rfTree ExecuteOut (STRUCT {
+                        "mulDiv"     ::= mkSome #mulDivVal ;
+                        "dataMem"    ::= @mkNone ty MemFenceUnion ;
+                        "cf"         ::= @mkNone ty CfPayload ;
+                        "isFenceIRq" ::= Const ty Bool false ;
+                        "nextPcc"    ::= #seqPcc
+                      })
                     ) ;
-                Return (mkExecBranchRes seqPcc execOut)
+                Return #execOut
               )
             Else
               (
                 Let nonSeq : NonSequentialUnion <- #aluOp `! "NonSequential" ;
-                LetIf resNonSeq : ExecBranchRes <-
+                LetIf resNonSeq : ExecuteOut <-
                   If (#nonSeq `? "Exception") Then
                     (
                       Let excVal    : ExceptionInfo <- #nonSeq `! "Exception" ;
@@ -533,7 +527,7 @@ Section AluRF.
                       Act incrementMinstret ;
                       Act (writeRegsList scrPathsWithKind ($(getScrIdx "MePrevPcc") : Expr ty (Bit ScrIdxSz)) #currPcc) ;
                       Let noExc : NoExceptionUnion <- #nonSeq `! "NoException" ;
-                      LetIf resNoExc : ExecBranchRes <-
+                      LetIf resNoExc : ExecuteOut <-
                         If (#noExc `? "DataMem") Then
                           (
                             Let dataMemVal : MemFenceUnion <- #noExc `! "DataMem" ;
@@ -554,10 +548,13 @@ Section AluRF.
                                   Let fVal    : Bool    <- ##fenceOp`"FenceI" ;
                                   Return #fVal
                                 ) ;
-                            Let execOut : ExecuteOut <- (defaultExecuteOut #seqPc)
-                                                          `{ "dataMem" <- mkSome #dataMemVal }
-                                                          `{ "isFenceIRq" <- #isFenceI } ;
-                            Return (mkExecBranchRes seqPcc execOut)
+                            @Return ty rfTree ExecuteOut (STRUCT {
+                              "mulDiv"     ::= @mkNone ty MulDivUnion ;
+                              "dataMem"    ::= mkSome #dataMemVal ;
+                              "cf"         ::= @mkNone ty CfPayload ;
+                              "isFenceIRq" ::= #isFenceI ;
+                              "nextPcc"    ::= #seqPcc
+                            })
                           )
                         Else
                           (
@@ -565,7 +562,7 @@ Section AluRF.
                               (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
 
                             Let cfScrCsr : CfScrCsrUnion <- #noExc `! "CfScrCsr" ;
-                            LetIf resCfScrCsr : ExecBranchRes <-
+                            LetIf resCfScrCsr : ExecuteOut <-
                               If (#cfScrCsr `? "ScrCsr") Then
                                 (
                                   Let scrCsr : ScrCsrPayload        <- #cfScrCsr `! "ScrCsr" ;
@@ -585,8 +582,13 @@ Section AluRF.
                                       ) ;
                                     Retv
                                   ) ;
-                                  Let execOut : ExecuteOut <- defaultExecuteOut #seqPc ;
-                                  Return (mkExecBranchRes seqPcc execOut)
+                                  @Return ty rfTree ExecuteOut (STRUCT {
+                                    "mulDiv"     ::= @mkNone ty MulDivUnion ;
+                                    "dataMem"    ::= @mkNone ty MemFenceUnion ;
+                                    "cf"         ::= @mkNone ty CfPayload ;
+                                    "isFenceIRq" ::= Const ty Bool false ;
+                                    "nextPcc"    ::= #seqPcc
+                                  })
                                 )
                               Else
                                 (
@@ -628,9 +630,13 @@ Section AluRF.
                                                ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
                                         Return #newPcc
                                       ) ;
-                                  Let execOut : ExecuteOut <- (defaultExecuteOut (##nextPccCf`"addr"))
-                                                                `{ "cf" <- mkSome #cf } ;
-                                  Return (mkExecBranchRes nextPccCf execOut)
+                                  @Return ty rfTree ExecuteOut (STRUCT {
+                                    "mulDiv"     ::= @mkNone ty MulDivUnion ;
+                                    "dataMem"    ::= @mkNone ty MemFenceUnion ;
+                                    "cf"         ::= mkSome #cf ;
+                                    "isFenceIRq" ::= Const ty Bool false ;
+                                    "nextPcc"    ::= #nextPccCf
+                                  })
                                 ) ;
                             Return #resCfScrCsr
                           ) ;
@@ -640,8 +646,7 @@ Section AluRF.
               ) ;
           Return #resSeqOrNonSeq
         ) ;
-    Act (writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) (##branchRes`"nextPcc")) ;
-    Return (##branchRes`"execOut").
+    Return #branchRes.
 
   Definition regRead (meip mtip : ty Bool) (regReadIn : ty RegReadIn) : Action ty rfTree AluInInstGroup :=
     Let  decodeOut  : DecodeOut        <- ##regReadIn`"decodeOut" ;
