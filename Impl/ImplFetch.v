@@ -319,66 +319,83 @@ Section FetchStage.
                                                                           ##combExc`"bounds" ] ;
 
             LetL pb                 : PreBranchInfo               <- preDecodeBranch expInst ;
-            Let  instPred           : Addr                        <- ITE (Eq #currInstLastParcel #exitParcel) (##entry`"predPc") #seqPc ;
-            Let  seqNextPktAddr     : Addr                        <- Add [ #alignedPc ; $NumBytesFullCapSz ] ;
+            Let  needsPred          : Bool                        <- Or [ ##pb`"isCjal" ; ##pb`"isBranch" ; ##pb`"isCjalr" ; ##pb`"isCall" ; ##pb`"isReturn" ] ;
+            Let  isSeqParcel        : Bool                        <- And [ Not (isAllOnes #currInstLastParcel) ;
+                                                                           Not (Eq #currInstLastParcel #exitParcel) ;
+                                                                           Not #needsPred ] ;
+            Let  nextK              : Bit LgFetchParcels          <- Add [ #currInstLastParcel ; $1 ] ;
+            Let  someNextK          : Option (Bit LgFetchParcels) <- mkSome #nextK ;
+            Let  fetchOut           : FetchOut                    <- STRUCT {
+              "hasAsr"   ::= ##pccECap`"perms"`"SR" ;
+              "inst"     ::= #expInst ;
+              "fetchExc" ::= #combExc
+            } ;
 
-            Let  defaultPredPc      : Addr                        <- ITE #initStraddle #seqNextPktAddr #instPred ;
-
-            LetIf l2PredPc : Addr <-
-              If (And [ Not #initStraddle ; Not #hasCombFault ]) Then (
-                Let needsPred <- Or [##pb`"isCjal" ; ##pb`"isBranch" ; ##pb`"isCjalr" ; ##pb`"isCall" ; ##pb`"isReturn" ] ;
-                LetA predPc <- liftAction np_bp ((withInstIfc ty).(withInst_getPred) instPc instPred expInst pb) ;
-                Return (ITE #needsPred #predPc #seqPc)
-              ) Else (
-                Return #defaultPredPc
-              ) ;
-
-            Let  isEndOfLine        : Bool                        <- Or [ Not (Eq #l2PredPc #seqPc) ; isAllOnes #currInstLastParcel ] ;
-
-            If #isEndOfLine Then (
-              Let exitMismatch   : Bool <- Not (Eq #exitParcel #currInstLastParcel) ;
-              Let predPcMismatch : Bool <- Not (Eq (##entry`"predPc") #l2PredPc) ;
-
-              Act (liftAction np_fetchFifo (@deq dom capacity FetchBufEntry ty)) ;
-              If (Not #hasPreFault) Then (
-                liftAction np_mem ((memIfc ty).(mem_deqInstRp) alignedPc)
-              ) ;
-              Act (liftAction np_fetch (@writeCurParcelOpt ty noneParcel)) ;
-              Act (liftAction np_noInst ((noInstIfc ty).(noInst_updByFetch)
-                     entryPc currInstLastParcel exitMismatch l2PredPc predPcMismatch pb initStraddle)) ;
-
-              If #predPcMismatch Then (
-                Let nextPredEpoch : Epoch <- Add [ #predEpoch ; $1 ] ;
-                Act (liftAction np_fetch (@writePredEpoch ty nextPredEpoch)) ;
-                liftAction np_fetch (@writeFetchPc ty l2PredPc)
-              ) ;
-              Retv
-            ) Else (
-              Let nextK     : Bit LgFetchParcels          <- Add [ #currInstLastParcel ; $1 ] ;
-              Let someNextK : Option (Bit LgFetchParcels) <- mkSome #nextK ;
-              liftAction np_fetch (@writeCurParcelOpt ty someNextK)
-            ) ;
-
-            If #initStraddle Then (
-              Let newStraddle : StraddleHalf <- STRUCT {
-                "lowParcel" ::= #parcelK ;
-                "fetchExc"  ::= #preExc
-              } ;
-              Let someStraddle : Option StraddleHalf <- mkSome #newStraddle ;
-              liftAction np_fetch (@writeStraddleOpt ty someStraddle)
-            ) Else (
-              Let fetchOut : FetchOut <- STRUCT {
-                "hasAsr"   ::= ##pccECap`"perms"`"SR" ;
-                "inst"     ::= #expInst ;
-                "fetchExc" ::= #combExc
-              } ;
+            If #isSeqParcel Then (
+              Act (liftAction np_fetch (@writeCurParcelOpt ty someNextK)) ;
+              Act (liftAction np_fetch (@clearStraddle ty)) ;
               Let asmInst : AssembledInst <- STRUCT {
                 "fetchOut"  ::= #fetchOut ;
-                "predPc"    ::= #l2PredPc ;
+                "predPc"    ::= #seqPc ;
                 "execEpoch" ::= #execEpoch
               } ;
-              Act (liftAction np_fetch (@clearStraddle ty)) ;
               liftAction np_instFifo (@enq dom capacity AssembledInst ty asmInst)
+            ) Else (
+              Let  instPred       : Addr <- ITE (Eq #currInstLastParcel #exitParcel) (##entry`"predPc") #seqPc ;
+              Let  seqNextPktAddr : Addr <- Add [ #alignedPc ; $NumBytesFullCapSz ] ;
+              Let  defaultPredPc  : Addr <- ITE #initStraddle #seqNextPktAddr #instPred ;
+
+              LetIf l2PredPc : Addr <-
+                If (And [ Not #initStraddle ; Not #hasCombFault ]) Then (
+                  LetIf predPc <- If #needsPred Then
+                                    liftAction np_bp ((withInstIfc ty).(withInst_getPred) instPc instPred expInst pb)
+                                  Else Return #seqPc ;
+                  Return #predPc
+                ) Else (
+                  Return #defaultPredPc
+                ) ;
+
+              Let  isEndOfLine    : Bool <- Or [ Not (Eq #l2PredPc #seqPc) ; isAllOnes #currInstLastParcel ] ;
+
+              If #isEndOfLine Then (
+                Let exitMismatch   : Bool <- Not (Eq #exitParcel #currInstLastParcel) ;
+                Let predPcMismatch : Bool <- Not (Eq (##entry`"predPc") #l2PredPc) ;
+
+                Act (liftAction np_fetchFifo (@deq dom capacity FetchBufEntry ty)) ;
+                If (Not #hasPreFault) Then (
+                  liftAction np_mem ((memIfc ty).(mem_deqInstRp) alignedPc)
+                ) ;
+                Act (liftAction np_fetch (@writeCurParcelOpt ty noneParcel)) ;
+                Act (liftAction np_noInst ((noInstIfc ty).(noInst_updByFetch)
+                       entryPc currInstLastParcel exitMismatch l2PredPc predPcMismatch pb initStraddle)) ;
+
+                If #predPcMismatch Then (
+                  Let nextPredEpoch : Epoch <- Add [ #predEpoch ; $1 ] ;
+                  Act (liftAction np_fetch (@writePredEpoch ty nextPredEpoch)) ;
+                  liftAction np_fetch (@writeFetchPc ty l2PredPc)
+                ) ;
+                Retv
+              ) Else (
+                liftAction np_fetch (@writeCurParcelOpt ty someNextK)
+              ) ;
+
+              If #initStraddle Then (
+                Let newStraddle : StraddleHalf <- STRUCT {
+                  "lowParcel" ::= #parcelK ;
+                  "fetchExc"  ::= #preExc
+                } ;
+                Let someStraddle : Option StraddleHalf <- mkSome #newStraddle ;
+                liftAction np_fetch (@writeStraddleOpt ty someStraddle)
+              ) Else (
+                Let asmInst : AssembledInst <- STRUCT {
+                  "fetchOut"  ::= #fetchOut ;
+                  "predPc"    ::= #l2PredPc ;
+                  "execEpoch" ::= #execEpoch
+                } ;
+                Act (liftAction np_fetch (@clearStraddle ty)) ;
+                liftAction np_instFifo (@enq dom capacity AssembledInst ty asmInst)
+              ) ;
+              Retv
             ) ;
             Retv
           ) ;
