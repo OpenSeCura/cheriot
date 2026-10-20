@@ -159,9 +159,6 @@ Section ImplBranchPredictor.
         Let isBranch      : Bool <- ##pb`"isBranch" ;
         Let isCjalr       : Bool <- ##pb`"isCjalr" ;
 
-        Let stepBytes     : Addr <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
-        Let seqPc         : Addr <- Add [ #pc ; #stepBytes ] ;
-
         Let jOffset       : Addr <- getJImm inst ;
         Let jumpTarget    : Addr <- Add [ #pc ; #jOffset ] ;
 
@@ -171,9 +168,8 @@ Section ImplBranchPredictor.
         Let isTakenBranch : Bool <- And [ #isBranch ; #isPredTaken ] ;
         Let l2PredPc      : Addr <- caseDefault [
                                         (#isCjal,        #jumpTarget) ;
-                                        (#isTakenBranch, #branchTarget) ;
-                                        (#isCjalr,       #predPc)
-                                      ] #seqPc ;
+                                        (#isTakenBranch, #branchTarget)
+                                      ] #predPc ;
 
         Return #l2PredPc.
 

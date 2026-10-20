@@ -326,7 +326,9 @@ Section FetchStage.
 
             LetIf l2PredPc : Addr <-
               If (And [ Not #initStraddle ; Not #hasCombFault ]) Then (
-                liftAction np_bp ((withInstIfc ty).(withInst_getPred) instPc instPred expInst pb)
+                Let needsPred <- Or [##pb`"isCjal" ; ##pb`"isBranch" ; ##pb`"isCjalr" ; ##pb`"isCall" ; ##pb`"isReturn" ] ;
+                LetA predPc <- liftAction np_bp ((withInstIfc ty).(withInst_getPred) instPc instPred expInst pb) ;
+                Return (ITE #needsPred #predPc #seqPc)
               ) Else (
                 Return #defaultPredPc
               ) ;
