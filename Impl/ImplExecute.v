@@ -84,7 +84,6 @@ Section ExecuteStage.
   Local Abbreviation mulDivTree := (mulDivIfc ty).(mulDivTree).
   Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree decodeTree implExecuteTree dataMemTree mulDivTree).
   Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
-  Local Abbreviation csrPathsWithKind := (csrPathsWithKind dom pcAddrInit).
   Local Abbreviation isInterruptPending := (isInterruptPending dom pcAddrInit).
   Local Abbreviation executeNonDeferred := (executeNonDeferred dom pcAddrInit).
 
@@ -188,9 +187,7 @@ Section ExecuteStage.
 
         LetA meip          : Bool                 <- liftAction np_mem meipAct ;
         LetA mtip          : Bool                 <- liftAction np_mem mtipAct ;
-        LetA mstatus       : Bit Xlen             <- liftAction np_rf (readRegsList csrPathsWithKind
-                                                       ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz))) ;
-        LetA intInfo       : InterruptPendingInfo <- liftAction np_rf (isInterruptPending mstatus meip mtip) ;
+        LetA intInfo       : InterruptPendingInfo <- liftAction np_rf (isInterruptPending meip mtip) ;
         Let  isInterrupt   : Bool                 <- ##intInfo`"isInterrupt" ;
         Let  isTrap        : Bool                 <- Or [ #isInterrupt ; #isExc ] ;
         Let  intStall      : Bool                 <- And [ #isInterrupt ; Not #dataMem_isEmpty ] ;

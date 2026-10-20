@@ -422,7 +422,9 @@ Section AluRF.
   Local Abbreviation incrementMcycle := (incrementMcycle dom pcAddrInit).
   Local Abbreviation updateMshwmOnStore := (updateMshwmOnStore dom pcAddrInit).
 
-  Definition isInterruptPending (mstatus : ty (Bit Xlen)) (meip mtip : ty Bool) : Action ty rfTree InterruptPendingInfo :=
+  Definition isInterruptPending (meip mtip : ty Bool) : Action ty rfTree InterruptPendingInfo :=
+    LetA mstatus     : Bit Xlen       <- readRegsList csrPathsWithKind
+                                           ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
     LetA mie         : Bit Xlen       <- readRegsList csrPathsWithKind
                                            ($(getCsrPhysicalIdx "mie") : Expr ty (Bit CsrIdxSz)) ;
     Let  currMIE     : Bool           <- getMstatusMIE #mstatus ;
@@ -456,9 +458,10 @@ Section AluRF.
     }.
 
   Definition handleTrap (currPcc : ty FullECapWithTag)
-                        (mstatus : ty (Bit Xlen))
                         (newMcause newMtval : ty (Bit Xlen))
     : Action ty rfTree ExecBranchRes :=
+    LetA mstatus    : Bit Xlen        <- readRegsList csrPathsWithKind
+                                           ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
     Let  mstatus1   : Bit Xlen        <- setMstatusMPIE #mstatus (getMstatusMIE #mstatus) ;
     Let  newMstatus : Bit Xlen        <- setMstatusMIE #mstatus1 (ConstBool false) ;
     LetA mtcc       : FullECapWithTag <- readRegsList scrPathsWithKind ($(getScrIdx "Mtcc") : Expr ty (Bit ScrIdxSz)) ;
@@ -479,9 +482,7 @@ Section AluRF.
     Let  seqPc       : Addr                 <- Add [ ##currPcc`"addr" ; #pcStep ] ;
     Let  seqPcc      : FullECapWithTag      <- #currPcc `{ "addr" <- #seqPc } ;
 
-    LetA mstatus     : Bit Xlen             <- readRegsList csrPathsWithKind
-                                                 ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-    LetA intInfo     : InterruptPendingInfo <- isInterruptPending mstatus meip mtip ;
+    LetA intInfo     : InterruptPendingInfo <- isInterruptPending meip mtip ;
     Let  isInterrupt : Bool                 <- ##intInfo`"isInterrupt" ;
     Let  intMcause   : Bit Xlen             <- ##intInfo`"intMcause" ;
 
@@ -489,7 +490,7 @@ Section AluRF.
       If #isInterrupt Then
         (
           Let intMtval : Bit Xlen <- $0 ;
-          handleTrap currPcc mstatus intMcause intMtval
+          handleTrap currPcc intMcause intMtval
         )
       Else
         (
@@ -525,7 +526,7 @@ Section AluRF.
                       Let excVal    : ExceptionInfo <- #nonSeq `! "Exception" ;
                       Let excMcause : Bit Xlen      <- encodeMcause ##excVal`"mcause" ;
                       Let excMtval  : Bit Xlen      <- encodeCheriMtval ##excVal`"mtval" ;
-                      handleTrap currPcc mstatus excMcause excMtval
+                      handleTrap currPcc excMcause excMtval
                     )
                   Else
                     (
@@ -618,9 +619,11 @@ Section AluRF.
                                       )
                                     Else
                                       (
-                                        Let addrECap   : ControlFlowAddrECap <- #cfOp `! "ControlFlowAddrECap" ;
-                                        Let newMIE     : Bool                <- ##addrECap`"interruptStatus" ;
-                                        Let newMstatus : Bit Xlen            <- setMstatusMIE #mstatus #newMIE ;
+                                        Let  addrECap   : ControlFlowAddrECap <- #cfOp `! "ControlFlowAddrECap" ;
+                                        Let  newMIE     : Bool                <- ##addrECap`"interruptStatus" ;
+                                        LetA mstatus    : Bit Xlen            <- readRegsList csrPathsWithKind
+                                                                                   ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
+                                        Let  newMstatus : Bit Xlen            <- setMstatusMIE #mstatus #newMIE ;
                                         Act (writeRegsList csrPathsWithKind
                                                ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
                                         Return #newPcc
