@@ -329,7 +329,7 @@ Section Alu.
 
     @RetE _ AluOut (STRUCT {
       "isComp"      ::= #isComp ;
-      "dstIdx"      ::= ITE0 (And [##aluIn`"writesCd"; Not (#ExceptionRes`"valid")]) #dstIdx ;
+      "dstIdx"      ::= ITE0 ##aluIn`"writesCd" #dstIdx ;
       "dstValue"    ::= #RegVal ;
       "Exception"   ::= #ExceptionRes ;
       "DataMem"     ::= #DataMemRes ;
