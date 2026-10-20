@@ -194,7 +194,8 @@ Definition FunctionalUnits := STRUCT_TYPE {
   "DecodeCap" :: Bool ;
   "PccEcap" :: Bool ;
   "Exception" :: Bool ;
-  "Deferred" :: Bool ;
+  "DataMem" :: Bool ;
+  "MulDiv" :: Bool ;
   "ControlFlow" :: Bool ;
   "ScrCsr" :: Bool
 }.
@@ -283,28 +284,6 @@ Definition MulDivType := [
 ].
 
 Definition MulDivUnion := TaggedUnion MulDivType.
-
-Definition DeferredUnionType := [
-  ("MemFence"%string, MemFenceUnion) ;
-  ("MulDiv"%string,   MulDivUnion)
-].
-
-Definition DeferredUnion := TaggedUnion DeferredUnionType.
-
-Section DeferredConstructors.
-  Variable ty : Kind -> Type.
-
-  Definition mkFenceData (rr rw wr ww fenceI : ty Bool) : LetExpr ty (TaggedUnion DeferredUnionType) :=
-    LetE fenceVal : FenceOp <- STRUCT {
-      "RR"     ::= #rr ;
-      "RW"     ::= #rw ;
-      "WR"     ::= #wr ;
-      "WW"     ::= #ww ;
-      "FenceI" ::= #fenceI
-    } ;
-    LetE memFenceVal : MemFenceUnion <- UNION (MemFenceType, "Fence" ::= #fenceVal) ;
-    RetE (UNION (DeferredUnionType, "MemFence" ::= #memFenceVal)).
-End DeferredConstructors.
 
 Section CapEncoding.
   Variable ty : Kind -> Type.
@@ -1027,11 +1006,13 @@ Definition AluControl := STRUCT_TYPE {
   (* Exception_isLoad = Load *)
   (* Exception_isStore = Store *)
 
-  (* Deferred *)
-  (* Deferred_isLoad = Load *)
-  (* Deferred_isStore = Store *)
-  (* Deferred_isFence = Fence *)
-  "Deferred_isMulDiv" :: Bool ;
+  (* DataMem *)
+  (* DataMem_isLoad = Load *)
+  (* DataMem_isStore = Store *)
+  "DataMem_isFence" :: Bool ;
+
+  (* MulDiv *)
+  "MulDiv_isMulDiv" :: Bool ;
 
   (* ControlFlow *)
   "ControlFlow_isMret" :: Bool ;
@@ -1092,7 +1073,6 @@ Definition AluControl := STRUCT_TYPE {
   "CjalOrCjalr" :: Bool ;
   "Load" :: Bool ;
   "Store" :: Bool ;
-  "Fence" :: Bool ;
   "Unseal" :: Bool ;
   "CSetBounds" :: Bool ;
   "CGetLen" :: Bool ;
@@ -1178,10 +1158,17 @@ Definition AluOut := STRUCT_TYPE {
   "dstIdx"      :: Bit RegIdxSzReal ;
   "dstValue"    :: FullECapWithTag ;
   "Exception"   :: Option ExceptionInfo ;
-  "Deferred"    :: Option DeferredUnion ;
+  "DataMem"     :: Option MemFenceUnion ;
+  "MulDiv"      :: Option MulDivUnion ;
   "ControlFlow" :: Option CfPayload ;
   "ScrCsr"      :: Option ScrCsrPayload
 }.
+
+Definition SequentialUnionType := [
+  ("Normal"%string, Bit 0) ;
+  ("MulDiv"%string, MulDivUnion)
+].
+Definition SequentialUnion := TaggedUnion SequentialUnionType.
 
 Definition CfScrCsrType := [
   ("ControlFlow"%string, CfPayload) ;
@@ -1189,21 +1176,21 @@ Definition CfScrCsrType := [
 ].
 Definition CfScrCsrUnion := TaggedUnion CfScrCsrType.
 
-Definition NotDeferredUnionType := [
-  ("Normal"%string,   Bit 0) ;
-  ("CfScrCsr"%string, CfScrCsrUnion)
-].
-Definition NotDeferredUnion := TaggedUnion NotDeferredUnionType.
-
 Definition NoExceptionUnionType := [
-  ("Deferred"%string,    DeferredUnion) ;
-  ("NotDeferred"%string, NotDeferredUnion)
+  ("DataMem"%string,  MemFenceUnion) ;
+  ("CfScrCsr"%string, CfScrCsrUnion)
 ].
 Definition NoExceptionUnion := TaggedUnion NoExceptionUnionType.
 
-Definition AluOpUnionType := [
+Definition NonSequentialUnionType := [
   ("Exception"%string,   ExceptionInfo) ;
   ("NoException"%string, NoExceptionUnion)
+].
+Definition NonSequentialUnion := TaggedUnion NonSequentialUnionType.
+
+Definition AluOpUnionType := [
+  ("Sequential"%string,    SequentialUnion) ;
+  ("NonSequential"%string, NonSequentialUnion)
 ].
 Definition AluOpUnion := TaggedUnion AluOpUnionType.
 
@@ -1298,25 +1285,17 @@ Arguments incrementMinstret dom pcAddrInit {ty}.
 Arguments incrementMcycle dom pcAddrInit {ty}.
 Arguments updateMshwmOnStore dom pcAddrInit {ty} stAddr.
 
-Definition DeferredReq := STRUCT_TYPE {
-  "dstIdx" :: Bit RegIdxSzReal ;
-  "addr"   :: Addr ;
-  "op"     :: DeferredUnion
-}.
-
 Definition InterruptPendingInfo := STRUCT_TYPE {
   "isInterrupt" :: Bool ;
-  "meipPending" :: Bool ;
-  "mtipPending" :: Bool ;
-  "currMIE"     :: Bool ;
-  "mstatus"     :: Bit Xlen
+  "intMcause"   :: Bit Xlen
 }.
 
 Definition ExecuteOut := STRUCT_TYPE {
-  "deferredReq" :: Option DeferredReq ;
-  "cf"          :: Option CfPayload ;
-  "nextPc"      :: Addr ;
-  "isFenceIRq"  :: Bool
+  "mulDiv"     :: Option MulDivUnion ;
+  "dataMem"    :: Option MemFenceUnion ;
+  "cf"         :: Option CfPayload ;
+  "isFenceIRq" :: Bool ;
+  "nextPc"     :: Addr
 }.
 
 Definition FetchOut := STRUCT_TYPE {

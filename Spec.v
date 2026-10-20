@@ -126,9 +126,13 @@ Section SpecDom.
           (* 5. Commit Non-Deferred (GPRs, SCRs, CSRs, PCC, Traps) *)
           LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred pcc meip mtip aluOut) ;
 
-          (* 6. Commit Deferred (Memory Loads, Stores, Fences) *)
-          Let  reqOpt  : Option DeferredReq <- ##execOut`"deferredReq" ;
-          Act (liftAction np_core (specExecuteDeferred config regions reqOpt)) ;
+          (* 6. Commit Deferred (Memory Loads, Stores, Fences, MulDiv) *)
+          Let  dstIdx     : Bit RegIdxSzReal     <- ##aluOut`"dstIdx" ;
+          Let  dstValue   : FullECapWithTag      <- ##aluOut`"dstValue" ;
+          Let  addr       : Addr                 <- ##dstValue`"addr" ;
+          Let  dataMemOpt : Option MemFenceUnion <- ##execOut`"dataMem" ;
+          Let  mulDivOpt  : Option MulDivUnion   <- ##execOut`"mulDiv" ;
+          Act (liftAction np_core (specExecuteDeferred config regions dstIdx addr dataMemOpt mulDivOpt)) ;
           Retv
         ) ;
         Retv.

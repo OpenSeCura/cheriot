@@ -84,6 +84,7 @@ Section ExecuteStage.
   Local Abbreviation mulDivTree := (mulDivIfc ty).(mulDivTree).
   Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree decodeTree implExecuteTree dataMemTree mulDivTree).
   Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
+  Local Abbreviation csrPathsWithKind := (csrPathsWithKind dom pcAddrInit).
   Local Abbreviation isInterruptPending := (isInterruptPending dom pcAddrInit).
   Local Abbreviation executeNonDeferred := (executeNonDeferred dom pcAddrInit).
 
@@ -166,24 +167,30 @@ Section ExecuteStage.
              writesCsr readWriteCsrIdx
              waitFalse)
       ) Else (
-        LetA pcc           : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
-        Let  pcAddr        : Addr            <- ##pcc`"addr" ;
-        LetL aluOut        : AluOutUnion     <- wrappedAlu pcc pkg ;
-
-        Let  aluOp         : AluOpUnion       <- ##aluOut`"Op" ;
-        Let  isExc         : Bool             <- #aluOp `? "Exception" ;
-        Let  noExc         : NoExceptionUnion <- #aluOp `! "NoException" ;
-        Let  isDeferredAlu : Bool             <- And [ #aluOp `? "NoException" ; #noExc `? "Deferred" ] ;
-        Let  defUnion      : DeferredUnion    <- #noExc `! "Deferred" ;
-        Let  isMemOrFence  : Bool             <- And [ #isDeferredAlu ; #defUnion `? "MemFence" ] ;
-        Let  isMulDiv      : Bool             <- And [ #isDeferredAlu ; #defUnion `? "MulDiv" ] ;
-        Let  mulDivOp      : MulDivUnion      <- #defUnion `! "MulDiv" ;
-        Let  isMul         : Bool             <- And [ #isMulDiv ; #mulDivOp `? "Mul" ] ;
-        Let  isDiv         : Bool             <- And [ #isMulDiv ; #mulDivOp `? "Div" ] ;
+        LetA pcc           : FullECapWithTag      <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
+        Let  pcAddr        : Addr                 <- ##pcc`"addr" ;
+        LetL aluOut        : AluOutUnion          <- wrappedAlu pcc pkg ;
+                                                  
+        Let  aluOp         : AluOpUnion           <- ##aluOut`"Op" ;
+        Let  isSeq         : Bool                 <- #aluOp `? "Sequential" ;
+        Let  seqOp         : SequentialUnion      <- #aluOp `! "Sequential" ;
+        Let  isMulDiv      : Bool                 <- And [ #isSeq ; #seqOp `? "MulDiv" ] ;
+        Let  mulDivOp      : MulDivUnion          <- #seqOp `! "MulDiv" ;
+        Let  isMul         : Bool                 <- And [ #isMulDiv ; #mulDivOp `? "Mul" ] ;
+        Let  isDiv         : Bool                 <- And [ #isMulDiv ; #mulDivOp `? "Div" ] ;
+                                                  
+        Let  nonSeqOp      : NonSequentialUnion   <- #aluOp `! "NonSequential" ;
+        Let  isNonSeq      : Bool                 <- #aluOp `? "NonSequential" ;
+        Let  isExc         : Bool                 <- And [ #isNonSeq ; #nonSeqOp `? "Exception" ] ;
+        Let  isNoExc       : Bool                 <- And [ #isNonSeq ; #nonSeqOp `? "NoException" ] ;
+        Let  noExc         : NoExceptionUnion     <- #nonSeqOp `! "NoException" ;
+        Let  isMemOrFence  : Bool                 <- And [ #isNoExc ; #noExc `? "DataMem" ] ;
 
         LetA meip          : Bool                 <- liftAction np_mem meipAct ;
         LetA mtip          : Bool                 <- liftAction np_mem mtipAct ;
-        LetA intInfo       : InterruptPendingInfo <- liftAction np_rf (isInterruptPending meip mtip) ;
+        LetA mstatus       : Bit Xlen             <- liftAction np_rf (readRegsList csrPathsWithKind
+                                                       ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz))) ;
+        LetA intInfo       : InterruptPendingInfo <- liftAction np_rf (isInterruptPending mstatus meip mtip) ;
         Let  isInterrupt   : Bool                 <- ##intInfo`"isInterrupt" ;
         Let  isTrap        : Bool                 <- Or [ #isInterrupt ; #isExc ] ;
         Let  intStall      : Bool                 <- And [ #isInterrupt ; Not #dataMem_isEmpty ] ;
@@ -221,30 +228,28 @@ Section ExecuteStage.
             liftAction np_execute (@setFenceIPending ty)
           ) ;
 
-          Let reqOpt     : Option DeferredReq <- ##execOut`"deferredReq" ;
-          Let isDeferred : Bool               <- #reqOpt`"valid" ;
+          Let dstVal     : FullECapWithTag      <- ##aluOut`"dstValue" ;
+          Let reqDst     : Bit RegIdxSzReal     <- ##aluOut`"dstIdx" ;
+          Let reqAddr    : Addr                 <- ##dstVal`"addr" ;
+          Let dataMemOpt : Option MemFenceUnion <- ##execOut`"dataMem" ;
+          Let mulDivOpt  : Option MulDivUnion   <- ##execOut`"mulDiv" ;
 
-          If #isDeferred Then (
-            Let req     : DeferredReq      <- #reqOpt`"data" ;
-            Let reqDst  : Bit RegIdxSzReal <- ##req`"dstIdx" ;
-            Let reqAddr : Addr             <- ##req`"addr" ;
-            Let reqOp   : DeferredUnion    <- ##req`"op" ;
-            If (#reqOp `? "MemFence") Then (
-              Let mfOp : MemFenceUnion <- #reqOp `! "MemFence" ;
-              liftAction np_dataMem ((dataMemIfc ty).(dataMem_enq) reqDst reqAddr mfOp)
+          If (#dataMemOpt`"valid") Then (
+            Let mfOp : MemFenceUnion <- #dataMemOpt`"data" ;
+            liftAction np_dataMem ((dataMemIfc ty).(dataMem_enq) reqDst reqAddr mfOp)
+          ) ;
+          If (#mulDivOpt`"valid") Then (
+            Let mdOp : MulDivUnion <- #mulDivOpt`"data" ;
+            If (#mdOp `? "Mul") Then (
+              Let mOp : MulOp <- #mdOp `! "Mul" ;
+              liftAction np_mulDiv ((mulDivIfc ty).(mulDiv_enqMul) reqDst reqAddr mOp)
             ) Else (
-              Let mdOp : MulDivUnion <- #reqOp `! "MulDiv" ;
-              If (#mdOp `? "Mul") Then (
-                Let mOp : MulOp <- #mdOp `! "Mul" ;
-                liftAction np_mulDiv ((mulDivIfc ty).(mulDiv_enqMul) reqDst reqAddr mOp)
-              ) Else (
-                Let dOp : DivOp <- #mdOp `! "Div" ;
-                liftAction np_mulDiv ((mulDivIfc ty).(mulDiv_enqDiv) reqDst reqAddr dOp)
-              ) ;
-              Retv
+              Let dOp : DivOp <- #mdOp `! "Div" ;
+              liftAction np_mulDiv ((mulDivIfc ty).(mulDiv_enqDiv) reqDst reqAddr dOp)
             ) ;
             Retv
-          ) Else (
+          ) ;
+          If (Not (Or [#dataMemOpt`"valid" ; #mulDivOpt`"valid"])) Then (
             liftAction np_waitBits
               (@setDstWaitBits dom ty
                  writesCd dstIdxReal

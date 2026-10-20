@@ -164,7 +164,7 @@ Load
       b) ComparatorTopOrRep (checking top AdderBeforeBoundsCheck < cs1.top)
       c) ComparatorBase (checking base AdderBeforeBoundsCheck >= cs1.base)
       d) AddrBoundsCheck (ands the two comparator outputs correctly)
-      e) Deferred (outputs memory operation info: memSize and LoadOp {isUnsigned, isLM, isLG})
+      e) DataMem (outputs memory operation info: memSize and LoadOp {isUnsigned, isLM, isLG})
       f) Exception (outputs exception if bounds/tag/permission/alignment violation)
 
 Store
@@ -179,7 +179,7 @@ Store
       c) ComparatorBase (checking base AdderBeforeBoundsCheck >= cs1.base)
       d) AddrBoundsCheck (ands the two comparator outputs correctly)
       e) EncodeCap (compresses cs2.ecap into cs2.cap for storing)
-      f) Deferred (outputs memory operation info: memSize and Store {tag, cap, addr})
+      f) DataMem (outputs memory operation info: memSize and Store {tag, cap, addr})
       g) Exception (outputs exception if bounds/tag/permission/alignment violation)
 
 MulDiv
@@ -192,7 +192,7 @@ MulDiv
 * REM cd, cs1, cs2
 * REMU cd, cs1, cs2
     Functional Units:
-      a) Deferred (outputs MulDiv operation info)
+      a) MulDiv (outputs MulDiv operation info)
 
 AddSub
 * ADD rd, rs1, rs2
@@ -366,7 +366,7 @@ Fence
 * FENCE.I
 * FENCE.TSO
     Functional Units:
-      a) Deferred (outputs fence operation info)
+      a) DataMem (outputs fence operation info)
 
 -------------------------------------------------------------------------------
 2. FUNCTIONAL UNIT/RESOURCE MAPPING
@@ -543,21 +543,25 @@ Exception (Mux):
   inBounds: AddrBoundsCheck (Load, Store)
   addr: AdderBeforeBoundsCheck (Load, Store)
 
-Deferred (Mux):
-  Outputs: isDeferred, (MemFence {Mem {memSize, LoadOp {isUnsigned, isLM, isLG} OR Store {tag, cap, addr}} OR
-                                  Fence {RR, RW, WR, WW, FenceI}} OR
-                        MulDiv {Mul {op2, isHigh, op1Signed, op2Signed} OR
-                                Div {op2, isUnsigned, isRem}})
-  - Load   : Load
-  - Store  : Store
-  - Fence  : Fence
-  - MulDiv : MulDiv
+DataMem (Mux):
+  Outputs: isDataMem, (Mem {memSize, LoadOp {isUnsigned, isLM, isLG} OR Store {tag, cap, addr}} OR
+                       Fence {RR, RW, WR, WW, FenceI})
+  - Load  : Load
+  - Store : Store
+  - Fence : Fence
   cs1Perms: cs1.perms (Load, Store)
   cs2Perms: cs2.perms (Store)
-  inst: inst (Load, Store, Fence, MulDiv)
+  inst: inst (Load, Store, Fence)
   storeTag: cs2.tag (Store)
   storeCap: EncodeCap (Store)
-  cs2Addr: cs2.addr (Store, MulDiv)
+  cs2Addr: cs2.addr (Store)
+
+MulDiv:
+  Outputs: isMulDiv, (Mul {op2, isHigh, op1Signed, op2Signed} OR
+                      Div {op2, isUnsigned, isRem})
+  - MulDiv : MulDiv
+  inst: inst (MulDiv)
+  cs2Addr: cs2.addr (MulDiv)
 
 ControlFlow (Mux):
   Outputs: isCf, CfPayload {NewPcc, capChanged, CfOp {ControlFlowAddrOnly {Branch {isTaken} OR Cjal} OR
@@ -594,7 +598,8 @@ ScrCsr (Mux):
   oldVal: cs2.addr (Csr)
 
 Exception
-Deferred
+DataMem
+MulDiv
 ControlFlow
 ScrCsr
 
@@ -754,10 +759,11 @@ Section DecodeInstGroup.
       (* "Exception_isLoad" ::= ##group`"Load" ; *)
       (* "Exception_isStore" ::= ##group`"Store" ; *)
 
-      (* "Deferred_isLoad" ::= ##group`"Load" ; *)
-      (* "Deferred_isStore" ::= ##group`"Store" ; *)
-      (* "Deferred_isFence" ::= ##group`"Fence" ; *)
-      "Deferred_isMulDiv" ::= ##group`"MulDiv" ;
+      (* "DataMem_isLoad" ::= ##group`"Load" ; *)
+      (* "DataMem_isStore" ::= ##group`"Store" ; *)
+      "DataMem_isFence" ::= ##group`"Fence" ;
+
+      "MulDiv_isMulDiv" ::= ##group`"MulDiv" ;
 
       "ControlFlow_isMret" ::= ##group`"Mret" ;
       (* "ControlFlow_isCjal" ::= ##group`"Cjal" ; *)
@@ -832,7 +838,6 @@ Section DecodeInstGroup.
       "CjalOrCjalr" ::= Or [ ##group`"Cjal"; ##group`"Cjalr" ] ;
       "Load" ::= ##group`"Load" ;
       "Store" ::= ##group`"Store" ;
-      "Fence" ::= ##group`"Fence" ;
       "Unseal" ::= ##group`"Unseal" ;
       "CSetBounds" ::= ##group`"CSetBounds" ;
       "CGetLen" ::= ##group`"CGetLen" ;
@@ -913,7 +918,8 @@ Section GetFunctionalUnits.
       "DecodeCap" ::= ##group`"CSetHigh" ;
       "PccEcap" ::= Or [ ##group`"AuiPcc"; ##group`"Cjal"; ##group`"Cjalr" ] ;
       "Exception" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"ECall"; ##group`"EBreak" ] ;
-      "Deferred" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"Fence"; ##group`"MulDiv" ] ;
+      "DataMem" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"Fence" ] ;
+      "MulDiv" ::= ##group`"MulDiv" ;
       "ControlFlow" ::= Or [ ##group`"Mret"; ##group`"Cjal"; ##group`"Cjalr"; ##group`"Branch" ] ;
       "ScrCsr" ::= Or [ ##group`"Scr"; ##group`"Csr" ]
     }).
@@ -1396,13 +1402,13 @@ Section FunctionalUnits.
   Definition PccEcap (pccEcap : ty ECap) (cOType : ty (Bit CapcOTypeSz)) : LetExpr ty ECap :=
     RetE (##pccEcap `{ "cOType" <- #cOType }).
 
-  Definition Deferred (isLoad isStore isFence isMulDiv : ty Bool)
-                      (cs1Perms cs2Perms : ty CapPerms)
-                      (inst : ty (Bit Xlen))
-                      (storeTag : ty Bool)
-                      (storeCap : ty Cap)
-                      (cs2Addr : ty Addr)
-  : LetExpr ty (Option DeferredUnion) :=
+  Definition DataMem (isLoad isStore isFence : ty Bool)
+                     (cs1Perms cs2Perms : ty CapPerms)
+                     (inst : ty (Bit Xlen))
+                     (storeTag : ty Bool)
+                     (storeCap : ty Cap)
+                     (cs2Addr : ty Addr)
+  : LetExpr ty (Option MemFenceUnion) :=
     LetE memSize : Bit LgLgNumBytesFullCapSz <- getMemSize inst ;
     LetE loadIsUnsigned : Bool <- FromBit Bool (#inst`[14:14]) ;
     LetE isFenceI : Bool <- isNotZero (#inst`[12:12]) ;
@@ -1426,9 +1432,12 @@ Section FunctionalUnits.
     LetE memFenceOpt : Option MemFenceUnion <-
       Or [ ITE0 #isFence (mkSome (UNION (MemFenceType, "Fence" ::= #fenceVal))) ;
            #memOpOpt ] ;
-    LetE isMemFence : Bool <- #memFenceOpt`"valid" ;
-    LetE memFenceVal : MemFenceUnion <- #memFenceOpt`"data" ;
+    RetE #memFenceOpt.
 
+  Definition MulDiv (isMulDiv : ty Bool)
+                    (inst : ty (Bit Xlen))
+                    (cs2Addr : ty Addr)
+  : LetExpr ty (Option MulDivUnion) :=
     LetE isDiv          : Bool <- FromBit Bool (#inst`[14:14]) ;
     LetE isMulHigh      : Bool <- isNotZero (#inst`[13:12]) ;
     LetE isMulOp1Signed : Bool <- Or [ Eq (#inst`[13:12]) $1; Eq (#inst`[13:12]) $2 ] ;
@@ -1451,12 +1460,7 @@ Section FunctionalUnits.
       ITE (Not #isDiv)
           (UNION (MulDivType, "Mul" ::= #mulVal))
           (UNION (MulDivType, "Div" ::= #divVal)) ;
-    LetE isDeferred : Bool <- Or [ #isMemFence ; #isMulDiv ] ;
-    LetE deferredVal : DeferredUnion <-
-      ITE #isMulDiv
-          (UNION (DeferredUnionType, "MulDiv" ::= #mulDivVal))
-          (UNION (DeferredUnionType, "MemFence" ::= #memFenceVal)) ;
-    RetE (ITE0 #isDeferred (mkSome #deferredVal)).
+    RetE (ITE0 #isMulDiv (mkSome #mulDivVal)).
 
   Definition MemException (isStore : ty Bool)
                           (cs1Tag : ty Bool)

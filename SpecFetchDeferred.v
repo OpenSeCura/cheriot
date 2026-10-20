@@ -54,18 +54,6 @@ Definition MemFenceActionType := [
 ].
 Definition MemFenceAction := TaggedUnion MemFenceActionType.
 
-Definition MulDivCmd := STRUCT_TYPE {
-  "dstIdx"   :: Bit RegIdxSzReal ;
-  "op1"      :: Addr ;
-  "mulDivOp" :: MulDivUnion
-}.
-
-Definition DeferredActionType := [
-  ("MemFence"%string, MemFenceAction) ;
-  ("MulDiv"%string,   MulDivCmd)
-].
-Definition DeferredAction := TaggedUnion DeferredActionType.
-
 Definition RevCmd := STRUCT_TYPE {
   "base"       :: Bit (AddrSz + 1) ;
   "pendingRev" :: PendingRev
@@ -153,26 +141,6 @@ Section CombinationalDeferred.
         @RetE _ MemFenceAction (UNION (MemFenceActionType, "Fence" ::= #fenceVal))
       ) ;
     @RetE _ MemFenceAction #mfAct.
-
-  Definition dispatchDeferredReq (req : ty DeferredReq) : LetExpr ty DeferredAction :=
-    LetE dstIdx     : Bit RegIdxSzReal <- ##req`"dstIdx" ;
-    LetE addr       : Addr             <- ##req`"addr" ;
-    LetE op         : DeferredUnion    <- ##req`"op" ;
-    LetIfE action : DeferredAction <-
-      IfE (##op `? "MemFence") ThenE (
-        LetE memFence : MemFenceUnion  <- ##op `! "MemFence" ;
-        LETE mfAct    : MemFenceAction <- dispatchMemFence dstIdx addr memFence ;
-        @RetE _ DeferredAction (UNION (DeferredActionType, "MemFence" ::= #mfAct))
-      ) ElseE (
-        LetE mulDivOp : MulDivUnion <- ##op `! "MulDiv" ;
-        LetE mdCmd    : MulDivCmd   <- STRUCT {
-          "dstIdx"   ::= #dstIdx ;
-          "op1"      ::= #addr ;
-          "mulDivOp" ::= #mulDivOp
-        } ;
-        @RetE _ DeferredAction (UNION (DeferredActionType, "MulDiv" ::= #mdCmd))
-      ) ;
-    @RetE _ DeferredAction #action.
 
   Definition dispatchLoadResponse (config : RevConfig) (pl : ty PendingLoad) (memVal : ty FullCapWithTag) : LetExpr ty LoadOutcome :=
     LetE dstIdx     : Bit RegIdxSzReal          <- ##pl`"dstIdx" ;
@@ -323,31 +291,34 @@ Section SpecCoreTree.
       Return #fetchOut.
 
     (* ===========================================================================
-     * specExecuteDeferredReq (Single Deferred Request Execution)
+     * specExecuteDeferred (Executing Deferred DataMem or MulDiv)
      * =========================================================================== *)
-    Definition specExecuteDeferredReq (req : ty DeferredReq) : Action ty coreTree (Bit 0) :=
-      LetL action : DeferredAction <- dispatchDeferredReq req ;
-
-      If (##action `? "MemFence") Then (
-        Let mfAct : MemFenceAction <- ##action `! "MemFence" ;
+    Definition specExecuteDeferred (dstIdx : ty (Bit RegIdxSzReal))
+                                   (addr : ty Addr)
+                                   (dataMemOpt : ty (Option MemFenceUnion))
+                                   (mulDivOpt : ty (Option MulDivUnion))
+      : Action ty coreTree (Bit 0) :=
+      If (##dataMemOpt`"valid") Then (
+        Let  memFence : MemFenceUnion  <- ##dataMemOpt`"data" ;
+        LetL mfAct    : MemFenceAction <- dispatchMemFence dstIdx addr memFence ;
 
         If (##mfAct `? "Mem") Then (
           Let memAct : MemAction <- ##mfAct `! "Mem" ;
 
           If (##memAct `? "Store") Then (
             Let st        : StoreCmd                  <- ##memAct `! "Store" ;
-            Let addr      : Addr                      <- ##st`"addr" ;
+            Let stAddr    : Addr                      <- ##st`"addr" ;
             Let stVal     : FullCapWithTag            <- ##st`"stVal" ;
             Let memSize   : Bit LgLgNumBytesFullCapSz <- ##st`"memSize" ;
 
-            liftAction np_mem (specMemWrite regions addr stVal memSize)
+            liftAction np_mem (specMemWrite regions stAddr stVal memSize)
           ) Else (
             Let ld        : LoadCmd                   <- ##memAct `! "Load" ;
-            Let addr      : Addr                      <- ##ld`"addr" ;
+            Let ldAddr    : Addr                      <- ##ld`"addr" ;
             Let pending   : PendingLoad               <- ##ld`"pending" ;
             Let memSize   : Bit LgLgNumBytesFullCapSz <- ##pending`"memSize" ;
 
-            LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions false addr memSize) ;
+            LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions false ldAddr memSize) ;
             LetL outcome  : LoadOutcome       <- dispatchLoadResponse config pending memVal ;
 
             If (#outcome `? "RevLookup") Then (
@@ -379,29 +350,20 @@ Section SpecCoreTree.
         ) ;
         Retv
       ) Else (
-        Let md       : MulDivCmd   <- ##action `! "MulDiv" ;
-        Let op1      : Addr        <- ##md`"op1" ;
-        Let mulDivOp : MulDivUnion <- ##md`"mulDivOp" ;
-        LetL resAddr : Addr        <- MulDiv op1 mulDivOp ;
-        Let wbVal : FullECapWithTag <- STRUCT {
-          "tag"  ::= Const ty Bool false ;
-          "ecap" ::= Const ty ECap (getDefault _) ;
-          "addr" ::= #resAddr
-        } ;
-        If (isNotZero (##md`"dstIdx")) Then (
-          liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##md`"dstIdx") #wbVal)
+        If (##mulDivOpt`"valid") Then (
+          Let  mulDivOp : MulDivUnion    <- ##mulDivOpt`"data" ;
+          LetL resAddr  : Addr           <- SpecMulDiv.MulDiv addr mulDivOp ;
+          Let  wbVal    : FullECapWithTag <- STRUCT {
+            "tag"  ::= Const ty Bool false ;
+            "ecap" ::= Const ty ECap (getDefault _) ;
+            "addr" ::= #resAddr
+          } ;
+          If (isNotZero #dstIdx) Then (
+            liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) #dstIdx #wbVal)
+          ) ;
+          Retv
         ) ;
         Retv
-      ) ;
-      Retv.
-
-    (* ===========================================================================
-     * specExecuteDeferred (Executing Option DeferredReq)
-     * =========================================================================== *)
-    Definition specExecuteDeferred (reqOpt : ty (Option DeferredReq)) : Action ty coreTree (Bit 0) :=
-      If (##reqOpt`"valid") Then (
-        Let req : DeferredReq <- ##reqOpt`"data" ;
-        specExecuteDeferredReq req
       ) ;
       Retv.
 
