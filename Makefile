@@ -26,25 +26,23 @@ coq: Makefile.coq.all
 	$(MAKE) -f Makefile.coq.all
 
 all: coq
-	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/ $(CURR_DIR)/Clut/"
+	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/"
 
 rtl_bin: coq
-	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/ $(CURR_DIR)/Clut/" $(CURR_DIR)/Rtl $(CURR_DIR)/Impl/Rtl $(CURR_DIR)/Clut/Rtl
+	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/" $(CURR_DIR)/Rtl $(CURR_DIR)/Impl/Rtl
 
 rtl: rtl_bin
-	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Impl/ $(CURR_DIR)/Clut/" rtl
+	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Impl/" rtl
 
 rtlexe: rtl
 	verilator -Wno-CMPCONST --top Tb --binary -I../Guru/Verilog -I./Impl -I. --Mdir Impl/obj_dir Impl/Tb.sv
-	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" rtlexe
 
 simrtl: rtl_bin
-	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/ $(CURR_DIR)/Clut/" simrtl
+	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/" simrtl
 
 simrtlexe: simrtl
 	verilator -Wno-CMPCONST --top Tb --binary -I../Guru/Verilog -I. --Mdir sim_obj_dir SimTb.sv
 	verilator -Wno-CMPCONST --top Tb --binary -I../Guru/Verilog -I./Impl -I. --Mdir Impl/sim_obj_dir SimTb.sv
-	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/Clut/" simrtlexe
 
 force:
 
