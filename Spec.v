@@ -147,7 +147,7 @@ Section SpecDom.
     Definition spec : Mod sysTree :=
       fun ty =>
         map (fun a => (core, a)) (
-          [ specRevokerStep ty ]
+          [ Retv ; specRevokerStep ty ]
           ++ specPlicPendingsSteps ty
           ++ [
             specPlicClaimStep ty ;
