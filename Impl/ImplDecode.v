@@ -117,44 +117,46 @@ Section DecodeStage.
    * ========================================================================= *)
   Definition decodeAndRegRead : Action ty coreTree (Bit 0) :=
     LetA canProceed          : Bool                 <- liftAction np_decode (@readDecodeCanProceed ty) ;
-    LetA instHead            : Option AssembledInst <- liftAction np_fetch (fetchIfc ty).(fetch_instFirst) ;
-    LetA decodeToAlu_isFull  : Bool                 <- liftAction np_decodeToAluFifo (@isFull dom capacity DecodeToAluEntry ty) ;
-    LetA decodeToAlu_isEmpty : Bool                 <- liftAction np_decodeToAluFifo (@isEmpty dom capacity DecodeToAluEntry ty) ;
-    LetA dataMem_isEmpty     : Bool                 <- liftAction np_dataMem (dataMemIfc ty).(dataMem_isEmpty) ;
-    LetA currExecEpoch       : Epoch                <- liftAction np_execute (executeIfc ty).(execute_readExecEpoch) ;
-    LetA meip                : Bool                 <- liftAction np_mem meipAct ;
-    LetA mtip                : Bool                 <- liftAction np_mem mtipAct ;
-    Let  pipelineEmpty       : Bool                 <- And [ #decodeToAlu_isEmpty ; #dataMem_isEmpty ] ;
-
-    Let  asmInst          : AssembledInst   <- ##instHead`"data" ;
-    Let  fetchOut         : FetchOut        <- ##asmInst`"fetchOut" ;
-    Let  inst             : Inst            <- ##fetchOut`"inst" ;
-    Let  predPc           : Addr            <- ##asmInst`"predPc" ;
-    Let  entryExecEpoch   : Epoch           <- ##asmInst`"execEpoch" ;
-
-    LetL regReadIn        : RegReadIn       <- wrappedDecode fetchOut ;
-    Let  decodeOut        : DecodeOut       <- ##regReadIn`"decodeOut" ;
-    LetA aluInInstGroup   : AluInInstGroup  <- liftAction np_rf (regRead meip mtip regReadIn) ;
-
-    Let  cs1Idx           : Bit RegIdxSzReal <- ##decodeOut`"cs1Idx" ;
-    Let  cs2Idx           : Bit RegIdxSzReal <- ##decodeOut`"cs2Idx" ;
-    Let  writesCd         : Bool             <- ##decodeOut`"writesCd" ;
-    Let  cdIdx            : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal (getCd inst) ;
-    Let  readsScr         : Bool             <- ##decodeOut`"readsScr" ;
-    Let  writesScr        : Bool             <- ##decodeOut`"writesScr" ;
-    Let  readWriteScrIdx  : Bit ScrIdxSz     <- ##decodeOut`"readWriteScrIdx" ;
-    Let  readsCsr         : Bool             <- ##decodeOut`"readsCsr" ;
-    Let  writesCsr        : Bool             <- ##decodeOut`"writesCsr" ;
-    Let  readWriteCsrIdx  : Bit CsrIdxSz     <- ##decodeOut`"readWriteCsrIdx" ;
-
-    LetA cs1Wait          : Bool <- liftAction np_waitBits (@readGprWaitBit dom ty cs1Idx) ;
-    LetA cs2Wait          : Bool <- liftAction np_waitBits (@readGprWaitBit dom ty cs2Idx) ;
-    LetA cdWait           : Bool <- liftAction np_waitBits (@readGprWaitBit dom ty cdIdx) ;
-    LetA scrWait          : Bool <- liftAction np_waitBits (@readScrWaitBit dom ty readWriteScrIdx) ;
-    LetA csrWait          : Bool <- liftAction np_waitBits (@readCsrWaitBit dom ty readWriteCsrIdx) ;
 
     If #canProceed Then (
       Act (liftAction np_decode (@clearDecodeCanProceed ty)) ;
+
+      LetA instHead            : Option AssembledInst <- liftAction np_fetch (fetchIfc ty).(fetch_instFirst) ;
+      LetA decodeToAlu_isFull  : Bool                 <- liftAction np_decodeToAluFifo (@isFull dom capacity DecodeToAluEntry ty) ;
+      LetA decodeToAlu_isEmpty : Bool                 <- liftAction np_decodeToAluFifo (@isEmpty dom capacity DecodeToAluEntry ty) ;
+      LetA dataMem_isEmpty     : Bool                 <- liftAction np_dataMem (dataMemIfc ty).(dataMem_isEmpty) ;
+      LetA currExecEpoch       : Epoch                <- liftAction np_execute (executeIfc ty).(execute_readExecEpoch) ;
+      LetA meip                : Bool                 <- liftAction np_mem meipAct ;
+      LetA mtip                : Bool                 <- liftAction np_mem mtipAct ;
+      Let  pipelineEmpty       : Bool                 <- And [ #decodeToAlu_isEmpty ; #dataMem_isEmpty ] ;
+
+      Let  asmInst          : AssembledInst   <- ##instHead`"data" ;
+      Let  fetchOut         : FetchOut        <- ##asmInst`"fetchOut" ;
+      Let  inst             : Inst            <- ##fetchOut`"inst" ;
+      Let  predPc           : Addr            <- ##asmInst`"predPc" ;
+      Let  entryExecEpoch   : Epoch           <- ##asmInst`"execEpoch" ;
+
+      LetL regReadIn        : RegReadIn       <- wrappedDecode fetchOut ;
+      Let  decodeOut        : DecodeOut       <- ##regReadIn`"decodeOut" ;
+      LetA aluInInstGroup   : AluInInstGroup  <- liftAction np_rf (regRead meip mtip regReadIn) ;
+
+      Let  cs1Idx           : Bit RegIdxSzReal <- ##decodeOut`"cs1Idx" ;
+      Let  cs2Idx           : Bit RegIdxSzReal <- ##decodeOut`"cs2Idx" ;
+      Let  writesCd         : Bool             <- ##decodeOut`"writesCd" ;
+      Let  cdIdx            : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal (getCd inst) ;
+      Let  readsScr         : Bool             <- ##decodeOut`"readsScr" ;
+      Let  writesScr        : Bool             <- ##decodeOut`"writesScr" ;
+      Let  readWriteScrIdx  : Bit ScrIdxSz     <- ##decodeOut`"readWriteScrIdx" ;
+      Let  readsCsr         : Bool             <- ##decodeOut`"readsCsr" ;
+      Let  writesCsr        : Bool             <- ##decodeOut`"writesCsr" ;
+      Let  readWriteCsrIdx  : Bit CsrIdxSz     <- ##decodeOut`"readWriteCsrIdx" ;
+
+      LetA cs1Wait          : Bool <- liftAction np_waitBits (@readGprWaitBit dom ty cs1Idx) ;
+      LetA cs2Wait          : Bool <- liftAction np_waitBits (@readGprWaitBit dom ty cs2Idx) ;
+      LetA cdWait           : Bool <- liftAction np_waitBits (@readGprWaitBit dom ty cdIdx) ;
+      LetA scrWait          : Bool <- liftAction np_waitBits (@readScrWaitBit dom ty readWriteScrIdx) ;
+      LetA csrWait          : Bool <- liftAction np_waitBits (@readCsrWaitBit dom ty readWriteCsrIdx) ;
+
       If (##instHead`"valid") Then (
         (* Wrong-execEpoch instructions are dropped here *)
         If (Not (Eq #entryExecEpoch #currExecEpoch)) Then (

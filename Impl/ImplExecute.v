@@ -151,56 +151,58 @@ Section ExecuteStage.
    * ========================================================================= *)
   Definition aluAndExecuteNonDeferred : Action ty coreTree (Bit 0) :=
     LetA canProceed       : Bool                    <- liftAction np_execute (@readExecuteCanProceed ty) ;
-    LetA d2aHead          : Option DecodeToAluEntry <- liftAction np_decode (decodeIfc ty).(decode_first) ;
-    LetA dataMemIn_isFull : Bool                    <- liftAction np_dataMem (dataMemIfc ty).(dataMem_isFull) ;
-    LetA dataMem_isEmpty  : Bool                    <- liftAction np_dataMem (dataMemIfc ty).(dataMem_isEmpty) ;
-    LetA mulIn_isFull     : Bool                    <- liftAction np_mulDiv (mulDivIfc ty).(mulDiv_isFullMul) ;
-    LetA divIn_isFull     : Bool                    <- liftAction np_mulDiv (mulDivIfc ty).(mulDiv_isFullDiv) ;
-    LetA currExecEpoch    : Epoch                   <- liftAction np_execute (@readExecEpoch ty) ;
-    LetA pcc              : FullECapWithTag         <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
-    LetA meip             : Bool                    <- liftAction np_mem meipAct ;
-    LetA mtip             : Bool                    <- liftAction np_mem mtipAct ;
-    LetA isInterrupt      : Bool                    <- liftAction np_rf (isInterruptPending meip mtip) ;
-
-    Let  d2aEntry       : DecodeToAluEntry <- ##d2aHead`"data" ;
-    Let  pkg            : AluInInstGroup   <- ##d2aEntry`"aluIn" ;
-    Let  predPc         : Addr             <- ##d2aEntry`"predPc" ;
-    Let  entryExecEpoch : Epoch            <- ##d2aEntry`"execEpoch" ;
-
-    Let  instBits        : Inst             <- ##pkg`"inst" ;
-    Let  writesCd        : Bool             <- ##pkg`"writesCd" ;
-    Let  dstIdxReal      : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal (getCd instBits) ;
-    Let  writesScr       : Bool             <- ##pkg`"writesScr" ;
-    Let  readWriteScrIdx : Bit ScrIdxSz     <- ##pkg`"readWriteScrIdx" ;
-    Let  writesCsr       : Bool             <- ##pkg`"writesCsr" ;
-    Let  readWriteCsrIdx : Bit CsrIdxSz     <- ##pkg`"readWriteCsrIdx" ;
-
-    Let  pcAddr          : Addr               <- ##pcc`"addr" ;
-    LetL aluOut          : AluOutUnion        <- wrappedAlu pcc pkg ;
-
-    Let  aluOp           : AluOpUnion         <- ##aluOut`"Op" ;
-    Let  isSeq           : Bool               <- #aluOp `? "Sequential" ;
-    Let  seqOp           : SequentialUnion    <- #aluOp `! "Sequential" ;
-    Let  isMulDiv        : Bool               <- And [ #isSeq ; #seqOp `? "MulDiv" ] ;
-    Let  mulDivOp        : MulDivUnion        <- #seqOp `! "MulDiv" ;
-    Let  isMul           : Bool               <- And [ #isMulDiv ; #mulDivOp `? "Mul" ] ;
-    Let  isDiv           : Bool               <- And [ #isMulDiv ; #mulDivOp `? "Div" ] ;
-
-    Let  nonSeqOp        : NonSequentialUnion <- #aluOp `! "NonSequential" ;
-    Let  isNonSeq        : Bool               <- #aluOp `? "NonSequential" ;
-    Let  isExc           : Bool               <- And [ #isNonSeq ; #nonSeqOp `? "Exception" ] ;
-    Let  isNoExc         : Bool               <- And [ #isNonSeq ; #nonSeqOp `? "NoException" ] ;
-    Let  noExc           : NoExceptionUnion   <- #nonSeqOp `! "NoException" ;
-    Let  isMemOrFence    : Bool               <- And [ #isNoExc ; #noExc `? "DataMem" ] ;
-
-    Let  dstVal          : FullECapWithTag    <- ##aluOut`"dstValue" ;
-    Let  reqDst          : Bit RegIdxSzReal   <- ##aluOut`"dstIdx" ;
-    Let  reqAddr         : Addr               <- ##dstVal`"addr" ;
-
-    Let  waitFalse : Bool <- ConstBool false ;
 
     If #canProceed Then (
       Act (liftAction np_execute (@clearExecuteCanProceed ty)) ;
+
+      LetA d2aHead          : Option DecodeToAluEntry <- liftAction np_decode (decodeIfc ty).(decode_first) ;
+      LetA dataMemIn_isFull : Bool                    <- liftAction np_dataMem (dataMemIfc ty).(dataMem_isFull) ;
+      LetA dataMem_isEmpty  : Bool                    <- liftAction np_dataMem (dataMemIfc ty).(dataMem_isEmpty) ;
+      LetA mulIn_isFull     : Bool                    <- liftAction np_mulDiv (mulDivIfc ty).(mulDiv_isFullMul) ;
+      LetA divIn_isFull     : Bool                    <- liftAction np_mulDiv (mulDivIfc ty).(mulDiv_isFullDiv) ;
+      LetA currExecEpoch    : Epoch                   <- liftAction np_execute (@readExecEpoch ty) ;
+      LetA pcc              : FullECapWithTag         <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
+      LetA meip             : Bool                    <- liftAction np_mem meipAct ;
+      LetA mtip             : Bool                    <- liftAction np_mem mtipAct ;
+      LetA isInterrupt      : Bool                    <- liftAction np_rf (isInterruptPending meip mtip) ;
+
+      Let  d2aEntry       : DecodeToAluEntry <- ##d2aHead`"data" ;
+      Let  pkg            : AluInInstGroup   <- ##d2aEntry`"aluIn" ;
+      Let  predPc         : Addr             <- ##d2aEntry`"predPc" ;
+      Let  entryExecEpoch : Epoch            <- ##d2aEntry`"execEpoch" ;
+
+      Let  instBits        : Inst             <- ##pkg`"inst" ;
+      Let  writesCd        : Bool             <- ##pkg`"writesCd" ;
+      Let  dstIdxReal      : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal (getCd instBits) ;
+      Let  writesScr       : Bool             <- ##pkg`"writesScr" ;
+      Let  readWriteScrIdx : Bit ScrIdxSz     <- ##pkg`"readWriteScrIdx" ;
+      Let  writesCsr       : Bool             <- ##pkg`"writesCsr" ;
+      Let  readWriteCsrIdx : Bit CsrIdxSz     <- ##pkg`"readWriteCsrIdx" ;
+
+      Let  pcAddr          : Addr               <- ##pcc`"addr" ;
+      LetL aluOut          : AluOutUnion        <- wrappedAlu pcc pkg ;
+
+      Let  aluOp           : AluOpUnion         <- ##aluOut`"Op" ;
+      Let  isSeq           : Bool               <- #aluOp `? "Sequential" ;
+      Let  seqOp           : SequentialUnion    <- #aluOp `! "Sequential" ;
+      Let  isMulDiv        : Bool               <- And [ #isSeq ; #seqOp `? "MulDiv" ] ;
+      Let  mulDivOp        : MulDivUnion        <- #seqOp `! "MulDiv" ;
+      Let  isMul           : Bool               <- And [ #isMulDiv ; #mulDivOp `? "Mul" ] ;
+      Let  isDiv           : Bool               <- And [ #isMulDiv ; #mulDivOp `? "Div" ] ;
+
+      Let  nonSeqOp        : NonSequentialUnion <- #aluOp `! "NonSequential" ;
+      Let  isNonSeq        : Bool               <- #aluOp `? "NonSequential" ;
+      Let  isExc           : Bool               <- And [ #isNonSeq ; #nonSeqOp `? "Exception" ] ;
+      Let  isNoExc         : Bool               <- And [ #isNonSeq ; #nonSeqOp `? "NoException" ] ;
+      Let  noExc           : NoExceptionUnion   <- #nonSeqOp `! "NoException" ;
+      Let  isMemOrFence    : Bool               <- And [ #isNoExc ; #noExc `? "DataMem" ] ;
+
+      Let  dstVal          : FullECapWithTag    <- ##aluOut`"dstValue" ;
+      Let  reqDst          : Bit RegIdxSzReal   <- ##aluOut`"dstIdx" ;
+      Let  reqAddr         : Addr               <- ##dstVal`"addr" ;
+
+      Let  waitFalse : Bool <- ConstBool false ;
+
       If (##d2aHead`"valid") Then (
         If (Not (Eq #entryExecEpoch #currExecEpoch)) Then (
           Act (liftAction np_decode (decodeIfc ty).(decode_deq)) ;

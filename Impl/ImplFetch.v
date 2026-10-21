@@ -254,87 +254,89 @@ Section FetchStage.
    * ========================================================================= *)
   Definition fetchAssemble : Action ty coreTree (Bit 0) :=
     LetA canProceed         : Bool                       <- liftAction np_fetch (@readFetchCanProceed ty) ;
-    LetA fetchHead          : Option FetchBufEntry       <- liftAction np_fetchFifo (@first dom fetchCapacity FetchBufEntry ty) ;
-    LetA instBuf_isFull     : Bool                       <- liftAction np_instFifo (@isFull dom instCapacity AssembledInst ty) ;
-    LetA execEpoch          : Epoch                      <- liftAction np_execute (executeIfc ty).(execute_readExecEpoch) ;
-    LetA predEpoch          : Epoch                      <- liftAction np_fetch (@readPredEpoch ty) ;
-    LetA curParcelOpt       : Option (Bit LgFetchParcels) <- liftAction np_fetch (@readCurParcelOpt ty) ;
-    LetA straddleOpt        : Option StraddleHalf        <- liftAction np_fetch (@readStraddleOpt ty) ;
-    LetA pcc                : FullECapWithTag            <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
-
-    Let  entry              : FetchBufEntry              <- ##fetchHead`"data" ;
-    Let  entryPc            : Addr                       <- ##entry`"pcAddr" ;
-    Let  alignedPc          : Addr                       <- alignPacketAddr entryPc ;
-    Let  startParcel        : Bit LgFetchParcels         <- getPacketParcel entryPc ;
-    Let  exitParcel         : Bit LgFetchParcels         <- ##entry`"exitParcel" ;
-    Let  preExc             : FetchException             <- ##entry`"fetchExc" ;
-    Let  hasPreFault        : Bool                       <- Or [ ##preExc`"tag" ;
-                                                                 ##preExc`"seal" ;
-                                                                 ##preExc`"perm" ;
-                                                                 ##preExc`"bounds" ] ;
-
-    LetIf pktOpt : Option FetchPacket <-
-      If #hasPreFault Then (
-        Return (mkSome ConstDef)
-      ) Else (
-        liftAction np_mem ((memIfc ty).(mem_getInstRp) alignedPc)
-      ) ;
-
-    Let  pkt                : FetchPacket                <- ##pktOpt`"data" ;
-    Let  noneParcel         : Option (Bit LgFetchParcels) <- ConstDef ;
-    Let  isEpochMatch       : Bool                       <- And [ Eq (##entry`"execEpoch") #execEpoch ;
-                                                                  Eq (##entry`"predEpoch") #predEpoch ] ;
-
-    Let  straddle           : StraddleHalf               <- ##straddleOpt`"data" ;
-    Let  hasStraddle        : Bool                       <- ##straddleOpt`"valid" ;
-
-    Let  k                  : Bit LgFetchParcels         <- ITE (##curParcelOpt`"valid") (##curParcelOpt`"data") #startParcel ;
-    Let  instPcK            : Addr                       <- getParcelAddr alignedPc k ;
-    Let  parcelK            : Bit CompInstSz             <- ReadArray #pkt #k ;
-    Let  isCompParcel       : Bool                       <- isParcelCompressed parcelK ;
-    Let  isLastK            : Bool                       <- isAllOnes #k ;
-    Let  initStraddle       : Bool                       <- And [ Not #hasStraddle ; Not #isCompParcel ; #isLastK ] ;
-
-    Let  kPlus1             : Bit LgFetchParcels         <- Add [ #k ; $1 ] ;
-    Let  currInstLastParcel : Bit LgFetchParcels         <-
-      ITE0 (Not #hasStraddle) (ITE (Or [ #isCompParcel ; #initStraddle ]) #k #kPlus1) ;
-
-    Let  highParcelIdx      : Bit LgFetchParcels         <- ITE0 (Not #hasStraddle) #kPlus1 ;
-    Let  highParcel         : Bit CompInstSz             <- ReadArray #pkt #highParcelIdx ;
-    Let  lowParcel          : Bit CompInstSz             <- ITE #hasStraddle (##straddle`"lowParcel") #parcelK ;
-    Let  rawInst            : Inst                       <- {< #highParcel, #lowParcel >} ;
-    LetL expInst            : Inst                       <- preDecode rawInst ;
-
-    Let  instPc             : Addr                       <- ITE #hasStraddle (Sub #alignedPc $2) #instPcK ;
-    Let  stepBytes          : Addr                       <-
-      ITE (And [ Not #hasStraddle ; #isCompParcel ]) $(CompInstSz / 8) $(InstSz / 8) ;
-    Let  seqPc              : Addr                       <- Add [ #instPc ; #stepBytes ] ;
-
-    Let  pccECap            : ECap                       <- ##pcc`"ecap" ;
-    Let  topExc             : Bool                       <- Ugt (ZeroExtendTo (AddrSz + 2) #seqPc) (##pccECap`"top") ;
-    Let  stradExc           : FetchException             <- ##straddle`"fetchExc" ;
-    Let  pktExc             : FetchException             <- ITE #hasStraddle #stradExc #preExc ;
-    Let  combExc            : FetchException             <- #pktExc `{ "bounds" <- Or [ ##pktExc`"bounds" ; #topExc ] } ;
-    Let  hasCombFault       : Bool                       <- Or [ ##combExc`"tag" ;
-                                                                 ##combExc`"seal" ;
-                                                                 ##combExc`"perm" ;
-                                                                 ##combExc`"bounds" ] ;
-
-    LetL pb                 : PreBranchInfo              <- preDecodeBranch expInst ;
-    Let  needsPred          : Bool                       <- Or [ ##pb`"isCjal" ; ##pb`"isBranch" ; ##pb`"isCjalr" ; ##pb`"isCall" ; ##pb`"isReturn" ] ;
-    Let  isSeqParcel        : Bool                       <- And [ Not (isAllOnes #currInstLastParcel) ;
-                                                                  Not (Eq #currInstLastParcel #exitParcel) ;
-                                                                  Not #needsPred ] ;
-    Let  nextK              : Bit LgFetchParcels         <- Add [ #currInstLastParcel ; $1 ] ;
-    Let  someNextK          : Option (Bit LgFetchParcels) <- mkSome #nextK ;
-    Let  fetchOut           : FetchOut                   <- STRUCT {
-      "hasAsr"   ::= ##pccECap`"perms"`"SR" ;
-      "inst"     ::= #expInst ;
-      "fetchExc" ::= #combExc
-    } ;
 
     If #canProceed Then (
       Act (liftAction np_fetch (@clearFetchCanProceed ty)) ;
+
+      LetA fetchHead          : Option FetchBufEntry       <- liftAction np_fetchFifo (@first dom fetchCapacity FetchBufEntry ty) ;
+      LetA instBuf_isFull     : Bool                       <- liftAction np_instFifo (@isFull dom instCapacity AssembledInst ty) ;
+      LetA execEpoch          : Epoch                      <- liftAction np_execute (executeIfc ty).(execute_readExecEpoch) ;
+      LetA predEpoch          : Epoch                      <- liftAction np_fetch (@readPredEpoch ty) ;
+      LetA curParcelOpt       : Option (Bit LgFetchParcels) <- liftAction np_fetch (@readCurParcelOpt ty) ;
+      LetA straddleOpt        : Option StraddleHalf        <- liftAction np_fetch (@readStraddleOpt ty) ;
+      LetA pcc                : FullECapWithTag            <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
+
+      Let  entry              : FetchBufEntry              <- ##fetchHead`"data" ;
+      Let  entryPc            : Addr                       <- ##entry`"pcAddr" ;
+      Let  alignedPc          : Addr                       <- alignPacketAddr entryPc ;
+      Let  startParcel        : Bit LgFetchParcels         <- getPacketParcel entryPc ;
+      Let  exitParcel         : Bit LgFetchParcels         <- ##entry`"exitParcel" ;
+      Let  preExc             : FetchException             <- ##entry`"fetchExc" ;
+      Let  hasPreFault        : Bool                       <- Or [ ##preExc`"tag" ;
+                                                                   ##preExc`"seal" ;
+                                                                   ##preExc`"perm" ;
+                                                                   ##preExc`"bounds" ] ;
+
+      LetIf pktOpt : Option FetchPacket <-
+        If #hasPreFault Then (
+          Return (mkSome ConstDef)
+        ) Else (
+          liftAction np_mem ((memIfc ty).(mem_getInstRp) alignedPc)
+        ) ;
+
+      Let  pkt                : FetchPacket                <- ##pktOpt`"data" ;
+      Let  noneParcel         : Option (Bit LgFetchParcels) <- ConstDef ;
+      Let  isEpochMatch       : Bool                       <- And [ Eq (##entry`"execEpoch") #execEpoch ;
+                                                                    Eq (##entry`"predEpoch") #predEpoch ] ;
+
+      Let  straddle           : StraddleHalf               <- ##straddleOpt`"data" ;
+      Let  hasStraddle        : Bool                       <- ##straddleOpt`"valid" ;
+
+      Let  k                  : Bit LgFetchParcels         <- ITE (##curParcelOpt`"valid") (##curParcelOpt`"data") #startParcel ;
+      Let  instPcK            : Addr                       <- getParcelAddr alignedPc k ;
+      Let  parcelK            : Bit CompInstSz             <- ReadArray #pkt #k ;
+      Let  isCompParcel       : Bool                       <- isParcelCompressed parcelK ;
+      Let  isLastK            : Bool                       <- isAllOnes #k ;
+      Let  initStraddle       : Bool                       <- And [ Not #hasStraddle ; Not #isCompParcel ; #isLastK ] ;
+
+      Let  kPlus1             : Bit LgFetchParcels         <- Add [ #k ; $1 ] ;
+      Let  currInstLastParcel : Bit LgFetchParcels         <-
+        ITE0 (Not #hasStraddle) (ITE (Or [ #isCompParcel ; #initStraddle ]) #k #kPlus1) ;
+
+      Let  highParcelIdx      : Bit LgFetchParcels         <- ITE0 (Not #hasStraddle) #kPlus1 ;
+      Let  highParcel         : Bit CompInstSz             <- ReadArray #pkt #highParcelIdx ;
+      Let  lowParcel          : Bit CompInstSz             <- ITE #hasStraddle (##straddle`"lowParcel") #parcelK ;
+      Let  rawInst            : Inst                       <- {< #highParcel, #lowParcel >} ;
+      LetL expInst            : Inst                       <- preDecode rawInst ;
+
+      Let  instPc             : Addr                       <- ITE #hasStraddle (Sub #alignedPc $2) #instPcK ;
+      Let  stepBytes          : Addr                       <-
+        ITE (And [ Not #hasStraddle ; #isCompParcel ]) $(CompInstSz / 8) $(InstSz / 8) ;
+      Let  seqPc              : Addr                       <- Add [ #instPc ; #stepBytes ] ;
+
+      Let  pccECap            : ECap                       <- ##pcc`"ecap" ;
+      Let  topExc             : Bool                       <- Ugt (ZeroExtendTo (AddrSz + 2) #seqPc) (##pccECap`"top") ;
+      Let  stradExc           : FetchException             <- ##straddle`"fetchExc" ;
+      Let  pktExc             : FetchException             <- ITE #hasStraddle #stradExc #preExc ;
+      Let  combExc            : FetchException             <- #pktExc `{ "bounds" <- Or [ ##pktExc`"bounds" ; #topExc ] } ;
+      Let  hasCombFault       : Bool                       <- Or [ ##combExc`"tag" ;
+                                                                   ##combExc`"seal" ;
+                                                                   ##combExc`"perm" ;
+                                                                   ##combExc`"bounds" ] ;
+
+      LetL pb                 : PreBranchInfo              <- preDecodeBranch expInst ;
+      Let  needsPred          : Bool                       <- Or [ ##pb`"isCjal" ; ##pb`"isBranch" ; ##pb`"isCjalr" ; ##pb`"isCall" ; ##pb`"isReturn" ] ;
+      Let  isSeqParcel        : Bool                       <- And [ Not (isAllOnes #currInstLastParcel) ;
+                                                                    Not (Eq #currInstLastParcel #exitParcel) ;
+                                                                    Not #needsPred ] ;
+      Let  nextK              : Bit LgFetchParcels         <- Add [ #currInstLastParcel ; $1 ] ;
+      Let  someNextK          : Option (Bit LgFetchParcels) <- mkSome #nextK ;
+      Let  fetchOut           : FetchOut                   <- STRUCT {
+        "hasAsr"   ::= ##pccECap`"perms"`"SR" ;
+        "inst"     ::= #expInst ;
+        "fetchExc" ::= #combExc
+      } ;
+
       If (##fetchHead`"valid") Then (
         If (##pktOpt`"valid") Then (
           If (Not #isEpochMatch) Then (
