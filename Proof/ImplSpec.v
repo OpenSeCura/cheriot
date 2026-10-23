@@ -35,38 +35,6 @@ Local Open Scope guru_scope.
 
 Section InitStateRelLemmas.
 
-  Lemma ElemContentRel_InitStateElemConsistent :
-    forall (e : Elem) (s1 s2 : ElemState e),
-      InitStateElemConsistent e s1 ->
-      ElemContentRel e s1 s2 ->
-      InitStateElemConsistent e s2.
-  Proof.
-    intros [r | m | k | k] s1 s2 Hinit Hrel; cbn in Hinit, Hrel |- *.
-    - destruct (regInit r) as [init |]; [congruence | exact I].
-    - destruct (memInit m) as [init |]; [congruence | exact I].
-    - congruence.
-    - congruence.
-  Qed.
-
-  Theorem TreeContentRel_InitStateConsistent :
-    forall (t : Tree DomainElem) (s1 s2 : TreeState DomainElemState t),
-      InitStateConsistent t s1 ->
-      TreeContentRel t s1 s2 ->
-      InitStateConsistent t s2.
-  Proof.
-    fix F 1.
-    intros [name de | name children] s1 s2 Hinit Hrel; cbn in Hinit, Hrel |- *.
-    - exact (ElemContentRel_InitStateElemConsistent (snd de) s1 s2 Hinit Hrel).
-    - induction children as [| x xs IH].
-      + exact I.
-      + destruct s1 as [sx1 sxs1], s2 as [sx2 sxs2].
-        cbn [Fst Snd] in Hinit, Hrel |- *.
-        destruct Hinit as [Hinit_x Hinit_xs], Hrel as [Hrel_x Hrel_xs].
-        split.
-        * exact (F x sx1 sx2 Hinit_x Hrel_x).
-        * exact (IH sxs1 sxs2 Hinit_xs Hrel_xs).
-  Qed.
-
   Theorem stateRel_InitStateConsistent :
     forall (core : string) (pcAddrInit : Z)
            (fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat)

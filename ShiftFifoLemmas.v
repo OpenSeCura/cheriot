@@ -27,39 +27,6 @@ Local Open Scope Z_scope.
 Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
-Lemma Kind_eq_dec : forall k1 k2 : Kind, {k1 = k2} + {k1 <> k2}.
-Proof.
-  intros k1 k2.
-  case_eq (Kind_eqb k1 k2); intros Heq; [left | right];
-    pose proof (Kind_BoolSpec k1 k2) as Hspec;
-    rewrite Heq in Hspec; inversion Hspec; assumption.
-Qed.
-
-Lemma Kind_eqb_refl : forall k : Kind, Kind_eqb k k = true.
-Proof.
-  intros k.
-  destruct (Kind_BoolSpec k k) as [_ | Hne]; [reflexivity | exfalso; apply Hne; reflexivity].
-Qed.
-
-Lemma Kind_uip_refl : forall (k : Kind) (pf : k = k), pf = eq_refl.
-Proof.
-  intros k pf.
-  apply (UIP_dec Kind_eq_dec).
-Qed.
-
-Lemma eq_rect_Kind_refl : forall (k : Kind) (P : Kind -> Type) (v : P k) (pf : k = k),
-  eq_rect k P v k pf = v.
-Proof.
-  intros k P v pf.
-  rewrite (Kind_uip_refl k pf).
-  reflexivity.
-Qed.
-
-Lemma Zmod_1_0 : forall x : Zmod 1, x = Zmod.zero.
-Proof.
-  intros x; apply Zmod.unsigned_inj; pose proof (Zmod.unsigned_pos_bound x eq_refl); rewrite Zmod.unsigned_0; lia.
-Qed.
-
 Definition fifo1_elem {dom : string} {elemK : Kind}
   (f : TreeState DomainElemState (fifoTree dom 1 elemK)) : type elemK :=
   f.(Fst).(Fst).
