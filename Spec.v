@@ -116,8 +116,8 @@ Section SpecDom.
           (* 2. Decode *)
           LetL regReadIn : RegReadIn <- wrappedDecode fetchOut ;
 
-          (* 3. Register Read (GPRs, SCRs, CSRs, mstatus) *)
-          LetA aluInInstGroup : AluInInstGroup <- liftAction np_rf (regRead meip mtip regReadIn) ;
+          (* 3. Register Read (GPRs) *)
+          LetA aluInInstGroup : AluInInstGroup <- liftAction np_rf (regRead regReadIn) ;
 
           (* 4. Alu Control, Routing, and Execution *)
           LetA pcc    : FullECapWithTag <- liftAction np_rf (readRegsList (gprPathsWithKind core pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal))) ;

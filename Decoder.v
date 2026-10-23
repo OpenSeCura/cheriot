@@ -84,7 +84,6 @@ Section DecodeUncompressed.
     LetE isShiftLeft : Bool <- And [ #isAlu; Eq #funct3 $1; isZero #funct7 ] ;
     LetE isShiftRight : Bool <- And [ #isAlu; Eq #funct3 $5; Or [ isZero #funct7; Eq #funct7 $0x20 ] ] ;
     LetE isShift : Bool <- Or [ #isShiftLeft; #isShiftRight ] ;
-    LetE isShiftArith: Bool <- And [ #isShift; FromBit Bool (#funct7`[5:5]) ] ;
 
     LetE isLogical: Bool <- And [ Or [ Eq #funct3 $4; Eq #funct3 $6; Eq #funct3 $7 ];
                                   Or [And [#isOp; isZero #funct7]; #isOpImm] ] ;
@@ -111,8 +110,6 @@ Section DecodeUncompressed.
 
     LetE isCsr  : Bool <- And [ #isCsrOp; #isValidCsr ] ;
     LetE isCsrImm: Bool <- And [ #isCsr; FromBit Bool (#funct3`[2:2]) ] ;
-    LetE isCsrSet   : Bool <- Eq (#funct3`[1:0]) $2 ;
-    LetE isCsrClear : Bool <- Eq (#funct3`[1:0]) $3 ;
 
     LetE isSysZero: Bool <- And [ #isSystem; isZero #funct3 ] ;
     LetE isMret   : Bool <- And [ #isSysZero; Eq #csrAddr $0x302 ] ;
@@ -219,17 +216,12 @@ Section DecodeUncompressed.
       "Slt"                         ::= #isSlt ;
       "CSetEqual"                   ::= #isCSetEqual ;
       "Shift"                       ::= #isShift ;
-      "Shift_isArith"               ::= #isShiftArith ;
-      "Shift_isRight"               ::= #isShiftRight ;
       "Logical"                     ::= #isLogical ;
       "Cram"                        ::= #isCram ;
       "Crrl"                        ::= #isCrrl ;
       "CAndPerm"                    ::= #isCAndPerm ;
       "Csr"                         ::= #isCsr ;
       "Scr"                         ::= #isScr ;
-      "ScrCsr_Write"                ::= Or [ And [ #isCsr; #isCsrWrite ] ; #isScrWrite ] ;
-      "Csr_Set"                     ::= #isCsrSet ;
-      "Csr_Clear"                   ::= #isCsrClear ;
       "Lui"                         ::= #isLui ;
       "CGetPerm"                    ::= #isCGetPerm ;
       "CGetType"                    ::= #isCGetType ;
@@ -266,16 +258,6 @@ Section DecodeUncompressed.
 
     LetE writesCd : Bool <- And [ isNotZero #cdReal; Not (Or [ #isBranch; #isStore; #isFence; #isECall; #isEBreak; #isMret ]) ] ;
 
-    LetE readsScr        : Bool         <- Or [ #isScr ; #isMret ] ;
-    LetE writesScr       : Bool         <- #isScrWrite ;
-    LetE readWriteScrIdx : Bit ScrIdxSz <- ITE #isMret $(getScrIdx "MePcc"%string) #scrMappedIdx ;
-
-    LetE readsMstatus    : Bool         <- Or [ And [ #isCjal ; Eq #cdReal $Cra ] ; #isCjalr ; #isMret ] ;
-    LetE writesMstatus   : Bool         <- Or [ #isCjalr ; #isMret ] ;
-    LetE readsCsr        : Bool         <- Or [ #isCsr ; #readsMstatus ] ;
-    LetE writesCsr       : Bool         <- Or [ And [ #isCsr ; #isCsrWrite ] ; #writesMstatus ] ;
-    LetE readWriteCsrIdx : Bit CsrIdxSz <- ITE #isCsr #csrMappedIdx ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-
     LetE decodeExcVal : DecodeException <- STRUCT {
       "illegal" ::= #isIllegalInst ;
       "asr"     ::= #asrViolation
@@ -286,12 +268,8 @@ Section DecodeUncompressed.
       "cs1Idx"          ::= #actualCs1Idx ;
       "cs2Idx"          ::= #actualCs2Idx ;
       "writesCd"        ::= #writesCd ;
-      "readsScr"        ::= #readsScr ;
-      "writesScr"       ::= #writesScr ;
-      "readWriteScrIdx" ::= #readWriteScrIdx ;
-      "readsCsr"        ::= #readsCsr ;
-      "writesCsr"       ::= #writesCsr ;
-      "readWriteCsrIdx" ::= #readWriteCsrIdx ;
+      "readWriteScrIdx" ::= #scrMappedIdx ;
+      "readWriteCsrIdx" ::= #csrMappedIdx ;
       "decodeExc"       ::= #decodeExcVal
     }).
 End DecodeUncompressed.

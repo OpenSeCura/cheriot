@@ -196,9 +196,7 @@ Section ImplDom.
       Definition decodeAndRegReadStage : Action ty sysTree (Bit 0) :=
         liftAction np_core
           (@decodeAndRegRead core decodeCapacity pcAddrInit
-                             bpTree mdTree fetchIfc executeIfc dataMemIfc memIfc ty
-                             (implPlicAction (@plicMeip core nIrq ty))
-                             (implClintAction (readClintMtip core ty))).
+                             bpTree mdTree fetchIfc executeIfc dataMemIfc memIfc ty).
 
       Definition setDecodeCanProceedStage : Action ty sysTree (Bit 0) :=
         liftAction np_decode (@setDecodeCanProceed core decodeCapacity ty).

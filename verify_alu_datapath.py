@@ -112,8 +112,9 @@ def parse_functional_units_spec(file_path):
     sec1_text = sec1_match.group(1)
     sec2_text = sec2_match.group(1)
 
-    # 1. SECTION 1: Extract InstGroup elements
+    # 1. SECTION 1: Extract InstGroup elements and their declared Functional Units
     section1_groups = set()
+    section1_group_units = {}
     raw_sec1_blocks = re.split(r"\n\n+", sec1_text)
     for block in raw_sec1_blocks:
         lines = [line.strip() for line in block.split("\n") if line.strip()]
@@ -123,22 +124,41 @@ def parse_functional_units_spec(file_path):
         if header.startswith("Immediate") or header.startswith("Miscellaneous") or header.startswith("-") or header.startswith("*") or ":" in header:
             continue
         sub_headers = [h.strip() for h in header.split("/") if h.strip()]
+        valid_sub = []
         for h in sub_headers:
             if re.match(r"^[A-Z][A-Za-z0-9_]*$", h) and h not in ["Immediate", "Miscellaneous"]:
                 section1_groups.add(h)
+                valid_sub.append(h)
+        if valid_sub:
+            fu_set = set()
+            in_fu = False
+            for line in lines[1:]:
+                if line.startswith("Functional Units:"):
+                    in_fu = True
+                    continue
+                if in_fu:
+                    if line.startswith("None"):
+                        continue
+                    m_fu = re.match(r"^[a-z]\)\s+([A-Za-z0-9_]+)", line)
+                    if m_fu:
+                        fu_set.add(m_fu.group(1))
+            for h in valid_sub:
+                section1_group_units[h] = fu_set
 
-    def extract_groups_from_paren(paren_text):
+    def extract_groups_from_paren(paren_text, expand_all=True):
         found = set()
         p_clean = re.sub(r"\bIF\s+!?Compressed\b", "", paren_text, flags=re.IGNORECASE)
         p_clean = re.sub(r"&\s*!?isImm\b", "", p_clean, flags=re.IGNORECASE)
-        p_clean = re.sub(r"\bwhen\s+[A-Z0-9_/.]+\b", "", p_clean, flags=re.IGNORECASE).strip()
+        p_clean = re.sub(r"\bwhen\s+[A-Za-z0-9_/.]+\b", "", p_clean, flags=re.IGNORECASE)
+        p_clean = re.sub(r"[()]", "", p_clean).strip()
         tokens = [t.strip() for t in p_clean.split(",") if t.strip()]
         for t in tokens:
             if t == "all":
-                found.update(section1_groups)
+                if expand_all:
+                    found.update(section1_groups)
             elif t == "others":
                 pass
-            elif t in section1_groups:
+            elif not t.isdigit():
                 found.add(t)
         return found
 
@@ -162,32 +182,58 @@ def parse_functional_units_spec(file_path):
                 "is_mux": is_mux,
                 "outputs": [],
                 "output_fields": set(),
+                "op_groups": set(),
                 "ports": {}
             }
 
             port_lines = []
+            op_lines = []
             curr_p = []
+            curr_op = []
             outputs_str = ""
             in_outputs = False
+            in_op = False
             for line in lines[1:]:
                 l_str = line.strip()
-                if not l_str or l_str.startswith("-"):
+                if not l_str:
+                    continue
+                if l_str.startswith("-"):
+                    in_outputs = False
+                    if curr_p:
+                        port_lines.append(" ".join(curr_p))
+                        curr_p = []
+                    if curr_op:
+                        op_lines.append(" ".join(curr_op))
+                    curr_op = [l_str[1:].strip()]
+                    in_op = True
                     continue
                 if l_str.startswith("Outputs:"):
                     in_outputs = True
+                    in_op = False
+                    if curr_op:
+                        op_lines.append(" ".join(curr_op))
+                        curr_op = []
                     outputs_str += " " + l_str[len("Outputs:"):].strip()
                     continue
                 
                 if ":" in l_str and not l_str.startswith("(") and re.match(r"^[a-zA-Z0-9_.]+\s*:", l_str):
                     in_outputs = False
+                    in_op = False
+                    if curr_op:
+                        op_lines.append(" ".join(curr_op))
+                        curr_op = []
                     if curr_p:
                         port_lines.append(" ".join(curr_p))
                         curr_p = []
                 
                 if in_outputs:
                     outputs_str += " " + l_str
+                elif in_op:
+                    curr_op.append(l_str)
                 else:
                     curr_p.append(l_str)
+            if curr_op:
+                op_lines.append(" ".join(curr_op))
             if curr_p:
                 port_lines.append(" ".join(curr_p))
 
@@ -196,6 +242,15 @@ def parse_functional_units_spec(file_path):
                 units[unit_name]["outputs"] = parsed_tree
                 units[unit_name]["output_fields"] = get_all_fields_from_tree(parsed_tree)
 
+            for op_str in op_lines:
+                if ":" not in op_str:
+                    continue
+                rest = op_str[op_str.find(":") + 1:].strip()
+                raw_selector_tokens.append((rest, f"- {op_str}"))
+                grps = extract_groups_from_paren(rest, expand_all=False)
+                s2_groups_found.update(grps)
+                units[unit_name]["op_groups"].update(grps & section1_groups)
+
             for p_str in port_lines:
                 if ":" not in p_str:
                     continue
@@ -203,15 +258,16 @@ def parse_functional_units_spec(file_path):
                 rest = p_str[p_str.find(":") + 1:].strip()
                 units[unit_name]["ports"][port_name] = []
 
-                matches = re.findall(r"([^(),]+?)\s*\(([^)]+)\)", rest)
+                matches = re.findall(r"((?:\{[^}]*\}|[^(),])+?)\s*\(([^)]+)\)", rest)
                 if matches:
                     explicit_grps = set()
                     parsed = []
                     for src_expr, paren in matches:
-                        src_clean = re.sub(r"^.*?,\s*", "", src_expr).strip()
+                        src_clean = re.sub(r"^\s*,\s*", "", src_expr).strip()
                         raw_selector_tokens.append((paren, rest))
-                        grps = extract_groups_from_paren(paren)
-                        s2_groups_found.update(grps)
+                        explicit_only = extract_groups_from_paren(paren, expand_all=False)
+                        s2_groups_found.update(explicit_only)
+                        grps = explicit_only & section1_groups
                         if "all" in paren:
                             parsed.append((src_clean, "all", section1_groups))
                         elif "others" in paren:
@@ -255,15 +311,16 @@ def parse_functional_units_spec(file_path):
                     rest = line_str[line_str.find(":") + 1:].strip()
                     writebacks[wb_name] = []
 
-                    matches = re.findall(r"([^(),]+?)\s*\(([^)]+)\)", rest)
+                    matches = re.findall(r"((?:\{[^}]*\}|[^(),])+?)\s*\(([^)]+)\)", rest)
                     if matches:
                         explicit_grps = set()
                         parsed = []
                         for src_expr, paren in matches:
-                            src_clean = re.sub(r"^.*?,\s*", "", src_expr).strip()
+                            src_clean = re.sub(r"^\s*,\s*", "", src_expr).strip()
                             raw_selector_tokens.append((paren, rest))
-                            grps = extract_groups_from_paren(paren)
-                            s2_groups_found.update(grps)
+                            explicit_only = extract_groups_from_paren(paren, expand_all=False)
+                            s2_groups_found.update(explicit_only)
+                            grps = explicit_only & section1_groups
                             if "all" in paren:
                                 parsed.append((src_clean, "all", section1_groups))
                             elif "others" in paren:
@@ -285,16 +342,17 @@ def parse_functional_units_spec(file_path):
                         writebacks[wb_name].append((rest, section1_groups))
                 elif line_str in units:
                     sink_unit = line_str
-                    driven_grps = set()
+                    driven_grps = set(units[sink_unit]["op_groups"])
                     for _, src_list in units[sink_unit]["ports"].items():
                         for _, grps in src_list:
-                            driven_grps.update(grps)
+                            if grps != section1_groups:
+                                driven_grps.update(grps)
                     writebacks[sink_unit] = [(sink_unit, driven_grps)]
-    return section1_groups, s2_groups_found, units, writebacks, raw_selector_tokens
+    return section1_groups, s2_groups_found, units, writebacks, raw_selector_tokens, section1_group_units
 
 def run_invariant_checks():
     spec_path = "FunctionalUnits.v"
-    section1_groups, s2_groups_found, units, writebacks, raw_selector_tokens = parse_functional_units_spec(spec_path)
+    section1_groups, s2_groups_found, units, writebacks, raw_selector_tokens, section1_group_units = parse_functional_units_spec(spec_path)
 
     print("=" * 80)
     print(" FORMAL ARCHITECTURAL INVARIANT VERIFIER (FunctionalUnits.v)")
@@ -313,6 +371,16 @@ def run_invariant_checks():
     if extra:
         print(f"  [FAIL] InstGroups in mapping but missing in classification: {sorted(list(extra))}")
         inv1_failed = True
+    for u_name, u_info in units.items():
+        s2_u_grps = set(u_info["op_groups"])
+        for _, src_list in u_info["ports"].items():
+            for _, grps in src_list:
+                if grps != section1_groups:
+                    s2_u_grps.update(grps)
+        s1_u_grps = {g for g, fu_set in section1_group_units.items() if u_name in fu_set}
+        if s1_u_grps != s2_u_grps:
+            print(f"  [FAIL] Unit '{u_name}' mismatch between Section 1 Functional Units {sorted(list(s1_u_grps))} and Section 2 {sorted(list(s2_u_grps))}")
+            inv1_failed = True
     if not inv1_failed:
         print(f"  [PASS] Every element in InstGroup defined in the instruction classification is used by a functional unit or writeback, and vice-versa.")
 
@@ -342,7 +410,8 @@ def run_invariant_checks():
     for paren, context_line in raw_selector_tokens:
         p_clean = re.sub(r"\bIF\s+!?Compressed\b", "", paren, flags=re.IGNORECASE)
         p_clean = re.sub(r"&\s*!?isImm\b", "", p_clean, flags=re.IGNORECASE)
-        p_clean = re.sub(r"\bwhen\s+[A-Z0-9_/.]+\b", "", p_clean, flags=re.IGNORECASE).strip()
+        p_clean = re.sub(r"\bwhen\s+[A-Za-z0-9_/.]+\b", "", p_clean, flags=re.IGNORECASE)
+        p_clean = re.sub(r"[()]", "", p_clean).strip()
         tokens = [t.strip() for t in p_clean.split(",") if t.strip()]
         for t in tokens:
             if t not in valid_elements and not t.isdigit():
@@ -353,26 +422,38 @@ def run_invariant_checks():
 
     print("\n" + "-" * 80)
     print("INVARIANT 4:")
-    print("  If unit B consumes unit A for an element in InstGroup, unit A must have valid input selectors on one of its input ports for that element.")
+    print("  If unit or writeback B consumes unit A for an element in InstGroup, unit A must have valid input selectors on one of its input ports for that element.")
     print("-" * 80)
     inv4_failed = False
     for u_name_b, u_info_b in units.items():
         for p_name_b, src_list_b in u_info_b["ports"].items():
             for src_expr, grps_b in src_list_b:
-                unit_a = src_expr.split(".")[0].strip()
+                for unit_a in re.findall(r"\b([A-Za-z0-9_]+)\b", src_expr):
+                    if unit_a in units and unit_a != u_name_b:
+                        u_info_a = units[unit_a]
+                        for g in grps_b:
+                            driven_on_any_port = (g in u_info_a["op_groups"]) or any(
+                                any(g in grps_a for _, grps_a in src_list_a)
+                                for src_list_a in u_info_a["ports"].values()
+                            )
+                            if not driven_on_any_port:
+                                print(f"  [FAIL] Unit '{u_name_b}' consumes '{unit_a}' for Group '{g}', but '{unit_a}' has NO input selector for Group '{g}' on any port!")
+                                inv4_failed = True
+    for wb_name, src_list_wb in writebacks.items():
+        for src_expr, grps_wb in src_list_wb:
+            for unit_a in re.findall(r"\b([A-Za-z0-9_]+)\b", src_expr):
                 if unit_a in units:
                     u_info_a = units[unit_a]
-                    for g in grps_b:
-                        driven_on_any_port = False
-                        for p_name_a, src_list_a in u_info_a["ports"].items():
-                            if any(g in grps_a for _, grps_a in src_list_a):
-                                driven_on_any_port = True
-                                break
+                    for g in grps_wb:
+                        driven_on_any_port = (g in u_info_a["op_groups"]) or any(
+                            any(g in grps_a for _, grps_a in src_list_a)
+                            for src_list_a in u_info_a["ports"].values()
+                        )
                         if not driven_on_any_port:
-                            print(f"  [FAIL] Unit '{u_name_b}' consumes '{unit_a}' for Group '{g}', but '{unit_a}' has NO input selector for Group '{g}' on any port!")
+                            print(f"  [FAIL] Writeback '{wb_name}' consumes '{unit_a}' for Group '{g}', but '{unit_a}' has NO input selector for Group '{g}' on any port!")
                             inv4_failed = True
     if not inv4_failed:
-        print("  [PASS] If unit B consumes unit A for an element in InstGroup, unit A has valid input selectors on one of its input ports for that element.")
+        print("  [PASS] If unit or writeback B consumes unit A for an element in InstGroup, unit A has valid input selectors on one of its input ports for that element.")
 
     print("\n" + "-" * 80)
     print("INVARIANT 5:")
@@ -380,10 +461,11 @@ def run_invariant_checks():
     print("-" * 80)
     inv5_failed = False
     for u_name_a, u_info_a in units.items():
-        driven_groups = set()
+        driven_groups = set(u_info_a["op_groups"])
         for p_name_a, src_list_a in u_info_a["ports"].items():
             for _, grps in src_list_a:
-                driven_groups.update(grps)
+                if grps != section1_groups:
+                    driven_groups.update(grps)
 
         for g in driven_groups:
             consumed = False
@@ -392,7 +474,7 @@ def run_invariant_checks():
                     continue
                 for p_name_b, src_list_b in u_info_b["ports"].items():
                     for src_expr, grps_b in src_list_b:
-                        if src_expr.split(".")[0].strip() == u_name_a and g in grps_b:
+                        if u_name_a in re.findall(r"\b([A-Za-z0-9_]+)\b", src_expr) and g in grps_b:
                             consumed = True
                             break
                     if consumed:
@@ -402,7 +484,7 @@ def run_invariant_checks():
             if not consumed:
                 for wb_name, src_list_wb in writebacks.items():
                     for src_expr, grps_wb in src_list_wb:
-                        if (src_expr.split(".")[0].strip() == u_name_a or wb_name == u_name_a) and g in grps_wb:
+                        if (u_name_a in re.findall(r"\b([A-Za-z0-9_]+)\b", src_expr) or wb_name == u_name_a) and g in grps_wb:
                             consumed = True
                             break
                     if consumed:
@@ -424,7 +506,7 @@ def run_invariant_checks():
         ports = u_info["ports"]
         if not ports:
             continue
-        driven_groups = set()
+        driven_groups = set(u_info["op_groups"])
         for p_name, src_list in ports.items():
             for _, grps in src_list:
                 driven_groups.update(grps)

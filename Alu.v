@@ -41,7 +41,6 @@ Section Alu.
     LetE fetchExc : FetchException <- ##aluIn`"fetchExc" ;
     LetE cs1 : FullECapWithTag <- ##aluIn`"cs1" ;
     LetE cs2 : FullECapWithTag <- ##aluIn`"cs2" ;
-    LetE currInterruptStatus : Bool <- ##aluIn`"currInterruptStatus" ;
     LetE aluControl : AluControl <- ##aluIn`"aluControl" ;
 
     LetE isComp  : Bool     <- isCompressed inst ;
@@ -94,7 +93,7 @@ Section Alu.
           (##aluControl`"Cjal", #jimm20) ;
           (##aluControl`"AdderBeforeBoundsCheck_offset_uimm20_11", #uimm20_11) ;
           (##aluControl`"AdderBeforeBoundsCheck_offset_cs2Addr", #cs2Addr) ;
-          (##aluControl`"Bounds_isImm", #zimm12) ;
+          (##aluControl`"AdderBeforeBoundsCheck_offset_zimm12", #zimm12) ;
           (##aluControl`"Store", #store_imm) ]
         #simm12 ;
     LETE AdderBeforeBoundsCheckOut : Addr <-
@@ -102,7 +101,7 @@ Section Alu.
 
     LetE AdderToOutput_base : Bit Xlen <-
       caseDefault (k := Bit Xlen) [
-          (##aluControl`"CjalOrCjalr", #pccAddr) ;
+          (##aluControl`"AdderToOutput_base_pccAddr", #pccAddr) ;
           (##aluControl`"CGetLen", TruncLsb 2 AddrSz #cs1Top) ]
         #cs1Addr ;
     LetE AdderToOutput_offset : Bit Xlen <-
@@ -121,10 +120,8 @@ Section Alu.
       ITE (##aluControl`"Shifter_shamt_isCs2AddrNotShamt")
           (TruncLsb (AddrSz - RegIdxSz) RegIdxSz #cs2Addr)
           #shamt ;
-    LetE Shifter_isRight : Bool <- ##aluControl`"Shifter_isRight" ;
-    LetE Shifter_isArith : Bool <- ##aluControl`"Shifter_isArith" ;
     LETE ShifterOut : Bit Xlen <-
-      Shifter Shifter_isRight Shifter_isArith Shifter_data Shifter_shamt ;
+      Shifter inst Shifter_data Shifter_shamt ;
 
     LetE AdderBeforeRepCheck_base : Bit (AddrSz + 1) <-
       ITE (#BranchOrCjalOrAuiPcc) #pccBase #cs1Base ;
@@ -138,9 +135,8 @@ Section Alu.
           (##aluControl`"ComparatorTopOrRep_addr_AdderBeforeBoundsCheck",
            ZeroExtendTo (AddrSz + 2) #AdderBeforeBoundsCheckOut) ;
           (##aluControl`"SealOrSetAddr", ZeroExtendTo (AddrSz + 2) #cs2Addr) ;
-          (##aluControl`"Unseal", ZeroExtendTo (AddrSz + 2) #cs1OType) ;
-          (##aluControl`"CTestSubset", #cs1Top) ]
-        (ZeroExtendTo (AddrSz + 2) #cs1Addr) ;
+          (##aluControl`"Unseal", ZeroExtendTo (AddrSz + 2) #cs1OType) ]
+        #cs1Top ;
     LetE ComparatorTopOrRep_topRep : Bit (AddrSz + 2) <-
       caseDefault (k := Bit (AddrSz + 2)) [
           (##aluControl`"ComparatorTopOrRep_topRep_AdderBeforeRepCheck", #AdderBeforeRepCheckOut) ;
@@ -189,26 +185,25 @@ Section Alu.
                         ComparatorGeneral_checkEq ComparatorGeneral_invertRes
                         ComparatorGeneral_op1 ComparatorGeneral_op2 ;
 
-    LETE CjalrUnitOut : CjalrUnitRes <- CjalrUnit cs1 inst currInterruptStatus ;
+    LETE CjalrUnitOut : CjalrUnitRes <- CjalrUnit cs1 inst ;
 
     LetE Logical_op1 : Bit Xlen <- #cs1Addr ;
     LetE Logical_op2 : Bit Xlen <-
       ITE (##aluControl`"Logical_op2_isCs2AddrNotSimm12") #cs2Addr #simm12 ;
-    LetE Logical_opSel : Bit 2 <- ##inst`[13:12] ;
-    LETE LogicalOut : Bit Xlen <- Logical Logical_opSel Logical_op1 Logical_op2 ;
+    LETE LogicalOut : Bit Xlen <- Logical inst Logical_op1 Logical_op2 ;
 
     LETE CAndPermOut : TagECap <- CAndPerm cs1Tag cs1ECap cs2Addr ;
 
-    LetE Bounds_reqLimit : Addr <-
-      caseDefault (k := Addr) [ (##aluControl`"Bounds_reqLimit_cs2Addr", #cs2Addr) ;
-                                     (##aluControl`"Bounds_reqLimit_cs1Addr", #cs1Addr) ]
+    LetE Bounds_length : Addr <-
+      caseDefault (k := Addr) [ (##aluControl`"Bounds_length_cs2Addr", #cs2Addr) ;
+                                (##aluControl`"Bounds_length_cs1Addr", #cs1Addr) ]
         #zimm12 ;
     LetE Bounds_isRoundDown : Bool <- ##aluControl`"Bounds_isRoundDown" ;
-    LETE BoundsOut : BoundsRes <- Bounds Bounds_isRoundDown cs1Addr Bounds_reqLimit ;
+    LETE BoundsOut : BoundsRes <- Bounds Bounds_isRoundDown cs1Addr Bounds_length ;
 
-    LetE Bounds_boundsExact : Bool <- ##BoundsOut`"exact" ;
-    LetE Bounds_instIsExact : Bool <- ##aluControl`"Bounds_isExact" ;
-    LETE BoundsExactOut : Bool <- BoundsExact Bounds_instIsExact AddrBoundsCheckOut Bounds_boundsExact ;
+    LetE BoundsTag_boundsExact : Bool <- ##BoundsOut`"exact" ;
+    LetE BoundsTag_instIsExact : Bool <- ##aluControl`"BoundsTag_instIsExact" ;
+    LETE BoundsTagOut : Bool <- BoundsTag BoundsTag_instIsExact AddrBoundsCheckOut BoundsTag_boundsExact ;
 
     LetE Saturater_isBase : Bool <- ##aluControl`"Saturater_isBase" ;
     LetE Saturater_isTop : Bool <- ##aluControl`"Saturater_isTop" ;
@@ -232,21 +227,16 @@ Section Alu.
 
     LetE cjalrTag : Bool <- ##CjalrUnitOut`"tag" ;
     LetE cjalrEcap : ECap <- ##CjalrUnitOut`"ecap" ;
-    LetE cjalrIntStatus : Bool <- ##CjalrUnitOut`"interruptStatus" ;
-    LETE ControlFlowResOut : ControlFlowRes <-
-      ControlFlow isMret isCjal isCjalr isBranch isCond cs2 AdderBeforeBoundsCheckOut
-             AddrBoundsCheckOut cjalrTag cjalrEcap cjalrIntStatus pccTag pccECap inst currInterruptStatus ;
-    LetE ControlFlowOut : Option CfPayload <- ##ControlFlowResOut`"cfOut" ;
-
-    LetE PccEcap_cOType : Bit CapcOTypeSz <- ITE0 (##aluControl`"CjalOrCjalr") (##ControlFlowResOut`"linkCOType") ;
-    LETE PccEcapOut : ECap <- PccEcap pccECap PccEcap_cOType ;
+    LetE cjalrIntStatus : Option Bool <- ##CjalrUnitOut`"interruptStatus" ;
+    LETE ControlFlowOut : Option CfPayload <-
+      ControlFlow isMret isCjal isCjalr isBranch isCond AdderBeforeBoundsCheckOut
+                  AddrBoundsCheckOut cjalrTag cjalrEcap cjalrIntStatus pccTag pccECap inst ;
 
     LetE Reg_tag : Bool <-
       Or [ And [ ##aluControl`"Cjal"                  ; #pccTag ] ;
            And [ ##aluControl`"Reg_tag_cs1Tag"         ; #cs1Tag ] ;
-           And [ ##aluControl`"Scr"                    ; #cs2Tag ] ;
            And [ ##aluControl`"Reg_tag_AddrBoundsCheck"; #AddrBoundsCheckOut ] ;
-           And [ ##aluControl`"CSetBounds"             ; #BoundsExactOut ] ;
+           And [ ##aluControl`"CSetBounds"             ; #BoundsTagOut ] ;
            And [ ##aluControl`"CAndPerm"               ; ##CAndPermOut`"tag" ] ;
            And [ ##aluControl`"SealOrUnseal"           ; ##SealerUnsealerOut`"tag" ] ] ;
 
@@ -260,11 +250,9 @@ Section Alu.
                                            "cE"     ::= ##BoundsOut`"cE" ;
                                            "top"    ::= ##BoundsOut`"top" ;
                                            "base"   ::= ##BoundsOut`"base" };
-
     LetE Reg_ecap : ECap <-
-      caseDefault (k := ECap) [ (##aluControl`"Reg_ecap_PccEcap", #PccEcapOut) ;
+      caseDefault (k := ECap) [ (##aluControl`"Reg_ecap_pccEcap", #pccECap) ;
                                  (##aluControl`"Reg_ecap_cs1Ecap", ##cs1`"ecap") ;
-                                 (##aluControl`"Scr", #cs2ECap) ;
                                  (##aluControl`"Reg_ecap_decodedECap", #decodedECap) ;
                                  (##aluControl`"CAndPerm", ##CAndPermOut`"ecap") ;
                                  (##aluControl`"SealOrUnseal", ##SealerUnsealerOut`"ecap") ;
@@ -315,17 +303,14 @@ Section Alu.
       STRUCT { "tag" ::= #Reg_tag; "ecap" ::= #Reg_ecap; "addr" ::= #Reg_addr } ;
 
     LetE cfPayload : Option CfPayload <- #ControlFlowOut ;
-  
+
     LetE ScrCsr_operand : Addr <-
-      ITE (##aluControl`"ScrCsr_operand_isImm") (ZeroExtendTo Xlen #zimm5) #cs1Addr ;
-    LetE ScrCsr_isScr : Bool <- ##aluControl`"Scr" ;
+      ITE (##aluControl`"ScrCsr_operand_isZimm5NotCs1Addr") (ZeroExtendTo Xlen #zimm5) #cs1Addr ;
+    LetE ScrCsr_isScr : Bool <- ##aluControl`"ScrCsr_isScr" ;
     LetE ScrCsr_isCsr : Bool <- ##aluControl`"ScrCsr_isCsr" ;
-    LetE ScrCsr_isSet : Bool <- ##aluControl`"ScrCsr_isSet" ;
-    LetE ScrCsr_isClear : Bool <- ##aluControl`"ScrCsr_isClear" ;
-    LetE ScrCsr_isWrite : Bool <- ##aluControl`"ScrCsr_isWrite" ;
     LETE ScrCsrOut : Option ScrCsrPayload <-
-      ScrCsr ScrCsr_isScr ScrCsr_isCsr ScrCsr_isSet ScrCsr_isClear ScrCsr_isWrite
-             readWriteScrIdx readWriteCsrIdx ScrSanitizerOut cs1ECap ScrCsr_operand cs2Addr ;
+      ScrCsr ScrCsr_isScr ScrCsr_isCsr
+             readWriteScrIdx readWriteCsrIdx ScrSanitizerOut cs1ECap ScrCsr_operand inst ;
 
     @RetE _ AluOut (STRUCT {
       "isComp"      ::= #isComp ;
@@ -489,7 +474,7 @@ Section AluRF.
         ) ;
     Return #mulDivOpt.
 
-  Definition executeNonSequential (currPcc : ty FullECapWithTag) (aluOut : ty AluOutUnion)
+  Definition executeNonSequential (currPcc : ty FullECapWithTag) (meip mtip : ty Bool) (aluOut : ty AluOutUnion)
     : Action ty rfTree ExecuteOut :=
     Let isComp : Bool               <- ##aluOut`"isComp" ;
     Let dstIdx : Bit RegIdxSzReal   <- ##aluOut`"dstIdx" ;
@@ -541,30 +526,53 @@ Section AluRF.
               )
             Else
               (
-                If (isNotZero #dstIdx) Then
-                  (writeRegsList gprPathsWithKind #dstIdx #dstVal) ;
-
                 Let cfScrCsr : CfScrCsrUnion <- #noExc `! "CfScrCsr" ;
                 LetIf resCfScrCsr : ExecuteOut <-
                   If (#cfScrCsr `? "ScrCsr") Then
                     (
-                      Let scrCsr : ScrCsrPayload        <- #cfScrCsr `! "ScrCsr" ;
-                      Let sDest  : TaggedUnion ScrCsrIdx <- ##scrCsr`"SpecialDest" ;
-                      Let sVal   : FullECapWithTag      <- ##scrCsr`"SpecialValue" ;
+                      Let scrCsr  : ScrCsrPayload         <- #cfScrCsr `! "ScrCsr" ;
+                      Let sDest   : TaggedUnion ScrCsrIdx <- ##scrCsr`"SpecialDest" ;
+                      Let sVal    : FullECapWithTag       <- ##scrCsr`"SpecialValue" ;
+                      Let isSet   : Bool                  <- ##scrCsr`"isSet" ;
+                      Let isClear : Bool                  <- ##scrCsr`"isClear" ;
+                      Let isWrite : Bool                  <- ##scrCsr`"isWrite" ;
 
-                      If ##scrCsr`"isWrite" Then (
-                        If (#sDest `? "Scr") Then
-                          (
-                            Let scrIdx : Bit ScrIdxSz <- #sDest `! "Scr" ;
-                            writeRegsList scrPathsWithKind #scrIdx #sVal
-                          )
-                        Else
-                          (
-                            Let csrIdx : Bit CsrIdxSz <- #sDest `! "Csr" ;
-                            writeRegsList csrPathsWithKind #csrIdx ##sVal`"addr"
-                          ) ;
-                        Retv
-                      ) ;
+                      If (#sDest `? "Scr") Then
+                        (
+                          Let  scrIdx : Bit ScrIdxSz    <- #sDest `! "Scr" ;
+                          LetA oldScr : FullECapWithTag <- readRegsList scrPathsWithKind #scrIdx ;
+                          If (isNotZero #dstIdx) Then
+                            (writeRegsList gprPathsWithKind #dstIdx #oldScr) ;
+                          If #isWrite Then
+                            (writeRegsList scrPathsWithKind #scrIdx #sVal) ;
+                          Retv
+                        )
+                      Else
+                        (
+                          Let  csrIdx    : Bit CsrIdxSz    <- #sDest `! "Csr" ;
+                          (* Physical read yields 0 for a virtual CSR: its index is past the register list. *)
+                          LetA csrPhys   : Bit Xlen        <- readRegsList csrPathsWithKind #csrIdx ;
+                          Let  oldCsr    : Bit Xlen        <- Or [ #csrPhys ;
+                                                                   ITE0 (Eq #csrIdx $(getCsrIdx "mip"))
+                                                                     (createMip #meip #mtip) ] ;
+                          Let  oldCsrCap : FullECapWithTag <- STRUCT {
+                                                                "tag"  ::= Const ty Bool false ;
+                                                                "ecap" ::= Const ty ECap (getDefault _) ;
+                                                                "addr" ::= #oldCsr
+                                                              } ;
+                          If (isNotZero #dstIdx) Then
+                            (writeRegsList gprPathsWithKind #dstIdx #oldCsrCap) ;
+                          If #isWrite Then
+                            (
+                              Let operand : Addr     <- ##sVal`"addr" ;
+                              Let newCsr  : Bit Xlen <- caseDefault
+                                                          [ (#isSet  , Or  [ #oldCsr ; #operand ]) ;
+                                                            (#isClear, And [ #oldCsr ; Not #operand ]) ]
+                                                          #operand ;
+                              writeRegsList csrPathsWithKind #csrIdx #newCsr
+                            ) ;
+                          Retv
+                        ) ;
                       @Return ty rfTree ExecuteOut (STRUCT {
                         "mulDiv"     ::= @mkNone ty MulDivUnion ;
                         "dataMem"    ::= @mkNone ty MemFenceUnion ;
@@ -575,11 +583,22 @@ Section AluRF.
                     )
                   Else
                     (
-                      Let cf     : CfPayload       <- #cfScrCsr `! "ControlFlow" ;
-                      Let newPcc : FullECapWithTag <- ##cf`"NewPcc" ;
-                      Let cfOp   : CfOp            <- ##cf`"CfOp" ;
+                      Let  cf      : CfPayload       <- #cfScrCsr `! "ControlFlow" ;
+                      Let  newPcc  : FullECapWithTag <- ##cf`"NewPcc" ;
+                      Let  cfOp    : CfOp            <- ##cf`"CfOp" ;
+                      LetA mstatus : Bit Xlen        <- readRegsList csrPathsWithKind
+                                                          ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
 
-                      LetIf nextPccCf : FullECapWithTag <-
+                      If (isNotZero #dstIdx) Then
+                        (
+                          Let linkCOType : Bit CapcOTypeSz <- ITE0 (Eq #dstIdx $Cra)
+                                                                (ITE (getMstatusMIE #mstatus) $RetSentryIe $RetSentryId) ;
+                          Let linkECap   : ECap            <- (##dstVal`"ecap") `{ "cOType" <- #linkCOType } ;
+                          Let linkVal    : FullECapWithTag <- #dstVal `{ "ecap" <- #linkECap } ;
+                          writeRegsList gprPathsWithKind #dstIdx #linkVal
+                        ) ;
+
+                      LetIf resCf : ExecuteOut <-
                         If (#cfOp `? "ControlFlowAddrOnly") Then
                           (
                             Let addrOnlyOp : ControlFlowAddrOnlyOp <- #cfOp `! "ControlFlowAddrOnly" ;
@@ -600,26 +619,55 @@ Section AluRF.
                                                                        `{ "addr" <- ##newPcc`"addr" } ;
                                   Return #targetPcc
                                 ) ;
-                            Return #nextPccAO
+                            @Return ty rfTree ExecuteOut (STRUCT {
+                              "mulDiv"     ::= @mkNone ty MulDivUnion ;
+                              "dataMem"    ::= @mkNone ty MemFenceUnion ;
+                              "cf"         ::= mkSome #cf ;
+                              "isFenceIRq" ::= Const ty Bool false ;
+                              "nextPcc"    ::= #nextPccAO
+                            })
                           )
                         Else
                           (
-                            Let  addrECap   : ControlFlowAddrECap <- #cfOp `! "ControlFlowAddrECap" ;
-                            Let  newMIE     : Bool                <- ##addrECap`"interruptStatus" ;
-                            LetA mstatus    : Bit Xlen            <- readRegsList csrPathsWithKind
-                                                                       ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-                            Let  newMstatus : Bit Xlen            <- setMstatusMIE #mstatus #newMIE ;
-                            Act (writeRegsList csrPathsWithKind
-                                   ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
-                            Return #newPcc
+                            Let  addrECap   : ControlFlowAddrECap   <- #cfOp `! "ControlFlowAddrECap" ;
+                            Let  addrECapOp : ControlFlowAddrECapOp <- ##addrECap`"op" ;
+                            LetIf resAddrECap : ExecuteOut <-
+                              If (#addrECapOp `? "Cjalr") Then
+                                (
+                                  Let updMIEOpt : Option Bool <- ##addrECap`"interruptStatus" ;
+                                  If (##updMIEOpt`"valid") Then
+                                    (
+                                      Let newMstatus : Bit Xlen <- setMstatusMIE #mstatus (##updMIEOpt`"data") ;
+                                      writeRegsList csrPathsWithKind
+                                        ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus
+                                    ) ;
+                                  @Return ty rfTree ExecuteOut (STRUCT {
+                                    "mulDiv"     ::= @mkNone ty MulDivUnion ;
+                                    "dataMem"    ::= @mkNone ty MemFenceUnion ;
+                                    "cf"         ::= mkSome #cf ;
+                                    "isFenceIRq" ::= Const ty Bool false ;
+                                    "nextPcc"    ::= #newPcc
+                                  })
+                                )
+                              Else
+                                (
+                                  LetA mePcc          : FullECapWithTag <- readRegsList scrPathsWithKind
+                                                                             ($(getScrIdx "MePcc") : Expr ty (Bit ScrIdxSz)) ;
+                                  Let  newMstatus     : Bit Xlen        <- setMstatusMIE #mstatus (getMstatusMPIE #mstatus) ;
+                                  Act (writeRegsList csrPathsWithKind
+                                         ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) #newMstatus) ;
+                                  Let  cfOut          : CfPayload       <- #cf `{ "NewPcc"     <- #mePcc } ;
+                                  @Return ty rfTree ExecuteOut (STRUCT {
+                                    "mulDiv"     ::= @mkNone ty MulDivUnion ;
+                                    "dataMem"    ::= @mkNone ty MemFenceUnion ;
+                                    "cf"         ::= mkSome #cfOut ;
+                                    "isFenceIRq" ::= Const ty Bool false ;
+                                    "nextPcc"    ::= #mePcc
+                                  })
+                                ) ;
+                            Return #resAddrECap
                           ) ;
-                      @Return ty rfTree ExecuteOut (STRUCT {
-                        "mulDiv"     ::= @mkNone ty MulDivUnion ;
-                        "dataMem"    ::= @mkNone ty MemFenceUnion ;
-                        "cf"         ::= mkSome #cf ;
-                        "isFenceIRq" ::= Const ty Bool false ;
-                        "nextPcc"    ::= #nextPccCf
-                      })
+                      Return #resCf
                     ) ;
                 Return #resCfScrCsr
               ) ;
@@ -651,70 +699,32 @@ Section AluRF.
                 })
               )
             Else
-              (executeNonSequential currPcc aluOut) ;
+              (executeNonSequential currPcc meip mtip aluOut) ;
           Return #resSeqOrNonSeq
         ) ;
     Return #branchRes.
 
-  Definition regRead (meip mtip : ty Bool) (regReadIn : ty RegReadIn) : Action ty rfTree AluInInstGroup :=
-    Let  decodeOut  : DecodeOut        <- ##regReadIn`"decodeOut" ;
-    Let  fetchExc   : FetchException   <- ##regReadIn`"fetchExc" ;
-    Let  cs1Idx     : Bit RegIdxSzReal <- ##decodeOut`"cs1Idx" ;
-    Let  readsScr   : Bool             <- ##decodeOut`"readsScr" ;
-    Let  readsCsr   : Bool             <- ##decodeOut`"readsCsr" ;
+  Definition regRead (regReadIn : ty RegReadIn) : Action ty rfTree AluInInstGroup :=
+    Let  decodeOut : DecodeOut        <- ##regReadIn`"decodeOut" ;
+    Let  fetchExc  : FetchException   <- ##regReadIn`"fetchExc" ;
+    Let  cs1Idx    : Bit RegIdxSzReal <- ##decodeOut`"cs1Idx" ;
+    Let  cs2Idx    : Bit RegIdxSzReal <- ##decodeOut`"cs2Idx" ;
 
-    LetA cs1Raw     : FullECapWithTag  <- readRegsList gprPathsWithKind #cs1Idx ;
-    Let  cs1        : FullECapWithTag  <- ITE0 (isNotZero #cs1Idx) #cs1Raw ;
+    LetA cs1Raw    : FullECapWithTag  <- readRegsList gprPathsWithKind #cs1Idx ;
+    Let  cs1       : FullECapWithTag  <- ITE0 (isNotZero #cs1Idx) #cs1Raw ;
 
-    LetIf cs2 : FullECapWithTag <-
-      If #readsScr Then
-        (
-          Let scrIdx : Bit ScrIdxSz <- ##decodeOut`"readWriteScrIdx" ;
-          readRegsList scrPathsWithKind #scrIdx
-        )
-      Else
-        (
-          LetIf csrOrReg <- If #readsCsr Then
-            (
-              Let  csrIdx  : Bit CsrIdxSz    <- ##decodeOut`"readWriteCsrIdx" ;
-              (* Physical read yields 0 for a virtual CSR: its index is past the register list. *)
-              LetA csrPhys : Bit Xlen        <- readRegsList csrPathsWithKind #csrIdx ;
-              Let  csrVal  : Bit Xlen        <- Or [ #csrPhys ;
-                                                     ITE0 (Eq #csrIdx $(getCsrIdx "mip"))
-                                                       (createMip #meip #mtip) ] ;
-              Let  csrCap : FullECapWithTag <- STRUCT {
-                                                   "tag"  ::= Const ty Bool false ;
-                                                   "ecap" ::= Const ty ECap (getDefault _) ;
-                                                   "addr" ::= #csrVal
-                                                 } ;
-              Return #csrCap
-            )
-          Else
-            (
-              Let  cs2Idx : Bit RegIdxSzReal <- ##decodeOut`"cs2Idx" ;
-              LetA cs2Raw : FullECapWithTag  <- readRegsList gprPathsWithKind #cs2Idx ;
-              Return (ITE0 (isNotZero #cs2Idx) #cs2Raw)
-            ) ;
-          Return #csrOrReg
-        ) ;
-
-    LetA mstatus       : Bit Xlen <- readRegsList csrPathsWithKind ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
-    Let  currIntStatus : Bool     <- ITE (##decodeOut`"instGroup"`"Mret")
-                                         (getMstatusMPIE #mstatus)
-                                         (getMstatusMIE #mstatus) ;
+    LetA cs2Raw    : FullECapWithTag  <- readRegsList gprPathsWithKind #cs2Idx ;
+    Let  cs2       : FullECapWithTag  <- ITE0 (isNotZero #cs2Idx) #cs2Raw ;
 
     @Return ty rfTree AluInInstGroup (STRUCT {
-      "writesCd"            ::= ##decodeOut`"writesCd" ;
-      "writesScr"           ::= ##decodeOut`"writesScr" ;
-      "readWriteScrIdx"     ::= ##decodeOut`"readWriteScrIdx" ;
-      "writesCsr"           ::= ##decodeOut`"writesCsr" ;
-      "readWriteCsrIdx"     ::= ##decodeOut`"readWriteCsrIdx" ;
-      "inst"                ::= ##regReadIn`"inst" ;
-      "decodeExc"           ::= ##decodeOut`"decodeExc" ;
-      "fetchExc"            ::= #fetchExc ;
-      "cs1"                 ::= #cs1 ;
-      "cs2"                 ::= #cs2 ;
-      "currInterruptStatus" ::= #currIntStatus ;
-      "instGroup"           ::= ##decodeOut`"instGroup"
+      "writesCd"        ::= ##decodeOut`"writesCd" ;
+      "readWriteScrIdx" ::= ##decodeOut`"readWriteScrIdx" ;
+      "readWriteCsrIdx" ::= ##decodeOut`"readWriteCsrIdx" ;
+      "inst"            ::= ##regReadIn`"inst" ;
+      "decodeExc"       ::= ##decodeOut`"decodeExc" ;
+      "fetchExc"        ::= #fetchExc ;
+      "cs1"             ::= #cs1 ;
+      "cs2"             ::= #cs2 ;
+      "instGroup"       ::= ##decodeOut`"instGroup"
     }).
 End AluRF.

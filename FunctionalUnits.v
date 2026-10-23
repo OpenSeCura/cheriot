@@ -32,7 +32,6 @@ Immediate Formats:
   * zimm5           : 5-bit zero-extended immediate (CSR manipulations)
 
 Miscellaneous:
-  * interruptStatus : Current interrupt status
   * isCompressed    : Whether the current instruction is compressed or not
 
 Branch
@@ -56,8 +55,9 @@ Branch
 
 Cjal
 * CJAL cd, jimm20
-    Implicit Read : pcc, interruptStatus (when cd = c1 / cra)
+    Implicit Read : pcc, mstatus.MIE (in executeNonSequential when cd = c1 / cra)
     Implicit Write: pcc.addr, pcc.tag
+    Note: executeNonSequential seals cOType of link capability when cd = c1 / cra
     Functional Units:
       a) AdderBeforeBoundsCheck (computing jump target address PC + jimm20)
       b) AdderToOutput (computing return link address PC + 2 / PC + 4)
@@ -66,8 +66,7 @@ Cjal
                              AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       e) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= pcc.base)
       f) AddrBoundsCheck (ands the two comparator outputs correctly)
-      g) ControlFlow (creates CfPayload from AddrBoundsCheck and AdderBeforeBoundsCheck, and outputs linkCOType using currInterruptStatus)
-      h) PccEcap (sets return link capability cOType to ControlFlow.linkCOType)
+      g) ControlFlow (creates CfPayload from AddrBoundsCheck and AdderBeforeBoundsCheck)
 
 AuiCgp/AuiPcc
 * AUICGP cd, uimm20_11
@@ -81,7 +80,6 @@ AuiCgp/AuiPcc
                              AdderBeforeBoundsCheck <= AdderBeforeRepCheck)
       d) ComparatorBase (checking representable lower limit AdderBeforeBoundsCheck >= base)
       e) AddrBoundsCheck (ands the two comparator outputs correctly)
-      f) PccEcap (sets output capability cOType to 0 for AuiPcc)
 
 CIncAddr
 * CIncAddr cd, cs1, rs2
@@ -104,16 +102,16 @@ CSetAddr
 
 Cjalr
 * CJALR cd, cs1, simm12
-    Implicit Read : pcc, interruptStatus
-    Implicit Write: pcc, interruptStatus
+    Implicit Read : pcc, mstatus.MIE (in executeNonSequential when cd = c1 / cra)
+    Implicit Write: pcc, mstatus.MIE (in executeNonSequential when jumping to a valid sealed non-Ih sentry)
+    Note: executeNonSequential seals cOType of link capability when cd = c1 / cra
     Note: This doesn't generate exceptions; just clears tag.
           The new MePrevPcc can help identify caller
     Functional Units:
       a) AdderBeforeBoundsCheck (computing jump target address cs1.addr + simm12)
       b) AdderToOutput (computing return link address PC + 2 / PC + 4)
       c) CjalrUnit (sentry legality / unsealing check unit)
-      d) ControlFlow (creates CfPayload from CjalrUnit.tag, CjalrUnit.ecap, AdderBeforeBoundsCheck and CjalrUnit.interruptStatus, and outputs linkCOType)
-      e) PccEcap (sets return link capability cOType to ControlFlow.linkCOType)
+      d) ControlFlow (creates CfPayload from CjalrUnit.tag, CjalrUnit.ecap, CjalrUnit.interruptStatus and AdderBeforeBoundsCheck)
 
 CTestSubset
 * CTestSubset rd, cs1, cs2
@@ -129,11 +127,11 @@ CSetBounds
 * CSetBoundsImm cd, cs1, zimm12
     Functional Units:
       a) AdderBeforeBoundsCheck (computing requested top address cs1.addr + rs2 / zimm12)
-      b) Bounds (computing compressed bounds Bounds.base, Bounds.top, Bounds.E)
+      b) Bounds (computing compressed bounds Bounds.base, Bounds.top, Bounds.cE)
       c) ComparatorTopOrRep (verifying requested top AdderBeforeBoundsCheck <= cs1.top)
       d) ComparatorBase (verifying requested base >= cs1.base)
       e) AddrBoundsCheck (ands the two comparator outputs correctly)
-      f) BoundsExact (checking if bounds are exact when CSetBoundsExact is used)
+      f) BoundsTag (checking if bounds are exact when CSetBoundsExact is used)
 
 Seal
 * CSeal cd, cs1, cs2
@@ -267,8 +265,9 @@ Csr
     Note: Decode can cause exceptions for accessing certain CSRs if no ASR
     Note: CSRRS/RC[I] with a zero rs1/zimm5 field only read; ScrCsr_Write gates the write
     Note: Decode raises IllegalInst on a write to a virtual CSR (mip), which has no register
+    Note: CSR read, GPR writeback of old CSR value, and CSR write happen in executeNonSequential
     Functional Units:
-      a) ScrCsr (creates ScrCsrPayload with CSR write info)
+      a) ScrCsr (creates ScrCsrPayload with CSR operation info and operand)
 
 Scr
 * CSpecialRw cd, cSpecial, cs1
@@ -278,6 +277,7 @@ Scr
     Note: ScrSanitizer only checks for LSB = 1'b0 for MePcc and Mtcc (MePrevPcc needs no sanitizing)
     Note: cs1 = c0 makes this a pure read; ScrCsr_Write gates the write
     Note: Decode raises IllegalInst on a write to a read-only SCR (MePrevPcc)
+    Note: SCR read, GPR writeback of old SCR value, and SCR write happen in executeNonSequential
     Functional Units:
       a) ScrSanitizer (check if the last LSB bit is 0 for certain SCR writes)
       b) ScrCsr (creates ScrCsrPayload with SCR write info using ScrSanitizer tag)
@@ -355,11 +355,12 @@ EBreak
 
 Mret
 * MRET
-    Implicit Read : MEPCC, pcc.perms, interruptStatus
-    Implicit Write: pcc, interruptStatus
+    Implicit Read : MEPCC, pcc.perms, mstatus.MPIE (in executeNonSequential)
+    Implicit Write: pcc, mstatus.MIE (in executeNonSequential)
     Note: Decoder will cause exceptions if no ASR
+    Note: MEPCC read, mstatus update, and nextPcc computation happen in executeNonSequential
     Functional Units:
-      a) ControlFlow (creates CfPayload from cs2.tag, cs2.ecap, cs2.addr and currInterruptStatus)
+      a) ControlFlow (creates CfPayload with Mret op)
 
 Fence
 * FENCE
@@ -384,8 +385,7 @@ AdderBeforeBoundsCheck:
 AdderToOutput:
   - ADD : Cjal, Cjalr, AddSub (when ADD/ADDI)
   - SUB : AddSub (when SUB/CSub), CGetLen
-  base: pcc.addr (Cjal, Cjalr), cs1.addr (AddSub),
-        cs1.top (CGetLen)
+  base: pcc.addr (Cjal, Cjalr), cs1.top (CGetLen), cs1.addr (AddSub)
   offset: 2 (Cjal, Cjalr) IF Compressed, 4 (Cjal, Cjalr) IF !Compressed,
         cs2.addr (AddSub & !isImm), simm12 (AddSub & isImm), cs1.base (CGetLen)
 
@@ -394,7 +394,7 @@ ComparatorGeneral:
   - EQ         : Branch (when BEQ/BNE), CSetEqual
   - LTSigned   : Branch (when BLT/BGE), Slt (when SLT/SLTI)
   - LTUnsigned : Branch (when BLTU/BGEU), Slt (when SLTU/SLTIU)
-  - Invert     : Branch (when BNE, BGE, BGEU)
+  - Invert     : Branch (when BNE/BGE/BGEU)
   op1: cs1.addr (Branch, Slt, CSetEqual)
   op2: cs2.addr (Branch, Slt & !isImm, CSetEqual), simm12 (Slt & isImm)
 
@@ -403,12 +403,12 @@ CjalrUnit:
   - CheckSentryAndUnseal : Cjalr
   cs1: cs1 (Cjalr)
   inst: inst (Cjalr)
-  currIntStatus: currInterruptStatus (Cjalr)
 
 Logical:
   - AND : Logical (when AND/ANDI)
   - OR  : Logical (when OR/ORI)
   - XOR : Logical (when XOR/XORI)
+  inst: inst (Logical)
   op1: cs1.addr (Logical)
   op2: cs2.addr (Logical & !isImm), simm12 (Logical & isImm)
 
@@ -429,15 +429,15 @@ SealerUnsealer:
   inBounds: AddrBoundsCheck (Seal, Unseal)
 
 Bounds:
-  Outputs: base, length, top, E, cram, crrl, exact
+  Outputs: m, cE, base, top, cram, length, exact
   - SetBounds   : CSetBounds
   - ComputeCram : Cram
   - ComputeCrrl : Crrl
   - RoundDown   : CSetBounds (when CSetBoundsRoundDown)
   base: cs1.addr (CSetBounds, Cram, Crrl)
-  length: cs2.addr (CSetBounds & !isImm), zimm12 (CSetBounds & isImm), cs1.addr (Cram, Crrl)
+  length: cs2.addr (CSetBounds & !isImm), cs1.addr (Cram, Crrl), zimm12 (CSetBounds & isImm)
 
-BoundsExact:
+BoundsTag:
   - CalcBoundsExactTag : CSetBounds (when CSetBoundsExact)
   inBounds: AddrBoundsCheck (CSetBounds)
   boundsAreExact: Bounds.exact (CSetBounds)
@@ -454,6 +454,7 @@ Shifter:
   - ShiftLeftLogical     : Shift (when SLL/SLLI)
   - ShiftRightLogical    : Shift (when SRL/SRLI)
   - ShiftRightArithmetic : Shift (when SRA/SRAI)
+  inst: inst (Shift)
   data: cs1.addr (Shift)
   shamt: cs2.addr (Shift & !isImm), shamt (Shift & isImm)
 
@@ -469,21 +470,21 @@ ComparatorTopOrRep:
   addr: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetBounds, Load, Store),
         cs2.addr (Seal, CSetAddr), cs1.otype (Unseal), cs1.top (CTestSubset)
   topRep: AdderBeforeRepCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr),
-        cs1.top (CSetBounds, Load, Store), cs2.top (Seal, Unseal, CTestSubset)
+        cs2.top (Seal, Unseal, CTestSubset), cs1.top (CSetBounds, Load, Store)
 
 ComparatorBase:
   - GTEUnsigned : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Seal, Unseal, Load, Store,
                   CTestSubset
   addr: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, Load, Store),
-        cs2.addr (Seal, CSetAddr), cs1.otype (Unseal), cs1.addr (CSetBounds), cs1.base (CTestSubset)
+        cs2.addr (Seal, CSetAddr), cs1.otype (Unseal), cs1.base (CTestSubset), cs1.addr (CSetBounds)
   base: pcc.base (Branch, Cjal, AuiPcc),
-        cs1.base (AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store),
-        cs2.base (Seal, Unseal, CTestSubset)
+        cs2.base (Seal, Unseal, CTestSubset),
+        cs1.base (AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store)
 
 AddrBoundsCheck:
   - CheckInBounds : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal
-  tag: cs1.tag (AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal),
-        pcc.tag (Branch, Cjal, AuiPcc)
+  tag: pcc.tag (Branch, Cjal, AuiPcc),
+        cs1.tag (AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal)
   topLt: ComparatorTopOrRep.lt
         (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, CSetBounds, Load, Store, Seal, Unseal)
   baseGe: ComparatorBase
@@ -515,19 +516,13 @@ ScrSanitizer:
 EncodeCap:
   Outputs: cap
   - Compress : CGetHigh, Store
-  ecap: cs1.ecap (CGetHigh), cs2.ecap (Store)
+  ecap: cs2.ecap (Store), cs1.ecap (CGetHigh)
 
 DecodeCap:
   Outputs: ecap
   - Decompress : CSetHigh
   cap: cs2.addr (CSetHigh)
   addr: cs1.addr (CSetHigh)
-
-PccEcap:
-  Outputs: ecap
-  - SetCOType : AuiPcc, Cjal, Cjalr
-  pccEcap: pcc.ecap (AuiPcc, Cjal, Cjalr)
-  cOType: ControlFlow.linkCOType (Cjal, Cjalr), 0 (AuiPcc)
 
 Exception (Mux):
   Outputs: isException, mcause, isScr, regIdx, mtval
@@ -565,37 +560,31 @@ MulDiv:
 
 ControlFlow (Mux):
   Outputs: isCf, CfPayload {NewPcc, capChanged, CfOp {ControlFlowAddrOnly {Branch {isTaken} OR Cjal} OR
-                                                      ControlFlowAddrECap {interruptStatus, op {Cjalr {isCall, isReturn} OR Mret}}}},
-           linkCOType
+                                                      ControlFlowAddrECap {interruptStatus, op {Cjalr {isCall, isReturn} OR Mret}}}}
   - Mret   : Mret
   - Cjal   : Cjal
   - Cjalr  : Cjalr
   - Branch : Branch
   isCond: ComparatorGeneral.cond (Branch)
-  cs2: cs2 (Mret)
   addrIn: AdderBeforeBoundsCheck (Branch, Cjal, Cjalr)
   inBounds: AddrBoundsCheck (Branch, Cjal)
   cjalrTag: CjalrUnit.tag (Cjalr)
   cjalrEcap: CjalrUnit.ecap (Cjalr)
   cjalrIntStatus: CjalrUnit.interruptStatus (Cjalr)
-  pccTag: pcc.tag (Branch, Cjal, Cjalr, Mret)
+  pccTag: pcc.tag (Branch, Cjal, Cjalr)
   pccEcap: pcc.ecap (Cjalr)
   inst: inst (Cjal, Cjalr)
-  currIntStatus: currInterruptStatus (Cjal, Cjalr, Mret)
 
 ScrCsr (Mux):
-  Outputs: isScrCsr, SpecialDest, SpecialValue, isWrite
+  Outputs: isScrCsr, SpecialDest, SpecialValue, isSet, isClear, isWrite
   - Scr   : Scr
   - Csr   : Csr
-  - Set   : Csr_Set
-  - Clear : Csr_Clear
-  - Write : ScrCsr_Write
   scrIdx: readWriteScrIdx (Scr)
   csrIdx: readWriteCsrIdx (Csr)
   newTag: ScrSanitizer (Scr)
   cs1Ecap: cs1.ecap (Scr)
   operand: zimm5 (Csr & isImm), cs1.addr (Csr & !isImm, Scr)
-  oldVal: cs2.addr (Csr)
+  inst: inst (Scr, Csr)
 
 Exception
 DataMem
@@ -603,34 +592,35 @@ MulDiv
 ControlFlow
 ScrCsr
 
-Reg.tag: 0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGetTag, CGetAddr, CGetHigh,
-            CGetTop, CGetLen, Cram, Crrl, CSetEqual, CTestSubset, Csr, CSetHigh, CClearTag),
-         pcc.tag (Cjal),
+Reg.tag: pcc.tag (Cjal),
          cs1.tag (Cjalr, CMove),
-         cs2.tag (Scr),
          AddrBoundsCheck (AuiPcc, AuiCgp, CIncAddr, CSetAddr),
-         BoundsExact (CSetBounds),
+         BoundsTag (CSetBounds),
          CAndPerm.tag (CAndPerm),
-         SealerUnsealer.tag (Seal, Unseal)
+         SealerUnsealer.tag (Seal, Unseal),
+         0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGetTag, CGetAddr, CGetHigh,
+            CGetTop, CGetLen, Cram, Crrl, CSetEqual, CTestSubset, CSetHigh, CClearTag)
 
-Reg.ecap: 0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGetTag, CGetAddr, CGetHigh,
-             CGetTop, CGetLen, Cram, Crrl, CSetEqual, CTestSubset, Csr),
-          PccEcap (AuiPcc, Cjal, Cjalr),
+Reg.ecap: pcc.ecap (AuiPcc, Cjal, Cjalr),
           cs1.ecap (AuiCgp, CIncAddr, CSetAddr, CClearTag, CMove),
-          DecodeCap (CSetHigh), cs2.ecap (Scr), CAndPerm.ecap (CAndPerm),
+          DecodeCap (CSetHigh),
+          CAndPerm.ecap (CAndPerm),
           SealerUnsealer.ecap (Seal, Unseal),
-          {cs1.R, cs1.perms, cs1.otype, Bounds.E, Bounds.top, Bounds.base} (CSetBounds)
+          {cs1.R, cs1.perms, cs1.otype, Bounds.cE, Bounds.top, Bounds.base} (CSetBounds),
+          0 (Lui, AddSub, Slt, Shift, Logical, CGetPerm, CGetType, CGetBase, CGetTag, CGetAddr, CGetHigh,
+             CGetTop, CGetLen, Cram, Crrl, CSetEqual, CTestSubset)
 
-Reg.addr: uimm20 (Lui), AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, Store),
+Reg.addr: AdderBeforeBoundsCheck (AuiPcc, AuiCgp, CIncAddr, Load, Store),
           ComparatorGeneral.cond (Slt), Shifter (Shift), Logical (Logical),
           AdderToOutput (Cjal, Cjalr, AddSub),
           cs1.perms (CGetPerm), cs1.otype (CGetType), cs1.tag (CGetTag),
           EncodeCap (CGetHigh),
-          cs2.addr (CSetAddr, Csr, Scr),
+          Saturater (CGetBase, CGetLen, CGetTop),
+          cs2.addr (CSetAddr),
           cs1.addr (CGetAddr, CAndPerm, CClearTag, Seal, Unseal, CMove, CSetHigh, CSetBounds, MulDiv),
-          Bounds.cram (Cram), Bounds.crrl (Crrl),
+          Bounds.cram (Cram), Bounds.length (Crrl),
           CapSubset (CTestSubset), CapEq (CSetEqual),
-          Saturater (CGetBase, CGetLen, CGetTop)
+          uimm20 (Lui)
 *)
 
 From Stdlib Require Import String List ZArith Zmod.
@@ -659,15 +649,15 @@ Section DecodeInstGroup.
       "AdderBeforeBoundsCheck_offset_cs2Addr" ::=
         Or [ And [ ##group`"CIncAddr"; Not ##group`"isImm" ];
              And [ ##group`"CSetBounds"; Not ##group`"isImm" ] ] ;
-      (* "AdderBeforeBoundsCheck_offset_zimm12" ::=
-        And [ ##group`"CSetBounds"; ##group`"isImm" ] ; *)
+      "AdderBeforeBoundsCheck_offset_zimm12" ::=
+        And [ ##group`"CSetBounds"; ##group`"isImm" ] ;
       (* "AdderBeforeBoundsCheck_offset_store_imm" ::= ##group`"Store" ; *)
       (* "AdderBeforeBoundsCheck_offset_simm12" ::=
         Or [ ##group`"Cjalr"; ##group`"Load";
              And [ ##group`"CIncAddr"; ##group`"isImm" ] ] ; *)
 
       "AdderToOutput_isSub" ::= Or [ And [ ##group`"AddSub"; ##group`"AddSub_isSub" ]; ##group`"CGetLen" ] ;
-      (* "AdderToOutput_base_pccAddr" ::= Or [ ##group`"Cjal"; ##group`"Cjalr" ] ; *)
+      "AdderToOutput_base_pccAddr" ::= Or [ ##group`"Cjal"; ##group`"Cjalr" ] ;
       (* "AdderToOutput_base_cs1Top" ::= ##group`"CGetLen" ; *)
       (* "AdderToOutput_base_cs1Addr" ::= ##group`"AddSub" ; *)
       "AdderToOutput_offset_const2" ::=
@@ -693,20 +683,16 @@ Section DecodeInstGroup.
       (* "SealerUnsealer_isUnseal" ::= ##group`"Unseal" ; *)
 
       "Bounds_isRoundDown" ::= ##group`"CSetBounds_isRoundDown" ;
-      "Bounds_isExact" ::= ##group`"CSetBounds_isExact" ;
-      "Bounds_isImm" ::= And [ ##group`"CSetBounds"; ##group`"isImm" ] ;
-      "Bounds_reqLimit_cs2Addr" ::= And [ ##group`"CSetBounds"; Not ##group`"isImm" ] ;
-      "Bounds_reqLimit_cs1Addr" ::= Or [ ##group`"Cram"; ##group`"Crrl" ] ;
-      (* "Bounds_reqLimit_zimm12" ::= And [ ##group`"CSetBounds"; ##group`"isImm" ] ; *)
+      "Bounds_length_cs2Addr" ::= And [ ##group`"CSetBounds"; Not ##group`"isImm" ] ;
+      "Bounds_length_cs1Addr" ::= Or [ ##group`"Cram"; ##group`"Crrl" ] ;
+      (* "Bounds_length_zimm12" ::= And [ ##group`"CSetBounds"; ##group`"isImm" ] ; *)
 
-      (* "BoundsExact_instIsExact" ::= ##group`"CSetBounds_isExact" ; *)
+      "BoundsTag_instIsExact" ::= ##group`"CSetBounds_isExact" ;
 
       "Saturater_isBase" ::= ##group`"CGetBase" ;
       "Saturater_isTop" ::= ##group`"CGetTop" ;
       (* "Saturater_isLen" ::= ##group`"CGetLen" ; *)
 
-      "Shifter_isRight" ::= ##group`"Shift_isRight" ;
-      "Shifter_isArith" ::= ##group`"Shift_isArith" ;
       "Shifter_shamt_isCs2AddrNotShamt" ::= And [ ##group`"Shift"; Not ##group`"isImm" ] ;
 
       (* "AdderBeforeRepCheck_base_isPccBaseNotCs1Base" ::=
@@ -717,42 +703,38 @@ Section DecodeInstGroup.
       "ComparatorTopOrRep_checkLte" ::= Or [ ##group`"CTestSubset"; ##group`"CSetBounds" ] ;
       "ComparatorTopOrRep_addr_AdderBeforeBoundsCheck" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
-             ##group`"CIncAddr"; ##group`"CSetBounds"; ##group`"Load";
-             ##group`"Store" ] ;
-      (* "ComparatorTopOrRep_addr_cs1Addr" ::= ConstTBool false ; *)
+              ##group`"CIncAddr"; ##group`"CSetBounds"; ##group`"Load";
+              ##group`"Store" ] ;
       (* "ComparatorTopOrRep_addr_cs2Addr" ::= Or [ ##group`"Seal"; ##group`"CSetAddr" ] ; *)
       (* "ComparatorTopOrRep_addr_cs1OType" ::= ##group`"Unseal" ; *)
       (* "ComparatorTopOrRep_addr_cs1Top" ::= ##group`"CTestSubset" ; *)
-      (* "ComparatorTopOrRep_topRep_cs1Top" ::=
-        Or [ ##group`"CSetBounds"; ##group`"Load"; ##group`"Store" ] ; *)
       "ComparatorTopOrRep_topRep_AdderBeforeRepCheck" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
-             ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
+              ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
       (* "ComparatorTopOrRep_topRep_cs2Top" ::=
         Or [ ##group`"CTestSubset"; ##group`"Seal"; ##group`"Unseal" ] ; *)
+      (* "ComparatorTopOrRep_topRep_cs1Top" ::=
+        Or [ ##group`"CSetBounds"; ##group`"Load"; ##group`"Store" ] ; *)
 
       "ComparatorBase_addr_AdderBeforeBoundsCheck" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
-             ##group`"CIncAddr"; ##group`"Load"; ##group`"Store" ] ;
+              ##group`"CIncAddr"; ##group`"Load"; ##group`"Store" ] ;
       (* "ComparatorBase_addr_cs2Addr" ::= Or [ ##group`"Seal"; ##group`"CSetAddr" ] ; *)
-      (* "ComparatorBase_addr_cs1Addr" ::= ##group`"CSetBounds" ; *)
       (* "ComparatorBase_addr_cs1OType" ::= ##group`"Unseal" ; *)
       (* "ComparatorBase_addr_cs1Base" ::= ##group`"CTestSubset" ; *)
+      (* "ComparatorBase_addr_cs1Addr" ::= ##group`"CSetBounds" ; *)
       (* "ComparatorBase_base_pccBase" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ; *)
       (* "ComparatorBase_base_cs2Base" ::=
         Or [ ##group`"CTestSubset"; ##group`"Seal"; ##group`"Unseal" ] ; *)
       (* "ComparatorBase_base_cs1Base" ::=
         Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CSetBounds";
-             ##group`"Load"; ##group`"Store" ] ; *)
+              ##group`"Load"; ##group`"Store" ] ; *)
 
       (* "AddrBoundsCheck_tag_isPccTagNotCs1Tag" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ; *)
 
       (* "EncodeCap_ecap_isCs2EcapNotCs1Ecap" ::= ##group`"Store" ; *)
-
-      (* "PccEcap_cOType_isLinkCOTypeNotZero" ::=
-        Or [ ##group`"Cjal"; ##group`"Cjalr" ] ; *)
 
       "Exception_isECall" ::= ##group`"ECall" ;
       "Exception_isEBreak" ::= ##group`"EBreak" ;
@@ -770,44 +752,38 @@ Section DecodeInstGroup.
       "ControlFlow_isCjalr" ::= ##group`"Cjalr" ;
       (* "ControlFlow_isBranch" ::= ##group`"Branch" ; *)
 
-      (* "ScrCsr_isScr" ::= ##group`"Scr" ; *)
+      "ScrCsr_isScr" ::= ##group`"Scr" ;
       "ScrCsr_isCsr" ::= ##group`"Csr" ;
-      "ScrCsr_isSet" ::= ##group`"Csr_Set" ;
-      "ScrCsr_isClear" ::= ##group`"Csr_Clear" ;
-      "ScrCsr_isWrite" ::= ##group`"ScrCsr_Write" ;
-      "ScrCsr_operand_isImm" ::= And [ ##group`"Csr"; ##group`"isImm" ] ;
+      "ScrCsr_operand_isZimm5NotCs1Addr" ::= And [ ##group`"Csr"; ##group`"isImm" ] ;
 
       (* "Reg_tag_pccTag" ::= ##group`"Cjal" ; *)
       "Reg_tag_cs1Tag" ::= Or [ ##group`"Cjalr"; ##group`"CMove" ] ;
-      (* "Reg_tag_cs2Tag" ::= ##group`"Scr" ; *)
       "Reg_tag_AddrBoundsCheck" ::=
         Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr" ] ;
-      (* "Reg_tag_BoundsExact" ::= ##group`"CSetBounds" ; *)
+      (* "Reg_tag_BoundsTag" ::= ##group`"CSetBounds" ; *)
       (* "Reg_tag_CAndPerm" ::= ##group`"CAndPerm" ; *)
       (* "Reg_tag_SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ; *)
       (* "Reg_tag_zero" ::=
         Or [ ##group`"Lui"; ##group`"AddSub"; ##group`"Slt"; ##group`"Shift";
-             ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
-             ##group`"CGetTag"; ##group`"CGetAddr"; ##group`"CGetHigh"; ##group`"CGetTop";
-             ##group`"CSetHigh"; ##group`"CClearTag"; ##group`"CGetLen"; ##group`"Cram";
-             ##group`"Crrl"; ##group`"CTestSubset"; ##group`"CSetEqual"; ##group`"Csr";
-             ##group`"MulDiv" ] ; *)
+              ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
+              ##group`"CGetTag"; ##group`"CGetAddr"; ##group`"CGetHigh"; ##group`"CGetTop";
+              ##group`"CSetHigh"; ##group`"CClearTag"; ##group`"CGetLen"; ##group`"Cram";
+              ##group`"Crrl"; ##group`"CTestSubset"; ##group`"CSetEqual" ] ; *)
 
-      "Reg_ecap_PccEcap" ::= Or [ ##group`"AuiPcc"; ##group`"Cjal"; ##group`"Cjalr" ] ;
+      "Reg_ecap_pccEcap" ::= Or [ ##group`"AuiPcc"; ##group`"Cjal"; ##group`"Cjalr" ] ;
       "Reg_ecap_cs1Ecap" ::=
         Or [ ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"CSetAddr"; ##group`"CClearTag";
-             ##group`"CMove" ] ;
-      (* "Reg_ecap_cs2Ecap" ::= ##group`"Scr" ; *)
+              ##group`"CMove" ] ;
       "Reg_ecap_decodedECap" ::= ##group`"CSetHigh" ;
       (* "Reg_ecap_CAndPerm" ::= ##group`"CAndPerm" ; *)
-      (* "Reg_ecap_Bounds" ::= ##group`"CSetBounds" ; *)
       (* "Reg_ecap_SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ; *)
+      (* "Reg_ecap_Bounds" ::= ##group`"CSetBounds" ; *)
       (* "Reg_ecap_zero" ::=
         Or [ ##group`"Lui"; ##group`"AddSub"; ##group`"Slt"; ##group`"Shift";
-             ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
-             ##group`"CGetTag"; ##group`"CGetAddr"; ##group`"CGetHigh"; ##group`"CGetTop";
-             ##group`"CGetLen"; ##group`"Cram"; ##group`"Crrl"; ##group`"CTestSubset";
-             ##group`"CSetEqual"; ##group`"Csr"; ##group`"MulDiv" ] ; *)
+              ##group`"Logical"; ##group`"CGetPerm"; ##group`"CGetType"; ##group`"CGetBase";
+              ##group`"CGetTag"; ##group`"CGetAddr"; ##group`"CGetHigh"; ##group`"CGetTop";
+              ##group`"CGetLen"; ##group`"Cram"; ##group`"Crrl"; ##group`"CTestSubset";
+              ##group`"CSetEqual" ] ; *)
 
       "Reg_addr_AdderBeforeBoundsCheck" ::=
         Or [ ##group`"AuiPcc"; ##group`"AuiCgp"; ##group`"CIncAddr"; ##group`"Load"; ##group`"Store" ] ;
@@ -822,11 +798,11 @@ Section DecodeInstGroup.
       "Reg_addr_CGetHigh" ::= ##group`"CGetHigh" ;
       "Reg_addr_Saturater" ::=
         Or [ ##group`"CGetBase"; ##group`"CGetLen"; ##group`"CGetTop" ] ;
-      "Reg_addr_cs2Addr" ::= Or [ ##group`"CSetAddr"; ##group`"Scr"; ##group`"Csr" ] ;
+      "Reg_addr_cs2Addr" ::= ##group`"CSetAddr" ;
       "Reg_addr_cs1Addr" ::=
         Or [ ##group`"CGetAddr"; ##group`"CAndPerm"; ##group`"CClearTag";
-             ##group`"Seal"; ##group`"Unseal"; ##group`"CMove";
-             ##group`"CSetHigh"; ##group`"CSetBounds"; ##group`"MulDiv" ] ;
+              ##group`"Seal"; ##group`"Unseal"; ##group`"CMove";
+              ##group`"CSetHigh"; ##group`"CSetBounds"; ##group`"MulDiv" ] ;
       "Reg_addr_BoundsCram" ::= ##group`"Cram" ;
       "Reg_addr_BoundsCrrl" ::= ##group`"Crrl" ;
       (* "Reg_addr_CapSubset" ::= ##group`"CTestSubset" ; *)
@@ -835,14 +811,12 @@ Section DecodeInstGroup.
 
       "Branch" ::= ##group`"Branch" ;
       "Cjal" ::= ##group`"Cjal" ;
-      "CjalOrCjalr" ::= Or [ ##group`"Cjal"; ##group`"Cjalr" ] ;
       "Load" ::= ##group`"Load" ;
       "Store" ::= ##group`"Store" ;
       "Unseal" ::= ##group`"Unseal" ;
       "CSetBounds" ::= ##group`"CSetBounds" ;
       "CGetLen" ::= ##group`"CGetLen" ;
       "CTestSubset" ::= ##group`"CTestSubset" ;
-      "Scr" ::= ##group`"Scr" ;
       "CAndPerm" ::= ##group`"CAndPerm" ;
       "BranchOrCjalOrAuiPcc" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ;
@@ -869,7 +843,6 @@ Section ConstructAluIn.
       "fetchExc"            ::= ##aluInGroup`"fetchExc" ;
       "cs1"                 ::= ##aluInGroup`"cs1" ;
       "cs2"                 ::= ##aluInGroup`"cs2" ;
-      "currInterruptStatus" ::= ##aluInGroup`"currInterruptStatus" ;
       "aluControl"          ::= #ctrl
     }).
 End ConstructAluIn.
@@ -891,7 +864,7 @@ Section GetFunctionalUnits.
       "CAndPerm" ::= ##group`"CAndPerm" ;
       "SealerUnsealer" ::= Or [ ##group`"Seal"; ##group`"Unseal" ] ;
       "Bounds" ::= Or [ ##group`"CSetBounds"; ##group`"Cram"; ##group`"Crrl" ] ;
-      "BoundsExact" ::= ##group`"CSetBounds_isExact" ;
+      "BoundsTag" ::= ##group`"CSetBounds" ;
       "Saturater" ::= Or [ ##group`"CGetBase"; ##group`"CGetLen"; ##group`"CGetTop" ] ;
       "Shifter" ::= ##group`"Shift" ;
       "AdderBeforeRepCheck" ::=
@@ -916,7 +889,6 @@ Section GetFunctionalUnits.
       "ScrSanitizer" ::= ##group`"Scr" ;
       "EncodeCap" ::= Or [ ##group`"CGetHigh"; ##group`"Store" ] ;
       "DecodeCap" ::= ##group`"CSetHigh" ;
-      "PccEcap" ::= Or [ ##group`"AuiPcc"; ##group`"Cjal"; ##group`"Cjalr" ] ;
       "Exception" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"ECall"; ##group`"EBreak" ] ;
       "DataMem" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"Fence" ] ;
       "MulDiv" ::= ##group`"MulDiv" ;
@@ -957,9 +929,9 @@ Section FunctionalUnits.
   Definition CjalrUnitRes := STRUCT_TYPE {
     "tag"             :: Bool;
     "ecap"            :: ECap;
-    "interruptStatus" :: Bool }.
+    "interruptStatus" :: Option Bool }.
 
-  Definition CjalrUnit (cs1 : ty FullECapWithTag) (inst : ty Inst) (currIntStatus : ty Bool)
+  Definition CjalrUnit (cs1 : ty FullECapWithTag) (inst : ty Inst)
   : LetExpr ty CjalrUnitRes :=
     LetE cs1Tag : Bool <- ##cs1`"tag" ;
     LetE cs1ECap : ECap <- ##cs1`"ecap" ;
@@ -987,19 +959,20 @@ Section FunctionalUnits.
       And [ #cs1Tag; #cs1PermEx; #nextPccLegal; Or [ #notCs1Sealed; #immZero ] ] ;
     LetE nextPccECap : ECap <- ##cs1ECap `{ "cOType" <- Const ty (Bit CapcOTypeSz) Zmod.zero } ;
 
-    LetE nextIntStatus : Bool <- ITE (And [#nextPccTag; isSealed cs1ECap; Not (isSentryIh cs1OType)])
-                                   (isSentryIe cs1OType)
-                                   #currIntStatus ;
+    LetE nextIntStatus : Option Bool <-
+      STRUCT { "data"  ::= isSentryIe cs1OType ;
+               "valid" ::= And [#nextPccTag; #cs1Sealed; Not (isSentryIh cs1OType)] } ;
 
     @RetE _ CjalrUnitRes (STRUCT { "tag"             ::= #nextPccTag;
                                    "ecap"            ::= #nextPccECap;
                                    "interruptStatus" ::= #nextIntStatus }).
 
-  Definition Logical (opSel : ty (Bit 2)) (op1 op2 : ty (Bit Xlen)) : LetExpr ty (Bit Xlen) :=
+  Definition Logical (inst : ty Inst) (op1 op2 : ty (Bit Xlen)) : LetExpr ty (Bit Xlen) :=
+    LetE opSel  : Bit 2 <- #inst`[13:12] ;
     LetE andRes : Bit Xlen <- And [ #op1; #op2 ];
     LetE orRes  : Bit Xlen <- Or [ #op1; #op2 ];
     LetE xorRes : Bit Xlen <- Xor [ #op1; #op2 ];
-    LetE selArr : Array 2 Bool <- FromBit _ #opSel;
+    LetE selArr : Array 2 Bool <- FromBit (Array 2 Bool) #opSel;
     RetE (ITE (#selArr$[1]) (ITE (#selArr$[0]) #andRes #orRes) #xorRes).
 
   Definition TagECap := STRUCT_TYPE {
@@ -1242,7 +1215,7 @@ Section FunctionalUnits.
                           "length" ::= #outLen;
                           "exact" ::= And [isZero #base_mod_ef; isZero #length_mod_ef] })).
 
-  Definition BoundsExact (instIsExact inBounds boundsAreExact : ty Bool) : LetExpr ty Bool :=
+  Definition BoundsTag (instIsExact inBounds boundsAreExact : ty Bool) : LetExpr ty Bool :=
     @RetE _ Bool (And [ #inBounds; Or [ Not #instIsExact; #boundsAreExact ] ]).
 
   Definition Saturater (isBase isTop isLen : ty Bool)
@@ -1271,9 +1244,11 @@ Section FunctionalUnits.
     @RetE _ (Bit Xlen) (ITE #isSaturated (Const ty (Bit Xlen) (InvDefault _)) #rawData).
 
   (* If isArith is set for left shift, results are wrong *)
-  Definition Shifter (isRight isArith : ty Bool) (data : ty (Bit Xlen)) (shamt : ty (Bit LgXlen))
+  Definition Shifter (inst : ty Inst) (data : ty (Bit Xlen)) (shamt : ty (Bit LgXlen))
   : LetExpr ty (Bit Xlen) :=
     ( let rev e := ToBit (ArrayReverse (FromBit (Array (Z.to_nat Xlen) Bool) e)) in
+      LetE isRight : Bool <- FromBit Bool (#inst`[14:14]) ;
+      LetE isArith : Bool <- FromBit Bool (#inst`[30:30]) ;
       LetE inpVal : Bit Xlen <- ITE #isRight #data (rev #data) ;
       LetE signBit : Bit 1 <-
         ITE #isArith (TruncMsb 1 (Xlen - 1) #inpVal) (Const ty (Bit 1) Zmod.zero) ;
@@ -1336,7 +1311,7 @@ Section FunctionalUnits.
                        (storeTag : ty Bool)
                        (storeCap : ty Cap)
                        (storeData : ty Addr)
-  : LetExpr ty (Option MemFenceUnion) :=
+  : LetExpr ty MemPayload :=
     LetE isLM : Bool <- And [ #isLoad ; ##cs1Perms`"LM" ] ;
     LetE isLG : Bool <- And [ #isLoad ; ##cs1Perms`"LG" ] ;
     LetE isUnsig : Bool <- And [ #isLoad ; #isUnsigned ] ;
@@ -1359,8 +1334,7 @@ Section FunctionalUnits.
       "memSize"     ::= #memSize ;
       "memOp"       ::= #loadOrStoreKind
     } ;
-    LetE isMemOp : Bool <- Or [ #isLoad; #isStore ] ;
-    RetE (ITE0 #isMemOp (mkSome (UNION (MemFenceType, "Mem" ::= #memOpVal)))).
+    RetE #memOpVal.
 
 
   Definition EncodeCap (ecap: ty ECap) : LetExpr ty Cap :=
@@ -1399,9 +1373,6 @@ Section FunctionalUnits.
                           "top" ::= #base_top`"top";
                           "base" ::= #base_top`"base" })).
 
-  Definition PccEcap (pccEcap : ty ECap) (cOType : ty (Bit CapcOTypeSz)) : LetExpr ty ECap :=
-    RetE (##pccEcap `{ "cOType" <- #cOType }).
-
   Definition DataMem (isLoad isStore isFence : ty Bool)
                      (cs1Perms cs2Perms : ty CapPerms)
                      (inst : ty (Bit Xlen))
@@ -1428,11 +1399,13 @@ Section FunctionalUnits.
       "WW"       ::= #ww ;
       "FenceI"   ::= #isFenceI
     } ;
-    LETE memOpOpt : Option MemFenceUnion <- LoadStore cs1Perms cs2Perms memSize loadIsUnsigned isLoad isStore storeTag storeCap cs2Addr ;
-    LetE memFenceOpt : Option MemFenceUnion <-
-      Or [ ITE0 #isFence (mkSome (UNION (MemFenceType, "Fence" ::= #fenceVal))) ;
-           #memOpOpt ] ;
-    RetE #memFenceOpt.
+    LETE memOpVal : MemPayload <- LoadStore cs1Perms cs2Perms memSize loadIsUnsigned isLoad isStore storeTag storeCap cs2Addr ;
+    LetE memFenceVal : MemFenceUnion <-
+      ITE #isFence
+          (UNION (MemFenceType, "Fence" ::= #fenceVal))
+          (UNION (MemFenceType, "Mem"   ::= #memOpVal)) ;
+    LetE isDataMem : Bool <- Or [ #isLoad ; #isStore ; #isFence ] ;
+    @RetE _ (Option MemFenceUnion) (STRUCT { "data" ::= #memFenceVal; "valid" ::= #isDataMem }).
 
   Definition MulDiv (isMulDiv : ty Bool)
                     (inst : ty (Bit Xlen))
@@ -1460,7 +1433,7 @@ Section FunctionalUnits.
       ITE (Not #isDiv)
           (UNION (MulDivType, "Mul" ::= #mulVal))
           (UNION (MulDivType, "Div" ::= #divVal)) ;
-    RetE (ITE0 #isMulDiv (mkSome #mulDivVal)).
+    @RetE _ (Option MulDivUnion) (STRUCT { "data" ::= #mulDivVal; "valid" ::= #isMulDiv }).
 
   Definition MemException (isStore : ty Bool)
                           (cs1Tag : ty Bool)
@@ -1561,29 +1534,19 @@ Section FunctionalUnits.
                   #otherExc)))))
     ).
 
-  Definition ControlFlowRes := STRUCT_TYPE {
-    "cfOut"      :: Option CfPayload ;
-    "linkCOType" :: Bit CapcOTypeSz
-  }.
-
   Definition ControlFlow (isMret isCjal isCjalr isBranch : ty Bool)
                     (isCond : ty Bool)
-                    (cs2 : ty FullECapWithTag) (addrIn : ty Addr)
-                    (inBounds cjalrTag : ty Bool) (cjalrEcap : ty ECap) (cjalrIntStatus : ty Bool)
+                    (addrIn : ty Addr)
+                    (inBounds cjalrTag : ty Bool) (cjalrEcap : ty ECap) (cjalrIntStatus : ty (Option Bool))
                     (pccTag : ty Bool) (pccEcap : ty ECap)
-                    (inst : ty Inst) (currIntStatus : ty Bool)
-  : LetExpr ty ControlFlowRes :=
-    LetE cs2Addr : Addr <- ##cs2`"addr" ;
-    LetE pccAddrOut : Addr <- ITE (#isMret) #cs2Addr #addrIn ;
+                    (inst : ty Inst)
+  : LetExpr ty (Option CfPayload) :=
+    LetE pccAddrOut : Addr <- #addrIn ;
     LetE pccTagOut : Bool <-
       caseDefault (k := Bool) [
-          (#isMret, ##cs2`"tag") ;
           (Or [ #isBranch ; #isCjal ], #inBounds) ;
           (#isCjalr, #cjalrTag) ]
         #pccTag ;
-    LetE pccEcapOut : ECap <-
-      Or [ ITE0 #isMret ##cs2`"ecap" ;
-           ITE0 #isCjalr #cjalrEcap ] ;
 
     LetE cdNum      : Bit RegIdxSz <- getCd inst ;
     LetE cs1Num     : Bit RegIdxSz <- getCs1 inst ;
@@ -1592,10 +1555,10 @@ Section FunctionalUnits.
     LetE isCdCra    : Bool         <- Eq #cdNum $Cra ;
     LetE isReturn   : Bool         <- And [ #isCdZero ; #isCs1Cra ] ;
     LetE isCall     : Bool         <- #isCdCra ;
-    LetE isTakenCf   : Bool         <- Or [ And [ #isBranch ; #isCond ] ; #isCjal ; #isCjalr ; #isMret ] ;
+    LetE isTakenCf   : Bool         <- Or [ And [ #isBranch ; #isCond ] ; #isCjal ; #isCjalr ] ;
     LetE tagChanged  : Bool         <- And [ #isTakenCf ; Not (Eq #pccTagOut #pccTag) ] ;
-    LetE ecapChanged : Bool         <- And [ Or [ #isCjalr ; #isMret ] ; Not (Eq #pccEcapOut #pccEcap) ] ;
-    LetE capChanged  : Bool         <- Or [ #tagChanged ; #ecapChanged ] ;
+    LetE ecapChanged : Bool         <- And [ #isCjalr ; Not (Eq #cjalrEcap #pccEcap) ] ;
+    LetE capChanged  : Bool         <- Or [ #tagChanged ; #ecapChanged ; #isMret ] ;
 
     LetE cjalrOp : CjalrOp <- STRUCT {
       "isCall"     ::= #isCall ;
@@ -1603,7 +1566,7 @@ Section FunctionalUnits.
     } ;
 
     LetE addrECap : ControlFlowAddrECap <- STRUCT {
-      "interruptStatus" ::= ITE #isMret #currIntStatus #cjalrIntStatus ;
+      "interruptStatus" ::= #cjalrIntStatus ;
       "op"              ::= ITE #isCjalr
                                 (UNION (ControlFlowAddrECapOpType, "Cjalr" ::= #cjalrOp))
                                 (UNION (ControlFlowAddrECapOpType, "Mret" ::= Const ty (Bit 0) Zmod.zero))
@@ -1618,7 +1581,7 @@ Section FunctionalUnits.
 
     LetE newPcc : FullECapWithTag <- STRUCT {
       "tag"  ::= #pccTagOut ;
-      "ecap" ::= #pccEcapOut ;
+      "ecap" ::= #cjalrEcap ;
       "addr" ::= #pccAddrOut
     } ;
 
@@ -1628,43 +1591,32 @@ Section FunctionalUnits.
       "CfOp"       ::= #cfOpPayload
     } ;
     LetE isCf : Bool <- Or [ #isBranch ; #isCjal ; #isCjalr ; #isMret ] ;
-    LetE cfPayloadOpt : Option CfPayload <- ITE0 #isCf (mkSome #cfPayload) ;
+    @RetE _ (Option CfPayload) (STRUCT { "data" ::= #cfPayload; "valid" ::= #isCf }).
 
-    LetE linkCOType : Bit CapcOTypeSz <-
-      ITE #isCdCra
-          (ITE #currIntStatus $RetSentryIe $RetSentryId)
-          (Const ty (Bit CapcOTypeSz) Zmod.zero) ;
-
-    @RetE _ ControlFlowRes (STRUCT {
-      "cfOut"      ::= #cfPayloadOpt ;
-      "linkCOType" ::= #linkCOType
-    }).
-
-  Definition ScrCsr (isScr isCsr isSet isClear isWrite : ty Bool)
+  Definition ScrCsr (isScr isCsr : ty Bool)
                     (scrIdx : ty (Bit ScrIdxSz))
                     (csrIdx : ty (Bit CsrIdxSz))
                     (newTag : ty Bool)
                     (cs1Ecap : ty ECap)
                     (operand : ty Addr)
-                    (oldVal : ty Addr) : LetExpr ty (Option ScrCsrPayload) :=
+                    (inst : ty Inst) : LetExpr ty (Option ScrCsrPayload) :=
     LetE isScrCsr : Bool <- Or [ #isScr ; #isCsr ] ;
+    LetE isSet    : Bool <- Eq (#inst`[13:12]) $2 ;
+    LetE isClear  : Bool <- Eq (#inst`[13:12]) $3 ;
+    LetE isWrite  : Bool <- Or [ Eq (#inst`[13:12]) $1 ; isNotZero (getCs1 inst) ] ;
     LetE scrCsrIdx : (TaggedUnion ScrCsrIdx) <-
       ITE #isScr
           (UNION (ScrCsrIdx, "Scr" ::= #scrIdx))
           (UNION (ScrCsrIdx, "Csr" ::= #csrIdx)) ;
-    (* isSet and isClear are false for Scr and for CSRRW[I], leaving newAddr = operand *)
-    LetE newAddr : Addr <- caseDefault
-                             [ (#isSet  , Or  [ #oldVal ; #operand ]) ;
-                               (#isClear, And [ #oldVal ; Not #operand ]) ]
-                             #operand ;
     LetE NewSpecialVal : FullECapWithTag <-
-      STRUCT { "tag" ::= #newTag; "ecap" ::= #cs1Ecap; "addr" ::= #newAddr } ;
+      STRUCT { "tag" ::= #newTag; "ecap" ::= #cs1Ecap; "addr" ::= #operand } ;
     LetE scrCsrPayload : ScrCsrPayload <- STRUCT {
-      "SpecialDest" ::= #scrCsrIdx ;
+      "SpecialDest"  ::= #scrCsrIdx ;
       "SpecialValue" ::= #NewSpecialVal ;
-      "isWrite" ::= #isWrite
+      "isSet"        ::= #isSet ;
+      "isClear"      ::= #isClear ;
+      "isWrite"      ::= #isWrite
     } ;
-    LetE scrCsr : Option ScrCsrPayload <- ITE0 #isScrCsr (mkSome #scrCsrPayload) ;
-    RetE #scrCsr.
+    @RetE _ (Option ScrCsrPayload) (STRUCT { "data" ::= #scrCsrPayload; "valid" ::= #isScrCsr }).
 
 End FunctionalUnits.

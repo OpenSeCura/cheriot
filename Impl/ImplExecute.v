@@ -139,15 +139,15 @@ Section ExecuteStage.
    * - Action:       Dequeue d2aEntry { aluIn, predPc, execEpoch } from
    *                 decodeToAluBuf.
    *                 - If execEpoch != currExecEpoch: drop entry and clear its
-   *                   destination GPR/SCR/CSR wait bits.
+   *                   destination GPR wait bit.
    *                 - If execEpoch == currExecEpoch: run AluRouting, Alu, and
    *                   dispatch to executeInterrupt, executeSequential, or
    *                   executeNonSequential; update branch predictor; on
    *                   ControlFlowAddrECap or committedNextPc != predPc,
    *                   advance execEpoch, clear straddleOpt, and redirect
-   *                   fetchPc; clear destination SCR/CSR wait bits (and GPR
-   *                   wait bit when not deferred), or enqueue MemFence into
-   *                   dataMemIfc and Mul/Div into mulDivIfc.
+   *                   fetchPc; clear destination GPR wait bit when not
+   *                   deferred, or enqueue MemFence into dataMemIfc and
+   *                   Mul/Div into mulDivIfc.
    * ========================================================================= *)
   Definition aluAndExecuteNonDeferred : Action ty coreTree (Bit 0) :=
     LetA canProceed       : Bool                    <- liftAction np_execute (@readExecuteCanProceed ty) ;
@@ -174,10 +174,6 @@ Section ExecuteStage.
       Let  instBits        : Inst             <- ##pkg`"inst" ;
       Let  writesCd        : Bool             <- ##pkg`"writesCd" ;
       Let  dstIdxReal      : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal (getCd instBits) ;
-      Let  writesScr       : Bool             <- ##pkg`"writesScr" ;
-      Let  readWriteScrIdx : Bit ScrIdxSz     <- ##pkg`"readWriteScrIdx" ;
-      Let  writesCsr       : Bool             <- ##pkg`"writesCsr" ;
-      Let  readWriteCsrIdx : Bit CsrIdxSz     <- ##pkg`"readWriteCsrIdx" ;
 
       Let  pcAddr          : Addr               <- ##pcc`"addr" ;
       LetL aluOut          : AluOutUnion        <- wrappedAlu pcc pkg ;
@@ -209,8 +205,6 @@ Section ExecuteStage.
           liftAction np_waitBits
             (@setDstWaitBits dom ty
                writesCd dstIdxReal
-               writesScr readWriteScrIdx
-               writesCsr readWriteCsrIdx
                waitFalse)
         ) Else (
           If #isInterrupt Then (
@@ -229,8 +223,6 @@ Section ExecuteStage.
               liftAction np_waitBits
                 (@setDstWaitBits dom ty
                    writesCd dstIdxReal
-                   writesScr readWriteScrIdx
-                   writesCsr readWriteCsrIdx
                    waitFalse)
             ) ;
             Retv
@@ -258,8 +250,6 @@ Section ExecuteStage.
                   liftAction np_waitBits
                     (@setDstWaitBits dom ty
                        writesCd dstIdxReal
-                       writesScr readWriteScrIdx
-                       writesCsr readWriteCsrIdx
                        waitFalse)
                 ) ;
                 Retv
@@ -268,7 +258,7 @@ Section ExecuteStage.
             ) Else (
               If (Or [ Not #isMemOrFence ; Not #dataMemIn_isFull ]) Then (
                 Act (liftAction np_decode (decodeIfc ty).(decode_deq)) ;
-                LetA execOut         : ExecuteOut      <- liftAction np_rf (executeNonSequential pcc aluOut) ;
+                LetA execOut         : ExecuteOut      <- liftAction np_rf (executeNonSequential pcc meip mtip aluOut) ;
                 Let  nextPcc         : FullECapWithTag <- ##execOut`"nextPcc" ;
                 Act (liftAction np_rf (writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #nextPcc)) ;
 
@@ -305,8 +295,6 @@ Section ExecuteStage.
                   liftAction np_waitBits
                     (@setDstWaitBits dom ty
                        writesCd dstIdxReal
-                       writesScr readWriteScrIdx
-                       writesCsr readWriteCsrIdx
                        waitFalse)
                 ) ;
                 Retv
