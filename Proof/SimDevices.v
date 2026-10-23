@@ -29,35 +29,6 @@ Local Open Scope Z_scope.
 Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
-Lemma bits_0_eq_zero : forall (v : bits 0), v = Zmod.zero.
-Proof.
-  intros v; apply Zmod.unsigned_inj.
-  pose proof (Zmod.unsigned_pos_bound v eq_refl).
-  rewrite Zmod.unsigned_0; lia.
-Qed.
-
-Lemma evalActionPropGen_ex_iff :
-  forall {t : Tree DomainElem} {k : Kind} {A : Type}
-         (a : Action type t k) (old : TreeState DomainElemState t)
-         (f : TreeState DomainElemState t -> A) (s' : A) (v : type k),
-    evalActionPropGen a old (fun m' v0 => f m' = s' /\ v0 = v) <->
-    exists m',
-      evalActionPropGen a old (fun new' ret' => new' = m' /\ ret' = v) /\
-      s' = f m'.
-Proof.
-  intros t k A a old f s' v; split.
-  - intros Heval.
-    destruct (evalActionPropGen_to_SemAction a old _ Heval)
-      as [m' [v0 [Hsem [Hs' Hv0]]]].
-    subst s' v0.
-    rewrite SemAction_iff_evalActionPropGen in Hsem.
-    exists m'; split; [exact Hsem | reflexivity].
-  - intros [m' [Heval Hs']].
-    subst s'.
-    eapply evalActionPropGen_mono; [| exact Heval].
-    intros sub' r [Hsub Hr]; subst; split; reflexivity.
-Qed.
-
 (* ===========================================================================
  * 1. SUBTREE ACCESSORS FOR `specSysTree` AND `implSysTree`
  * =========================================================================== *)
@@ -860,7 +831,7 @@ Section SystemDevicesSim.
       exists (projImplMemSpecState core regions (implMem new1)).
       rewrite Hmem; split; [exact HspecMem | reflexivity]. }
     repeat split; auto.
-    rewrite (bits_0_eq_zero v) in Hspec.
+    rewrite (Zmod_1_0 v) in Hspec.
     eapply ConsAction with (a := @specTickTimer core pcAddrInit regions clint type).
     - apply In_specTickTimer_spec.
     - exact Hspec.
@@ -895,7 +866,7 @@ Section SystemDevicesSim.
       exists (projImplMemSpecState core regions (implMem new1)).
       rewrite Hmem; split; [exact HspecMem | reflexivity]. }
     repeat split; auto.
-    rewrite (bits_0_eq_zero v) in Hspec.
+    rewrite (Zmod_1_0 v) in Hspec.
     eapply ConsAction with (a := @specSampleMtipStep core pcAddrInit regions clint type).
     - apply In_specSampleMtipStep_spec.
     - exact Hspec.
@@ -950,7 +921,7 @@ Section SystemDevicesSim.
       exists (projImplMemSpecState core regions (implMem new1)).
       rewrite Hmem; split; [exact HspecMem | reflexivity]. }
     repeat split; auto.
-    rewrite (bits_0_eq_zero v) in Hspec.
+    rewrite (Zmod_1_0 v) in Hspec.
     eapply ConsAction with (a := @specPlicClaimStep core pcAddrInit regions plic type).
     - apply In_specPlicClaimStep_spec.
     - exact Hspec.
@@ -985,7 +956,7 @@ Section SystemDevicesSim.
       exists (projImplMemSpecState core regions (implMem new1)).
       rewrite Hmem; split; [exact HspecMem | reflexivity]. }
     repeat split; auto.
-    rewrite (bits_0_eq_zero v) in Hspec.
+    rewrite (Zmod_1_0 v) in Hspec.
     eapply ConsAction with (a := @specPlicSampleMeipStep core pcAddrInit regions plic type).
     - apply In_specPlicSampleMeipStep_spec.
     - exact Hspec.
@@ -1170,7 +1141,7 @@ Section SystemDevicesSim.
       exists (projImplMemSpecState core regions (implMem new1)).
       rewrite Hmem; split; [exact HspecMem | reflexivity]. }
     repeat split; auto.
-    rewrite (bits_0_eq_zero v) in HspecAct.
+    rewrite (Zmod_1_0 v) in HspecAct.
     eapply ConsAction with (a := liftAction np_mem_s specMemAct).
     - exact HinSpec.
     - exact HspecAct.
@@ -1270,7 +1241,7 @@ Section SystemDevicesSim.
       exists (projImplMemSpecState core regions (implMem new1)).
       rewrite Hmem; split; [exact HspecMem | reflexivity]. }
     repeat split; auto.
-    rewrite (bits_0_eq_zero v) in HspecAct.
+    rewrite (Zmod_1_0 v) in HspecAct.
     eapply ConsAction with (a := liftAction np_mem_s (fSpec type)).
     - exact HinSpec.
     - exact HspecAct.
