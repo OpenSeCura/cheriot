@@ -130,7 +130,7 @@ module Tb();
         $fflush(32'h8000_0001);
       end
       if (cycleCount + 64'd1 >= maxCycles) begin
-        $finish;
+        $fatal(1, "Simulation timed out at %0d cycles", maxCycles);
       end
       cycleCount <= cycleCount + 64'd1;
 

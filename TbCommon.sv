@@ -137,8 +137,7 @@
               $display("TEST PASSED!");
               $finish;
             end else begin
-              $display("TEST FAILED at test case: %0d", tohostVal);
-              $finish;
+              $fatal(1, "TEST FAILED at test case: %0d", tohostVal);
             end
           end
         end
