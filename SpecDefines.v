@@ -830,6 +830,10 @@ Section Decoders.
   Definition csrIsVirtualDecoder (addr : ty (Bit CsrAddrSz)) : Expr ty Bool :=
     Or (map (fun e => Eq #addr $(e.(csrAddr))) VirtualCsrTable).
 
+  Definition csrIdxIsVirtual (idx : ty (Bit CsrIdxSz)) : Expr ty Bool :=
+    Or (map (fun '(_, vIdx) => Eq #idx $vIdx)
+            (skipn (length PhysicalCsrTable) (enumerate CsrTable))).
+
   Definition scrIsReadOnlyDecoder (addr : ty (Bit ScrAddrSz)) : Expr ty Bool :=
     Or (map (fun e => Eq #addr $(e.(scrAddr)))
             (filter (fun e => e.(scrReadOnly)) (ScrTable 0))).

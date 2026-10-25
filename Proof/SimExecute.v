@@ -411,6 +411,207 @@ Section AluExecutionLemmas.
     split; intros H; exact H.
   Qed.
 
+  Lemma evalExpr_csrIdxIsVirtual :
+    forall (csrIdx : bits CsrIdxSz),
+      evalExpr (@csrIdxIsVirtual type csrIdx) =
+      evalExpr (Eq (Var type (Bit CsrIdxSz) csrIdx) $(getCsrIdx "mip")).
+  Proof.
+    intros csrIdx.
+    unfold csrIdxIsVirtual.
+    cbn [skipn length PhysicalCsrTable VirtualCsrTable CsrTable app enumerate enumerate_aux map evalExpr fold_left evalOrBinary evalBinary orb KindCustomInd getDefault].
+    reflexivity.
+  Qed.
+
+  Lemma bits1_eqb_0_false_1_true :
+    forall (b : bits 1),
+      Zmod.eqb b (Zmod.of_Z (2 ^ 1) 0) = false ->
+      Zmod.eqb b (Zmod.of_Z (2 ^ 1) 1) = true.
+  Proof.
+    intros b Hb.
+    pose proof (bits.unsigned_range b ltac:(lia)) as Hrange.
+    destruct (Zmod.eqb_spec b (Zmod.of_Z (2 ^ 1) 0)) as [_ | Hneq]; [discriminate |].
+    apply Zmod.eqb_eq.
+    apply Zmod.unsigned_inj.
+    change (Zmod.unsigned (Zmod.of_Z (2 ^ 1) 1)) with 1.
+    assert (Zmod.unsigned b <> 0).
+    { intros H0; apply Hneq; apply Zmod.unsigned_inj; exact H0. }
+    lia.
+  Qed.
+
+  Lemma evalActionPropGen_LetExp_cong {t : Tree DomainElem} {k k' : Kind} :
+    forall {env : Env t} (nm : string) (e : Expr type k')
+           (cont1 cont2 : type k' -> Action type t k)
+           (s : TreeState DomainElemState t) P,
+      (forall v, evalActionPropGen env (cont1 v) s P <-> evalActionPropGen env (cont2 v) s P) ->
+      (evalActionPropGen env (LetExp nm e cont1) s P <->
+       evalActionPropGen env (LetExp nm e cont2) s P).
+  Proof.
+    intros env nm e cont1 cont2 s P Hcont; cbn [evalActionPropGen]; apply Hcont.
+  Qed.
+
+  Lemma evalActionPropGen_LetExp_eval_cong {t : Tree DomainElem} {k k' : Kind} :
+    forall {env : Env t} (nm : string) (e : Expr type k')
+           (cont1 cont2 : type k' -> Action type t k)
+           (s : TreeState DomainElemState t) P,
+      (evalActionPropGen env (cont1 (evalExpr e)) s P <->
+       evalActionPropGen env (cont2 (evalExpr e)) s P) ->
+      (evalActionPropGen env (LetExp nm e cont1) s P <->
+       evalActionPropGen env (LetExp nm e cont2) s P).
+  Proof.
+    intros env nm e cont1 cont2 s P Hcont; cbn [evalActionPropGen]; exact Hcont.
+  Qed.
+
+  Lemma evalActionPropGen_LetExp_eq_cong {t : Tree DomainElem} {k k' : Kind} :
+    forall {env : Env t} (nm : string) (e1 e2 : Expr type k')
+           (cont1 cont2 : type k' -> Action type t k)
+           (s : TreeState DomainElemState t) P,
+      evalExpr e1 = evalExpr e2 ->
+      (forall v, evalActionPropGen env (cont1 v) s P <-> evalActionPropGen env (cont2 v) s P) ->
+      (evalActionPropGen env (LetExp nm e1 cont1) s P <->
+       evalActionPropGen env (LetExp nm e2 cont2) s P).
+  Proof.
+    intros env nm e1 e2 cont1 cont2 s P Heq Hcont; cbn [evalActionPropGen]; rewrite Heq; apply Hcont.
+  Qed.
+
+  Lemma evalActionPropGen_LetAction_cong {t : Tree DomainElem} {k k' : Kind} :
+    forall {env : Env t} (nm : string) (a : Action type t k')
+           (cont1 cont2 : type k' -> Action type t k)
+           (s : TreeState DomainElemState t) P,
+      (forall s1 v, evalActionPropGen env (cont1 v) s1 P <-> evalActionPropGen env (cont2 v) s1 P) ->
+      (evalActionPropGen env (LetAction nm a cont1) s P <->
+       evalActionPropGen env (LetAction nm a cont2) s P).
+  Proof.
+    intros env nm a cont1 cont2 s P Hcont; cbn [evalActionPropGen].
+    apply evalActionPropGen_ext; intros s1 v; apply Hcont.
+  Qed.
+
+  Lemma evalActionPropGen_IfElse_dep_cong {t : Tree DomainElem} {k k' : Kind} :
+    forall {env : Env t} (nm : string) (c : Expr type Bool) (a1 a2 b1 b2 : Action type t k')
+           (cont1 cont2 : type k' -> Action type t k)
+           (s : TreeState DomainElemState t) P,
+      (evalExpr c = true ->
+       forall P0, evalActionPropGen env a1 s P0 <-> evalActionPropGen env b1 s P0) ->
+      (evalExpr c = false ->
+       forall P0, evalActionPropGen env a2 s P0 <-> evalActionPropGen env b2 s P0) ->
+      (forall s1 v, evalActionPropGen env (cont1 v) s1 P <-> evalActionPropGen env (cont2 v) s1 P) ->
+      (evalActionPropGen env (IfElse nm c a1 a2 cont1) s P <->
+       evalActionPropGen env (IfElse nm c b1 b2 cont2) s P).
+  Proof.
+    intros env nm c a1 a2 b1 b2 cont1 cont2 s P Htrue Hfalse Hcont; cbn [evalActionPropGen].
+    destruct (evalExpr c) eqn:Hc.
+    - rewrite (Htrue eq_refl); apply evalActionPropGen_ext; intros s1 v; apply Hcont.
+    - rewrite (Hfalse eq_refl); apply evalActionPropGen_ext; intros s1 v; apply Hcont.
+  Qed.
+
+  Lemma evalExpr_Or_ITE0_false :
+    forall (x : bits Xlen) (c : Expr type Bool) (a b : Expr type (Bit Xlen)),
+      evalExpr c = false ->
+      evalExpr (Or [ Var type (Bit Xlen) x ; ITE0 c a ]) =
+      evalExpr (Or [ Var type (Bit Xlen) x ; ITE0 c b ]).
+  Proof.
+    intros x c a b Hc.
+    unfold ITE0; cbn [evalExpr map fold_left]; rewrite Hc; reflexivity.
+  Qed.
+
+  Local Transparent executeNonSequential.
+  Local Opaque evalActionPropGen readRegsList writeRegsList incrementMinstret handleTrap updateMshwmOnStore
+               Alu.getSeqPcc encodeMcause encodeCheriMtval createMip.
+
+  Lemma evalActionPropGen_executeNonSequential_not_virtCsr_meip_mtip_indep :
+    forall {env : Env rTree} (currPcc : type FullECapWithTag)
+           (meip1 mtip1 meip2 mtip2 : bool) (aluOut : type AluOutUnion)
+           (rf : TreeState DomainElemState rTree) P,
+      evalExpr ((Var type AluOpUnion (aluOut.(Snd).(Snd).(Snd).(Fst))) `? "Sequential") = false ->
+      isVirtualCsrAluOut aluOut = false ->
+      (evalActionPropGen env (@executeNonSequential dom pcAddrInit type currPcc meip1 mtip1 aluOut) rf P <->
+       evalActionPropGen env (@executeNonSequential dom pcAddrInit type currPcc meip2 mtip2 aluOut) rf P).
+  Proof.
+    intros env currPcc meip1 mtip1 meip2 mtip2 aluOut rf P Hseq Hvirt.
+    unfold isVirtualCsrAluOut in Hvirt.
+    rewrite evalExpr_csrIdxIsVirtual in Hvirt.
+    set (aluOp := evalExpr ((Var type AluOutUnion aluOut)`"Op")) in *.
+    set (nonSeqOp := evalExpr ((Var type AluOpUnion aluOp) `! "NonSequential")) in *.
+    set (noExc := evalExpr ((Var type NonSequentialUnion nonSeqOp) `! "NoException")) in *.
+    set (cfScrCsr := evalExpr ((Var type NoExceptionUnion noExc) `! "CfScrCsr")) in *.
+    set (scrCsr := evalExpr ((Var type CfScrCsrUnion cfScrCsr) `! "ScrCsr")) in *.
+    set (sDest := evalExpr ((Var type ScrCsrPayload scrCsr)`"SpecialDest")) in *.
+    set (csrIdx := evalExpr ((Var type (TaggedUnion ScrCsrIdx) sDest) `! "Csr")) in *.
+    assert (HnonSeq : evalExpr ((Var type AluOpUnion aluOp) `? "NonSequential") = true)
+      by (apply bits1_eqb_0_false_1_true; exact Hseq).
+    rewrite HnonSeq in Hvirt; cbn [andb] in Hvirt.
+    unfold executeNonSequential.
+    do 6 apply evalActionPropGen_LetExp_eval_cong.
+    apply evalActionPropGen_IfElse_dep_cong; [intros _ ?; reflexivity | | intros ? ?; reflexivity].
+    intros Hexc P0.
+    assert (HnoExc : evalExpr ((Var type NonSequentialUnion nonSeqOp) `? "NoException") = true)
+      by (apply bits1_eqb_0_false_1_true; exact Hexc).
+    rewrite HnoExc in Hvirt; cbn [andb] in Hvirt.
+    apply evalActionPropGen_LetAction_cong; intros s1 ?.
+    apply evalActionPropGen_LetAction_cong; intros s2 ?.
+    apply evalActionPropGen_LetExp_eval_cong.
+    apply evalActionPropGen_IfElse_dep_cong; [intros _ ?; reflexivity | | intros ? ?; reflexivity].
+    intros Hdm P1.
+    assert (HcfScrCsr : evalExpr ((Var type NoExceptionUnion noExc) `? "CfScrCsr") = true)
+      by (apply bits1_eqb_0_false_1_true; exact Hdm).
+    rewrite HcfScrCsr in Hvirt; cbn [andb] in Hvirt.
+    apply evalActionPropGen_LetExp_eval_cong.
+    apply evalActionPropGen_IfElse_dep_cong; [| intros _ ?; reflexivity | intros ? ?; reflexivity].
+    intros HscrCsr P2.
+    change (evalExpr ((Var type CfScrCsrUnion cfScrCsr) `? "ScrCsr") = true) in HscrCsr.
+    rewrite HscrCsr in Hvirt; cbn [andb] in Hvirt.
+    do 6 apply evalActionPropGen_LetExp_eval_cong.
+    apply evalActionPropGen_IfElse_dep_cong; [intros _ ?; reflexivity | | intros ? ?; reflexivity].
+    intros Hscr P3.
+    assert (Hcsr : evalExpr ((Var type (TaggedUnion ScrCsrIdx) sDest) `? "Csr") = true)
+      by (apply bits1_eqb_0_false_1_true; exact Hscr).
+    rewrite Hcsr in Hvirt; cbn [andb] in Hvirt.
+    apply evalActionPropGen_LetExp_eval_cong.
+    apply evalActionPropGen_LetAction_cong; intros s3 csrPhys.
+    apply evalActionPropGen_LetExp_eq_cong; [| intros ?; reflexivity].
+    apply evalExpr_Or_ITE0_false; exact Hvirt.
+  Qed.
+
+  Local Transparent evalActionPropGen.
+  Local Opaque executeNonSequential.
+
+  Theorem evalActionPropGen_executeNonDeferred_not_virtCsr_meip_mtip_indep :
+    forall {env : Env rTree} (currPcc : type FullECapWithTag)
+           (meip1 mtip1 meip2 mtip2 : bool) (aluOut : type AluOutUnion)
+           (rf : TreeState DomainElemState rTree) P,
+      evalIsInterruptPending meip1 mtip1 rf = false ->
+      evalIsInterruptPending meip2 mtip2 rf = false ->
+      isVirtualCsrAluOut aluOut = false ->
+      (evalActionPropGen env (@executeNonDeferred dom pcAddrInit type currPcc meip1 mtip1 aluOut) rf P <->
+       evalActionPropGen env (@executeNonDeferred dom pcAddrInit type currPcc meip2 mtip2 aluOut) rf P).
+  Proof.
+    intros env currPcc meip1 mtip1 meip2 mtip2 aluOut rf P Hint1 Hint2 Hvirt.
+    destruct (evalExpr ((Var type AluOpUnion (aluOut.(Snd).(Snd).(Snd).(Fst))) `? "Sequential")) eqn:Hseq.
+    - rewrite (evalActionPropGen_executeNonDeferred_sequential currPcc meip1 mtip1 aluOut rf P Hint1 Hseq).
+      rewrite (evalActionPropGen_executeNonDeferred_sequential currPcc meip2 mtip2 aluOut rf P Hint2 Hseq).
+      reflexivity.
+    - rewrite (evalActionPropGen_executeNonDeferred_nonSequential currPcc meip1 mtip1 aluOut rf P Hint1 Hseq).
+      rewrite (evalActionPropGen_executeNonDeferred_nonSequential currPcc meip2 mtip2 aluOut rf P Hint2 Hseq).
+      exact (evalActionPropGen_executeNonSequential_not_virtCsr_meip_mtip_indep
+               currPcc meip1 mtip1 meip2 mtip2 aluOut rf P Hseq Hvirt).
+  Qed.
+
+  Theorem SemAction_executeNonDeferred_not_virtCsr_meip_mtip_indep :
+    forall {env : Env rTree} (currPcc : type FullECapWithTag)
+           (meip1 mtip1 meip2 mtip2 : bool) (aluOut : type AluOutUnion)
+           (rf rf' : TreeState DomainElemState rTree) (execOut : type ExecuteOut),
+      evalIsInterruptPending meip1 mtip1 rf = false ->
+      evalIsInterruptPending meip2 mtip2 rf = false ->
+      isVirtualCsrAluOut aluOut = false ->
+      (SemAction env (@executeNonDeferred dom pcAddrInit type currPcc meip1 mtip1 aluOut) rf rf' execOut <->
+       SemAction env (@executeNonDeferred dom pcAddrInit type currPcc meip2 mtip2 aluOut) rf rf' execOut).
+  Proof.
+    intros env currPcc meip1 mtip1 meip2 mtip2 aluOut rf rf' execOut Hint1 Hint2 Hvirt.
+    rewrite !SemAction_iff_evalActionPropGen.
+    exact (evalActionPropGen_executeNonDeferred_not_virtCsr_meip_mtip_indep
+             currPcc meip1 mtip1 meip2 mtip2 aluOut rf (fun s r => s = rf' /\ r = execOut)
+             Hint1 Hint2 Hvirt).
+  Qed.
+
 End AluExecutionLemmas.
 
 (* ===========================================================================

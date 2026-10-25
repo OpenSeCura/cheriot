@@ -192,6 +192,14 @@ Section ExecuteStage.
       Let  isNoExc         : Bool               <- And [ #isNonSeq ; #nonSeqOp `? "NoException" ] ;
       Let  noExc           : NoExceptionUnion   <- #nonSeqOp `! "NoException" ;
       Let  isMemOrFence    : Bool               <- And [ #isNoExc ; #noExc `? "DataMem" ] ;
+      Let  isCfScrCsr      : Bool               <- And [ #isNoExc ; #noExc `? "CfScrCsr" ] ;
+      Let  cfScrCsr        : CfScrCsrUnion      <- #noExc `! "CfScrCsr" ;
+      Let  isScrCsr        : Bool               <- And [ #isCfScrCsr ; #cfScrCsr `? "ScrCsr" ] ;
+      Let  scrCsr          : ScrCsrPayload      <- #cfScrCsr `! "ScrCsr" ;
+      Let  sDest           : TaggedUnion ScrCsrIdx <- ##scrCsr`"SpecialDest" ;
+      Let  isCsr           : Bool               <- And [ #isScrCsr ; #sDest `? "Csr" ] ;
+      Let  csrIdx          : Bit CsrIdxSz       <- #sDest `! "Csr" ;
+      Let  isVirtCsr       : Bool               <- And [ #isCsr ; csrIdxIsVirtual csrIdx ] ;
 
       Let  dstVal          : FullECapWithTag    <- ##aluOut`"dstValue" ;
       Let  reqDst          : Bit RegIdxSzReal   <- ##aluOut`"dstIdx" ;
@@ -256,7 +264,8 @@ Section ExecuteStage.
               ) ;
               Retv
             ) Else (
-              If (Or [ Not #isMemOrFence ; Not #dataMemIn_isFull ]) Then (
+              If (And [ Or [ Not #isMemOrFence ; Not #dataMemIn_isFull ] ;
+                        Or [ Not #isVirtCsr ; #dataMem_isEmpty ] ]) Then (
                 Act (liftAction np_decode (decodeIfc ty).(decode_deq)) ;
                 LetA execOut         : ExecuteOut      <- liftAction np_rf (executeNonSequential pcc meip mtip aluOut) ;
                 Let  nextPcc         : FullECapWithTag <- ##execOut`"nextPcc" ;

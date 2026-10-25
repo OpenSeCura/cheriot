@@ -685,6 +685,23 @@ Section StateProjections.
       then val
       else mask idx.
 
+  (* Pure boolean predicate matching `isVirtCsr` in `aluAndExecuteNonDeferred` (`ImplExecute.v`):
+   * checks whether `aluOut` is a non-sequential virtual CSR access (`VirtualCsrTable`). *)
+  Definition isVirtualCsrAluOut (aluOut : type AluOutUnion) : bool :=
+    let aluOp      : type AluOpUnion              := evalExpr (##aluOut`"Op") in
+    let isNonSeq   : bool                         := evalExpr (#aluOp `? "NonSequential") in
+    let nonSeqOp   : type NonSequentialUnion      := evalExpr (#aluOp `! "NonSequential") in
+    let isNoExc    : bool                         := andb isNonSeq (evalExpr (#nonSeqOp `? "NoException")) in
+    let noExc      : type NoExceptionUnion        := evalExpr (#nonSeqOp `! "NoException") in
+    let isCfScrCsr : bool                         := andb isNoExc (evalExpr (#noExc `? "CfScrCsr")) in
+    let cfScrCsr   : type CfScrCsrUnion           := evalExpr (#noExc `! "CfScrCsr") in
+    let isScrCsr   : bool                         := andb isCfScrCsr (evalExpr (#cfScrCsr `? "ScrCsr")) in
+    let scrCsr     : type ScrCsrPayload           := evalExpr (#cfScrCsr `! "ScrCsr") in
+    let sDest      : type (TaggedUnion ScrCsrIdx) := evalExpr (##scrCsr`"SpecialDest") in
+    let isCsr      : bool                         := andb isScrCsr (evalExpr (#sDest `? "Csr")) in
+    let csrIdx     : bits CsrIdxSz                := evalExpr (#sDest `! "Csr") in
+    andb isCsr (evalExpr (@csrIdxIsVirtual type csrIdx)).
+
   (* Pure specification of a single non-deferred Stage-4 execution step (`GhostStep`):
    * Given architectural `rf0` and scoreboard mask `waitMask0`, executing an instruction
    * whose non-deferred phase (`executeNonDeferred` + `nextPcc` write + optional `mulDiv`
@@ -719,8 +736,9 @@ Section StateProjections.
 
   (* Generalized `GhostStepOpt` indexed by `dmOpt : option (type MemFenceReq)`:
    * - Covers both `dmOpt = Some req` (DataMem/Fence instruction) and `dmOpt = None`
-   *   (Interrupt, Sequential ALU/MulDiv, or Non-Sequential Exception/SCR/CSR/CF
-   *   executed in Stage 4 while `dataMem` is non-empty).
+   *   (Sequential ALU/MulDiv or Non-Sequential Exception/SCR/physical-CSR/CF
+   *   executed in Stage 4 while `dataMem` is non-empty; virtual CSRs and interrupts
+   *   stall until `dataMem` is empty).
    * - Includes `ghost_nonInterference`: at issue/decode time, `waitMask0` was `false`
    *   on the destination GPR (if non-zero). *)
   Record GhostStepOpt
@@ -743,6 +761,7 @@ Section StateProjections.
           exists (pcc : type FullECapWithTag) (meip mtip : bool)
                  (aluOut : type AluOutUnion) (execOut : type ExecuteOut)
                  (rf_mid : RfState),
+            isVirtualCsrAluOut aluOut = false /\
             SemAction defaultEnv (executeNonDeferred core pcAddrInit pcc meip mtip aluOut) rf0 rf_mid execOut /\
             execOut.(Snd).(Fst).(Snd).(Fst) = false /\
             rf1 = evalWriteRegsList (gprPathsWithKind core pcAddrInit)
