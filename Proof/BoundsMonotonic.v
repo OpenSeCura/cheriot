@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import List String Ascii ZArith Znumtheory Zmod Zmod.Bits Lia Bool.
-From Guru Require Import Primitives Library Syntax Combinators Semantics Notations MergeFold Theorems.
+From Guru Require Import Primitives Library Syntax Combinators Semantics Notations MergeFold Theorems HelperLemmas.
 From Cheriot Require Import SpecDefines FunctionalUnits.
 
 Set Implicit Arguments.

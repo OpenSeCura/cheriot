@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Znumtheory Zmod Zmod.Bits Lia Bool Eqdep_dec.
-From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems ActionSim.
+From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems HelperLemmas ActionSim.
 From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchDeferred SpecMulDiv Spec.
 From Cheriot Require Import ImplCommon ImplExecute ImplDataMem ImplMulDiv ImplMulDivProof Impl.
 From Cheriot.Proof Require Import TreeLemmas StateRel.
@@ -38,6 +38,7 @@ Section RfActionCommutes.
   Variable pcAddrInit : Z.
 
   Local Abbreviation rTree := (rfTree dom pcAddrInit).
+  Context {env : Env rTree}.
   Local Opaque gprPathsWithKind scrPathsWithKind csrPathsWithKind.
 
   Lemma ActionCommutes_readCsr_updGpr :
@@ -45,7 +46,7 @@ Section RfActionCommutes.
       ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
         (readRegsList (csrPathsWithKind dom pcAddrInit) idxExpr).
   Proof.
-    intros wIdx wbVal idxExpr s P.
+    intros wIdx wbVal idxExpr env0 s P.
     rewrite !evalActionPropGen_readRegsList.
     change (evalReadRegsList (csrPathsWithKind dom pcAddrInit) (evalExpr idxExpr) (updGpr dom pcAddrInit wIdx wbVal s))
       with (readCsr dom pcAddrInit (evalExpr idxExpr) (updGpr dom pcAddrInit wIdx wbVal s)).
@@ -60,7 +61,7 @@ Section RfActionCommutes.
       ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
         (writeRegsList (csrPathsWithKind dom pcAddrInit) idxExpr valExpr).
   Proof.
-    intros wIdx wbVal idxExpr valExpr s P.
+    intros wIdx wbVal idxExpr valExpr env0 s P.
     rewrite !evalActionPropGen_writeRegsList.
     change (evalWriteRegsList (csrPathsWithKind dom pcAddrInit) (evalExpr idxExpr) (evalExpr valExpr) (updGpr dom pcAddrInit wIdx wbVal s))
       with (updCsr dom pcAddrInit (evalExpr idxExpr) (evalExpr valExpr) (updGpr dom pcAddrInit wIdx wbVal s)).
@@ -75,7 +76,7 @@ Section RfActionCommutes.
       ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
         (readRegsList (scrPathsWithKind dom pcAddrInit) idxExpr).
   Proof.
-    intros wIdx wbVal idxExpr s P.
+    intros wIdx wbVal idxExpr env0 s P.
     rewrite !evalActionPropGen_readRegsList.
     change (evalReadRegsList (scrPathsWithKind dom pcAddrInit) (evalExpr idxExpr) (updGpr dom pcAddrInit wIdx wbVal s))
       with (readScr dom pcAddrInit (evalExpr idxExpr) (updGpr dom pcAddrInit wIdx wbVal s)).
@@ -90,7 +91,7 @@ Section RfActionCommutes.
       ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
         (writeRegsList (scrPathsWithKind dom pcAddrInit) idxExpr valExpr).
   Proof.
-    intros wIdx wbVal idxExpr valExpr s P.
+    intros wIdx wbVal idxExpr valExpr env0 s P.
     rewrite !evalActionPropGen_writeRegsList.
     change (evalWriteRegsList (scrPathsWithKind dom pcAddrInit) (evalExpr idxExpr) (evalExpr valExpr) (updGpr dom pcAddrInit wIdx wbVal s))
       with (updScr dom pcAddrInit (evalExpr idxExpr) (evalExpr valExpr) (updGpr dom pcAddrInit wIdx wbVal s)).
@@ -106,7 +107,7 @@ Section RfActionCommutes.
       ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
         (readRegsList (gprPathsWithKind dom pcAddrInit) idxExpr).
   Proof.
-    intros wIdx wbVal idxExpr Hneq s P.
+    intros wIdx wbVal idxExpr Hneq env0 s P.
     rewrite !evalActionPropGen_readRegsList.
     change (evalReadRegsList (gprPathsWithKind dom pcAddrInit) (evalExpr idxExpr) (updGpr dom pcAddrInit wIdx wbVal s))
       with (readGpr dom pcAddrInit (evalExpr idxExpr) (updGpr dom pcAddrInit wIdx wbVal s)).
@@ -122,7 +123,7 @@ Section RfActionCommutes.
       ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
         (writeRegsList (gprPathsWithKind dom pcAddrInit) idxExpr valExpr).
   Proof.
-    intros wIdx wbVal idxExpr valExpr Hneq s P.
+    intros wIdx wbVal idxExpr valExpr Hneq env0 s P.
     rewrite !evalActionPropGen_writeRegsList.
     change (evalWriteRegsList (gprPathsWithKind dom pcAddrInit) (evalExpr idxExpr) (evalExpr valExpr) (updGpr dom pcAddrInit wIdx wbVal s))
       with (updGpr dom pcAddrInit (evalExpr idxExpr) (evalExpr valExpr) (updGpr dom pcAddrInit wIdx wbVal s)).
@@ -396,8 +397,8 @@ Section RfActionCommutes.
   Theorem SemAction_isInterruptPending_updGpr :
     forall wIdx wbVal (meip mtip : bool)
            (rf rf' : TreeState DomainElemState rTree) (res : bool),
-      SemAction (@isInterruptPending dom pcAddrInit type meip mtip) rf rf' res ->
-      SemAction (@isInterruptPending dom pcAddrInit type meip mtip)
+      SemAction env (@isInterruptPending dom pcAddrInit type meip mtip) rf rf' res ->
+      SemAction env (@isInterruptPending dom pcAddrInit type meip mtip)
         (updGpr dom pcAddrInit wIdx wbVal rf)
         (updGpr dom pcAddrInit wIdx wbVal rf')
         res.
@@ -411,8 +412,8 @@ Section RfActionCommutes.
   Theorem SemAction_handleTrap_updGpr :
     forall wIdx wbVal (currPcc : type FullECapWithTag) (mcauseVal mtvalVal : type (Bit Xlen))
            (rf rf' : TreeState DomainElemState rTree) (execOut : type ExecuteOut),
-      SemAction (@handleTrap dom pcAddrInit type currPcc mcauseVal mtvalVal) rf rf' execOut ->
-      SemAction (@handleTrap dom pcAddrInit type currPcc mcauseVal mtvalVal)
+      SemAction env (@handleTrap dom pcAddrInit type currPcc mcauseVal mtvalVal) rf rf' execOut ->
+      SemAction env (@handleTrap dom pcAddrInit type currPcc mcauseVal mtvalVal)
         (updGpr dom pcAddrInit wIdx wbVal rf)
         (updGpr dom pcAddrInit wIdx wbVal rf')
         execOut.
@@ -426,8 +427,8 @@ Section RfActionCommutes.
   Theorem SemAction_executeInterrupt_updGpr :
     forall wIdx wbVal (currPcc : type FullECapWithTag) (meip mtip : bool)
            (rf rf' : TreeState DomainElemState rTree) (execOut : type ExecuteOut),
-      SemAction (@executeInterrupt dom pcAddrInit type currPcc meip mtip) rf rf' execOut ->
-      SemAction (@executeInterrupt dom pcAddrInit type currPcc meip mtip)
+      SemAction env (@executeInterrupt dom pcAddrInit type currPcc meip mtip) rf rf' execOut ->
+      SemAction env (@executeInterrupt dom pcAddrInit type currPcc meip mtip)
         (updGpr dom pcAddrInit wIdx wbVal rf)
         (updGpr dom pcAddrInit wIdx wbVal rf')
         execOut.
@@ -442,8 +443,8 @@ Section RfActionCommutes.
     forall wIdx wbVal (currPcc : type FullECapWithTag) (aluOut : type AluOutUnion)
            (rf rf' : TreeState DomainElemState rTree) (mulDivOpt : type (Option MulDivUnion)),
       (Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false -> wIdx <> aluOut.(Snd).(Fst)) ->
-      SemAction (@executeSequential dom pcAddrInit type currPcc aluOut) rf rf' mulDivOpt ->
-      SemAction (@executeSequential dom pcAddrInit type currPcc aluOut)
+      SemAction env (@executeSequential dom pcAddrInit type currPcc aluOut) rf rf' mulDivOpt ->
+      SemAction env (@executeSequential dom pcAddrInit type currPcc aluOut)
         (updGpr dom pcAddrInit wIdx wbVal rf)
         (updGpr dom pcAddrInit wIdx wbVal rf')
         mulDivOpt.
@@ -459,8 +460,8 @@ Section RfActionCommutes.
            (aluOut : type AluOutUnion) (rf rf' : TreeState DomainElemState rTree)
            (execOut : type ExecuteOut),
       (Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false -> wIdx <> aluOut.(Snd).(Fst)) ->
-      SemAction (@executeNonSequential dom pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
-      SemAction (@executeNonSequential dom pcAddrInit type currPcc meip mtip aluOut)
+      SemAction env (@executeNonSequential dom pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
+      SemAction env (@executeNonSequential dom pcAddrInit type currPcc meip mtip aluOut)
         (updGpr dom pcAddrInit wIdx wbVal rf)
         (updGpr dom pcAddrInit wIdx wbVal rf')
         execOut.
@@ -476,8 +477,8 @@ Section RfActionCommutes.
            (aluOut : type AluOutUnion) (rf rf' : TreeState DomainElemState rTree)
            (execOut : type ExecuteOut),
       (Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false -> wIdx <> aluOut.(Snd).(Fst)) ->
-      SemAction (@executeNonDeferred dom pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
-      SemAction (@executeNonDeferred dom pcAddrInit type currPcc meip mtip aluOut)
+      SemAction env (@executeNonDeferred dom pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
+      SemAction env (@executeNonDeferred dom pcAddrInit type currPcc meip mtip aluOut)
         (updGpr dom pcAddrInit wIdx wbVal rf)
         (updGpr dom pcAddrInit wIdx wbVal rf')
         execOut.
@@ -570,7 +571,7 @@ Section RfActionCommutes.
              LetExp nm2 (ITE0 (isNotZero (Var type (Bit RegIdxSzReal) idx)) (Var type FullECapWithTag csRaw))
                cont)).
   Proof.
-    intros wIdx wbVal nm1 nm2 idx cont Hidx Hcont s P.
+    intros wIdx wbVal nm1 nm2 idx cont Hidx Hcont env0 s P.
     cbn [evalActionPropGen].
     rewrite !evalActionPropGen_readRegsList.
     cbn [evalActionPropGen].
@@ -615,8 +616,8 @@ Section RfActionCommutes.
       let cs2Idx : bits RegIdxSzReal := evalExpr (##decodeOut`"cs2Idx") in
       (Zmod.eqb cs1Idx Zmod.zero = false -> cs1Idx <> wIdx) ->
       (Zmod.eqb cs2Idx Zmod.zero = false -> cs2Idx <> wIdx) ->
-      SemAction (@regRead dom pcAddrInit type regReadIn) rf rf' out ->
-      SemAction (@regRead dom pcAddrInit type regReadIn)
+      SemAction env (@regRead dom pcAddrInit type regReadIn) rf rf' out ->
+      SemAction env (@regRead dom pcAddrInit type regReadIn)
         (updGpr dom pcAddrInit wIdx wbVal rf)
         (updGpr dom pcAddrInit wIdx wbVal rf')
         out.
@@ -636,6 +637,7 @@ End RfActionCommutes.
 Section FlushMulDivLemmas.
   Variable core : string.
   Variable pcAddrInit : Z.
+  Context {env : Env (RfTree core pcAddrInit)}.
 
   Local Opaque gprPathsWithKind scrPathsWithKind csrPathsWithKind
                evalWriteRegsList evalReadRegsList.
@@ -808,11 +810,11 @@ Section FlushMulDivLemmas.
        ActionCommutes (updGpr core pcAddrInit dstIdx val) act) ->
       ActionCommutes (writeGprVal core pcAddrInit dstIdx val) act.
   Proof.
-    intros dstIdx val act Hcomm s P.
+    intros dstIdx val act Hcomm env0 s P.
     unfold writeGprVal, updGpr in *.
     destruct (Zmod.eqb dstIdx Zmod.zero) eqn:Hz; cbn [negb].
     - split; intros H; exact H.
-    - exact (Hcomm eq_refl s P).
+    - exact (Hcomm eq_refl env0 s P).
   Qed.
   Local Opaque writeGprVal updGpr.
   Local Strategy opaque [writeGprVal updGpr readGpr updScr readScr updCsr readCsr].
@@ -837,8 +839,8 @@ Section FlushMulDivLemmas.
       (Zmod.eqb dstIdx Zmod.zero = false ->
        Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false ->
        dstIdx <> aluOut.(Snd).(Fst)) ->
-      SemAction (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
-      SemAction (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut)
+      SemAction env (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
+      SemAction env (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut)
         (writeGprVal core pcAddrInit dstIdx val rf)
         (writeGprVal core pcAddrInit dstIdx val rf')
         execOut.
@@ -858,8 +860,8 @@ Section FlushMulDivLemmas.
       let noExcOp : type NoExceptionUnion := evalExpr (#nonSeqOp `! "NoException") in
       evalExpr (#aluOp `? "Sequential") = false ->
       evalExpr (#noExcOp `? "DataMem") = true ->
-      SemAction (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
-      SemAction (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut)
+      SemAction env (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
+      SemAction env (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut)
         (writeGprVal core pcAddrInit dstIdx val rf)
         (writeGprVal core pcAddrInit dstIdx val rf')
         execOut.
@@ -893,8 +895,8 @@ Section FlushMulDivLemmas.
       let cs2Idx : bits RegIdxSzReal := evalExpr (##decodeOut`"cs2Idx") in
       (Zmod.eqb dstIdx Zmod.zero = false -> Zmod.eqb cs1Idx Zmod.zero = false -> cs1Idx <> dstIdx) ->
       (Zmod.eqb dstIdx Zmod.zero = false -> Zmod.eqb cs2Idx Zmod.zero = false -> cs2Idx <> dstIdx) ->
-      SemAction (@regRead core pcAddrInit type regReadIn) rf rf' out ->
-      SemAction (@regRead core pcAddrInit type regReadIn)
+      SemAction env (@regRead core pcAddrInit type regReadIn) rf rf' out ->
+      SemAction env (@regRead core pcAddrInit type regReadIn)
         (writeGprVal core pcAddrInit dstIdx val rf)
         (writeGprVal core pcAddrInit dstIdx val rf')
         out.
@@ -1084,8 +1086,8 @@ Section FlushMulDivLemmas.
   Theorem SemAction_isInterruptPending_flushMulDivCaps :
     forall entries (meip mtip : bool)
            (rf rf' : RfState core pcAddrInit) (res : bool),
-      SemAction (@isInterruptPending core pcAddrInit type meip mtip) rf rf' res ->
-      SemAction (@isInterruptPending core pcAddrInit type meip mtip)
+      SemAction env (@isInterruptPending core pcAddrInit type meip mtip) rf rf' res ->
+      SemAction env (@isInterruptPending core pcAddrInit type meip mtip)
         (flushMulDivCaps core pcAddrInit entries rf)
         (flushMulDivCaps core pcAddrInit entries rf')
         res.
@@ -1101,8 +1103,8 @@ Section FlushMulDivLemmas.
   Theorem SemAction_executeInterrupt_flushMulDivCaps :
     forall entries (currPcc : type FullECapWithTag) (meip mtip : bool)
            (rf rf' : RfState core pcAddrInit) (execOut : type ExecuteOut),
-      SemAction (@executeInterrupt core pcAddrInit type currPcc meip mtip) rf rf' execOut ->
-      SemAction (@executeInterrupt core pcAddrInit type currPcc meip mtip)
+      SemAction env (@executeInterrupt core pcAddrInit type currPcc meip mtip) rf rf' execOut ->
+      SemAction env (@executeInterrupt core pcAddrInit type currPcc meip mtip)
         (flushMulDivCaps core pcAddrInit entries rf)
         (flushMulDivCaps core pcAddrInit entries rf')
         execOut.
@@ -1123,8 +1125,8 @@ Section FlushMulDivLemmas.
          Zmod.eqb dstIdx Zmod.zero = false ->
          Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false ->
          dstIdx <> aluOut.(Snd).(Fst)) ->
-      SemAction (@executeSequential core pcAddrInit type currPcc aluOut) rf rf' mulDivOpt ->
-      SemAction (@executeSequential core pcAddrInit type currPcc aluOut)
+      SemAction env (@executeSequential core pcAddrInit type currPcc aluOut) rf rf' mulDivOpt ->
+      SemAction env (@executeSequential core pcAddrInit type currPcc aluOut)
         (flushMulDivCaps core pcAddrInit entries rf)
         (flushMulDivCaps core pcAddrInit entries rf')
         mulDivOpt.
@@ -1146,8 +1148,8 @@ Section FlushMulDivLemmas.
          Zmod.eqb dstIdx Zmod.zero = false ->
          Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false ->
          dstIdx <> aluOut.(Snd).(Fst)) ->
-      SemAction (@executeNonSequential core pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
-      SemAction (@executeNonSequential core pcAddrInit type currPcc meip mtip aluOut)
+      SemAction env (@executeNonSequential core pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
+      SemAction env (@executeNonSequential core pcAddrInit type currPcc meip mtip aluOut)
         (flushMulDivCaps core pcAddrInit entries rf)
         (flushMulDivCaps core pcAddrInit entries rf')
         execOut.
@@ -1169,8 +1171,8 @@ Section FlushMulDivLemmas.
          Zmod.eqb dstIdx Zmod.zero = false ->
          Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false ->
          dstIdx <> aluOut.(Snd).(Fst)) ->
-      SemAction (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
-      SemAction (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut)
+      SemAction env (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
+      SemAction env (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut)
         (flushMulDivCaps core pcAddrInit entries rf)
         (flushMulDivCaps core pcAddrInit entries rf')
         execOut.
@@ -1191,8 +1193,8 @@ Section FlushMulDivLemmas.
       let noExcOp : type NoExceptionUnion := evalExpr (#nonSeqOp `! "NoException") in
       evalExpr (#aluOp `? "Sequential") = false ->
       evalExpr (#noExcOp `? "DataMem") = true ->
-      SemAction (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
-      SemAction (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut)
+      SemAction env (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
+      SemAction env (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut)
         (flushMulDivCaps core pcAddrInit entries rf)
         (flushMulDivCaps core pcAddrInit entries rf')
         execOut.
@@ -1220,8 +1222,8 @@ Section FlushMulDivLemmas.
          Zmod.eqb dstIdx Zmod.zero = false ->
          Zmod.eqb cs2Idx Zmod.zero = false ->
          cs2Idx <> dstIdx) ->
-      SemAction (@regRead core pcAddrInit type regReadIn) rf rf' out ->
-      SemAction (@regRead core pcAddrInit type regReadIn)
+      SemAction env (@regRead core pcAddrInit type regReadIn) rf rf' out ->
+      SemAction env (@regRead core pcAddrInit type regReadIn)
         (flushMulDivCaps core pcAddrInit entries rf)
         (flushMulDivCaps core pcAddrInit entries rf')
         out.

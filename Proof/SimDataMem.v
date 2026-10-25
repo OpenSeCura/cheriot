@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Znumtheory Zmod Zmod.Bits Lia Bool Eqdep_dec.
-From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems ActionSim.
+From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems HelperLemmas ActionSim.
 From Cheriot Require Export SpecDefines Decoder FunctionalUnits Alu SpecFetchDeferred SpecMulDiv Spec SpecDevice Clint Plic SpecRevoker.
 From Cheriot Require Export Impl ImplCommon ImplDevice ImplRevoker ImplFetch ImplDecode ImplExecute ImplDataMem ImplMulDiv ImplMulDivProof ImplBranchPredictor.
 From Cheriot.Proof Require Export TreeLemmas StateRel SimExecute.
@@ -73,30 +73,31 @@ Section DataMemTreeHelpers.
   Proof. reflexivity. Qed.
 
   Lemma evalActionPropGen_readState :
-    forall (dm : TreeState DomainElemState dmTree) P,
-      evalActionPropGen (@readState dom capacity type) dm P <->
+    forall {env : Env dmTree} (dm : TreeState DomainElemState dmTree) P,
+      evalActionPropGen env (@readState dom capacity type) dm P <->
       P dm (dm_state dm).
   Proof.
-    intros dm P; reflexivity.
+    intros env dm P; reflexivity.
   Qed.
 
   Lemma evalActionPropGen_writeState :
-    forall (val : type DataMemState) (dm : TreeState DomainElemState dmTree) P,
-      evalActionPropGen (@writeState dom capacity type val) dm P <->
+    forall {env : Env dmTree} (val : type DataMemState) (dm : TreeState DomainElemState dmTree) P,
+      evalActionPropGen env (@writeState dom capacity type val) dm P <->
       P (dm_withState dm val) Zmod.zero.
   Proof.
-    intros val dm P; reflexivity.
+    intros env val dm P; reflexivity.
   Qed.
 
   Lemma evalActionPropGen_dataMemIsEmpty :
-    forall (dm : TreeState DomainElemState dmTree) P,
-      evalActionPropGen (@dataMemIsEmpty dom capacity type) dm P <->
-      evalActionPropGen (@isEmpty dom capacity MemFenceReq type) (dm_inputFifo dm)
+    forall {env : Env dmTree} (dm : TreeState DomainElemState dmTree) P,
+      evalActionPropGen env (@dataMemIsEmpty dom capacity type) dm P <->
+      evalActionPropGen (subEnv (np_dmInputFifo dom capacity) env dm)
+        (@isEmpty dom capacity MemFenceReq type) (dm_inputFifo dm)
         (fun f' inEmpty =>
            P (dm_withInputFifo dm f')
              (andb inEmpty (Zmod.eqb ((dm_state dm).(Snd)) Zmod.zero))).
   Proof.
-    intros dm P.
+    intros env dm P.
     unfold dataMemIsEmpty.
     cbn [evalActionPropGen].
     rewrite (evalActionPropGen_liftAction (np_dmInputFifo dom capacity)).
@@ -106,26 +107,29 @@ Section DataMemTreeHelpers.
   Qed.
 
   Lemma evalActionPropGen_dataMemIsFull :
-    forall (dm : TreeState DomainElemState dmTree) P,
-      evalActionPropGen (@dataMemIsFull dom capacity type) dm P <->
-      evalActionPropGen (@isFull dom capacity MemFenceReq type) (dm_inputFifo dm)
+    forall {env : Env dmTree} (dm : TreeState DomainElemState dmTree) P,
+      evalActionPropGen env (@dataMemIsFull dom capacity type) dm P <->
+      evalActionPropGen (subEnv (np_dmInputFifo dom capacity) env dm)
+        (@isFull dom capacity MemFenceReq type) (dm_inputFifo dm)
         (fun f' res => P (dm_withInputFifo dm f') res).
   Proof.
-    intros dm P.
+    intros env dm P.
     unfold dataMemIsFull.
     rewrite (evalActionPropGen_liftAction (np_dmInputFifo dom capacity)).
     reflexivity.
   Qed.
 
   Lemma evalActionPropGen_dataMemEnq :
-    forall (dstIdx : bits RegIdxSzReal) (addr : type Addr) (op : type MemFenceUnion)
+    forall {env : Env dmTree}
+           (dstIdx : bits RegIdxSzReal) (addr : type Addr) (op : type MemFenceUnion)
            (dm : TreeState DomainElemState dmTree) P,
-      evalActionPropGen (@dataMemEnq dom capacity type dstIdx addr op) dm P <->
+      evalActionPropGen env (@dataMemEnq dom capacity type dstIdx addr op) dm P <->
       let req : type MemFenceReq := (dstIdx ,, (addr ,, (op ,, tt))) in
-      evalActionPropGen (@enq dom capacity MemFenceReq type req) (dm_inputFifo dm)
+      evalActionPropGen (subEnv (np_dmInputFifo dom capacity) env dm)
+        (@enq dom capacity MemFenceReq type req) (dm_inputFifo dm)
         (fun f' res => P (dm_withInputFifo dm f') res).
   Proof.
-    intros dstIdx addr op dm P.
+    intros env dstIdx addr op dm P.
     unfold dataMemEnq.
     cbn [evalActionPropGen evalExpr].
     rewrite (evalActionPropGen_liftAction (np_dmInputFifo dom capacity)).
@@ -192,14 +196,15 @@ Section DataMemCoreLemmas.
     else c.
 
   Lemma evalActionPropGen_commitWb :
-    forall (dstIdx : bits RegIdxSzReal) (dstVal : type FullECapWithTag)
+    forall {env : Env cTree}
+           (dstIdx : bits RegIdxSzReal) (dstVal : type FullECapWithTag)
            (c : TreeState DomainElemState cTree) P,
-      evalActionPropGen
+      evalActionPropGen env
         (@ImplDataMem.commitWb dom capacity pcAddrInit bpT fetchT decodeT mulDivT
                                executeIfc memIfc type dstIdx dstVal) c P <->
       P (evalCommitWb dstIdx dstVal c) Zmod.zero.
   Proof.
-    intros dstIdx dstVal c P.
+    intros env dstIdx dstVal c P.
     unfold ImplDataMem.commitWb, evalCommitWb.
     cbn [evalActionPropGen evalExpr isNotZero isZero evalNot isEq KindCustomInd getDefault].
     destruct (negb (Zmod.eqb dstIdx Zmod.zero)) eqn:Hnz.
@@ -238,8 +243,9 @@ Section DataMemCoreLemmas.
   Qed.
 
   Theorem issueRevRq_core_frame :
-    forall (c c' : TreeState DomainElemState cTree) (res : type (Bit 0)),
-      SemAction
+    forall {env : Env cTree}
+           (c c' : TreeState DomainElemState cTree) (res : type (Bit 0)),
+      SemAction env
         (@issueRevRq dom capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)
         c c' res ->
       dmCore_rf c' = dmCore_rf c /\
@@ -251,7 +257,7 @@ Section DataMemCoreLemmas.
       dmCore_mulDiv c' = dmCore_mulDiv c /\
       dm_inputFifo dom capacity (dmCore_dataMem c') = dm_inputFifo dom capacity (dmCore_dataMem c).
   Proof.
-    intros c c' res Hsem.
+    intros env c c' res Hsem.
     rewrite SemAction_iff_evalActionPropGen in Hsem.
     unfold issueRevRq in Hsem.
     cbn [evalActionPropGen] in Hsem.
@@ -278,23 +284,10 @@ Section DataMemCoreLemmas.
       destruct Hsem as [<- _]; repeat split; reflexivity.
   Qed.
 
-  Lemma evalActionPropGen_toAction :
-    forall {t : Tree DomainElem} {k : Kind} (le : LetExpr type k)
-           (s0 : TreeState DomainElemState t) P,
-      evalActionPropGen (@toAction type t k le) s0 P <->
-      P s0 (evalLetExpr le).
-  Proof.
-    intros t k le.
-    induction le; intros s0 P; cbn [toAction evalActionPropGen evalLetExpr].
-    - reflexivity.
-    - apply IHle.
-    - rewrite IHle; apply H.
-    - destruct (evalExpr p); [rewrite IHle1 | rewrite IHle2]; apply H.
-  Qed.
-
   Theorem revRpAndWriteBack_core_frame :
-    forall (c c' : TreeState DomainElemState cTree) (res : type (Bit 0)),
-      SemAction
+    forall {env : Env cTree}
+           (c c' : TreeState DomainElemState cTree) (res : type (Bit 0)),
+      SemAction env
         (@revRpAndWriteBack dom capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)
         c c' res ->
       dmCore_bp c' = dmCore_bp c /\
@@ -304,7 +297,7 @@ Section DataMemCoreLemmas.
       dmCore_mulDiv c' = dmCore_mulDiv c /\
       dm_inputFifo dom capacity (dmCore_dataMem c') = dm_inputFifo dom capacity (dmCore_dataMem c).
   Proof.
-    intros c c' res Hsem.
+    intros env c c' res Hsem.
     rewrite SemAction_iff_evalActionPropGen in Hsem.
     unfold revRpAndWriteBack in Hsem.
     cbn [evalActionPropGen] in Hsem.
@@ -469,9 +462,9 @@ Section DataMemStageSimulation.
   Qed.
 
   Lemma SemAction_lift_np_mem_core_frame :
-    forall {k : Kind} (act : Action type mTree k)
+    forall {env1 : Env iTree} {k : Kind} (act : Action type mTree k)
            (s1 s1' : IState) (v : type k),
-      SemAction
+      SemAction env1
         (liftAction
            (@Impl.np_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
@@ -527,7 +520,7 @@ Section DataMemStageSimulation.
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1.
   Proof.
-    intros k act s1 s1' v Hsem.
+    intros env1 k act s1 s1' v Hsem.
     rewrite SemAction_iff_evalActionPropGen in Hsem.
     rewrite evalActionPropGen_liftAction in Hsem.
     destruct (evalActionPropGen_to_SemAction act _ _ Hsem) as [m' [v' [_ [<- _]]]].
@@ -535,12 +528,13 @@ Section DataMemStageSimulation.
   Qed.
 
   Theorem dataReadRqs_frame :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState) (v : bits 0),
+    forall {env1 : Env iTree}
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (v : bits 0),
       In act
         (@dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
@@ -572,7 +566,7 @@ Section DataMemStageSimulation.
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1.
   Proof.
-    intros act s1 s1' v Hin Hsem.
+    intros env1 act s1 s1' v Hin Hsem.
     unfold dataReadRqs in Hin.
     apply in_map_iff in Hin as [mAct [<- _]].
     destruct (SemAction_lift_np_mem_core_frame mAct s1 s1' v Hsem)
@@ -582,12 +576,13 @@ Section DataMemStageSimulation.
   Qed.
 
   Theorem dataReadRps_frame :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState) (v : bits 0),
+    forall {env1 : Env iTree}
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (v : bits 0),
       In act
         (@dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
@@ -619,7 +614,7 @@ Section DataMemStageSimulation.
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1.
   Proof.
-    intros act s1 s1' v Hin Hsem.
+    intros env1 act s1 s1' v Hin Hsem.
     unfold dataReadRps in Hin.
     apply in_map_iff in Hin as [mAct [<- _]].
     destruct (SemAction_lift_np_mem_core_frame mAct s1 s1' v Hsem)
@@ -629,12 +624,13 @@ Section DataMemStageSimulation.
   Qed.
 
   Theorem dataWriteRqs_frame :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState) (v : bits 0),
+    forall {env1 : Env iTree}
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (v : bits 0),
       In act
         (@dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
@@ -666,7 +662,7 @@ Section DataMemStageSimulation.
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1.
   Proof.
-    intros act s1 s1' v Hin Hsem.
+    intros env1 act s1 s1' v Hin Hsem.
     unfold dataWriteRqs in Hin.
     apply in_map_iff in Hin as [mAct [<- _]].
     destruct (SemAction_lift_np_mem_core_frame mAct s1 s1' v Hsem)
@@ -676,12 +672,13 @@ Section DataMemStageSimulation.
   Qed.
 
   Theorem dataCrossLineSteps_frame :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState) (v : bits 0),
+    forall {env1 : Env iTree}
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (v : bits 0),
       In act
         (@dataCrossLineSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
@@ -713,7 +710,7 @@ Section DataMemStageSimulation.
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1.
   Proof.
-    intros act s1 s1' v Hin Hsem.
+    intros env1 act s1 s1' v Hin Hsem.
     unfold dataCrossLineSteps in Hin.
     apply in_map_iff in Hin as [mAct [<- _]].
     destruct (SemAction_lift_np_mem_core_frame mAct s1 s1' v Hsem)
@@ -727,8 +724,9 @@ Section DataMemStageSimulation.
   (* Case 1: Stuttering step of `loadRqOrStoreOrFenceStage`
    * (`inputBuf` empty, `state != "LoadRq"`, or downstream memory/device port busy). *)
   Theorem sim_loadRqOrStoreOrFenceStage_stutter :
-    forall (s1 s1' : IState) (s2 : SState) (v : bits 0),
-      SemAction
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (s1 s1' : IState) (s2 : SState) (v : bits 0),
+      SemAction env1
         (@loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
@@ -759,10 +757,10 @@ Section DataMemStageSimulation.
                  mulDivMode config regions s1' s2) ->
       cRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         cRel s1' s2'.
   Proof.
-    intros s1 s1' s2 v _ Hflush Hmem Hdm Hfence Hrel.
+    intros env1 env2 s1 s1' s2 v _ Hflush Hmem Hdm Hfence Hrel.
     exists s2; split.
     - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
     - destruct Hrel as [Hghost HmemRel HfenceInv].
@@ -775,9 +773,10 @@ Section DataMemStageSimulation.
   (* Case 2: Store or Fence (or zero-addr Load) drained in `loadRqOrStoreOrFenceStage`
    * and committed architecturally via `specStep` (`ConsAction`). *)
   Theorem sim_loadRqOrStoreOrFenceStage_storeOrFence_commit :
-    forall (s1 s1' : IState) (s2 s2' : SState) (v : bits 0)
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (s1 s1' : IState) (s2 s2' : SState) (v : bits 0)
            (req : type MemFenceReq) (reqs : list (type MemFenceReq)),
-      SemAction
+      SemAction env1
         (@loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
@@ -808,7 +807,7 @@ Section DataMemStageSimulation.
       (forall rf1 wm1,
          GhostStep core pcAddrInit (spec_rf core pcAddrInit regions s2) rf1 (fun _ => false) wm1 req ->
          spec_rf core pcAddrInit regions s2' = rf1 /\ wm1 = (fun _ => false)) ->
-      SemAction (@specStep core pcAddrInit config regions clint plic type) s2 s2' Zmod.zero ->
+      SemAction env2 (@specStep core pcAddrInit config regions clint plic type) s2 s2' Zmod.zero ->
       TreeContentRel (SpecMemSubTree core regions)
         (projImplMemSpecState core regions
            (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -819,10 +818,10 @@ Section DataMemStageSimulation.
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2' ->
       exists mid2 : SState,
-        SemActions (map snd (specMod type)) s2 mid2 /\
+        SemActions env2 (map snd (specMod type)) s2 mid2 /\
         cRel s1' mid2.
   Proof.
-    intros s1 s1' s2 s2' v req reqs _ Hrel Hrq1 Hrq1' Hq1 Hq1' Hflush HstepRf Hspec HmemRel' Hfence'.
+    intros env1 env2 s1 s1' s2 s2' v req reqs _ Hrel Hrq1 Hrq1' Hq1 Hq1' Hflush HstepRf Hspec HmemRel' Hfence'.
     exists s2'; split.
     - exact (specMod_single_specStep core pcAddrInit config regions clint revSpec plic s2 s2' Hspec).
     - destruct Hrel as [[rf_mid [wm_mid [wm_dm [Hinflight Hgl]]]] _ _].
@@ -846,9 +845,10 @@ Section DataMemStageSimulation.
    * `s2` stutters via `NilAction` while the head `GhostStep` moves from
    * `dataMemPendingQueue` into `DataMemInFlightRel` via `GhostList_drain_to_inflight_local`! *)
   Theorem sim_loadRqOrStoreOrFenceStage_loadRq_issue :
-    forall (s1 s1' : IState) (s2 : SState) (v : bits 0)
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (s1 s1' : IState) (s2 : SState) (v : bits 0)
            (req : type MemFenceReq) (reqs : list (type MemFenceReq)),
-      SemAction
+      SemAction env1
         (@loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
@@ -888,10 +888,10 @@ Section DataMemStageSimulation.
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         cRel s1' s2'.
   Proof.
-    intros s1 s1' s2 v req reqs _ Hrel Hrq1 HnotRq1' Hq1 Hq1' Hflush HmemProj Hfence'.
+    intros env1 env2 s1 s1' s2 v req reqs _ Hrel Hrq1 HnotRq1' Hq1 Hq1' Hflush HmemProj Hfence'.
     exists s2; split.
     - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
     - destruct Hrel as [[rf_mid [wm_mid [wm_dm [Hinflight Hgl]]]] HmemRel _].
@@ -913,9 +913,10 @@ Section DataMemStageSimulation.
   (* --- 3D. Memory Sub-Pipeline Stuttering Simulation (`dataCrossLineSteps`, `dataReadRqs`, `dataReadRps`, `dataWriteRqs`) --- *)
 
   Theorem sim_dataMem_mem_stutter :
-    forall (act : Action type mTree (Bit 0))
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type mTree (Bit 0))
            (s1 s1' : IState) (s2 : SState) (v : bits 0),
-      SemAction
+      SemAction env1
         (liftAction
            (@Impl.np_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
@@ -933,10 +934,10 @@ Section DataMemStageSimulation.
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         cRel s1' s2'.
   Proof.
-    intros act s1 s1' s2 v Hsem Hrel HmemRel' Hfence'.
+    intros env1 env2 act s1 s1' s2 v Hsem Hrel HmemRel' Hfence'.
     destruct (SemAction_lift_np_mem_core_frame act s1 s1' v Hsem)
       as [Hrf [_ [_ [_ [_ [_ [Hdm Hmd]]]]]]].
     exists s2; split.
@@ -951,8 +952,9 @@ Section DataMemStageSimulation.
   (* --- 3E. `issueRevRqStage`, `loadRpAndIssueRevRqStage`, and `revRpAndWriteBackStage` Simulation --- *)
 
   Theorem issueRevRqStage_frame :
-    forall (s1 s1' : IState) (v : bits 0),
-      SemAction
+    forall {env1 : Env iTree}
+           (s1 s1' : IState) (v : bits 0),
+      SemAction env1
         (@issueRevRqStage core pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
@@ -990,7 +992,7 @@ Section DataMemStageSimulation.
                         dataMemCapacity mulCapacity divCapacity mulStages divStages
                         mulDivMode config regions s1).
   Proof.
-    intros s1 s1' v Hsem.
+    intros env1 s1 s1' v Hsem.
     unfold issueRevRqStage in Hsem.
     rewrite SemAction_iff_evalActionPropGen in Hsem.
     rewrite evalActionPropGen_liftAction in Hsem.
@@ -1019,8 +1021,9 @@ Section DataMemStageSimulation.
   Qed.
 
   Theorem revRpAndWriteBackStage_frame :
-    forall (s1 s1' : IState) (v : bits 0),
-      SemAction
+    forall {env1 : Env iTree}
+           (s1 s1' : IState) (v : bits 0),
+      SemAction env1
         (@revRpAndWriteBackStage core pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
@@ -1058,7 +1061,7 @@ Section DataMemStageSimulation.
                         dataMemCapacity mulCapacity divCapacity mulStages divStages
                         mulDivMode config regions s1).
   Proof.
-    intros s1 s1' v Hsem.
+    intros env1 s1 s1' v Hsem.
     unfold revRpAndWriteBackStage in Hsem.
     rewrite SemAction_iff_evalActionPropGen in Hsem.
     rewrite evalActionPropGen_liftAction in Hsem.
@@ -1090,7 +1093,8 @@ Section DataMemStageSimulation.
    * when an in-flight load advances state (`"LoadRp"` -> `"RevRq"` -> `"RevRp"`)
    * or stalls waiting for a memory/revoker response (`isDataMemLoadRq` stays `false`). *)
   Theorem sim_dataMem_inflight_stutter :
-    forall (s1 s1' : IState) (s2 : SState),
+    forall {env2 : Env sTree}
+           (s1 s1' : IState) (s2 : SState),
       cRel s1 s2 ->
       isDataMemLoadRq core dataMemCapacity
         (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -1124,10 +1128,10 @@ Section DataMemStageSimulation.
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         cRel s1' s2'.
   Proof.
-    intros s1 s1' s2 Hrel Hrq' Hq' Hflush' HmemRel' Hfence'.
+    intros env2 s1 s1' s2 Hrel Hrq' Hq' Hflush' HmemRel' Hfence'.
     exists s2; split.
     - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
     - destruct Hrel as [[rf_mid [wm_mid [wm_dm [Hinflight Hgl]]]] _ _].
@@ -1152,7 +1156,8 @@ Section DataMemStageSimulation.
    *   `GhostList (writeGprVal dstIdx dstVal rf_mid) (fun _ => false) reqs (flushMulDiv s1') wm_dm'`,
    *   which matches `spec_rf s2' = writeGprVal dstIdx dstVal rf_mid` after `specStep`! *)
   Theorem sim_dataMem_load_writeback_commit :
-    forall (s1 s1' : IState) (s2 s2' : SState)
+    forall {env2 : Env sTree}
+           (s1 s1' : IState) (s2 s2' : SState)
            (dstIdx : bits RegIdxSzReal) (dstVal : type FullECapWithTag),
       cRel s1 s2 ->
       isDataMemLoadRq core dataMemCapacity
@@ -1203,7 +1208,7 @@ Section DataMemStageSimulation.
                              dataMemCapacity mulCapacity divCapacity mulStages divStages
                              mulDivMode config regions s1))
              wm_dm') ->
-      SemAction (@specStep core pcAddrInit config regions clint plic type) s2 s2' Zmod.zero ->
+      SemAction env2 (@specStep core pcAddrInit config regions clint plic type) s2 s2' Zmod.zero ->
       TreeContentRel (SpecMemSubTree core regions)
         (projImplMemSpecState core regions
            (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -1214,10 +1219,10 @@ Section DataMemStageSimulation.
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2' ->
       exists mid2 : SState,
-        SemActions (map snd (specMod type)) s2 mid2 /\
+        SemActions env2 (map snd (specMod type)) s2 mid2 /\
         cRel s1' mid2.
   Proof.
-    intros s1 s1' s2 s2' dstIdx dstVal Hrel HnotRq1 Hrq1' Hq' Hflush' Hcomm Hspec HmemRel' Hfence'.
+    intros env2 s1 s1' s2 s2' dstIdx dstVal Hrel HnotRq1 Hrq1' Hq' Hflush' Hcomm Hspec HmemRel' Hfence'.
     exists s2'; split.
     - exact (specMod_single_specStep core pcAddrInit config regions clint revSpec plic s2 s2' Hspec).
     - destruct Hrel as [[rf_mid [wm_mid [wm_dm [Hinflight Hgl]]]] _ _].
@@ -1239,18 +1244,19 @@ Section DataMemStageSimulation.
   (* --- 3F. Unconditional `stateRel` Simulation Theorems --- *)
 
   Theorem sim_loadRqOrStoreOrFenceStage_stateRel :
-    forall (s1 s1' : IState) (s2 : SState) (v : bits 0),
-      SemAction
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (s1 s1' : IState) (s2 : SState) (v : bits 0),
+      SemAction env1
         (@loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
         s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    intros s1 s1' s2 v _ Hrel.
+    intros env1 env2 s1 s1' s2 v _ Hrel.
     exists s2; split; [apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2) |].
     exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
@@ -1258,33 +1264,35 @@ Section DataMemStageSimulation.
   Qed.
 
   Theorem sim_loadRqAndStoreStage_stateRel :
-    forall (s1 s1' : IState) (s2 : SState) (v : bits 0),
-      SemAction
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (s1 s1' : IState) (s2 : SState) (v : bits 0),
+      SemAction env1
         (@loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
         s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    exact sim_loadRqOrStoreOrFenceStage_stateRel.
+    intros env1 env2; exact sim_loadRqOrStoreOrFenceStage_stateRel.
   Qed.
 
   Theorem sim_loadRpAndIssueRevRqStage_stateRel :
-    forall (s1 s1' : IState) (s2 : SState) (v : bits 0),
-      SemAction
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (s1 s1' : IState) (s2 : SState) (v : bits 0),
+      SemAction env1
         (@loadRpAndIssueRevRqStage core pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
         s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    intros s1 s1' s2 v _ Hrel.
+    intros env1 env2 s1 s1' s2 v _ Hrel.
     exists s2; split; [apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2) |].
     exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
@@ -1292,18 +1300,19 @@ Section DataMemStageSimulation.
   Qed.
 
   Theorem sim_revRpAndWriteBackStage_stateRel :
-    forall (s1 s1' : IState) (s2 : SState) (v : bits 0),
-      SemAction
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (s1 s1' : IState) (s2 : SState) (v : bits 0),
+      SemAction env1
         (@revRpAndWriteBackStage core pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
         s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    intros s1 s1' s2 v _ Hrel.
+    intros env1 env2 s1 s1' s2 v _ Hrel.
     exists s2; split; [apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2) |].
     exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
@@ -1311,19 +1320,20 @@ Section DataMemStageSimulation.
   Qed.
 
   Theorem sim_dataWriteRqs_stateRel :
-    forall (act : Action type iTree (Bit 0))
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0))
            (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act
         (@dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    intros act s1 s1' s2 v _ _ Hrel.
+    intros env1 env2 act s1 s1' s2 v _ _ Hrel.
     exists s2; split; [apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2) |].
     exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
@@ -1331,19 +1341,20 @@ Section DataMemStageSimulation.
   Qed.
 
   Theorem sim_dataReadRqs_stateRel :
-    forall (act : Action type iTree (Bit 0))
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0))
            (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act
         (@dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    intros act s1 s1' s2 v _ _ Hrel.
+    intros env1 env2 act s1 s1' s2 v _ _ Hrel.
     exists s2; split; [apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2) |].
     exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
@@ -1351,19 +1362,20 @@ Section DataMemStageSimulation.
   Qed.
 
   Theorem sim_dataReadRps_stateRel :
-    forall (act : Action type iTree (Bit 0))
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0))
            (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act
         (@dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    intros act s1 s1' s2 v _ _ Hrel.
+    intros env1 env2 act s1 s1' s2 v _ _ Hrel.
     exists s2; split; [apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2) |].
     exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
@@ -1371,19 +1383,20 @@ Section DataMemStageSimulation.
   Qed.
 
   Theorem sim_dataCrossLineSteps_stateRel :
-    forall (act : Action type iTree (Bit 0))
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0))
            (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act
         (@dataCrossLineSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    intros act s1 s1' s2 v _ _ Hrel.
+    intros env1 env2 act s1 s1' s2 v _ _ Hrel.
     exists s2; split; [apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2) |].
     exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages

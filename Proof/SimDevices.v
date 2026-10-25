@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Znumtheory Zmod Zmod.Bits Lia Bool Eqdep_dec.
-From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems ActionSim.
+From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems HelperLemmas ActionSim.
 From Cheriot Require Export SpecDefines Decoder FunctionalUnits Alu SpecFetchDeferred Spec SpecDevice Clint Plic SpecRevoker.
 From Cheriot Require Export Impl ImplCommon ImplDevice ImplRevoker ImplFetch ImplDecode ImplExecute ImplDataMem ImplMulDiv ImplBranchPredictor.
 From Cheriot.Proof Require Export TreeLemmas.
@@ -336,31 +336,60 @@ Section MemProjection.
     revert s m; destruct (r.(regionKind)); intros s m; reflexivity.
   Qed.
 
+  Definition subEnvImplRegion (r : MemRegion dom)
+    (env : Env (implMemRegionTree r))
+    (s : TreeState DomainElemState (implMemRegionTree r))
+    : Env (memRegionTree r) :=
+    match r.(regionKind) as rk
+      return Env (match rk with
+                  | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible
+                  | ExternalMem => implExternalMemRegionTree r
+                  | CustomMem children _ _ _ _ => implCustomMemRegionTree r children
+                  end) ->
+             TreeState DomainElemState
+               (match rk with
+                | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible
+                | ExternalMem => implExternalMemRegionTree r
+                | CustomMem children _ _ _ _ => implCustomMemRegionTree r children
+                end) ->
+             Env (match rk with
+                  | InternalMem isAccessible _ _ => internalMemRegionTree r isAccessible
+                  | ExternalMem => externalMemRegionTree r
+                  | CustomMem children _ _ _ _ => customMemRegionTree r children
+                  end)
+    with
+    | InternalMem _ _ _ => fun env0 st => subEnv child0Path env0 st
+    | ExternalMem => fun env0 st => subEnv child0Path env0 st
+    | CustomMem _ _ _ _ _ => fun env0 st => subEnv child0Path env0 st
+    end env s.
+
   Lemma evalActionPropGen_liftToImplRegion :
     forall (r : MemRegion dom) {k : Kind}
+           {env : Env (implMemRegionTree r)}
            (act : Action type (memRegionTree r) k)
            (s : TreeState DomainElemState (implMemRegionTree r))
            (P : TreeState DomainElemState (implMemRegionTree r) -> type k -> Prop),
-      evalActionPropGen (liftToImplRegion act) s P <->
-      evalActionPropGen act (projImplRegionSpecState r s)
+      evalActionPropGen env (liftToImplRegion act) s P <->
+      evalActionPropGen (subEnvImplRegion r env s) act (projImplRegionSpecState r s)
         (fun m' v => P (writeImplRegionSpecState r s m') v).
   Proof.
-    intros r k act s P.
-    unfold liftToImplRegion, projImplRegionSpecState, writeImplRegionSpecState, implMemRegionTree, memRegionTree in *.
-    revert act s P; destruct (r.(regionKind)); intros act s P;
+    intros r k env act s P.
+    unfold liftToImplRegion, subEnvImplRegion, projImplRegionSpecState, writeImplRegionSpecState, implMemRegionTree, memRegionTree in *.
+    revert env act s P; destruct (r.(regionKind)); intros env act s P;
       apply (evalActionPropGen_liftAction child0Path act s P).
   Qed.
 
   Lemma SemAction_liftToImplRegion :
     forall (r : MemRegion dom) {k : Kind}
+           {env : Env (implMemRegionTree r)}
            (act : Action type (memRegionTree r) k)
            (s s' : TreeState DomainElemState (implMemRegionTree r)) (v : type k),
-      SemAction (liftToImplRegion act) s s' v <->
+      SemAction env (liftToImplRegion act) s s' v <->
       exists m',
-        SemAction act (projImplRegionSpecState r s) m' v /\
+        SemAction (subEnvImplRegion r env s) act (projImplRegionSpecState r s) m' v /\
         s' = writeImplRegionSpecState r s m'.
   Proof.
-    intros r k act s s' v.
+    intros r k env act s s' v.
     rewrite !SemAction_iff_evalActionPropGen.
     rewrite evalActionPropGen_liftToImplRegion.
     rewrite evalActionPropGen_ex_iff.
@@ -406,6 +435,22 @@ Section MemProjection.
     | r :: rs => fun s m =>
         (writeImplRegionSpecState r (Fst s) (Fst m) ,,
          (writeImplMemSpecState rs (Fst (Snd s)) (Fst (Snd m)) ,, Snd (Snd s)))
+    end.
+
+  Fixpoint ImplSpecRegionsEnvRel (regions : list (MemRegion dom))
+    : Env (implRegionsTree regions) ->
+      Env (specMemTree regions) -> Prop :=
+    match regions return Env (implRegionsTree regions) ->
+                         Env (specMemTree regions) -> Prop with
+    | [] => fun _ _ => True
+    | r :: rs => fun envI envS =>
+        (forall (s : TreeState DomainElemState (implRegionsTree (r :: rs))) m_r x v,
+           subEnvImplRegion r (subEnv child0Path envI s) (Fst s) m_r x v ->
+           subEnv child0Path envS (projImplMemSpecState (r :: rs) s) m_r x v) /\
+        (forall (s : TreeState DomainElemState (implRegionsTree (r :: rs))),
+           ImplSpecRegionsEnvRel rs
+             (subEnv child1Path envI s)
+             (subEnv child1Path envS (projImplMemSpecState (r :: rs) s)))
     end.
 
   Lemma projImplMemSpecState_writeImplMemSpecState :
@@ -462,47 +507,56 @@ Section MemProjection.
   Theorem evalActionPropGen_implNthRegionAction :
     forall (idx : nat) (regions : list (MemRegion dom)) (r0 : MemRegion dom)
            (pf : nth_error regions idx = Some r0) {k : Kind}
+           {envI : Env (implRegionsTree regions)}
+           {envS : Env (specMemTree regions)}
+           (Henv : ImplSpecRegionsEnvRel regions envI envS)
            (act : Action type (memRegionTree r0) k)
            (s : TreeState DomainElemState (implRegionsTree regions))
            (P : TreeState DomainElemState (implRegionsTree regions) -> type k -> Prop),
-      evalActionPropGen (@implNthRegionAction dom type idx regions r0 pf k act) s P <->
-      evalActionPropGen (@nthRegionAction dom type idx regions r0 pf k act)
+      evalActionPropGen envI (@implNthRegionAction dom type idx regions r0 pf k act) s P ->
+      evalActionPropGen envS (@nthRegionAction dom type idx regions r0 pf k act)
         (projImplMemSpecState regions s)
         (fun m' v => P (writeImplMemSpecState regions s m') v).
   Proof.
-    induction idx as [| idx' IH]; intros [| r rs] r0 pf k act s P;
+    induction idx as [| idx' IH]; intros [| r rs] r0 pf k envI envS Henv act s P Heval;
       try discriminate pf.
-    - cbn [implNthRegionAction nthRegionAction projImplMemSpecState].
-      rewrite !evalActionPropGen_liftAction.
-      cbn [child0Path readSubTreeState readSubTreeState_child Fst Snd writeSubTreeState writeSubTreeState_child writeImplMemSpecState].
-      rewrite (evalActionPropGen_liftToImplRegion r).
-      apply evalActionPropGen_ext; intros m' v.
-      rewrite writeImplMemSpecState_projImplMemSpecState; reflexivity.
-    - cbn [implNthRegionAction nthRegionAction projImplMemSpecState].
-      rewrite !evalActionPropGen_liftAction.
-      cbn [child1Path implRegionsTree specMemTree implRegionsChildren specMemChildren readSubTreeState readSubTreeState_child Fst Snd writeSubTreeState writeSubTreeState_child writeImplMemSpecState].
-      rewrite (IH rs r0 pf k act (Fst (Snd s))).
-      apply evalActionPropGen_ext; intros m' v.
+    - cbn [implNthRegionAction nthRegionAction projImplMemSpecState] in Heval |- *.
+      rewrite evalActionPropGen_liftAction in Heval; rewrite evalActionPropGen_liftAction.
+      cbn [child0Path readSubTreeState readSubTreeState_child Fst Snd writeSubTreeState writeSubTreeState_child writeImplMemSpecState] in Heval |- *.
+      rewrite (evalActionPropGen_liftToImplRegion r) in Heval.
+      eapply evalActionPropGen_env_mono; [exact (proj1 Henv s) |].
+      eapply evalActionPropGen_mono; [| exact Heval].
+      intros m' v HP.
+      rewrite writeImplMemSpecState_projImplMemSpecState; exact HP.
+    - cbn [implNthRegionAction nthRegionAction projImplMemSpecState] in Heval |- *.
+      rewrite evalActionPropGen_liftAction in Heval; rewrite evalActionPropGen_liftAction.
+      cbn [child1Path implRegionsTree specMemTree implRegionsChildren specMemChildren readSubTreeState readSubTreeState_child Fst Snd writeSubTreeState writeSubTreeState_child writeImplMemSpecState] in Heval |- *.
+      pose proof (IH rs r0 pf k _ _ (proj2 Henv s) act (Fst (Snd s)) _ Heval) as HevalS.
+      eapply evalActionPropGen_mono; [| exact HevalS].
+      intros m' v HP.
       rewrite writeImplRegionSpecState_projImplRegionSpecState.
-      destruct (Snd (Snd s)); reflexivity.
+      destruct (Snd (Snd s)); exact HP.
   Qed.
 
   Theorem SemAction_implNthRegionAction :
     forall (idx : nat) (regions : list (MemRegion dom)) (r0 : MemRegion dom)
            (pf : nth_error regions idx = Some r0) {k : Kind}
+           {envI : Env (implRegionsTree regions)}
+           {envS : Env (specMemTree regions)}
+           (Henv : ImplSpecRegionsEnvRel regions envI envS)
            (act : Action type (memRegionTree r0) k)
            (s s' : TreeState DomainElemState (implRegionsTree regions))
            (v : type k),
-      SemAction (@implNthRegionAction dom type idx regions r0 pf k act) s s' v ->
-      SemAction (@nthRegionAction dom type idx regions r0 pf k act)
+      SemAction envI (@implNthRegionAction dom type idx regions r0 pf k act) s s' v ->
+      SemAction envS (@nthRegionAction dom type idx regions r0 pf k act)
         (projImplMemSpecState regions s)
         (projImplMemSpecState regions s') v /\
       projImplMemExtraState regions s' = projImplMemExtraState regions s /\
       s' = writeImplMemSpecState regions s (projImplMemSpecState regions s').
   Proof.
-    intros idx regions r0 pf k act s s' v Hsem.
+    intros idx regions r0 pf k envI envS Henv act s s' v Hsem.
     rewrite SemAction_iff_evalActionPropGen in Hsem.
-    rewrite evalActionPropGen_implNthRegionAction in Hsem.
+    apply (evalActionPropGen_implNthRegionAction idx regions r0 pf Henv act s) in Hsem.
     apply evalActionPropGen_ex_iff in Hsem.
     destruct Hsem as [m' [Hm' Hs']]; subst s'.
     rewrite <- SemAction_iff_evalActionPropGen in Hm'.
@@ -514,24 +568,27 @@ Section MemProjection.
   Corollary SemAction_implMemNthRegionAction :
     forall (regions : list (MemRegion dom)) (idx : nat) (r0 : MemRegion dom)
            (pf : nth_error regions idx = Some r0) {k : Kind}
+           {envI : Env (implMemTree regions)}
+           {envS : Env (specMemTree regions)}
+           (Henv : ImplSpecRegionsEnvRel regions envI envS)
            (act : Action type (memRegionTree r0) k)
            (s s' : TreeState DomainElemState (implMemTree regions))
            (v : type k),
-      SemAction (@implMemNthRegionAction dom regions type idx r0 pf k act) s s' v ->
-      SemAction (@nthRegionAction dom type idx regions r0 pf k act)
+      SemAction envI (@implMemNthRegionAction dom regions type idx r0 pf k act) s s' v ->
+      SemAction envS (@nthRegionAction dom type idx regions r0 pf k act)
         (projImplMemSpecState regions s)
         (projImplMemSpecState regions s') v /\
       projImplMemExtraState regions s' = projImplMemExtraState regions s /\
       s' = writeImplMemSpecState regions s (projImplMemSpecState regions s').
   Proof.
-    intros regions idx r0 pf k act s s' v Hsem.
-    exact (SemAction_implNthRegionAction idx regions r0 pf act s s' v Hsem).
+    intros regions idx r0 pf k envI envS Henv act s s' v Hsem.
+    exact (SemAction_implNthRegionAction idx regions r0 pf Henv act s s' v Hsem).
   Qed.
 End MemProjection.
 
 Arguments projImplRegionSpecState_writeImplRegionSpecState {dom} r s m.
 Arguments projImplRegionExtraState_writeImplRegionSpecState {dom} r s m.
-Arguments evalActionPropGen_liftToImplRegion {dom} r {k} act s P.
+Arguments evalActionPropGen_liftToImplRegion {dom} r {k env} act s P.
 
 (* ===========================================================================
  * 3. `incrementMcycle` AND `implTickCycle` / `specTickCycle` SIMULATION
@@ -555,11 +612,12 @@ Section TickCycleSim.
       (evalExpr (TruncMsb Xlen Xlen #newVal : Expr type (Bit Xlen))) rf1.
 
   Lemma evalActionPropGen_incrementMcycle :
-    forall (rf : TreeState DomainElemState (rfTree dom pcAddrInit)) P,
-      evalActionPropGen (@incrementMcycle dom pcAddrInit type) rf P <->
+    forall {env : Env (rfTree dom pcAddrInit)}
+           (rf : TreeState DomainElemState (rfTree dom pcAddrInit)) P,
+      evalActionPropGen env (@incrementMcycle dom pcAddrInit type) rf P <->
       P (evalIncrementMcycle rf) Zmod.zero.
   Proof.
-    intros rf P.
+    intros env rf P.
     unfold incrementMcycle, evalIncrementMcycle, readCsr, updCsr.
     cbn [evalActionPropGen].
     rewrite evalActionPropGen_readRegsList.
@@ -574,11 +632,12 @@ Section TickCycleSim.
   Qed.
 
   Theorem SemAction_incrementMcycle_iff :
-    forall (rf rf' : TreeState DomainElemState (rfTree dom pcAddrInit)) v,
-      SemAction (@incrementMcycle dom pcAddrInit type) rf rf' v <->
+    forall {env : Env (rfTree dom pcAddrInit)}
+           (rf rf' : TreeState DomainElemState (rfTree dom pcAddrInit)) v,
+      SemAction env (@incrementMcycle dom pcAddrInit type) rf rf' v <->
       rf' = evalIncrementMcycle rf /\ v = Zmod.zero.
   Proof.
-    intros rf rf' v.
+    intros env rf rf' v.
     rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_incrementMcycle.
     split; intros [? ?]; subst; auto.
   Qed.
@@ -664,6 +723,15 @@ Section SystemDevicesSim.
   Local Abbreviation np_rf_s := (@Spec.np_rf core pcAddrInit regions).
   Local Abbreviation np_mem_s := (@Spec.np_mem core pcAddrInit regions).
 
+  Definition ImplSpecSysEnvRel
+    (envImpl : Env iTree) (envSpec : Env sTree) : Prop :=
+    forall (s1 : TreeState DomainElemState iTree)
+           (s2 : TreeState DomainElemState sTree),
+      specMem s2 = projImplMemSpecState core regions (implMem s1) ->
+      ImplSpecRegionsEnvRel core regions
+        (subEnv np_mem_i envImpl s1)
+        (subEnv np_mem_s envSpec s2).
+
   (* --- 4A. Helper for lifting any mem-tree simulation to `iTree` / `sTree` --- *)
 
   Lemma map_snd_specMod :
@@ -685,63 +753,67 @@ Section SystemDevicesSim.
   Qed.
 
   Lemma SemAction_lift_np_mem_impl :
-    forall {k : Kind} (act : Action type (implMemTree regions) k)
+    forall {k : Kind} {env : Env iTree} (act : Action type (implMemTree regions) k)
            (old1 new1 : TreeState DomainElemState iTree) (v : type k),
-      SemAction (liftAction np_mem_i act) old1 new1 v <->
+      SemAction env (liftAction np_mem_i act) old1 new1 v <->
       exists m1',
-        SemAction act (implMem old1) m1' v /\
+        SemAction (subEnv np_mem_i env old1) act (implMem old1) m1' v /\
         new1 = writeSubTreeState np_mem_i old1 m1'.
   Proof.
-    intros k act old1 new1 v.
+    intros k env act old1 new1 v.
     rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction, evalActionPropGen_ex_iff.
     rewrite readSubTreeState_impl_np_mem.
     split; intros [m1' [Hm1' Hnew1]]; exists m1';
-      rewrite !SemAction_iff_evalActionPropGen in *; auto.
+      [rewrite <- SemAction_iff_evalActionPropGen in Hm1'
+      | rewrite SemAction_iff_evalActionPropGen in Hm1']; auto.
   Qed.
 
   Lemma SemAction_lift_np_mem_spec :
-    forall {k : Kind} (act : Action type (specMemTree regions) k)
+    forall {k : Kind} {env : Env sTree} (act : Action type (specMemTree regions) k)
            (old2 new2 : TreeState DomainElemState sTree) (v : type k),
-      SemAction (liftAction np_mem_s act) old2 new2 v <->
+      SemAction env (liftAction np_mem_s act) old2 new2 v <->
       exists m2',
-        SemAction act (specMem old2) m2' v /\
+        SemAction (subEnv np_mem_s env old2) act (specMem old2) m2' v /\
         new2 = writeSubTreeState np_mem_s old2 m2'.
   Proof.
-    intros k act old2 new2 v.
+    intros k env act old2 new2 v.
     rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction, evalActionPropGen_ex_iff.
     rewrite readSubTreeState_spec_np_mem.
     split; intros [m2' [Hm2' Hnew2]]; exists m2';
-      rewrite !SemAction_iff_evalActionPropGen in *; auto.
+      [rewrite <- SemAction_iff_evalActionPropGen in Hm2'
+      | rewrite SemAction_iff_evalActionPropGen in Hm2']; auto.
   Qed.
 
   Lemma SemAction_lift_np_rf_impl :
-    forall {k : Kind} (act : Action type (rfTree core pcAddrInit) k)
+    forall {k : Kind} {env : Env iTree} (act : Action type (rfTree core pcAddrInit) k)
            (old1 new1 : TreeState DomainElemState iTree) (v : type k),
-      SemAction (liftAction np_rf_i act) old1 new1 v <->
+      SemAction env (liftAction np_rf_i act) old1 new1 v <->
       exists rf1',
-        SemAction act (implRf old1) rf1' v /\
+        SemAction (subEnv np_rf_i env old1) act (implRf old1) rf1' v /\
         new1 = writeSubTreeState np_rf_i old1 rf1'.
   Proof.
-    intros k act old1 new1 v.
+    intros k env act old1 new1 v.
     rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction, evalActionPropGen_ex_iff.
     rewrite readSubTreeState_impl_np_rf.
     split; intros [rf1' [Hrf1' Hnew1]]; exists rf1';
-      rewrite !SemAction_iff_evalActionPropGen in *; auto.
+      [rewrite <- SemAction_iff_evalActionPropGen in Hrf1'
+      | rewrite SemAction_iff_evalActionPropGen in Hrf1']; auto.
   Qed.
 
   Lemma SemAction_lift_np_rf_spec :
-    forall {k : Kind} (act : Action type (rfTree core pcAddrInit) k)
+    forall {k : Kind} {env : Env sTree} (act : Action type (rfTree core pcAddrInit) k)
            (old2 new2 : TreeState DomainElemState sTree) (v : type k),
-      SemAction (liftAction np_rf_s act) old2 new2 v <->
+      SemAction env (liftAction np_rf_s act) old2 new2 v <->
       exists rf2',
-        SemAction act (specRf old2) rf2' v /\
+        SemAction (subEnv np_rf_s env old2) act (specRf old2) rf2' v /\
         new2 = writeSubTreeState np_rf_s old2 rf2'.
   Proof.
-    intros k act old2 new2 v.
+    intros k env act old2 new2 v.
     rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction, evalActionPropGen_ex_iff.
     rewrite readSubTreeState_spec_np_rf.
     split; intros [rf2' [Hrf2' Hnew2]]; exists rf2';
-      rewrite !SemAction_iff_evalActionPropGen in *; auto.
+      [rewrite <- SemAction_iff_evalActionPropGen in Hrf2'
+      | rewrite SemAction_iff_evalActionPropGen in Hrf2']; auto.
   Qed.
 
   (* --- 4B. `implTickCycle` -> `specTickCycle` --- *)
@@ -756,22 +828,23 @@ Section SystemDevicesSim.
   Qed.
 
   Theorem sim_implTickCycle_step :
-    forall (old1 new1 : TreeState DomainElemState iTree)
+    forall {envImpl : Env iTree} {envSpec : Env sTree}
+           (old1 new1 : TreeState DomainElemState iTree)
            (old2 : TreeState DomainElemState sTree) (v : bits 0),
-      SemAction (@implTickCycle core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions type) old1 new1 v ->
+      SemAction envImpl (@implTickCycle core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions type) old1 new1 v ->
       let mid2 := writeSubTreeState np_rf_s old2 (evalIncrementMcycle core pcAddrInit (specRf old2)) in
       new1 = writeSubTreeState np_rf_i old1 (evalIncrementMcycle core pcAddrInit (implRf old1)) /\
       v = Zmod.zero /\
-      SemAction (@specTickCycle core pcAddrInit regions type) old2 mid2 Zmod.zero /\
-      SemActions (map snd (specMod type)) old2 mid2 /\
+      SemAction envSpec (@specTickCycle core pcAddrInit regions type) old2 mid2 Zmod.zero /\
+      SemActions envSpec (map snd (specMod type)) old2 mid2 /\
       specRf mid2 = evalIncrementMcycle core pcAddrInit (specRf old2) /\
       specMem mid2 = specMem old2.
   Proof.
-    intros old1 new1 old2 v Hsem mid2.
+    intros envImpl envSpec old1 new1 old2 v Hsem mid2.
     unfold implTickCycle in Hsem.
     apply SemAction_lift_np_rf_impl in Hsem as [rf1' [Hrf1' Hnew1]].
     apply SemAction_incrementMcycle_iff in Hrf1' as [Hrf1' Hv]; subst rf1' v.
-    assert (Hspec : SemAction (@specTickCycle core pcAddrInit regions type) old2 mid2 Zmod.zero).
+    assert (Hspec : SemAction envSpec (@specTickCycle core pcAddrInit regions type) old2 mid2 Zmod.zero).
     { unfold specTickCycle.
       apply SemAction_lift_np_rf_spec.
       exists (evalIncrementMcycle core pcAddrInit (specRf old2)).
@@ -804,28 +877,31 @@ Section SystemDevicesSim.
   Qed.
 
   Theorem sim_implTickTimer_step :
-    forall (old1 new1 : TreeState DomainElemState iTree)
+    forall {envImpl : Env iTree} {envSpec : Env sTree}
+           (Henv : ImplSpecSysEnvRel envImpl envSpec)
+           (old1 new1 : TreeState DomainElemState iTree)
            (old2 : TreeState DomainElemState sTree) (v : bits 0),
       specMem old2 = projImplMemSpecState core regions (implMem old1) ->
-      SemAction (@implTickTimer core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions clint type) old1 new1 v ->
+      SemAction envImpl (@implTickTimer core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions clint type) old1 new1 v ->
       let mid2 := writeSubTreeState np_mem_s old2 (projImplMemSpecState core regions (implMem new1)) in
-      SemAction (@specTickTimer core pcAddrInit regions clint type) old2 mid2 v /\
-      SemActions (map snd (specMod type)) old2 mid2 /\
+      SemAction envSpec (@specTickTimer core pcAddrInit regions clint type) old2 mid2 v /\
+      SemActions envSpec (map snd (specMod type)) old2 mid2 /\
       specRf mid2 = specRf old2 /\
       specMem mid2 = projImplMemSpecState core regions (implMem new1) /\
       projImplMemExtraState core regions (implMem new1) = projImplMemExtraState core regions (implMem old1) /\
       new1 = writeSubTreeState np_mem_i old1 (implMem new1).
   Proof.
-    intros old1 new1 old2 v Hmem Hsem mid2.
+    intros envImpl envSpec Henv old1 new1 old2 v Hmem Hsem mid2.
     unfold implTickTimer in Hsem.
     apply SemAction_lift_np_mem_impl in Hsem as [m1' [Hm1' Hnew1]].
     destruct (SemAction_implMemNthRegionAction core regions clint.(clintIdx)
                 (@clintRegion core regions clint) clint.(pfClint)
+                (Henv old1 old2 Hmem)
                 (clintTick core type) (implMem old1) m1' v Hm1')
       as [HspecMem [Hextra Hm1'Eq]].
     assert (Hm1'_proj : implMem new1 = m1') by (subst new1; reflexivity).
     rewrite <- Hm1'_proj in *.
-    assert (Hspec : SemAction (@specTickTimer core pcAddrInit regions clint type) old2 mid2 v).
+    assert (Hspec : SemAction envSpec (@specTickTimer core pcAddrInit regions clint type) old2 mid2 v).
     { unfold specTickTimer, clintTickAction, clintAction.
       apply SemAction_lift_np_mem_spec.
       exists (projImplMemSpecState core regions (implMem new1)).
@@ -839,28 +915,31 @@ Section SystemDevicesSim.
   Qed.
 
   Theorem sim_implSampleMtipStep_step :
-    forall (old1 new1 : TreeState DomainElemState iTree)
+    forall {envImpl : Env iTree} {envSpec : Env sTree}
+           (Henv : ImplSpecSysEnvRel envImpl envSpec)
+           (old1 new1 : TreeState DomainElemState iTree)
            (old2 : TreeState DomainElemState sTree) (v : bits 0),
       specMem old2 = projImplMemSpecState core regions (implMem old1) ->
-      SemAction (@implSampleMtipStep core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions clint type) old1 new1 v ->
+      SemAction envImpl (@implSampleMtipStep core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions clint type) old1 new1 v ->
       let mid2 := writeSubTreeState np_mem_s old2 (projImplMemSpecState core regions (implMem new1)) in
-      SemAction (@specSampleMtipStep core pcAddrInit regions clint type) old2 mid2 v /\
-      SemActions (map snd (specMod type)) old2 mid2 /\
+      SemAction envSpec (@specSampleMtipStep core pcAddrInit regions clint type) old2 mid2 v /\
+      SemActions envSpec (map snd (specMod type)) old2 mid2 /\
       specRf mid2 = specRf old2 /\
       specMem mid2 = projImplMemSpecState core regions (implMem new1) /\
       projImplMemExtraState core regions (implMem new1) = projImplMemExtraState core regions (implMem old1) /\
       new1 = writeSubTreeState np_mem_i old1 (implMem new1).
   Proof.
-    intros old1 new1 old2 v Hmem Hsem mid2.
+    intros envImpl envSpec Henv old1 new1 old2 v Hmem Hsem mid2.
     unfold implSampleMtipStep in Hsem.
     apply SemAction_lift_np_mem_impl in Hsem as [m1' [Hm1' Hnew1]].
     destruct (SemAction_implMemNthRegionAction core regions clint.(clintIdx)
                 (@clintRegion core regions clint) clint.(pfClint)
+                (Henv old1 old2 Hmem)
                 (clintSampleMtip core type) (implMem old1) m1' v Hm1')
       as [HspecMem [Hextra Hm1'Eq]].
     assert (Hm1'_proj : implMem new1 = m1') by (subst new1; reflexivity).
     rewrite <- Hm1'_proj in *.
-    assert (Hspec : SemAction (@specSampleMtipStep core pcAddrInit regions clint type) old2 mid2 v).
+    assert (Hspec : SemAction envSpec (@specSampleMtipStep core pcAddrInit regions clint type) old2 mid2 v).
     { unfold specSampleMtipStep, clintSampleMtipAction, clintAction.
       apply SemAction_lift_np_mem_spec.
       exists (projImplMemSpecState core regions (implMem new1)).
@@ -894,28 +973,31 @@ Section SystemDevicesSim.
   Qed.
 
   Theorem sim_implPlicClaimStep_step :
-    forall (old1 new1 : TreeState DomainElemState iTree)
+    forall {envImpl : Env iTree} {envSpec : Env sTree}
+           (Henv : ImplSpecSysEnvRel envImpl envSpec)
+           (old1 new1 : TreeState DomainElemState iTree)
            (old2 : TreeState DomainElemState sTree) (v : bits 0),
       specMem old2 = projImplMemSpecState core regions (implMem old1) ->
-      SemAction (@implPlicClaimStep core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions plic type) old1 new1 v ->
+      SemAction envImpl (@implPlicClaimStep core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions plic type) old1 new1 v ->
       let mid2 := writeSubTreeState np_mem_s old2 (projImplMemSpecState core regions (implMem new1)) in
-      SemAction (@specPlicClaimStep core pcAddrInit regions plic type) old2 mid2 v /\
-      SemActions (map snd (specMod type)) old2 mid2 /\
+      SemAction envSpec (@specPlicClaimStep core pcAddrInit regions plic type) old2 mid2 v /\
+      SemActions envSpec (map snd (specMod type)) old2 mid2 /\
       specRf mid2 = specRf old2 /\
       specMem mid2 = projImplMemSpecState core regions (implMem new1) /\
       projImplMemExtraState core regions (implMem new1) = projImplMemExtraState core regions (implMem old1) /\
       new1 = writeSubTreeState np_mem_i old1 (implMem new1).
   Proof.
-    intros old1 new1 old2 v Hmem Hsem mid2.
+    intros envImpl envSpec Henv old1 new1 old2 v Hmem Hsem mid2.
     unfold implPlicClaimStep in Hsem.
     apply SemAction_lift_np_mem_impl in Hsem as [m1' [Hm1' Hnew1]].
     destruct (SemAction_implMemNthRegionAction core regions plic.(plicIdx)
                 (@plicRegion core _ regions plic) plic.(pfPlic)
+                (Henv old1 old2 Hmem)
                 (@updateClaim core _ type) (implMem old1) m1' v Hm1')
       as [HspecMem [Hextra Hm1'Eq]].
     assert (Hm1'_proj : implMem new1 = m1') by (subst new1; reflexivity).
     rewrite <- Hm1'_proj in *.
-    assert (Hspec : SemAction (@specPlicClaimStep core pcAddrInit regions plic type) old2 mid2 v).
+    assert (Hspec : SemAction envSpec (@specPlicClaimStep core pcAddrInit regions plic type) old2 mid2 v).
     { unfold specPlicClaimStep, plicClaimStep, plicAction.
       apply SemAction_lift_np_mem_spec.
       exists (projImplMemSpecState core regions (implMem new1)).
@@ -929,28 +1011,31 @@ Section SystemDevicesSim.
   Qed.
 
   Theorem sim_implPlicSampleMeipStep_step :
-    forall (old1 new1 : TreeState DomainElemState iTree)
+    forall {envImpl : Env iTree} {envSpec : Env sTree}
+           (Henv : ImplSpecSysEnvRel envImpl envSpec)
+           (old1 new1 : TreeState DomainElemState iTree)
            (old2 : TreeState DomainElemState sTree) (v : bits 0),
       specMem old2 = projImplMemSpecState core regions (implMem old1) ->
-      SemAction (@implPlicSampleMeipStep core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions plic type) old1 new1 v ->
+      SemAction envImpl (@implPlicSampleMeipStep core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions plic type) old1 new1 v ->
       let mid2 := writeSubTreeState np_mem_s old2 (projImplMemSpecState core regions (implMem new1)) in
-      SemAction (@specPlicSampleMeipStep core pcAddrInit regions plic type) old2 mid2 v /\
-      SemActions (map snd (specMod type)) old2 mid2 /\
+      SemAction envSpec (@specPlicSampleMeipStep core pcAddrInit regions plic type) old2 mid2 v /\
+      SemActions envSpec (map snd (specMod type)) old2 mid2 /\
       specRf mid2 = specRf old2 /\
       specMem mid2 = projImplMemSpecState core regions (implMem new1) /\
       projImplMemExtraState core regions (implMem new1) = projImplMemExtraState core regions (implMem old1) /\
       new1 = writeSubTreeState np_mem_i old1 (implMem new1).
   Proof.
-    intros old1 new1 old2 v Hmem Hsem mid2.
+    intros envImpl envSpec Henv old1 new1 old2 v Hmem Hsem mid2.
     unfold implPlicSampleMeipStep in Hsem.
     apply SemAction_lift_np_mem_impl in Hsem as [m1' [Hm1' Hnew1]].
     destruct (SemAction_implMemNthRegionAction core regions plic.(plicIdx)
                 (@plicRegion core _ regions plic) plic.(pfPlic)
+                (Henv old1 old2 Hmem)
                 (@plicSampleMeip core _ type) (implMem old1) m1' v Hm1')
       as [HspecMem [Hextra Hm1'Eq]].
     assert (Hm1'_proj : implMem new1 = m1') by (subst new1; reflexivity).
     rewrite <- Hm1'_proj in *.
-    assert (Hspec : SemAction (@specPlicSampleMeipStep core pcAddrInit regions plic type) old2 mid2 v).
+    assert (Hspec : SemAction envSpec (@specPlicSampleMeipStep core pcAddrInit regions plic type) old2 mid2 v).
     { unfold specPlicSampleMeipStep, plicSampleMeipStep, plicAction.
       apply SemAction_lift_np_mem_spec.
       exists (projImplMemSpecState core regions (implMem new1)).
@@ -979,10 +1064,14 @@ Section SystemDevicesSim.
   Lemma Forall2_irqActions_with_uart :
     Forall2 (fun (aI : Action type (implMemTree regions) Bool)
                  (aS : Action type (specMemTree regions) Bool) =>
-               forall (s s' : TreeState DomainElemState (implMemTree regions)) (v : bool),
-                 SemAction aI s s' v ->
-                 SemAction aS (projImplMemSpecState core regions s) (projImplMemSpecState core regions s') v /\
-                 projImplMemExtraState core regions s' = projImplMemExtraState core regions s)
+               forall (envI : Env (implMemTree regions))
+                      (envS : Env (specMemTree regions)),
+                 ImplSpecRegionsEnvRel core regions envI envS ->
+                 forall (s s' : TreeState DomainElemState (implMemTree regions)) (v : bool),
+                   SemAction envI aI s s' v ->
+                   SemAction envS aS (projImplMemSpecState core regions s) (projImplMemSpecState core regions s') v /\
+                   projImplMemExtraState core regions s' = projImplMemExtraState core regions s /\
+                   s' = writeImplMemSpecState core regions s (projImplMemSpecState core regions s'))
             (implMemCollectIrqActions regions type ++
              [@implMemNthRegionAction core regions type plic.(plicIdx) (@plicRegion core _ regions plic) plic.(pfPlic) Bool
                 (Recv "uartIrq" (plicUartIrqPath core (S (S (length (collectIrqActions regions))))) (fun v => Return #v))])
@@ -994,10 +1083,14 @@ Section SystemDevicesSim.
       assert (Hgen : forall (rs : list (MemRegion core)),
                 Forall2 (fun (aI : Action type (implRegionsTree rs) Bool)
                              (aS : Action type (specMemTree rs) Bool) =>
-                           forall (s s' : TreeState DomainElemState (implRegionsTree rs)) (v : bool),
-                             SemAction aI s s' v ->
-                             SemAction aS (projImplMemSpecState core rs s) (projImplMemSpecState core rs s') v /\
-                             projImplMemExtraState core rs s' = projImplMemExtraState core rs s)
+                           forall (envI : Env (implRegionsTree rs))
+                                  (envS : Env (specMemTree rs)),
+                             ImplSpecRegionsEnvRel core rs envI envS ->
+                             forall (s s' : TreeState DomainElemState (implRegionsTree rs)) (v : bool),
+                               SemAction envI aI s s' v ->
+                               SemAction envS aS (projImplMemSpecState core rs s) (projImplMemSpecState core rs s') v /\
+                               projImplMemExtraState core rs s' = projImplMemExtraState core rs s /\
+                               s' = writeImplMemSpecState core rs s (projImplMemSpecState core rs s'))
                         (map (fun f => f type) (implCollectIrqActions rs))
                         (map (fun f => f type) (collectIrqActions rs))).
       { induction rs as [| r rs IH]; cbn [implCollectIrqActions collectIrqActions].
@@ -1005,10 +1098,14 @@ Section SystemDevicesSim.
         - assert (Hrest :
             Forall2 (fun (aI : Action type (implRegionsTree (r :: rs)) Bool)
                          (aS : Action type (specMemTree (r :: rs)) Bool) =>
-                       forall (s s' : TreeState DomainElemState (implRegionsTree (r :: rs))) (v : bool),
-                         SemAction aI s s' v ->
-                         SemAction aS (projImplMemSpecState core (r :: rs) s) (projImplMemSpecState core (r :: rs) s') v /\
-                         projImplMemExtraState core (r :: rs) s' = projImplMemExtraState core (r :: rs) s)
+                       forall (envI : Env (implRegionsTree (r :: rs)))
+                              (envS : Env (specMemTree (r :: rs))),
+                         ImplSpecRegionsEnvRel core (r :: rs) envI envS ->
+                         forall (s s' : TreeState DomainElemState (implRegionsTree (r :: rs))) (v : bool),
+                           SemAction envI aI s s' v ->
+                           SemAction envS aS (projImplMemSpecState core (r :: rs) s) (projImplMemSpecState core (r :: rs) s') v /\
+                           projImplMemExtraState core (r :: rs) s' = projImplMemExtraState core (r :: rs) s /\
+                           s' = writeImplMemSpecState core (r :: rs) s (projImplMemSpecState core (r :: rs) s'))
                     (map (fun f => f type) (map (fun act ty => liftAction child1Path (act ty)) (implCollectIrqActions rs)))
                     (map (fun f => f type) (map (fun act ty => liftAction child1Path (act ty)) (collectIrqActions rs)))).
           { rewrite !map_map.
@@ -1016,13 +1113,14 @@ Section SystemDevicesSim.
                       (fun (aI : Action type (implRegionsTree rs) Bool) => liftAction child1Path aI)
                       (fun (aS : Action type (specMemTree rs) Bool) => liftAction child1Path aS)) in IH.
             - rewrite !map_map in IH; exact IH.
-            - intros aI aS Hsim0 s s' v Hsem.
+            - intros aI aS Hsim0 envI envS Henv s s' v Hsem.
               rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction in Hsem.
               apply evalActionPropGen_ex_iff in Hsem as [sub1' [Hsub1' Hs']]; subst s'.
               rewrite <- SemAction_iff_evalActionPropGen in Hsub1'.
-              cbn [child0Path child1Path implRegionsTree specMemTree implRegionsChildren specMemChildren readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child projImplMemSpecState projImplMemExtraState Fst Snd] in *.
-              destruct (Hsim0 _ _ _ Hsub1') as [HspecSub1 HextraSub1].
-              rewrite HextraSub1; split; [| reflexivity].
+              pose proof (proj2 Henv s) as Henv1.
+              cbn [child0Path child1Path implRegionsTree specMemTree implRegionsChildren specMemChildren readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child projImplMemSpecState projImplMemExtraState writeImplMemSpecState Fst Snd] in *.
+              destruct (Hsim0 _ _ Henv1 _ _ _ Hsub1') as [HspecSub1 [HextraSub1 HwriteSub1]].
+              rewrite HextraSub1; split; [| split; [reflexivity | rewrite writeImplRegionSpecState_projImplRegionSpecState, <- HwriteSub1; destruct (Snd (Snd s)); reflexivity]].
               rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction.
               cbn [child0Path child1Path implRegionsTree specMemTree implRegionsChildren specMemChildren readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child Fst Snd].
               rewrite SemAction_iff_evalActionPropGen in HspecSub1.
@@ -1030,44 +1128,47 @@ Section SystemDevicesSim.
               intros st ret [Hst Hret]; subst; split; reflexivity. }
           destruct (memRegionIrqAction r) as [irqAct |]; [| exact Hrest].
           cbn [map]; constructor; [| exact Hrest].
-          intros s s' v Hsem.
+          intros envI envS Henv s s' v Hsem.
           rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction in Hsem.
           cbn [child0Path readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child Fst Snd] in Hsem.
           rewrite (evalActionPropGen_liftToImplRegion r) in Hsem.
           apply evalActionPropGen_ex_iff in Hsem as [m' [Hm' Hs']]; subst s'.
-          cbn [child0Path child1Path implRegionsTree specMemTree implRegionsChildren specMemChildren readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child projImplMemSpecState projImplMemExtraState Fst Snd] in *.
+          pose proof (proj1 Henv s) as Henv0.
+          cbn [child0Path child1Path implRegionsTree specMemTree implRegionsChildren specMemChildren readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child projImplMemSpecState projImplMemExtraState writeImplMemSpecState Fst Snd] in *.
           rewrite projImplRegionSpecState_writeImplRegionSpecState.
           rewrite projImplRegionExtraState_writeImplRegionSpecState.
-          split; [| reflexivity].
+          split; [| split; [reflexivity | rewrite writeImplMemSpecState_projImplMemSpecState; destruct s as [? [? []]]; reflexivity]].
           rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction.
           cbn [child0Path child1Path implRegionsTree specMemTree implRegionsChildren specMemChildren readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child Fst Snd].
+          eapply evalActionPropGen_env_mono; [exact Henv0 |].
           eapply evalActionPropGen_mono; [| exact Hm'].
           intros st ret [Hst Hret]; subst; split; reflexivity. }
       apply Hgen.
     - constructor; [| constructor].
-      intros s s' v Hsem.
+      intros envI envS Henv s s' v Hsem.
       unfold plicUartIrqAction, plicAction in *.
-      destruct (SemAction_implMemNthRegionAction core regions plic.(plicIdx)
-                  (@plicRegion core _ regions plic) plic.(pfPlic)
-                  (Recv "uartIrq" (plicUartIrqPath core _) (fun v0 => Return #v0))
-                  s s' v Hsem) as [Hspec [Hextra _]].
-      split; assumption.
+      exact (SemAction_implMemNthRegionAction core regions plic.(plicIdx)
+               (@plicRegion core _ regions plic) plic.(pfPlic) Henv
+               (Recv "uartIrq" (plicUartIrqPath core _) (fun v0 => Return #v0))
+               s s' v Hsem).
   Qed.
 
   Theorem sim_implPlicPendingsSteps :
-    forall act (old1 new1 : TreeState DomainElemState iTree)
+    forall {envImpl : Env iTree} {envSpec : Env sTree}
+           (Henv : ImplSpecSysEnvRel envImpl envSpec)
+           act (old1 new1 : TreeState DomainElemState iTree)
            (old2 : TreeState DomainElemState sTree) (v : bits 0),
       In act (@implPlicPendingsSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions plic type) ->
       specMem old2 = projImplMemSpecState core regions (implMem old1) ->
-      SemAction act old1 new1 v ->
+      SemAction envImpl act old1 new1 v ->
       let mid2 := writeSubTreeState np_mem_s old2 (projImplMemSpecState core regions (implMem new1)) in
-      SemActions (map snd (specMod type)) old2 mid2 /\
+      SemActions envSpec (map snd (specMod type)) old2 mid2 /\
       specRf mid2 = specRf old2 /\
       specMem mid2 = projImplMemSpecState core regions (implMem new1) /\
       projImplMemExtraState core regions (implMem new1) = projImplMemExtraState core regions (implMem old1) /\
       new1 = writeSubTreeState np_mem_i old1 (implMem new1).
   Proof.
-    intros act old1 new1 old2 v Hin Hmem Hsem mid2.
+    intros envImpl envSpec Henv act old1 new1 old2 v Hin Hmem Hsem mid2.
     unfold implPlicPendingsSteps in Hin.
     apply in_map_iff in Hin as [memAct [Hact HinMem]].
     subst act.
@@ -1078,6 +1179,7 @@ Section SystemDevicesSim.
       [contradiction |].
     destruct (inServicePathsWithKind core (S (S (length (collectIrqActions regions))))) as [| i0 devInsvs] eqn:Hinsvs;
       [contradiction |].
+    pose proof (Henv old1 old2 Hmem) as HenvMem.
     assert (Hhelper :
       forall (actsI : list (Action type (implMemTree regions) Bool))
              (actsS : list (Action type (specMemTree regions) Bool))
@@ -1085,10 +1187,14 @@ Section SystemDevicesSim.
              (insvs : list (RegOfKind (t := plicTree core (S (S (length (collectIrqActions regions))))) Bool)),
         Forall2 (fun (aI : Action type (implMemTree regions) Bool)
                      (aS : Action type (specMemTree regions) Bool) =>
-                   forall (s s' : TreeState DomainElemState (implMemTree regions)) (v0 : bool),
-                     SemAction aI s s' v0 ->
-                     SemAction aS (projImplMemSpecState core regions s) (projImplMemSpecState core regions s') v0 /\
-                     projImplMemExtraState core regions s' = projImplMemExtraState core regions s)
+                   forall (envI : Env (implMemTree regions))
+                          (envS : Env (specMemTree regions)),
+                     ImplSpecRegionsEnvRel core regions envI envS ->
+                     forall (s s' : TreeState DomainElemState (implMemTree regions)) (v0 : bool),
+                       SemAction envI aI s s' v0 ->
+                       SemAction envS aS (projImplMemSpecState core regions s) (projImplMemSpecState core regions s') v0 /\
+                       projImplMemExtraState core regions s' = projImplMemExtraState core regions s /\
+                       s' = writeImplMemSpecState core regions s (projImplMemSpecState core regions s'))
                 actsI actsS ->
         In memAct
           ((fix helper (a : list (Action type (implMemTree regions) Bool))
@@ -1104,7 +1210,7 @@ Section SystemDevicesSim.
               end) actsI pends insvs) ->
         exists specMemAct,
           In specMemAct (@plicPendingStepsHelper core (S (S (length (collectIrqActions regions)))) regions plic type actsS pends insvs) /\
-          SemAction specMemAct (projImplMemSpecState core regions (implMem old1)) (projImplMemSpecState core regions (implMem new1)) v /\
+          SemAction (subEnv np_mem_s envSpec old2) specMemAct (projImplMemSpecState core regions (implMem old1)) (projImplMemSpecState core regions (implMem new1)) v /\
           projImplMemExtraState core regions (implMem new1) = projImplMemExtraState core regions (implMem old1)).
     { intros actsI actsS pends insvs Hrel.
       revert pends insvs.
@@ -1118,9 +1224,9 @@ Section SystemDevicesSim.
         destruct (evalActionPropGen_to_SemAction aI (implMem old1) _ Hm1')
           as [sMid [irqVal [Hsem1 Hsem2]]].
         rewrite <- SemAction_iff_evalActionPropGen in Hsem2.
-        destruct (Ha (implMem old1) sMid irqVal Hsem1) as [Hspec1 Hextra1].
+        destruct (Ha _ _ HenvMem (implMem old1) sMid irqVal Hsem1) as [Hspec1 [Hextra1 HsMid]].
         destruct (SemAction_implMemNthRegionAction core regions plic.(plicIdx)
-                    (@plicRegion core _ regions plic) plic.(pfPlic)
+                    (@plicRegion core _ regions plic) plic.(pfPlic) HenvMem
                     (@updatePendingLeaf core _ type pendRk insvRk irqVal) sMid (implMem new1) v Hsem2)
           as [Hspec2 [Hextra2 _]].
         split.
@@ -1136,7 +1242,7 @@ Section SystemDevicesSim.
       unfold specPlicPendingsSteps, plicPendingsSteps.
       rewrite Hpends, Hinsvs.
       apply in_map_iff; exists specMemAct; split; [reflexivity | exact HinSpecMem]. }
-    assert (HspecAct : SemAction (liftAction np_mem_s specMemAct) old2 mid2 v).
+    assert (HspecAct : SemAction envSpec (liftAction np_mem_s specMemAct) old2 mid2 v).
     { apply SemAction_lift_np_mem_spec.
       exists (projImplMemSpecState core regions (implMem new1)).
       rewrite Hmem; split; [exact HspecMem | reflexivity]. }
@@ -1156,10 +1262,13 @@ Section SystemDevicesSim.
       In act (map (fun f => f type) (implCollectFenceIAckActions rs)) ->
       exists fSpec,
         In fSpec (collectFenceIAckActions rs) /\
-        forall (s s' : TreeState DomainElemState (implRegionsTree rs)) (v : bits 0),
-          SemAction act s s' v ->
-          SemAction (fSpec type) (projImplMemSpecState core rs s) (projImplMemSpecState core rs s') v /\
-          projImplMemExtraState core rs s' = projImplMemExtraState core rs s.
+        forall (envI : Env (implRegionsTree rs))
+               (envS : Env (specMemTree rs)),
+          ImplSpecRegionsEnvRel core rs envI envS ->
+          forall (s s' : TreeState DomainElemState (implRegionsTree rs)) (v : bits 0),
+            SemAction envI act s s' v ->
+            SemAction envS (fSpec type) (projImplMemSpecState core rs s) (projImplMemSpecState core rs s') v /\
+            projImplMemExtraState core rs s' = projImplMemExtraState core rs s.
   Proof.
     induction rs as [| r rs IH]; intros act Hin.
     - cbn in Hin; contradiction.
@@ -1172,17 +1281,19 @@ Section SystemDevicesSim.
         exists (fun ty => liftAction child0Path (f0 ty)); split.
         * apply in_or_app; left.
           apply in_map_iff; exists f0; split; [reflexivity | exact Hf0].
-        * intros s s' v Hsem.
+        * intros envI envS Henv s s' v Hsem.
           rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction in Hsem.
           cbn [child0Path readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child Fst Snd] in Hsem.
           rewrite (evalActionPropGen_liftToImplRegion r) in Hsem.
           apply evalActionPropGen_ex_iff in Hsem as [m' [Hm' Hs']]; subst s'.
+          pose proof (proj1 Henv s) as Henv0.
           cbn [child0Path child1Path implRegionsTree specMemTree implRegionsChildren specMemChildren readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child projImplMemSpecState projImplMemExtraState Fst Snd] in *.
           rewrite projImplRegionSpecState_writeImplRegionSpecState.
           rewrite projImplRegionExtraState_writeImplRegionSpecState.
           split; [| reflexivity].
           rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction.
           cbn [child0Path child1Path implRegionsTree specMemTree implRegionsChildren specMemChildren readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child Fst Snd].
+          eapply evalActionPropGen_env_mono; [exact Henv0 |].
           eapply evalActionPropGen_mono; [| exact Hm'].
           intros st ret [Hst Hret]; subst; split; reflexivity.
       + rewrite map_map in HinRest.
@@ -1194,12 +1305,13 @@ Section SystemDevicesSim.
         exists (fun ty => liftAction child1Path (fSpec0 ty)); split.
         * apply in_or_app; right.
           apply in_map_iff; exists fSpec0; split; [reflexivity | exact HinSpec0].
-        * intros s s' v Hsem.
+        * intros envI envS Henv s s' v Hsem.
           rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction in Hsem.
           apply evalActionPropGen_ex_iff in Hsem as [sub1' [Hsub1' Hs']]; subst s'.
           rewrite <- SemAction_iff_evalActionPropGen in Hsub1'.
+          pose proof (proj2 Henv s) as Henv1.
           cbn [child0Path child1Path implRegionsTree specMemTree implRegionsChildren specMemChildren readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child projImplMemSpecState projImplMemExtraState Fst Snd] in *.
-          destruct (Hsim0 _ _ _ Hsub1') as [HspecSub1 HextraSub1].
+          destruct (Hsim0 _ _ Henv1 _ _ _ Hsub1') as [HspecSub1 HextraSub1].
           rewrite HextraSub1; split; [| reflexivity].
           rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction.
           cbn [child0Path child1Path implRegionsTree specMemTree implRegionsChildren specMemChildren readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child Fst Snd].
@@ -1209,19 +1321,21 @@ Section SystemDevicesSim.
   Qed.
 
   Theorem sim_fenceIAcks :
-    forall act (old1 new1 : TreeState DomainElemState iTree)
+    forall {envImpl : Env iTree} {envSpec : Env sTree}
+           (Henv : ImplSpecSysEnvRel envImpl envSpec)
+           act (old1 new1 : TreeState DomainElemState iTree)
            (old2 : TreeState DomainElemState sTree) (v : bits 0),
       In act (@fenceIAcks core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions type) ->
       specMem old2 = projImplMemSpecState core regions (implMem old1) ->
-      SemAction act old1 new1 v ->
+      SemAction envImpl act old1 new1 v ->
       let mid2 := writeSubTreeState np_mem_s old2 (projImplMemSpecState core regions (implMem new1)) in
-      SemActions (map snd (specMod type)) old2 mid2 /\
+      SemActions envSpec (map snd (specMod type)) old2 mid2 /\
       specRf mid2 = specRf old2 /\
       specMem mid2 = projImplMemSpecState core regions (implMem new1) /\
       projImplMemExtraState core regions (implMem new1) = projImplMemExtraState core regions (implMem old1) /\
       new1 = writeSubTreeState np_mem_i old1 (implMem new1).
   Proof.
-    intros act old1 new1 old2 v Hin Hmem Hsem mid2.
+    intros envImpl envSpec Henv act old1 new1 old2 v Hin Hmem Hsem mid2.
     unfold fenceIAcks, implMemCollectFenceIAckActions in Hin.
     apply in_map_iff in Hin as [memAct [Hact HinMem]].
     subst act.
@@ -1230,13 +1344,13 @@ Section SystemDevicesSim.
     rewrite <- Hm1'_proj in *.
     destruct (implCollectFenceIAckActions_sim regions memAct HinMem)
       as [fSpec [HinSpecMem Hsim]].
-    destruct (Hsim (implMem old1) (implMem new1) v Hm1') as [HspecMem Hextra].
+    destruct (Hsim _ _ (Henv old1 old2 Hmem) (implMem old1) (implMem new1) v Hm1') as [HspecMem Hextra].
     assert (HinSpec : In (liftAction np_mem_s (fSpec type)) (map snd (specMod type))).
     { rewrite map_snd_specMod.
       apply in_or_app; right; apply in_or_app; right; apply in_or_app; right; apply in_or_app; left.
       unfold specFenceIAckSteps.
       apply in_map_iff; exists fSpec; split; [reflexivity | exact HinSpecMem]. }
-    assert (HspecAct : SemAction (liftAction np_mem_s (fSpec type)) old2 mid2 v).
+    assert (HspecAct : SemAction envSpec (liftAction np_mem_s (fSpec type)) old2 mid2 v).
     { apply SemAction_lift_np_mem_spec.
       exists (projImplMemSpecState core regions (implMem new1)).
       rewrite Hmem; split; [exact HspecMem | reflexivity]. }
@@ -1251,8 +1365,8 @@ Section SystemDevicesSim.
   (* --- 4G. `setCanProceedSteps` (`setFetchCanProceedStage`, `setDecodeCanProceedStage`, `setExecuteCanProceedStage`) --- *)
 
   Theorem SemAction_setFetchCanProceedStage_inv :
-    forall (old1 new1 : TreeState DomainElemState iTree) (v : bits 0),
-      SemAction (@setFetchCanProceedStage core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions type) old1 new1 v ->
+    forall {env : Env iTree} (old1 new1 : TreeState DomainElemState iTree) (v : bits 0),
+      SemAction env (@setFetchCanProceedStage core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions type) old1 new1 v ->
       new1 = writeSubTreeState np_fetch_i old1 (implFetch new1) /\
       v = Zmod.zero /\
       implRf new1 = implRf old1 /\
@@ -1270,7 +1384,7 @@ Section SystemDevicesSim.
       Fst (Snd (Snd (Snd (Snd (implFetch new1))))) = true /\
       Snd (Snd (Snd (Snd (Snd (implFetch new1))))) = Snd (Snd (Snd (Snd (Snd (implFetch old1))))).
   Proof.
-    intros old1 new1 v Hsem.
+    intros env old1 new1 v Hsem.
     unfold setFetchCanProceedStage, setFetchCanProceed in Hsem.
     rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction in Hsem.
     rewrite readSubTreeState_impl_np_fetch in Hsem.
@@ -1280,8 +1394,8 @@ Section SystemDevicesSim.
   Qed.
 
   Theorem SemAction_setDecodeCanProceedStage_inv :
-    forall (old1 new1 : TreeState DomainElemState iTree) (v : bits 0),
-      SemAction (@setDecodeCanProceedStage core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions type) old1 new1 v ->
+    forall {env : Env iTree} (old1 new1 : TreeState DomainElemState iTree) (v : bits 0),
+      SemAction env (@setDecodeCanProceedStage core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions type) old1 new1 v ->
       new1 = writeSubTreeState np_decode_i old1 (implDecode new1) /\
       v = Zmod.zero /\
       implRf new1 = implRf old1 /\
@@ -1295,7 +1409,7 @@ Section SystemDevicesSim.
       Fst (implDecode new1) = true /\
       Snd (implDecode new1) = Snd (implDecode old1).
   Proof.
-    intros old1 new1 v Hsem.
+    intros env old1 new1 v Hsem.
     unfold setDecodeCanProceedStage, setDecodeCanProceed in Hsem.
     rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction in Hsem.
     rewrite readSubTreeState_impl_np_decode in Hsem.
@@ -1305,8 +1419,8 @@ Section SystemDevicesSim.
   Qed.
 
   Theorem SemAction_setExecuteCanProceedStage_inv :
-    forall (old1 new1 : TreeState DomainElemState iTree) (v : bits 0),
-      SemAction (@setExecuteCanProceedStage core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions type) old1 new1 v ->
+    forall {env : Env iTree} (old1 new1 : TreeState DomainElemState iTree) (v : bits 0),
+      SemAction env (@setExecuteCanProceedStage core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions type) old1 new1 v ->
       new1 = writeSubTreeState np_execute_i old1 (implExecute new1) /\
       v = Zmod.zero /\
       implRf new1 = implRf old1 /\
@@ -1322,7 +1436,7 @@ Section SystemDevicesSim.
       Fst (Snd (Snd (implExecute new1))) = true /\
       Snd (Snd (Snd (implExecute new1))) = Snd (Snd (Snd (implExecute old1))).
   Proof.
-    intros old1 new1 v Hsem.
+    intros env old1 new1 v Hsem.
     unfold setExecuteCanProceedStage, setExecuteCanProceed in Hsem.
     rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction in Hsem.
     rewrite readSubTreeState_impl_np_execute in Hsem.
@@ -1390,27 +1504,30 @@ Section SystemDevicesSim.
     repeat (
       cbn [evalActionPropGen] in Hsem;
       lazymatch type of Hsem with
-      | _ /\ _ =>
+      | _ = s' /\ _ =>
           let Hs' := fresh "Hs'" in
           destruct Hsem as [Hs' _]; subst s'; split; reflexivity
+      | _ /\ _ =>
+          let Henv0 := fresh "Henv0" in
+          destruct Hsem as [Henv0 Hsem]
       | ex _ =>
           let x := fresh "x" in
           destruct Hsem as [x Hsem];
           try (is_var x; destruct x; cbn [evalActionPropGen evalExpr] in Hsem)
       | (if ?c then _ else _) =>
           destruct c; cbn [evalActionPropGen evalExpr] in Hsem
-      | context [evalActionPropGen (liftAction _ _) _ _] =>
+      | context [evalActionPropGen _ (liftAction _ _) _ _] =>
           rewrite evalActionPropGen_liftAction in Hsem
       end).
 
   Lemma SemAction_implInternalMemRegionTargetPortWrite_preserves_banks :
-    forall (r : MemRegion core)
+    forall (r : MemRegion core) {env : Env (implInternalMemRegionTree r true)}
            (s s' : TreeState DomainElemState (implInternalMemRegionTree r true))
            (v : bits 0),
-      SemAction (@implInternalMemRegionTargetPortWrite core r type) s s' v ->
+      SemAction env (@implInternalMemRegionTargetPortWrite core r type) s s' v ->
       Fst (Fst s') = Fst (Fst s) /\ Fst (Snd (Fst s')) = Fst (Snd (Fst s)).
   Proof.
-    intros r s s' v Hsem.
+    intros r env s s' v Hsem.
     unfold implInternalMemRegionTargetPortWrite, implInternalMemRegionPortWriteRq in Hsem.
     destruct (r.(isReadOnly));
       rewrite SemAction_iff_evalActionPropGen in Hsem;
@@ -1418,13 +1535,13 @@ Section SystemDevicesSim.
   Qed.
 
   Lemma SemAction_implInternalMemRegionTargetPortReadRq_preserves_banks :
-    forall (r : MemRegion core)
+    forall (r : MemRegion core) {env : Env (implInternalMemRegionTree r true)}
            (s s' : TreeState DomainElemState (implInternalMemRegionTree r true))
            (v : bits 0),
-      SemAction (@implInternalMemRegionTargetPortReadRq core r type) s s' v ->
+      SemAction env (@implInternalMemRegionTargetPortReadRq core r type) s s' v ->
       Fst (Fst s') = Fst (Fst s) /\ Fst (Snd (Fst s')) = Fst (Snd (Fst s)).
   Proof.
-    intros r s s' v Hsem.
+    intros r env s s' v Hsem.
     unfold implInternalMemRegionTargetPortReadRq, implInternalMemRegionDataLineReadRq,
            implInternalMemRegionPortReadRq in Hsem.
     rewrite SemAction_iff_evalActionPropGen in Hsem.
@@ -1432,13 +1549,13 @@ Section SystemDevicesSim.
   Qed.
 
   Lemma SemAction_implInternalMemRegionTargetPortReadRp_preserves_banks :
-    forall (r : MemRegion core)
+    forall (r : MemRegion core) {env : Env (implInternalMemRegionTree r true)}
            (s s' : TreeState DomainElemState (implInternalMemRegionTree r true))
            (v : bits 0),
-      SemAction (@implInternalMemRegionTargetPortReadRp core r type) s s' v ->
+      SemAction env (@implInternalMemRegionTargetPortReadRp core r type) s s' v ->
       Fst (Fst s') = Fst (Fst s) /\ Fst (Snd (Fst s')) = Fst (Snd (Fst s)).
   Proof.
-    intros r s s' v Hsem.
+    intros r env s s' v Hsem.
     unfold implInternalMemRegionTargetPortReadRp, implInternalMemRegionDataLineReadRp,
            implInternalMemRegionPortReadRp, implInternalMemRegionDataDeqRp,
            implInternalMemRegionPortDeqRp in Hsem.
@@ -1448,20 +1565,22 @@ Section SystemDevicesSim.
 
   Lemma implCollectRegionActions_preserves_spec :
     forall (getActions : forall r : MemRegion core, list (forall ty, Action ty (implMemRegionTree r) (Bit 0)))
-           (Hpres : forall (r : MemRegion core) (f : forall ty, Action ty (implMemRegionTree r) (Bit 0))
+           (Hpres : forall (r : MemRegion core) {env : Env (implMemRegionTree r)}
+                           (f : forall ty, Action ty (implMemRegionTree r) (Bit 0))
                            (s s' : TreeState DomainElemState (implMemRegionTree r)) (v : bits 0),
                       In f (getActions r) ->
-                      SemAction (f type) s s' v ->
+                      SemAction env (f type) s s' v ->
                       projImplRegionSpecState core r s' = projImplRegionSpecState core r s)
            (rs : list (MemRegion core))
+           {env : Env (implRegionsTree rs)}
            (act : Action type (implRegionsTree rs) (Bit 0))
            (s s' : TreeState DomainElemState (implRegionsTree rs)) (v : bits 0),
       In act (map (fun f => f type) (implCollectRegionActions getActions rs)) ->
-      SemAction act s s' v ->
+      SemAction env act s s' v ->
       projImplMemSpecState core rs s' = projImplMemSpecState core rs s.
   Proof.
     intros getActions Hpres.
-    induction rs as [| r rs IH]; intros act s s' v Hin Hsem.
+    induction rs as [| r rs IH]; intros env act s s' v Hin Hsem.
     - cbn in Hin; contradiction.
     - cbn [implCollectRegionActions] in Hin.
       rewrite map_app in Hin; apply in_app_or in Hin as [HinCurr | HinRest].
@@ -1470,7 +1589,7 @@ Section SystemDevicesSim.
         apply evalActionPropGen_ex_iff in Hsem as [sub0' [Hsub0' Hs']]; subst s'.
         rewrite <- SemAction_iff_evalActionPropGen in Hsub0'.
         cbn [child0Path child1Path implRegionsTree specMemTree implRegionsChildren specMemChildren readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child projImplMemSpecState Fst Snd] in *.
-        rewrite (Hpres r f0 (Fst s) sub0' _ Hf0 Hsub0').
+        rewrite (Hpres r _ f0 (Fst s) sub0' _ Hf0 Hsub0').
         reflexivity.
       + rewrite map_map in HinRest; apply in_map_iff in HinRest as [fRest [Hact HfRest]]; subst act.
         rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction in Hsem.
@@ -1484,20 +1603,22 @@ Section SystemDevicesSim.
 
   Lemma implCollectRegionActions_MemEqExceptTargetPort :
     forall (getActions : forall r : MemRegion core, list (forall ty, Action ty (implMemRegionTree r) (Bit 0)))
-           (Hpres : forall (r : MemRegion core) (f : forall ty, Action ty (implMemRegionTree r) (Bit 0))
+           (Hpres : forall (r : MemRegion core) {env : Env (implMemRegionTree r)}
+                           (f : forall ty, Action ty (implMemRegionTree r) (Bit 0))
                            (s s' : TreeState DomainElemState (implMemRegionTree r)) (v : bits 0),
                       In f (getActions r) ->
-                      SemAction (f type) s s' v ->
+                      SemAction env (f type) s s' v ->
                       RegionEqExceptTargetPort r (projImplRegionSpecState core r s') (projImplRegionSpecState core r s))
            (rs : list (MemRegion core))
+           {env : Env (implRegionsTree rs)}
            (act : Action type (implRegionsTree rs) (Bit 0))
            (s s' : TreeState DomainElemState (implRegionsTree rs)) (v : bits 0),
       In act (map (fun f => f type) (implCollectRegionActions getActions rs)) ->
-      SemAction act s s' v ->
+      SemAction env act s s' v ->
       MemEqExceptTargetPort rs (projImplMemSpecState core rs s') (projImplMemSpecState core rs s).
   Proof.
     intros getActions Hpres.
-    induction rs as [| r rs IH]; intros act s s' v Hin Hsem.
+    induction rs as [| r rs IH]; intros env act s s' v Hin Hsem.
     - exact I.
     - cbn [implCollectRegionActions] in Hin.
       rewrite map_app in Hin; apply in_app_or in Hin as [HinCurr | HinRest].
@@ -1506,7 +1627,7 @@ Section SystemDevicesSim.
         apply evalActionPropGen_ex_iff in Hsem as [sub0' [Hsub0' Hs']]; subst s'.
         rewrite <- SemAction_iff_evalActionPropGen in Hsub0'.
         cbn [child0Path child1Path implRegionsTree specMemTree implRegionsChildren specMemChildren readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child projImplMemSpecState MemEqExceptTargetPort Fst Snd] in *.
-        split; [exact (Hpres r f0 (Fst s) sub0' _ Hf0 Hsub0') | apply MemEqExceptTargetPort_refl].
+        split; [exact (Hpres r _ f0 (Fst s) sub0' _ Hf0 Hsub0') | apply MemEqExceptTargetPort_refl].
       + rewrite map_map in HinRest; apply in_map_iff in HinRest as [fRest [Hact HfRest]]; subst act.
         rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction in Hsem.
         apply evalActionPropGen_ex_iff in Hsem as [sub1' [Hsub1' Hs']]; subst s'.
@@ -1518,13 +1639,13 @@ Section SystemDevicesSim.
   Qed.
 
   Theorem sim_targetPortRqs_preserves_spec :
-    forall act (old1 new1 : TreeState DomainElemState iTree) (v : bits 0),
+    forall {env : Env iTree} act (old1 new1 : TreeState DomainElemState iTree) (v : bits 0),
       In act (@targetPortRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions type) ->
-      SemAction act old1 new1 v ->
+      SemAction env act old1 new1 v ->
       MemEqExceptTargetPort regions (projImplMemSpecState core regions (implMem new1)) (projImplMemSpecState core regions (implMem old1)) /\
       new1 = writeSubTreeState np_mem_i old1 (implMem new1).
   Proof.
-    intros act old1 new1 v Hin Hsem.
+    intros env act old1 new1 v Hin Hsem.
     unfold targetPortRqs, implMemCollectTargetPortRqActions, implCollectTargetPortRqActions in Hin.
     apply in_map_iff in Hin as [memAct [Hact HinMem]]; subst act.
     apply SemAction_lift_np_mem_impl in Hsem as [m1' [Hm1' Hnew1]].
@@ -1532,23 +1653,23 @@ Section SystemDevicesSim.
     rewrite <- Hm1'_proj in *.
     split; [| exact Hnew1].
     eapply implCollectRegionActions_MemEqExceptTargetPort; [| exact HinMem | exact Hm1'].
-    intros r f s s' v0 Hf Hsem0.
+    intros r env0 f s s' v0 Hf Hsem0.
     unfold implMemRegionTargetPortRqActions, RegionEqExceptTargetPort, projImplRegionSpecState, implMemRegionTree, memRegionTree in *.
-    revert f s s' Hf Hsem0.
-    destruct (r.(regionKind)) as [[|] ? ? | | ? ? ? ? ?]; intros f s s' Hf Hsem0; try contradiction.
+    revert env0 f s s' Hf Hsem0.
+    destruct (r.(regionKind)) as [[|] ? ? | | ? ? ? ? ?]; intros env0 f s s' Hf Hsem0; try contradiction.
     cbn [In] in Hf; destruct Hf as [Hf | [Hf | []]]; subst f.
     - eapply SemAction_implInternalMemRegionTargetPortWrite_preserves_banks; exact Hsem0.
     - eapply SemAction_implInternalMemRegionTargetPortReadRq_preserves_banks; exact Hsem0.
   Qed.
 
   Theorem sim_targetPortRps_preserves_spec :
-    forall act (old1 new1 : TreeState DomainElemState iTree) (v : bits 0),
+    forall {env : Env iTree} act (old1 new1 : TreeState DomainElemState iTree) (v : bits 0),
       In act (@targetPortRps core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions type) ->
-      SemAction act old1 new1 v ->
+      SemAction env act old1 new1 v ->
       MemEqExceptTargetPort regions (projImplMemSpecState core regions (implMem new1)) (projImplMemSpecState core regions (implMem old1)) /\
       new1 = writeSubTreeState np_mem_i old1 (implMem new1).
   Proof.
-    intros act old1 new1 v Hin Hsem.
+    intros env act old1 new1 v Hin Hsem.
     unfold targetPortRps, implMemCollectTargetPortRpActions, implCollectTargetPortRpActions in Hin.
     apply in_map_iff in Hin as [memAct [Hact HinMem]]; subst act.
     apply SemAction_lift_np_mem_impl in Hsem as [m1' [Hm1' Hnew1]].
@@ -1556,10 +1677,10 @@ Section SystemDevicesSim.
     rewrite <- Hm1'_proj in *.
     split; [| exact Hnew1].
     eapply implCollectRegionActions_MemEqExceptTargetPort; [| exact HinMem | exact Hm1'].
-    intros r f s s' v0 Hf Hsem0.
+    intros r env0 f s s' v0 Hf Hsem0.
     unfold implMemRegionTargetPortRpActions, RegionEqExceptTargetPort, projImplRegionSpecState, implMemRegionTree, memRegionTree in *.
-    revert f s s' Hf Hsem0.
-    destruct (r.(regionKind)) as [[|] ? ? | | ? ? ? ? ?]; intros f s s' Hf Hsem0; try contradiction.
+    revert env0 f s s' Hf Hsem0.
+    destruct (r.(regionKind)) as [[|] ? ? | | ? ? ? ? ?]; intros env0 f s s' Hf Hsem0; try contradiction.
     cbn [In] in Hf; destruct Hf as [Hf | []]; subst f.
     eapply SemAction_implInternalMemRegionTargetPortReadRp_preserves_banks; exact Hsem0.
   Qed.

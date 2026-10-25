@@ -15,7 +15,7 @@
  *)
 
 From Stdlib Require Import String List ZArith Znumtheory Zmod Zmod.Bits Lia Bool Eqdep_dec.
-From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems ActionSim.
+From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems HelperLemmas ActionSim.
 From Cheriot Require Export SpecDefines Decoder FunctionalUnits Alu SpecFetchDeferred SpecMulDiv Spec SpecDevice Clint Plic SpecRevoker.
 From Cheriot Require Export Impl ImplCommon ImplDevice ImplRevoker ImplFetch ImplDecode ImplExecute ImplDataMem ImplMulDiv ImplMulDivProof ImplBranchPredictor.
 From Cheriot.Proof Require Export TreeLemmas StateRel SimDevices SimFetchDecode SimExecute SimDataMem.
@@ -646,8 +646,12 @@ Section ModuleActionDecomposition.
   Qed.
 
   Theorem pipelinedMod_simulates_forwardDatapathMod :
-    ModSimulation pipeMod fwdMod (fun s1 s2 => s1 = s2).
+    forall (env1 env2 : Env iTree)
+           (env2Exists : EnvInhabited env2)
+           (envConsistent : EnvConsistent env1 env2 (fun s1 s2 => s1 = s2)),
+      ModSimulation env1 env2 pipeMod fwdMod (fun s1 s2 => s1 = s2) env2Exists envConsistent.
   Proof.
+    intros env1 env2 env2Exists envConsistent.
     apply SubsetActionModSimulation.
     exact In_pipelinedMod_In_forwardDatapathMod.
   Qed.
@@ -844,18 +848,19 @@ Section SystemModSimulation.
   (* --- 3A. Unconditional `setCanProceedSteps` Simulation --- *)
 
   Theorem sim_setFetchCanProceedStage :
-    forall (s1 s1' : IState) (s2 : SState) (v : bits 0),
-      SemAction
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (s1 s1' : IState) (s2 : SState) (v : bits 0),
+      SemAction env1
         (@setFetchCanProceedStage core pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type)
         s1 s1' v ->
       cRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         cRel s1' s2'.
   Proof.
-    intros s1 s1' s2 v Hsem Hrel.
+    intros env1 env2 s1 s1' s2 v Hsem Hrel.
     pose proof (SemAction_setFetchCanProceedStage_inv core pcAddrInit fetchCapacity instCapacity
                   decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1 s1' v Hsem)
@@ -878,18 +883,19 @@ Section SystemModSimulation.
   Qed.
 
   Theorem sim_setDecodeCanProceedStage :
-    forall (s1 s1' : IState) (s2 : SState) (v : bits 0),
-      SemAction
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (s1 s1' : IState) (s2 : SState) (v : bits 0),
+      SemAction env1
         (@setDecodeCanProceedStage core pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type)
         s1 s1' v ->
       cRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         cRel s1' s2'.
   Proof.
-    intros s1 s1' s2 v Hsem Hrel.
+    intros env1 env2 s1 s1' s2 v Hsem Hrel.
     pose proof (SemAction_setDecodeCanProceedStage_inv core pcAddrInit fetchCapacity instCapacity
                   decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1 s1' v Hsem)
@@ -912,18 +918,19 @@ Section SystemModSimulation.
   Qed.
 
   Theorem sim_setFetchCanProceedStage_stateRel :
-    forall (s1 s1' : IState) (s2 : SState) (v : bits 0),
-      SemAction
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (s1 s1' : IState) (s2 : SState) (v : bits 0),
+      SemAction env1
         (@setFetchCanProceedStage core pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type)
         s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    intros s1 s1' s2 v _ Hrel.
+    intros env1 env2 s1 s1' s2 v _ Hrel.
     exists s2; split.
     - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
     - exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
@@ -932,18 +939,19 @@ Section SystemModSimulation.
   Qed.
 
   Theorem sim_setDecodeCanProceedStage_stateRel :
-    forall (s1 s1' : IState) (s2 : SState) (v : bits 0),
-      SemAction
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (s1 s1' : IState) (s2 : SState) (v : bits 0),
+      SemAction env1
         (@setDecodeCanProceedStage core pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type)
         s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    intros s1 s1' s2 v _ Hrel.
+    intros env1 env2 s1 s1' s2 v _ Hrel.
     exists s2; split.
     - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
     - exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
@@ -952,19 +960,20 @@ Section SystemModSimulation.
   Qed.
 
   Theorem sim_setCanProceedSteps_stateRel :
-    forall (act : Action type iTree (Bit 0))
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0))
            (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act
         (@setCanProceedSteps core pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    intros act s1 s1' s2 v Hin Hsem Hrel.
+    intros env1 env2 act s1 s1' s2 v Hin Hsem Hrel.
     apply In_setCanProceedSteps_decomp in Hin as [-> | [-> | ->]].
     - exact (sim_setFetchCanProceedStage_stateRel s1 s1' s2 v Hsem Hrel).
     - exact (sim_setDecodeCanProceedStage_stateRel s1 s1' s2 v Hsem Hrel).
@@ -1013,14 +1022,15 @@ Section SystemModSimulation.
   Qed.
 
   Lemma stateRel_of_mem_lockstep :
-    forall (s1 s1' : IState) (s2 : SState),
+    forall {env2 : Env sTree}
+           (s1 s1' : IState) (s2 : SState),
       let s2' := writeSubTreeState (@Spec.np_mem core pcAddrInit regions) s2
                    (SimDevices.projImplMemSpecState core regions
                       (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
                          dataMemCapacity mulCapacity divCapacity mulStages divStages
                          mulDivMode config regions s1')) in
       cRel s1 s2 ->
-      SemActions (map snd (specMod type)) s2 s2' ->
+      SemActions env2 (map snd (specMod type)) s2 s2' ->
       s1' = writeSubTreeState
               (@Impl.np_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
@@ -1033,10 +1043,10 @@ Section SystemModSimulation.
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2' ->
       exists mid2 : SState,
-        SemActions (map snd (specMod type)) s2 mid2 /\
+        SemActions env2 (map snd (specMod type)) s2 mid2 /\
         cRel s1' mid2.
   Proof.
-    intros s1 s1' s2 s2' Hrel Hacts Hs1' Hfence'.
+    intros env2 s1 s1' s2 s2' Hrel Hacts Hs1' Hfence'.
     exists s2'; split; [exact Hacts |].
     destruct Hrel as [Hghost _ _].
     pose proof (impl_write_np_mem_accessors core pcAddrInit fetchCapacity instCapacity
@@ -1108,14 +1118,15 @@ Section SystemModSimulation.
   Qed.
 
   Lemma stateRel_of_mem_lockstep_noNewFenceI :
-    forall (s1 s1' : IState) (s2 : SState),
+    forall {env2 : Env sTree}
+           (s1 s1' : IState) (s2 : SState),
       let s2' := writeSubTreeState (@Spec.np_mem core pcAddrInit regions) s2
                    (SimDevices.projImplMemSpecState core regions
                       (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
                          dataMemCapacity mulCapacity divCapacity mulStages divStages
                          mulDivMode config regions s1')) in
       cRel s1 s2 ->
-      SemActions (map snd (specMod type)) s2 s2' ->
+      SemActions env2 (map snd (specMod type)) s2 s2' ->
       s1' = writeSubTreeState
               (@Impl.np_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
@@ -1135,10 +1146,10 @@ Section SystemModSimulation.
                dataMemCapacity mulCapacity divCapacity mulStages divStages
                mulDivMode config regions s1)) = true) ->
       exists mid2 : SState,
-        SemActions (map snd (specMod type)) s2 mid2 /\
+        SemActions env2 (map snd (specMod type)) s2 mid2 /\
         cRel s1' mid2.
   Proof.
-    intros s1 s1' s2 s2' Hrel Hacts Hs1' Hwait.
+    intros env2 s1 s1' s2 s2' Hrel Hacts Hs1' Hwait.
     apply (stateRel_of_mem_lockstep s1 s1' s2 Hrel Hacts Hs1').
     destruct Hrel as [_ _ [Hquiescent _]].
     pose proof (impl_write_np_mem_accessors core pcAddrInit fetchCapacity instCapacity
@@ -1202,7 +1213,8 @@ Section SystemModSimulation.
   Qed.
 
   Lemma stateRel_of_mem_stutter_preserves_spec :
-    forall (s1 s1' : IState) (s2 : SState),
+    forall {env2 : Env sTree}
+           (s1 s1' : IState) (s2 : SState),
       cRel s1 s2 ->
       s1' = writeSubTreeState
               (@Impl.np_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -1221,10 +1233,10 @@ Section SystemModSimulation.
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions s1) ->
       exists mid2 : SState,
-        SemActions (map snd (specMod type)) s2 mid2 /\
+        SemActions env2 (map snd (specMod type)) s2 mid2 /\
         cRel s1' mid2.
   Proof.
-    intros s1 s1' s2 Hrel Hs1' Hproj.
+    intros env2 s1 s1' s2 Hrel Hs1' Hproj.
     exists s2; split.
     - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
     - destruct Hrel as [Hghost HmemRel [Hquiescent Hcons]].
@@ -1315,17 +1327,18 @@ Section SystemModSimulation.
   Qed.
 
   Theorem sim_fetchRqs_stateRel :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act (@fetchRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                 config regions type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    intros act s1 s1' s2 v Hin _ _.
+    intros env1 env2 act s1 s1' s2 v Hin _ _.
     rewrite fetchRqs_nil in Hin; contradiction.
   Qed.
 
@@ -1372,6 +1385,7 @@ Section SystemModSimulation.
   Qed.
 
   Theorem sim_implTickCycle_cRel :
+    forall {env1 : Env iTree} {env2 : Env sTree},
     (forall rf1 rf2 wm1 wm2 req,
        GhostStep core pcAddrInit rf1 rf2 wm1 wm2 req ->
        GhostStep core pcAddrInit
@@ -1379,20 +1393,20 @@ Section SystemModSimulation.
          (evalIncrementMcycle core pcAddrInit rf2)
          wm1 wm2 req) ->
     forall (s1 s1' : IState) (s2 : SState) (v : bits 0),
-      SemAction
+      SemAction env1
         (@implTickCycle core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type)
         s1 s1' v ->
       cRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         cRel s1' s2'.
   Proof.
-    intros Hstep s1 s1' s2 v Hsem Hrel.
+    intros env1 env2 Hstep s1 s1' s2 v Hsem Hrel.
     pose proof (sim_implTickCycle_step core pcAddrInit fetchCapacity instCapacity
                   decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions clint revSpec plic s1 s1' s2 v Hsem)
+                  mulDivMode config regions clint revSpec plic (envSpec := env2) s1 s1' s2 v Hsem)
       as [Hs1' [_ [_ [Hacts [Hrf2 Hmem2]]]]].
     set (s2' := writeSubTreeState (@Spec.np_rf core pcAddrInit regions) s2
                   (evalIncrementMcycle core pcAddrInit (spec_rf core pcAddrInit regions s2))) in *.
@@ -1477,7 +1491,11 @@ Section SystemModSimulation.
   Qed.
 
   Theorem sim_implTickTimer_cRel :
-    forall (s1 s1' : IState) (s2 : SState) (v : bits 0),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (Henv : ImplSpecSysEnvRel core pcAddrInit fetchCapacity instCapacity decodeCapacity
+                     dataMemCapacity mulCapacity divCapacity mulStages divStages
+                     mulDivMode config regions env1 env2)
+           (s1 s1' : IState) (s2 : SState) (v : bits 0),
       let s2' := writeSubTreeState (@Spec.np_mem core pcAddrInit regions) s2
                    (SimDevices.projImplMemSpecState core regions
                       (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -1491,26 +1509,30 @@ Section SystemModSimulation.
       FenceIInv core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2' ->
-      SemAction
+      SemAction env1
         (@implTickTimer core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions clint type)
         s1 s1' v ->
       cRel s1 s2 ->
       exists mid2 : SState,
-        SemActions (map snd (specMod type)) s2 mid2 /\
+        SemActions env2 (map snd (specMod type)) s2 mid2 /\
         cRel s1' mid2.
   Proof.
-    intros s1 s1' s2 v s2' HmemEq Hfence' Hsem Hrel.
+    intros env1 env2 Henv s1 s1' s2 v s2' HmemEq Hfence' Hsem Hrel.
     destruct (sim_implTickTimer_step core pcAddrInit fetchCapacity instCapacity
                 decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-                mulDivMode config regions clint revSpec plic s1 s1' s2 v HmemEq Hsem)
+                mulDivMode config regions clint revSpec plic Henv s1 s1' s2 v HmemEq Hsem)
       as [_ [Hacts [_ [_ [_ Hs1']]]]].
     exact (stateRel_of_mem_lockstep s1 s1' s2 Hrel Hacts Hs1' Hfence').
   Qed.
 
   Theorem sim_implSampleMtipStep_cRel :
-    forall (s1 s1' : IState) (s2 : SState) (v : bits 0),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (Henv : ImplSpecSysEnvRel core pcAddrInit fetchCapacity instCapacity decodeCapacity
+                     dataMemCapacity mulCapacity divCapacity mulStages divStages
+                     mulDivMode config regions env1 env2)
+           (s1 s1' : IState) (s2 : SState) (v : bits 0),
       let s2' := writeSubTreeState (@Spec.np_mem core pcAddrInit regions) s2
                    (SimDevices.projImplMemSpecState core regions
                       (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -1524,26 +1546,30 @@ Section SystemModSimulation.
       FenceIInv core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2' ->
-      SemAction
+      SemAction env1
         (@implSampleMtipStep core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions clint type)
         s1 s1' v ->
       cRel s1 s2 ->
       exists mid2 : SState,
-        SemActions (map snd (specMod type)) s2 mid2 /\
+        SemActions env2 (map snd (specMod type)) s2 mid2 /\
         cRel s1' mid2.
   Proof.
-    intros s1 s1' s2 v s2' HmemEq Hfence' Hsem Hrel.
+    intros env1 env2 Henv s1 s1' s2 v s2' HmemEq Hfence' Hsem Hrel.
     destruct (sim_implSampleMtipStep_step core pcAddrInit fetchCapacity instCapacity
                 decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-                mulDivMode config regions clint revSpec plic s1 s1' s2 v HmemEq Hsem)
+                mulDivMode config regions clint revSpec plic Henv s1 s1' s2 v HmemEq Hsem)
       as [_ [Hacts [_ [_ [_ Hs1']]]]].
     exact (stateRel_of_mem_lockstep s1 s1' s2 Hrel Hacts Hs1' Hfence').
   Qed.
 
   Theorem sim_implPlicClaimStep_cRel :
-    forall (s1 s1' : IState) (s2 : SState) (v : bits 0),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (Henv : ImplSpecSysEnvRel core pcAddrInit fetchCapacity instCapacity decodeCapacity
+                     dataMemCapacity mulCapacity divCapacity mulStages divStages
+                     mulDivMode config regions env1 env2)
+           (s1 s1' : IState) (s2 : SState) (v : bits 0),
       let s2' := writeSubTreeState (@Spec.np_mem core pcAddrInit regions) s2
                    (SimDevices.projImplMemSpecState core regions
                       (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -1557,26 +1583,30 @@ Section SystemModSimulation.
       FenceIInv core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2' ->
-      SemAction
+      SemAction env1
         (@implPlicClaimStep core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions plic type)
         s1 s1' v ->
       cRel s1 s2 ->
       exists mid2 : SState,
-        SemActions (map snd (specMod type)) s2 mid2 /\
+        SemActions env2 (map snd (specMod type)) s2 mid2 /\
         cRel s1' mid2.
   Proof.
-    intros s1 s1' s2 v s2' HmemEq Hfence' Hsem Hrel.
+    intros env1 env2 Henv s1 s1' s2 v s2' HmemEq Hfence' Hsem Hrel.
     destruct (sim_implPlicClaimStep_step core pcAddrInit fetchCapacity instCapacity
                 decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-                mulDivMode config regions clint revSpec plic s1 s1' s2 v HmemEq Hsem)
+                mulDivMode config regions clint revSpec plic Henv s1 s1' s2 v HmemEq Hsem)
       as [_ [Hacts [_ [_ [_ Hs1']]]]].
     exact (stateRel_of_mem_lockstep s1 s1' s2 Hrel Hacts Hs1' Hfence').
   Qed.
 
   Theorem sim_implPlicSampleMeipStep_cRel :
-    forall (s1 s1' : IState) (s2 : SState) (v : bits 0),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (Henv : ImplSpecSysEnvRel core pcAddrInit fetchCapacity instCapacity decodeCapacity
+                     dataMemCapacity mulCapacity divCapacity mulStages divStages
+                     mulDivMode config regions env1 env2)
+           (s1 s1' : IState) (s2 : SState) (v : bits 0),
       let s2' := writeSubTreeState (@Spec.np_mem core pcAddrInit regions) s2
                    (SimDevices.projImplMemSpecState core regions
                       (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -1590,26 +1620,30 @@ Section SystemModSimulation.
       FenceIInv core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2' ->
-      SemAction
+      SemAction env1
         (@implPlicSampleMeipStep core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions plic type)
         s1 s1' v ->
       cRel s1 s2 ->
       exists mid2 : SState,
-        SemActions (map snd (specMod type)) s2 mid2 /\
+        SemActions env2 (map snd (specMod type)) s2 mid2 /\
         cRel s1' mid2.
   Proof.
-    intros s1 s1' s2 v s2' HmemEq Hfence' Hsem Hrel.
+    intros env1 env2 Henv s1 s1' s2 v s2' HmemEq Hfence' Hsem Hrel.
     destruct (sim_implPlicSampleMeipStep_step core pcAddrInit fetchCapacity instCapacity
                 decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-                mulDivMode config regions clint revSpec plic s1 s1' s2 v HmemEq Hsem)
+                mulDivMode config regions clint revSpec plic Henv s1 s1' s2 v HmemEq Hsem)
       as [_ [Hacts [_ [_ [_ Hs1']]]]].
     exact (stateRel_of_mem_lockstep s1 s1' s2 Hrel Hacts Hs1' Hfence').
   Qed.
 
   Theorem sim_implPlicPendingsSteps_cRel :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (Henv : ImplSpecSysEnvRel core pcAddrInit fetchCapacity instCapacity decodeCapacity
+                     dataMemCapacity mulCapacity divCapacity mulStages divStages
+                     mulDivMode config regions env1 env2)
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
       let s2' := writeSubTreeState (@Spec.np_mem core pcAddrInit regions) s2
                    (SimDevices.projImplMemSpecState core regions
                       (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -1627,22 +1661,26 @@ Section SystemModSimulation.
       FenceIInv core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2' ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       cRel s1 s2 ->
       exists mid2 : SState,
-        SemActions (map snd (specMod type)) s2 mid2 /\
+        SemActions env2 (map snd (specMod type)) s2 mid2 /\
         cRel s1' mid2.
   Proof.
-    intros act s1 s1' s2 v s2' Hin HmemEq Hfence' Hsem Hrel.
+    intros env1 env2 Henv act s1 s1' s2 v s2' Hin HmemEq Hfence' Hsem Hrel.
     destruct (sim_implPlicPendingsSteps core pcAddrInit fetchCapacity instCapacity
                 decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-                mulDivMode config regions clint revSpec plic act s1 s1' s2 v Hin HmemEq Hsem)
+                mulDivMode config regions clint revSpec plic Henv act s1 s1' s2 v Hin HmemEq Hsem)
       as [Hacts [_ [_ [_ Hs1']]]].
     exact (stateRel_of_mem_lockstep s1 s1' s2 Hrel Hacts Hs1' Hfence').
   Qed.
 
   Theorem sim_fenceIAcks_cRel :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (Henv : ImplSpecSysEnvRel core pcAddrInit fetchCapacity instCapacity decodeCapacity
+                     dataMemCapacity mulCapacity divCapacity mulStages divStages
+                     mulDivMode config regions env1 env2)
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
       let s2' := writeSubTreeState (@Spec.np_mem core pcAddrInit regions) s2
                    (SimDevices.projImplMemSpecState core regions
                       (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -1660,21 +1698,25 @@ Section SystemModSimulation.
       FenceIInv core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2' ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       cRel s1 s2 ->
       exists mid2 : SState,
-        SemActions (map snd (specMod type)) s2 mid2 /\
+        SemActions env2 (map snd (specMod type)) s2 mid2 /\
         cRel s1' mid2.
   Proof.
-    intros act s1 s1' s2 v s2' Hin HmemEq Hfence' Hsem Hrel.
+    intros env1 env2 Henv act s1 s1' s2 v s2' Hin HmemEq Hfence' Hsem Hrel.
     destruct (sim_fenceIAcks core pcAddrInit fetchCapacity instCapacity
                 decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-                mulDivMode config regions clint revSpec plic act s1 s1' s2 v Hin HmemEq Hsem)
+                mulDivMode config regions clint revSpec plic Henv act s1 s1' s2 v Hin HmemEq Hsem)
       as [Hacts [_ [_ [_ Hs1']]]].
     exact (stateRel_of_mem_lockstep s1 s1' s2 Hrel Hacts Hs1' Hfence').
   Qed.
 
   Theorem sim_implPeripheralSteps_cRel :
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (Henv : ImplSpecSysEnvRel core pcAddrInit fetchCapacity instCapacity decodeCapacity
+                     dataMemCapacity mulCapacity divCapacity mulStages divStages
+                     mulDivMode config regions env1 env2),
     (forall rf1 rf2 wm1 wm2 req,
        GhostStep core pcAddrInit rf1 rf2 wm1 wm2 req ->
        GhostStep core pcAddrInit
@@ -1699,32 +1741,33 @@ Section SystemModSimulation.
       FenceIInv core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2' ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       cRel s1 s2 ->
       exists mid2 : SState,
-        SemActions (map snd (specMod type)) s2 mid2 /\
+        SemActions env2 (map snd (specMod type)) s2 mid2 /\
         cRel s1' mid2.
   Proof.
-    intros Hstep act s1 s1' s2 v s2' Hin HmemEq Hfence' Hsem Hrel.
+    intros env1 env2 Henv Hstep act s1 s1' s2 v s2' Hin HmemEq Hfence' Hsem Hrel.
     apply (In_implPeripheralSteps_decomp core pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
              mulDivMode config regions clint plic type act) in Hin.
     destruct Hin as [Hin | [-> | [-> | [-> | [-> | ->]]]]].
-    - exact (sim_implPlicPendingsSteps_cRel act s1 s1' s2 v Hin HmemEq Hfence' Hsem Hrel).
-    - exact (sim_implPlicClaimStep_cRel s1 s1' s2 v HmemEq Hfence' Hsem Hrel).
-    - exact (sim_implPlicSampleMeipStep_cRel s1 s1' s2 v HmemEq Hfence' Hsem Hrel).
+    - exact (sim_implPlicPendingsSteps_cRel Henv act s1 s1' s2 v Hin HmemEq Hfence' Hsem Hrel).
+    - exact (sim_implPlicClaimStep_cRel Henv s1 s1' s2 v HmemEq Hfence' Hsem Hrel).
+    - exact (sim_implPlicSampleMeipStep_cRel Henv s1 s1' s2 v HmemEq Hfence' Hsem Hrel).
     - exact (sim_implTickCycle_cRel Hstep s1 s1' s2 v Hsem Hrel).
-    - exact (sim_implTickTimer_cRel s1 s1' s2 v HmemEq Hfence' Hsem Hrel).
-    - exact (sim_implSampleMtipStep_cRel s1 s1' s2 v HmemEq Hfence' Hsem Hrel).
+    - exact (sim_implTickTimer_cRel Henv s1 s1' s2 v HmemEq Hfence' Hsem Hrel).
+    - exact (sim_implSampleMtipStep_cRel Henv s1 s1' s2 v HmemEq Hfence' Hsem Hrel).
   Qed.
 
   Theorem sim_mulDivStageActions_cRel :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act
         (@mulDivStageActions core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
@@ -1733,22 +1776,23 @@ Section SystemModSimulation.
                     mulDivMode config regions s1 ->
       cRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         cRel s1' s2'.
   Proof.
-    intros act s1 s1' s2 v Hin Hsem Hflush Hrel.
+    intros env1 env2 act s1 s1' s2 v Hin Hsem Hflush Hrel.
     exact (SimExecute.sim_mulDivStageActions core pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
              mulDivMode config regions clint revSpec plic act s1 s1' s2 v Hin Hsem Hflush Hrel).
   Qed.
 
   Theorem sim_mulDivStageActions_preserve_entries :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act
         (@mulDivStageActions core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       impl_rf core pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
               mulDivMode config regions s1' =
@@ -1765,10 +1809,10 @@ Section SystemModSimulation.
                        mulDivMode config regions s1) ->
       cRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         cRel s1' s2'.
   Proof.
-    intros act s1 s1' s2 v Hin Hsem Hrf Hentries Hrel.
+    intros env1 env2 act s1 s1' s2 v Hin Hsem Hrf Hentries Hrel.
     apply (sim_mulDivStageActions_cRel act s1 s1' s2 v Hin Hsem); [| exact Hrel].
     exact (flushMulDiv_preserve_of_entries core pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
@@ -1776,13 +1820,14 @@ Section SystemModSimulation.
   Qed.
 
   Theorem sim_mulDivStageActions_wb_pop :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0)
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0)
            (dstIdx : bits RegIdxSzReal) (resCap : type FullECapWithTag),
       In act
         (@mulDivStageActions core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       impl_rf core pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
               mulDivMode config regions s1' =
@@ -1801,10 +1846,10 @@ Section SystemModSimulation.
                        mulDivMode config regions s1') ->
       cRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         cRel s1' s2'.
   Proof.
-    intros act s1 s1' s2 v dstIdx resCap Hin Hsem Hrf Hpop Hrel.
+    intros env1 env2 act s1 s1' s2 v dstIdx resCap Hin Hsem Hrf Hpop Hrel.
     apply (sim_mulDivStageActions_cRel act s1 s1' s2 v Hin Hsem); [| exact Hrel].
     exact (flushMulDiv_wb_pop_of_entries core pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
@@ -1851,6 +1896,7 @@ Section SystemModSimulation.
   Qed.
 
   Theorem sim_dataMem_load_writeback_GhostList :
+    forall {env2 : Env sTree},
     (forall wIdx wbVal rf0 rf1 wm0 wm1 req,
        (Zmod.eqb wIdx Zmod.zero = false ->
         Zmod.eqb (req.(Fst)) Zmod.zero = false ->
@@ -1898,7 +1944,7 @@ Section SystemModSimulation.
       (forall rf_mid wm_mid req,
          GhostStep core pcAddrInit (spec_rf core pcAddrInit regions s2) rf_mid (fun _ => false) wm_mid req ->
          spec_rf core pcAddrInit regions s2' = writeGprVal core pcAddrInit dstIdx dstVal rf_mid) ->
-      SemAction (@specStep core pcAddrInit config regions clint plic type) s2 s2' Zmod.zero ->
+      SemAction env2 (@specStep core pcAddrInit config regions clint plic type) s2 s2' Zmod.zero ->
       TreeContentRel (SpecMemSubTree core regions)
         (StateRel.projImplMemSpecState core regions
            (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -1909,10 +1955,10 @@ Section SystemModSimulation.
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2' ->
       exists mid2 : SState,
-        SemActions (map snd (specMod type)) s2 mid2 /\
+        SemActions env2 (map snd (specMod type)) s2 mid2 /\
         cRel s1' mid2.
   Proof.
-    intros Hstep s1 s1' s2 s2' dstIdx dstVal Hrel HnotRq1 Hrq1' Hq' Hflush' Hdisj HrfStep Hspec HmemRel' Hfence'.
+    intros env2 Hstep s1 s1' s2 s2' dstIdx dstVal Hrel HnotRq1 Hrq1' Hq' Hflush' Hdisj HrfStep Hspec HmemRel' Hfence'.
     eapply (sim_dataMem_load_writeback_commit core pcAddrInit fetchCapacity instCapacity
               decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
               mulDivMode config regions clint revSpec plic
@@ -1929,18 +1975,19 @@ Section SystemModSimulation.
   (* Unconditional `stateRel` step simulations for peripheral, revoker, fenceIAcks, and targetPort *)
 
   Theorem sim_implPeripheralSteps_stateRel :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act
         (@implPeripheralSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions clint plic type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    intros act s1 s1' s2 v _ _ Hrel.
+    intros env1 env2 act s1 s1' s2 v _ _ Hrel.
     exists s2; split.
     - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
     - exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
@@ -1949,18 +1996,19 @@ Section SystemModSimulation.
   Qed.
 
   Theorem sim_implRevokerStepsSys_stateRel :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act
         (@implRevokerStepsSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    intros act s1 s1' s2 v _ _ Hrel.
+    intros env1 env2 act s1 s1' s2 v _ _ Hrel.
     exists s2; split.
     - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
     - exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
@@ -1969,18 +2017,19 @@ Section SystemModSimulation.
   Qed.
 
   Theorem sim_fenceIAcks_stateRel :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act
         (@fenceIAcks core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    intros act s1 s1' s2 v _ _ Hrel.
+    intros env1 env2 act s1 s1' s2 v _ _ Hrel.
     exists s2; split.
     - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
     - exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
@@ -1989,18 +2038,19 @@ Section SystemModSimulation.
   Qed.
 
   Theorem sim_targetPortRqs_stateRel :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act
         (@targetPortRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    intros act s1 s1' s2 v _ _ Hrel.
+    intros env1 env2 act s1 s1' s2 v _ _ Hrel.
     exists s2; split.
     - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
     - exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
@@ -2009,18 +2059,19 @@ Section SystemModSimulation.
   Qed.
 
   Theorem sim_targetPortRps_stateRel :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act
         (@targetPortRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
-      SemAction act s1 s1' v ->
+      SemAction env1 act s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (map snd (specMod type)) s2 s2' /\
         sRel s1' s2'.
   Proof.
-    intros act s1 s1' s2 v _ _ Hrel.
+    intros env1 env2 act s1 s1' s2 v _ _ Hrel.
     exists s2; split.
     - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
     - exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
@@ -2033,168 +2084,171 @@ Section SystemModSimulation.
   (* Record packaging the per-group action-to-actions simulation obligations on `sRel`.
    * Note that `setCanProceedSteps` and `fetchRqs` are discharged unconditionally by
    * `sim_setCanProceedSteps_stateRel` and `sim_fetchRqs_stateRel` above. *)
-  Record StageStepSimulations : Prop := {
+  Record StageStepSimulations {env1 : Env iTree} {env2 : Env sTree} : Prop := {
     sim_step_peripheral :
       forall act s1 s1' s2,
         In act (@implPeripheralSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config regions clint plic type) ->
-        SemAction act s1 s1' Zmod.zero ->
+        SemAction env1 act s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_fetchRqStage :
       forall s1 s1' s2,
-        SemAction (@fetchRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        SemAction env1 (@fetchRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                      config regions rev type) s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_fetchRps :
       forall act s1 s1' s2,
         In act (@fetchRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config regions type) ->
-        SemAction act s1 s1' Zmod.zero ->
+        SemAction env1 act s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_fetchAssembleStage :
       forall s1 s1' s2,
-        SemAction (@fetchAssembleStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        SemAction env1 (@fetchAssembleStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                      config regions rev type) s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_decodeAndRegReadStage :
       forall s1 s1' s2,
-        SemAction (@decodeAndRegReadStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        SemAction env1 (@decodeAndRegReadStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                      config regions rev type) s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_aluAndExecuteStage :
       forall s1 s1' s2,
-        SemAction (@aluAndExecuteNonDeferredStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        SemAction env1 (@aluAndExecuteNonDeferredStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                      config regions clint rev plic type) s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_loadRqOrStoreOrFenceStage :
       forall s1 s1' s2,
-        SemAction (@loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        SemAction env1 (@loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                      config regions rev type) s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_dataWriteRqs :
       forall act s1 s1' s2,
         In act (@dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config regions type) ->
-        SemAction act s1 s1' Zmod.zero ->
+        SemAction env1 act s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_dataReadRqs :
       forall act s1 s1' s2,
         In act (@dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config regions type) ->
-        SemAction act s1 s1' Zmod.zero ->
+        SemAction env1 act s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_dataReadRps :
       forall act s1 s1' s2,
         In act (@dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config regions type) ->
-        SemAction act s1 s1' Zmod.zero ->
+        SemAction env1 act s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_dataCrossLineSteps :
       forall act s1 s1' s2,
         In act (@dataCrossLineSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config regions type) ->
-        SemAction act s1 s1' Zmod.zero ->
+        SemAction env1 act s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_loadRpAndIssueRevRqStage :
       forall s1 s1' s2,
-        SemAction (@loadRpAndIssueRevRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        SemAction env1 (@loadRpAndIssueRevRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                      config regions rev type) s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_revRpAndWriteBackStage :
       forall s1 s1' s2,
-        SemAction (@revRpAndWriteBackStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        SemAction env1 (@revRpAndWriteBackStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                      config regions rev type) s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_mulDivStageActions :
       forall act s1 s1' s2,
         In act (@mulDivStageActions core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config regions type) ->
-        SemAction act s1 s1' Zmod.zero ->
+        SemAction env1 act s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_revokerStepsSys :
       forall act s1 s1' s2,
         In act (@implRevokerStepsSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config regions rev type) ->
-        SemAction act s1 s1' Zmod.zero ->
+        SemAction env1 act s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_fenceIAcks :
       forall act s1 s1' s2,
         In act (@fenceIAcks core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config regions type) ->
-        SemAction act s1 s1' Zmod.zero ->
+        SemAction env1 act s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_targetPortRqs :
       forall act s1 s1' s2,
         In act (@targetPortRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config regions type) ->
-        SemAction act s1 s1' Zmod.zero ->
+        SemAction env1 act s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
     sim_step_targetPortRps :
       forall act s1 s1' s2,
         In act (@targetPortRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config regions type) ->
-        SemAction act s1 s1' Zmod.zero ->
+        SemAction env1 act s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions (map snd (specMod type)) s2 s2' /\ sRel s1' s2'
+        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2'
   }.
 
-  Lemma stageStepSimulations_holds : StageStepSimulations.
+  Lemma stageStepSimulations_holds :
+    forall (env1 : Env iTree) (env2 : Env sTree),
+      @StageStepSimulations env1 env2.
   Proof.
+    intros env1 env2.
     constructor; intros;
       lazymatch goal with
-      | H : sRel ?s1 ?s2 |- exists s2', SemActions _ ?s2 s2' /\ sRel ?s1' s2' =>
+      | H : sRel ?s1 ?s2 |- exists s2', SemActions _ _ ?s2 s2' /\ sRel ?s1' s2' =>
           exists s2; split;
           [ exact (specMod_stutter core pcAddrInit config regions clint revSpec plic s2)
           | exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
@@ -2204,19 +2258,20 @@ Section SystemModSimulation.
   Qed.
 
   Theorem ImplActionKind_actionToActions_sim :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState),
       ImplActionKind core pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions clint rev plic type act ->
-      SemAction act s1 s1' Zmod.zero ->
+      SemAction env1 act s1 s1' Zmod.zero ->
       forall s2 : SState,
         sRel s1 s2 ->
         exists s2' : SState,
-          SemActions (map snd (specMod type)) s2 s2' /\
+          SemActions env2 (map snd (specMod type)) s2 s2' /\
           sRel s1' s2'.
   Proof.
-    intros act s1 s1' Hkind Hsem s2 Hrel.
-    pose proof stageStepSimulations_holds as Hsim.
+    intros env1 env2 act s1 s1' Hkind Hsem s2 Hrel.
+    pose proof (stageStepSimulations_holds env1 env2) as Hsim.
     destruct Hkind as
       [Hin | -> | Hin | Hin | -> | -> | -> | -> | Hin | Hin | Hin | Hin | -> | -> | Hin | Hin | Hin | Hin | Hin | Hin].
     - exact (sim_step_peripheral Hsim act s1 s1' s2 Hin Hsem Hrel).
@@ -2242,31 +2297,33 @@ Section SystemModSimulation.
   Qed.
 
   Theorem forwardDatapath_actionToActions_sim :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState),
       In act (map snd (fwdMod type)) ->
-      SemAction act s1 s1' Zmod.zero ->
+      SemAction env1 act s1 s1' Zmod.zero ->
       forall s2 : SState,
         sRel s1 s2 ->
         exists s2' : SState,
-          SemActions (map snd (specMod type)) s2 s2' /\
+          SemActions env2 (map snd (specMod type)) s2 s2' /\
           sRel s1' s2'.
   Proof.
-    intros act s1 s1' Hin Hsem s2 Hrel.
+    intros env1 env2 act s1 s1' Hin Hsem s2 Hrel.
     apply In_forwardDatapathMod_ImplActionKind in Hin.
     exact (ImplActionKind_actionToActions_sim act s1 s1' Hin Hsem s2 Hrel).
   Qed.
 
   Theorem pipelined_actionToActions_sim :
-    forall (act : Action type iTree (Bit 0)) (s1 s1' : IState),
+    forall {env1 : Env iTree} {env2 : Env sTree}
+           (act : Action type iTree (Bit 0)) (s1 s1' : IState),
       In act (map snd (pipeMod type)) ->
-      SemAction act s1 s1' Zmod.zero ->
+      SemAction env1 act s1 s1' Zmod.zero ->
       forall s2 : SState,
         sRel s1 s2 ->
         exists s2' : SState,
-          SemActions (map snd (specMod type)) s2 s2' /\
+          SemActions env2 (map snd (specMod type)) s2 s2' /\
           sRel s1' s2'.
   Proof.
-    intros act s1 s1' Hin Hsem s2 Hrel.
+    intros env1 env2 act s1 s1' Hin Hsem s2 Hrel.
     apply (In_pipelinedMod_ImplActionKind core pcAddrInit issueWidth
              fetchCapacity instCapacity decodeCapacity dataMemCapacity
              mulCapacity divCapacity mulStages divStages mulDivMode
@@ -2276,8 +2333,12 @@ Section SystemModSimulation.
 
   (* Top-level `ModSimulation` theorem for `forwardDatapathMod` against `spec` *)
   Theorem forwardDatapathMod_simulates_spec :
-    ModSimulation fwdMod specMod sRel.
+    forall (env1 : Env iTree) (env2 : Env sTree)
+           (env2Exists : EnvInhabited env2)
+           (envConsistent : EnvConsistent env1 env2 sRel),
+      ModSimulation env1 env2 fwdMod specMod sRel env2Exists envConsistent.
   Proof.
+    intros env1 env2 env2Exists envConsistent.
     apply ActionToActionsModSimulation.
     - exact (stateRel_InitStateConsistent core pcAddrInit fetchCapacity instCapacity
                decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
@@ -2287,25 +2348,32 @@ Section SystemModSimulation.
 
   (* End-to-end `SemMod` refinement for `forwardDatapathMod` using `initStateRel` *)
   Theorem forwardDatapathMod_SemMod_refines_spec :
-    forall (old1 new1 : IState) (old2 : SState),
+    forall (env1 : Env iTree) (env2 : Env sTree)
+           (env2Exists : EnvInhabited env2)
+           (envConsistent : EnvConsistent env1 env2 sRel)
+           (old1 new1 : IState) (old2 : SState),
       InitStateConsistent sTree old2 ->
-      SemMod fwdMod old1 new1 ->
+      SemMod env1 fwdMod old1 new1 ->
       exists new2 : SState,
-        SemMod specMod old2 new2 /\
+        SemMod env2 specMod old2 new2 /\
         sRel new1 new2.
   Proof.
-    intros old1 new1 old2 Hinit2 Hsem1.
+    intros env1 env2 env2Exists envConsistent old1 new1 old2 Hinit2 Hsem1.
     inversion Hsem1 as [? ? Hinit1 _]; subst.
     pose proof (initStateRel core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions old1 old2 Hinit1 Hinit2) as Hrel0.
-    exact (forwardDatapathMod_simulates_spec old1 new1 Hsem1 old2 Hrel0).
+    exact (forwardDatapathMod_simulates_spec env1 env2 env2Exists envConsistent old1 new1 Hsem1 old2 Hrel0).
   Qed.
 
   (* Top-level `ModSimulation` theorem for `pipelinedMod` against `spec` *)
   Theorem pipelinedMod_simulates_spec :
-    ModSimulation pipeMod specMod sRel.
+    forall (env1 : Env iTree) (env2 : Env sTree)
+           (env2Exists : EnvInhabited env2)
+           (envConsistent : EnvConsistent env1 env2 sRel),
+      ModSimulation env1 env2 pipeMod specMod sRel env2Exists envConsistent.
   Proof.
+    intros env1 env2 env2Exists envConsistent.
     apply ActionToActionsModSimulation.
     - exact (stateRel_InitStateConsistent core pcAddrInit fetchCapacity instCapacity
                decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
@@ -2315,19 +2383,22 @@ Section SystemModSimulation.
 
   (* End-to-end `SemMod` refinement for `pipelinedMod` using `initStateRel` *)
   Theorem pipelinedMod_SemMod_refines_spec :
-    forall (old1 new1 : IState) (old2 : SState),
+    forall (env1 : Env iTree) (env2 : Env sTree)
+           (env2Exists : EnvInhabited env2)
+           (envConsistent : EnvConsistent env1 env2 sRel)
+           (old1 new1 : IState) (old2 : SState),
       InitStateConsistent sTree old2 ->
-      SemMod pipeMod old1 new1 ->
+      SemMod env1 pipeMod old1 new1 ->
       exists new2 : SState,
-        SemMod specMod old2 new2 /\
+        SemMod env2 specMod old2 new2 /\
         sRel new1 new2.
   Proof.
-    intros old1 new1 old2 Hinit2 Hsem1.
+    intros env1 env2 env2Exists envConsistent old1 new1 old2 Hinit2 Hsem1.
     inversion Hsem1 as [? ? Hinit1 _]; subst.
     pose proof (initStateRel core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions old1 old2 Hinit1 Hinit2) as Hrel0.
-    exact (pipelinedMod_simulates_spec old1 new1 Hsem1 old2 Hrel0).
+    exact (pipelinedMod_simulates_spec env1 env2 env2Exists envConsistent old1 new1 Hsem1 old2 Hrel0).
   Qed.
 
 End SystemModSimulation.

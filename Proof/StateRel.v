@@ -15,9 +15,9 @@
  *)
 
 From Stdlib Require Import String List PeanoNat ZArith Zmod Lia Bool Eqdep_dec.
-From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems ActionSim.
+From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems HelperLemmas ActionSim.
 From Cheriot Require Export SpecDefines Decoder FunctionalUnits Alu Spec SpecFetchDeferred SpecDevice SpecRevoker SpecMulDiv Clint Plic.
-From Cheriot Require Export Impl ImplCommon ImplBranchPredictor ImplFetch ImplDecode ImplExecute ImplDataMem ImplMulDiv ImplDevice ImplRevoker ImplStaged.
+From Cheriot Require Export Impl ImplCommon ImplBranchPredictor ImplFetch ImplDecode ImplExecute ImplDataMem ImplMulDiv ImplDevice ImplRevoker ImplStaged ImplStagedProof.
 From Cheriot Require Export ShiftFifo ShiftFifoLemmas FifoLemmas.
 From Cheriot Require Export TreeLemmas.
 
@@ -710,7 +710,7 @@ Section StateProjections.
       exists (pcc : type FullECapWithTag) (meip mtip : bool)
              (aluOut : type AluOutUnion) (execOut : type ExecuteOut)
              (rf_mid : RfState),
-        SemAction (executeNonDeferred core pcAddrInit pcc meip mtip aluOut) rf0 rf_mid execOut /\
+        SemAction defaultEnv (executeNonDeferred core pcAddrInit pcc meip mtip aluOut) rf0 rf_mid execOut /\
         rf1 = evalWriteRegsList (gprPathsWithKind core pcAddrInit) (Zmod.zero : bits RegIdxSzReal) (execOut.(Snd).(Snd).(Snd).(Snd).(Fst)) rf_mid /\
         execOut.(Snd).(Fst) = (req.(Snd).(Snd).(Fst) ,, (true ,, tt)) /\
         aluOut.(Snd).(Fst) = ghost_dstIdx /\
@@ -743,7 +743,7 @@ Section StateProjections.
           exists (pcc : type FullECapWithTag) (meip mtip : bool)
                  (aluOut : type AluOutUnion) (execOut : type ExecuteOut)
                  (rf_mid : RfState),
-            SemAction (executeNonDeferred core pcAddrInit pcc meip mtip aluOut) rf0 rf_mid execOut /\
+            SemAction defaultEnv (executeNonDeferred core pcAddrInit pcc meip mtip aluOut) rf0 rf_mid execOut /\
             execOut.(Snd).(Fst).(Snd).(Fst) = false /\
             rf1 = evalWriteRegsList (gprPathsWithKind core pcAddrInit)
                     (Zmod.zero : bits RegIdxSzReal)

@@ -15,8 +15,8 @@
  *)
 
 From Stdlib Require Import String List ZArith Znumtheory Zmod Zmod.Bits Lia Bool Eqdep_dec.
-From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems ActionSim.
-From Cheriot Require Export SpecDefines ShiftFifo ShiftFifoLemmas ImplStaged ImplCommon.
+From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems HelperLemmas ActionSim.
+From Cheriot Require Export SpecDefines ShiftFifo ShiftFifoLemmas ImplStaged ImplStagedProof ImplCommon.
 
 Unset Implicit Arguments.
 Unset Strict Implicit.
@@ -348,4 +348,93 @@ Theorem readGpr_updGpr_other :
 Proof.
   intros dom pcAddrInit idx1 idx2 v rf Hneq; unfold readGpr, updGpr.
   apply evalReadRegsList_evalWriteRegsList_other; [apply NoDup_gprPathsWithKind | exact Hneq].
+Qed.
+
+(* --- Environment invariance for trees without `ERecv` leaves (`rfTree`, etc.) --- *)
+
+Definition defaultEnv {t : Tree DomainElem} : Env t :=
+  fun _ _ _ => True.
+
+Fixpoint noRecvTree (t : Tree DomainElem) : bool :=
+  match t with
+  | Leaf _ de => negb (isRecvElem (snd de))
+  | Node _ children =>
+      (fix loop (ls : list (Tree DomainElem)) : bool :=
+         match ls with
+         | nil => true
+         | x :: xs => andb (noRecvTree x) (loop xs)
+         end) children
+  end.
+
+Lemma noRecvTree_no_isRecvElem :
+  forall (t : Tree DomainElem) (lp : LeafPath t),
+    noRecvTree t = true ->
+    Is_true (isRecvElem (getLeafElem lp)) ->
+    False.
+Proof.
+  fix F 1.
+  intros [name de | name children] lp Hno Hpf.
+  - cbn in Hno, Hpf.
+    destruct (isRecvElem (snd de)); [discriminate Hno | exact Hpf].
+  - cbn in Hno, lp, Hpf.
+    induction children as [| x xs IH].
+    + destruct lp.
+    + apply andb_prop in Hno as [Hx Hxs].
+      destruct lp as [lp_x | lp_xs].
+      * exact (F x lp_x Hx Hpf).
+      * exact (IH lp_xs Hxs Hpf).
+Qed.
+
+Lemma noRecvTree_no_RecvPath :
+  forall (t : Tree DomainElem),
+    noRecvTree t = true ->
+    forall (x : RecvPath t), False.
+Proof.
+  intros t Hno [lp pf].
+  exact (noRecvTree_no_isRecvElem t lp Hno pf).
+Qed.
+
+Lemma evalActionPropGen_noRecvTree_env :
+  forall {t : Tree DomainElem} (env1 env2 : Env t) {k : Kind}
+         (a : Action type t k) (s : TreeState DomainElemState t) P,
+    noRecvTree t = true ->
+    evalActionPropGen env1 a s P <-> evalActionPropGen env2 a s P.
+Proof.
+  intros t env1 env2 k a s P Hno.
+  apply evalActionPropGen_env_ext.
+  intros sub x v.
+  exfalso; exact (noRecvTree_no_RecvPath t Hno x).
+Qed.
+
+Lemma SemAction_noRecvTree_env :
+  forall {t : Tree DomainElem} (env1 env2 : Env t) {k : Kind}
+         (a : Action type t k) (s s' : TreeState DomainElemState t) (v : type k),
+    noRecvTree t = true ->
+    SemAction env1 a s s' v <-> SemAction env2 a s s' v.
+Proof.
+  intros t env1 env2 k a s s' v Hno.
+  split; apply SemAction_env_mono; intros sub x rv;
+    exfalso; exact (noRecvTree_no_RecvPath t Hno x).
+Qed.
+
+Lemma evalActionPropGen_rfTree_env :
+  forall {dom : string} {pcAddrInit : Z}
+         (env1 env2 : Env (rfTree dom pcAddrInit)) {k : Kind}
+         (a : Action type (rfTree dom pcAddrInit) k)
+         (s : TreeState DomainElemState (rfTree dom pcAddrInit)) P,
+    evalActionPropGen env1 a s P <-> evalActionPropGen env2 a s P.
+Proof.
+  intros dom pcAddrInit env1 env2 k a s P.
+  exact (evalActionPropGen_noRecvTree_env env1 env2 a s P eq_refl).
+Qed.
+
+Lemma SemAction_rfTree_env :
+  forall {dom : string} {pcAddrInit : Z}
+         (env1 env2 : Env (rfTree dom pcAddrInit)) {k : Kind}
+         (a : Action type (rfTree dom pcAddrInit) k)
+         (s s' : TreeState DomainElemState (rfTree dom pcAddrInit)) (v : type k),
+    SemAction env1 a s s' v <-> SemAction env2 a s s' v.
+Proof.
+  intros dom pcAddrInit env1 env2 k a s s' v.
+  exact (SemAction_noRecvTree_env env1 env2 a s s' v eq_refl).
 Qed.
