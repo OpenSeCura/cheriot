@@ -55,7 +55,7 @@ def parse_outputs_tree(s):
         nonlocal pos
         if pos >= len(tokens):
             return None
-        
+
         t = tokens[pos]
         if t == '(':
             pos += 1
@@ -168,11 +168,11 @@ def parse_functional_units_spec(file_path):
     raw_selector_tokens = []
 
     blocks = re.split(r"\n\n+", sec2_text.strip())
-    
+
     for block in blocks:
         lines = block.split("\n")
         header_line = lines[0].strip()
-        
+
         if header_line.endswith(":"):
             header_raw = header_line[:-1].strip()
             unit_name = header_raw.split("(")[0].strip()
@@ -215,7 +215,7 @@ def parse_functional_units_spec(file_path):
                         curr_op = []
                     outputs_str += " " + l_str[len("Outputs:"):].strip()
                     continue
-                
+
                 if ":" in l_str and not l_str.startswith("(") and re.match(r"^[a-zA-Z0-9_.]+\s*:", l_str):
                     in_outputs = False
                     in_op = False
@@ -225,7 +225,7 @@ def parse_functional_units_spec(file_path):
                     if curr_p:
                         port_lines.append(" ".join(curr_p))
                         curr_p = []
-                
+
                 if in_outputs:
                     outputs_str += " " + l_str
                 elif in_op:
@@ -295,7 +295,7 @@ def parse_functional_units_spec(file_path):
                 l_str = l.strip()
                 if not l_str:
                     continue
-                
+
                 is_new_wb = (":" in l_str) or (l_str in units)
                 if is_new_wb:
                     if curr_wb:
