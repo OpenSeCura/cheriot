@@ -351,11 +351,11 @@ Section MemFetchChannelLemmas.
            {env : Env (implMemRegionTree r)}
            (sr sr' : TreeState DomainElemState (implMemRegionTree r))
            (pktOpt : type (Option FetchPacket)),
-      SemAction env (@implMemRegionFetchRp core r type addr) sr sr' pktOpt ->
+      SemAction env (@implMemRegionFetchLineReadRp core r type addr) sr sr' pktOpt ->
       sr' = sr.
   Proof.
     intros r addr env sr sr' pktOpt Hsem.
-    unfold implMemRegionFetchRp, implMemRegionTree, implMemRegionKindTree in *.
+    unfold implMemRegionFetchLineReadRp, implMemRegionTree, implMemRegionKindTree in *.
     revert env sr sr' pktOpt Hsem.
     destruct (r.(regionKind)) as [| children rdAct wrAct irqAct];
       intros env sr sr' pktOpt Hsem.
@@ -376,10 +376,10 @@ Section MemFetchChannelLemmas.
            {env : Env (implRegionsTree rs)}
            (sm sm' : TreeState DomainElemState (implRegionsTree rs))
            (pktOpt : type (Option FetchPacket)),
-      SemAction env (@implRegionsFetchRp core type rs addr) sm sm' pktOpt ->
+      SemAction env (@implRegionsFetchLineReadRp core type rs addr) sm sm' pktOpt ->
       sm' = sm.
   Proof.
-    intros rs addr; unfold implRegionsFetchRp, genRouteRegionAction.
+    intros rs addr; unfold implRegionsFetchLineReadRp, genRouteRegionAction.
     lazymatch goal with
     | |- context [genRouteRegionActionAux _ _ _ _ ?a _] => generalize a as acc
     end.
@@ -411,7 +411,7 @@ Section MemFetchChannelLemmas.
            {env : Env (implMemTree rs)}
            (sm sm' : TreeState DomainElemState (implMemTree rs))
            (pktOpt : type (Option FetchPacket)),
-      SemAction env (liftAction child0Path (@implRegionsFetchRp core type rs addr)) sm sm' pktOpt ->
+      SemAction env (liftAction child0Path (@implRegionsFetchLineReadRp core type rs addr)) sm sm' pktOpt ->
       sm' = sm.
   Proof.
     intros rs addr env sm sm' pktOpt Hsem.
@@ -428,11 +428,11 @@ Section MemFetchChannelLemmas.
            {env : Env (implMemRegionTree r)}
            (sr sr' : TreeState DomainElemState (implMemRegionTree r))
            (v : bits 0),
-      SemAction env (@implMemRegionFetchDeqRp core r type) sr sr' v ->
+      SemAction env (@implMemRegionFetchLineDeqRp core r type) sr sr' v ->
       projImplRegionSpecState core r sr' = projImplRegionSpecState core r sr.
   Proof.
     intros r env sr sr' v Hsem.
-    unfold implMemRegionFetchDeqRp, implExternalFetchLineDeqRp, projImplRegionSpecState, implMemRegionTree, implMemRegionKindTree, memRegionTree, memRegionKindTree in *.
+    unfold implMemRegionFetchLineDeqRp, implExternalFetchLineDeqRp, projImplRegionSpecState, implMemRegionTree, implMemRegionKindTree, memRegionTree, memRegionKindTree in *.
     revert env sr sr' Hsem.
     destruct (r.(regionKind)) as [| children rdAct wrAct irqAct];
       intros env sr sr' Hsem.
@@ -447,10 +447,10 @@ Section MemFetchChannelLemmas.
            {env : Env (implRegionsTree rs)}
            (sm sm' : TreeState DomainElemState (implRegionsTree rs))
            (v : bits 0),
-      SemAction env (@implRegionsFetchDeqRp core type rs addr) sm sm' v ->
+      SemAction env (@implRegionsFetchLineDeqRp core type rs addr) sm sm' v ->
       projImplMemRegions core rs sm' = projImplMemRegions core rs sm.
   Proof.
-    intros rs addr; unfold implRegionsFetchDeqRp, genRouteRegionUnitAction, genRouteRegionAction.
+    intros rs addr; unfold implRegionsFetchLineDeqRp, genRouteRegionUnitAction, genRouteRegionAction.
     lazymatch goal with
     | |- context [genRouteRegionActionAux _ _ _ _ ?a _] => generalize a as acc
     end.
@@ -486,7 +486,7 @@ Section MemFetchChannelLemmas.
            {env : Env (implMemTree rs)}
            (sm sm' : TreeState DomainElemState (implMemTree rs))
            (v : bits 0),
-      SemAction env (liftAction child0Path (@implRegionsFetchDeqRp core type rs addr)) sm sm' v ->
+      SemAction env (liftAction child0Path (@implRegionsFetchLineDeqRp core type rs addr)) sm sm' v ->
       StateRel.projImplMemSpecState core rs sm' = StateRel.projImplMemSpecState core rs sm.
   Proof.
     intros rs addr env sm sm' v Hsem.
@@ -789,7 +789,7 @@ Section CoreStageFrameLemmas.
       (c'.(Snd).(Snd).(Snd).(Fst).(Fst) = c.(Snd).(Snd).(Snd).(Fst).(Fst) \/
        (exec_fenceIPending core (c.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).(Fst)) = false /\
         exists (envMem : Env (implMemTree core regions)) alignedPc canEnq,
-          SemAction envMem (liftAction child0Path (@implRegionsFetchRq core type regions alignedPc))
+          SemAction envMem (liftAction child0Path (@implRegionsFetchLineReadRq core type regions alignedPc))
             (c.(Snd).(Snd).(Snd).(Fst).(Fst))
             (c'.(Snd).(Snd).(Snd).(Fst).(Fst))
             canEnq)).
@@ -1523,7 +1523,7 @@ Section FetchDecodeSystemSim.
       (implMem s1' = implMem s1 \/
        (exec_fenceIPending core (implExecute s1) = false /\
         exists (envMem : Env (implMemTree core regions)) alignedPc canEnq,
-          SemAction envMem (liftAction child0Path (@implRegionsFetchRq core type regions alignedPc))
+          SemAction envMem (liftAction child0Path (@implRegionsFetchLineReadRq core type regions alignedPc))
             (implMem s1) (implMem s1') canEnq)).
   Proof.
     intros env1 s1 s1' v Hsem.

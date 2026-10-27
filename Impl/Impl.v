@@ -244,21 +244,42 @@ Section ImplDom.
         map (fun act => liftAction np_core act)
             (@mulDivRules core mulCapacity divCapacity mulStages divStages mulDivMode pcAddrInit bpTree memTree fTree decTree eTree dmTree ty).
 
-      Definition fetchRps : list (Action ty sysTree (Bit 0)) :=
+      Definition fetchLineRpPorts : list (Action ty sysTree (Bit 0)) :=
         map (fun act => liftAction np_mem act)
-            (implMemCollectFetchRpActions core regions ty).
+            (implMemCollectFetchLineRpPorts core regions ty).
+
+      Definition readRpPorts : list (Action ty sysTree (Bit 0)) :=
+        map (fun act => liftAction np_mem act)
+            (implMemCollectLineReadRpPorts core regions ty).
+
+      Definition readRpStep : Action ty sysTree (Bit 0) :=
+        liftAction np_mem (implMemReadRpStep core regions ty).
+
+      Definition readRqPorts : list (Action ty sysTree (Bit 0)) :=
+        map (fun act => liftAction np_mem act)
+            (implMemCollectLineReadRqPorts core regions ty).
+
+      Definition readRqStep : Action ty sysTree (Bit 0) :=
+        liftAction np_mem (implMemReadRqStep core regions ty).
+
+      Definition writeRqPorts : list (Action ty sysTree (Bit 0)) :=
+        map (fun act => liftAction np_mem act)
+            (implMemCollectLineWriteRqPorts core regions ty).
+
+      Definition writeRqStep : Action ty sysTree (Bit 0) :=
+        liftAction np_mem (implMemWriteRqStep core regions ty).
+
+      Definition fetchRps : list (Action ty sysTree (Bit 0)) :=
+        fetchLineRpPorts.
 
       Definition dataReadRps : list (Action ty sysTree (Bit 0)) :=
-        map (fun act => liftAction np_mem act)
-            (implMemCollectDataReadRpActions core regions ty).
+        readRpPorts ++ [ readRpStep ].
 
       Definition dataReadRqs : list (Action ty sysTree (Bit 0)) :=
-        map (fun act => liftAction np_mem act)
-            (implMemCollectDataReadRqActions core regions ty).
+        readRqStep :: readRqPorts.
 
       Definition dataWriteRqs : list (Action ty sysTree (Bit 0)) :=
-        map (fun act => liftAction np_mem act)
-            (implMemCollectDataWriteRqActions core regions ty).
+        writeRqStep :: writeRqPorts.
 
       Definition fenceIAcks : list (Action ty sysTree (Bit 0)) :=
         map (fun act => liftAction np_mem act)
@@ -274,23 +295,25 @@ Section ImplDom.
       map (fun a => (core, a)) (
         implPeripheralSteps ty
         ++ [ fetchRqStage ty ]
-        ++ fetchRps ty
+        ++ fetchLineRpPorts ty
         ++ [ fetchAssembleStage ty ;
              decodeAndRegReadStage ty ;
              aluAndExecuteNonDeferredStage ty ;
              loadRqOrStoreOrFenceStage ty ]
-        ++ dataWriteRqs ty ++ dataReadRqs ty ++ dataReadRps ty
-        ++ dataWriteRqs ty ++ dataReadRqs ty ++ dataReadRps ty
+        ++ [ writeRqStep ty ] ++ writeRqPorts ty
+        ++ [ writeRqStep ty ] ++ writeRqPorts ty
+        ++ [ readRqStep ty ] ++ readRqPorts ty ++ readRpPorts ty ++ [ readRpStep ty ]
+        ++ [ readRqStep ty ] ++ readRqPorts ty ++ readRpPorts ty ++ [ readRpStep ty ]
         ++ [ loadRpAndIssueRevRqStage ty ]
-        ++ dataReadRqs ty ++ dataReadRps ty
+        ++ [ readRqStep ty ] ++ readRqPorts ty ++ readRpPorts ty ++ [ readRpStep ty ]
         ++ [ revRpAndWriteBackStage ty ]
         ++ mulDivStageActions ty
         ++ [ implRevokerIdleStepSys ty ]
-        ++ dataReadRqs ty ++ dataReadRps ty
+        ++ [ readRqStep ty ] ++ readRqPorts ty ++ readRpPorts ty ++ [ readRpStep ty ]
         ++ [ implRevokerCapRpRevBitRqStepSys ty ]
-        ++ dataReadRqs ty ++ dataReadRps ty
+        ++ [ readRqStep ty ] ++ readRqPorts ty ++ readRpPorts ty ++ [ readRpStep ty ]
         ++ [ implRevokerRevBitRpWriteCapStepSys ty ]
-        ++ dataWriteRqs ty
+        ++ [ writeRqStep ty ] ++ writeRqPorts ty
         ++ fenceIAcks ty
         ++ setCanProceedSteps ty)%list.
 
@@ -299,7 +322,7 @@ Section ImplDom.
 
     Definition pipelinedList (ty : Kind -> Type) : list (string * Action ty sysTree (Bit 0)) :=
       map (fun a => (core, a)) (
-        fetchRps ty ++ dataReadRps ty
+        fetchLineRpPorts ty ++ readRpPorts ty ++ [ readRpStep ty ]
         ++ List.rev (
              [ fetchRqStage ty ]
              ++ repeat (fetchAssembleStage ty) issueWidth
@@ -313,7 +336,8 @@ Section ImplDom.
         ++ List.rev (implPeripheralSteps ty)
         ++ List.rev (implRevokerStepsSys ty)
         ++ fenceIAcks ty
-        ++ dataReadRqs ty ++ dataWriteRqs ty
+        ++ [ readRqStep ty ; writeRqStep ty ]
+        ++ readRqPorts ty ++ writeRqPorts ty
         ++ setCanProceedSteps ty)%list.
 
     Definition pipelinedMod : Mod sysTree :=

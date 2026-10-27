@@ -567,7 +567,12 @@ Section DataMemStageSimulation.
                      mulDivMode config regions s1.
   Proof.
     intros env1 act s1 s1' v Hin Hsem.
-    unfold dataReadRqs in Hin.
+    unfold dataReadRqs, readRqStep, readRqPorts in Hin.
+    lazymatch type of Hin with
+    | In _ (liftAction ?p ?x :: map _ ?l) =>
+        change (liftAction p x :: map (fun a => liftAction p a) l)
+          with (map (fun a => liftAction p a) (x :: l)) in Hin
+    end.
     apply in_map_iff in Hin as [mAct [<- _]].
     destruct (SemAction_lift_np_mem_core_frame mAct s1 s1' v Hsem)
       as [Hrf [_ [_ [Hfetch [Hdecode [Hexec [Hdm Hmd]]]]]]].
@@ -615,7 +620,12 @@ Section DataMemStageSimulation.
                      mulDivMode config regions s1.
   Proof.
     intros env1 act s1 s1' v Hin Hsem.
-    unfold dataReadRps in Hin.
+    unfold dataReadRps, readRpPorts, readRpStep in Hin.
+    lazymatch type of Hin with
+    | In _ (map _ ?l ++ [liftAction ?p ?x]) =>
+        change [liftAction p x] with (map (fun a => liftAction p a) [x]) in Hin;
+        rewrite <- map_app in Hin
+    end.
     apply in_map_iff in Hin as [mAct [<- _]].
     destruct (SemAction_lift_np_mem_core_frame mAct s1 s1' v Hsem)
       as [Hrf [_ [_ [Hfetch [Hdecode [Hexec [Hdm Hmd]]]]]]].
@@ -663,7 +673,12 @@ Section DataMemStageSimulation.
                      mulDivMode config regions s1.
   Proof.
     intros env1 act s1 s1' v Hin Hsem.
-    unfold dataWriteRqs in Hin.
+    unfold dataWriteRqs, writeRqStep, writeRqPorts in Hin.
+    lazymatch type of Hin with
+    | In _ (liftAction ?p ?x :: map _ ?l) =>
+        change (liftAction p x :: map (fun a => liftAction p a) l)
+          with (map (fun a => liftAction p a) (x :: l)) in Hin
+    end.
     apply in_map_iff in Hin as [mAct [<- _]].
     destruct (SemAction_lift_np_mem_core_frame mAct s1 s1' v Hsem)
       as [Hrf [_ [_ [Hfetch [Hdecode [Hexec [Hdm Hmd]]]]]]].

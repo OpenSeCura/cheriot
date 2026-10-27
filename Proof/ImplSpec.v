@@ -191,13 +191,13 @@ Section ModuleActionDecomposition.
        ++ @dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
              config regions ty
+       ++ @dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
+             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+             config regions ty
        ++ @dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
              config regions ty
        ++ @dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
              config regions ty
        ++ @dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -253,7 +253,9 @@ Section ModuleActionDecomposition.
              config regions ty)%list.
   Proof.
     intros ty; unfold forwardDatapathMod, forwardDatapathList.
-    rewrite map_map; cbn [snd]; apply map_id.
+    rewrite map_map; cbn [snd]; rewrite map_id.
+    unfold fetchRps, dataWriteRqs, dataReadRqs, dataReadRps.
+    rewrite <- !app_assoc; reflexivity.
   Qed.
 
   Lemma map_snd_pipelinedMod :
@@ -300,10 +302,16 @@ Section ModuleActionDecomposition.
        ++ @fenceIAcks core pcAddrInit fetchCapacity instCapacity decodeCapacity
              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
              config regions ty
-       ++ @dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
+       ++ [ @readRqStep core pcAddrInit fetchCapacity instCapacity decodeCapacity
+               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+               config regions ty ;
+            @writeRqStep core pcAddrInit fetchCapacity instCapacity decodeCapacity
+               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+               config regions ty ]
+       ++ @readRqPorts core pcAddrInit fetchCapacity instCapacity decodeCapacity
              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
              config regions ty
-       ++ @dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
+       ++ @writeRqPorts core pcAddrInit fetchCapacity instCapacity decodeCapacity
              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
              config regions ty
        ++ @setCanProceedSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -311,7 +319,9 @@ Section ModuleActionDecomposition.
              config regions ty)%list.
   Proof.
     intros ty; unfold pipelinedMod, pipelinedList.
-    rewrite map_map; cbn [snd]; apply map_id.
+    rewrite map_map; cbn [snd]; rewrite map_id.
+    unfold fetchRps, dataReadRps.
+    rewrite <- !app_assoc; reflexivity.
   Qed.
 
   (* --- 2B. Top-Level Action Classification (`ImplActionKind`) --- *)
@@ -551,7 +561,7 @@ Section ModuleActionDecomposition.
     rewrite map_snd_pipelinedMod in Hin.
     rewrite !in_app_iff in Hin.
     repeat rewrite <- in_rev in Hin.
-    rewrite !in_app_iff, !in_three_iff, !in_singleton_iff in Hin.
+    rewrite !in_app_iff, !in_three_iff, !in_two_iff, !in_singleton_iff in Hin.
     repeat lazymatch type of Hin with
     | _ \/ _ => destruct Hin as [Hin | Hin]
     end;
@@ -565,8 +575,10 @@ Section ModuleActionDecomposition.
       try (apply IA_RevRpAndWriteBackStage; exact Hin);
       try (apply IA_Peripheral; exact Hin);
       try (apply IA_FetchRps; exact Hin);
-      try (apply IA_DataWriteRqs; exact Hin);
-      try (apply IA_DataReadRqs; exact Hin);
+      try (apply IA_DataWriteRqs; left; exact (eq_sym Hin));
+      try (apply IA_DataWriteRqs; right; exact Hin);
+      try (apply IA_DataReadRqs; left; exact (eq_sym Hin));
+      try (apply IA_DataReadRqs; right; exact Hin);
       try (apply IA_DataReadRps; exact Hin);
       try (apply IA_MulDivStageActions; exact Hin);
       try (apply IA_RevokerStepsSys; exact Hin);
