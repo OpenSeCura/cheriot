@@ -826,11 +826,11 @@ Section ExecuteStageSimulation.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
   Variable config : RevConfig.
-  Variable regions : list (MemRegion core).
+  Variable regions : list MemRegion.
   Variable clint : @ClintInstance core regions.
   Variable rev : @RevokerInstance core (implRevokerExtraChildren core) regions.
   Variable revSpec : @RevokerInstance core [] regions.
-  Variable plic : @PlicInstance core (S (S (length (collectIrqActions regions)))) regions.
+  Variable plic : @PlicInstance core (S (S (length (collectIrqActions core regions)))) regions.
 
   Local Abbreviation sTree := (SpecTree core pcAddrInit regions).
   Local Abbreviation iTree :=
@@ -876,8 +876,7 @@ Section ExecuteStageSimulation.
           @specTickTimer core pcAddrInit regions clint type ;
           @specSampleMtipStep core pcAddrInit regions clint type ;
           @specStep core pcAddrInit config regions clint plic type ]
-     ++ @specFenceIAckSteps core pcAddrInit regions type
-     ++ @specInternalMemTargetPortSteps core pcAddrInit regions type)%list.
+     ++ @specFenceIAckSteps core pcAddrInit regions type)%list.
   Proof.
     unfold specMod, spec.
     rewrite map_map; cbn [snd].
@@ -1526,4 +1525,3 @@ Section ExecuteStageSimulation.
   Qed.
 
 End ExecuteStageSimulation.
-

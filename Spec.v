@@ -34,21 +34,21 @@ Section SpecDom.
   Variable core : string.
   Variable pcAddrInit : Z.
 
-  Definition specSysTree (regions : list (MemRegion core)) : Tree DomainElem :=
+  Definition specSysTree (regions : list MemRegion) : Tree DomainElem :=
     Node "sys" [
-      specCoreTree pcAddrInit regions
+      specCoreTree core pcAddrInit regions
     ].
 
   Section Spec.
     Variable config : RevConfig.
-    Variable regions : list (MemRegion core).
+    Variable regions : list MemRegion.
     Variable clint : @ClintInstance core regions.
     Variable rev : @RevokerInstance core [] regions.
-    Variable plic : @PlicInstance core (S (S (length (collectIrqActions regions)))) regions.
+    Variable plic : @PlicInstance core (S (S (length (collectIrqActions core regions)))) regions.
     Local Abbreviation sysTree := (specSysTree regions).
     Local Abbreviation incrementMcycle := (incrementMcycle core pcAddrInit).
-    Local Abbreviation specFetch := (specFetch pcAddrInit).
-    Local Abbreviation specExecuteDeferred := (specExecuteDeferred pcAddrInit).
+    Local Abbreviation specFetch := (specFetch core pcAddrInit).
+    Local Abbreviation specExecuteDeferred := (specExecuteDeferred core pcAddrInit).
     Local Abbreviation regRead := (regRead core pcAddrInit).
     Local Abbreviation executeNonDeferred := (executeNonDeferred core pcAddrInit).
 
@@ -91,13 +91,9 @@ Section SpecDom.
       Definition specPlicSampleMeipStep : Action ty sysTree (Bit 0) :=
         liftAction np_mem (plicSampleMeipStep plic ty).
 
-      (* Autonomous TargetPort steps for accessible InternalMem regions *)
-      Definition specInternalMemTargetPortSteps : list (Action ty sysTree (Bit 0)) :=
-        map (fun act => liftAction np_mem (act ty)) (collectTargetPortActions regions).
-
       (* Autonomous Fence.I ack steps for fenceI-enabled regions *)
       Definition specFenceIAckSteps : list (Action ty sysTree (Bit 0)) :=
-        map (fun act => liftAction np_mem (act ty)) (collectFenceIAckActions regions).
+        map (fun act => liftAction np_mem (act ty)) (collectFenceIAckActions core regions).
 
       (* ===========================================================================
        * Atomic Core Pipeline Step (specStep)
@@ -158,7 +154,6 @@ Section SpecDom.
             specStep ty
           ]
           ++ specFenceIAckSteps ty
-          ++ specInternalMemTargetPortSteps ty
         )%list.
 
   End Spec.

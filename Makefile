@@ -67,4 +67,3 @@ clean:: Makefile.coq.all
 	find . -type d -depth -name 'sim_obj_dir' -exec rm -rf {} \;
 	rm -f Makefile.coq.all Makefile.coq.all.conf .Makefile.coq.all.d
 	rm -f .nia.cache .lia.cache
-

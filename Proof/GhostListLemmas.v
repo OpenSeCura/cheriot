@@ -1828,5 +1828,3 @@ Section GhostListLemmas.
   Qed.
 
 End GhostListLemmas.
-
-

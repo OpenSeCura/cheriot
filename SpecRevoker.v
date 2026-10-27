@@ -109,22 +109,21 @@ Section Revoker.
   Definition revokerLineReadAction
              (base : Z)
              (ty : Kind -> Type)
-             (_ : ReadPortSel None)
              (addr : ty Addr)
              (_ : ty (Array (cfgLineBytes RevokerLineConfig) Bool))
-             : Action ty tRev (LineReadRp RevokerLineConfig false) :=
+             : Action ty tRev (LineReadRp RevokerLineConfig) :=
     Let offset : Bit RevokerOffsetSz <- getMemOffset base RevokerSizeBytes #addr ;
     readRevokerLine #offset (fun readBytes =>
-      @Return ty tRev (LineReadRp RevokerLineConfig false) (STRUCT {
+      @Return ty tRev (LineReadRp RevokerLineConfig) (STRUCT {
         "data" ::= #readBytes ;
-        "tag"  ::= Const ty (Array (cfgNumLineTags RevokerLineConfig false) Bool) (getDefault _)
+        "tag"  ::= Const ty (Array (cfgNumLineTags RevokerLineConfig) Bool) (getDefault _)
       })
     ).
 
   Definition revokerLineWriteAction
              (base : Z)
              (ty : Kind -> Type)
-             (rq : ty (LineWriteRq RevokerLineConfig false))
+             (rq : ty (LineWriteRq RevokerLineConfig))
              : Action ty tRev (Bit 0) :=
     Let offset : Bit RevokerOffsetSz <- getMemOffset base RevokerSizeBytes (##rq`"addr") ;
     readRevokerLine #offset (fun oldBytes =>
@@ -174,24 +173,21 @@ Section Revoker.
              (base : Z)
              (pfBound : Is_true ((0 <=? base) && (base + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
              (pfAligned : Is_true (base mod (2 ^ Z.of_nat (cfgLgLineBytes RevokerLineConfig)) =? 0)%Z)
-             : MemRegion dom := {|
+             : MemRegion := {|
     regionName        := "revoker" ;
     regionBase        := base ;
     regionSize        := RevokerSizeBytes ;
     regionLineCfg     := RevokerLineConfig ;
-    isReadOnly        := false ;
-    hasExtraFetchPort := None ;
-    regionKind        := @CustomMem dom "revoker" RevokerSizeBytes RevokerLineConfig None revokerChildren
+    regionKind        := @CustomMem "revoker" RevokerLineConfig revokerChildren
                                     (@revokerLineReadAction base)
                                     (@revokerLineWriteAction base)
-                                    (Some (fun ty => revokerLocalInterrupt))
-                                    tt ;
+                                    (Some (fun ty => revokerLocalInterrupt)) ;
     regionInMemory    := pfBound ;
     regionBaseAligned := pfAligned ;
     regionSizeAligned := I
   |}.
 
-  Record RevokerInstance (regions : list (MemRegion dom)) := {
+  Record RevokerInstance (regions : list MemRegion) := {
     revokerIdx      : nat ;
     revokerBaseAddr : Z ;
     pfBound         : Is_true ((0 <=? revokerBaseAddr) && (revokerBaseAddr + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
@@ -199,7 +195,7 @@ Section Revoker.
     pfRevoker       : nth_error regions revokerIdx = Some (@revokerMemRegion revokerBaseAddr pfBound pfAligned)
   }.
 
-  Definition revokerRegion {regions} (rev : RevokerInstance regions) : MemRegion dom :=
+  Definition revokerRegion {regions} (rev : RevokerInstance regions) : MemRegion :=
     @revokerMemRegion rev.(revokerBaseAddr) rev.(pfBound) rev.(pfAligned).
 
   (* ===========================================================================
@@ -207,12 +203,12 @@ Section Revoker.
    * =========================================================================== *)
 
   Section RevokerAction.
-    Variable regions : list (MemRegion dom).
+    Variable regions : list MemRegion.
     Variable rev : RevokerInstance regions.
     Variable config : RevConfig.
     Variable ty : Kind -> Type.
 
-    Local Abbreviation memTree := (specMemTree regions).
+    Local Abbreviation memTree := (specMemTree dom regions).
 
     Local Definition revokerAction {k : Kind} (act : Action ty tRev k) : Action ty memTree k :=
       nthRegionAction rev.(revokerIdx) regions (revokerRegion rev) rev.(pfRevoker) act.
@@ -269,7 +265,7 @@ Section Revoker.
         If (Not #isDone) Then (
           (* 1. Inspect capability at current scanAddr *)
           Let capSz      : Bit LgLgNumBytesFullCapSz <- $LgNumBytesFullCapSz ;
-          LetA ldFullCap : FullCapWithTag            <- specMemRead regions false scanAddr capSz ;
+          LetA ldFullCap : FullCapWithTag            <- specMemRead regions scanAddr capSz ;
           Let ldTag      : Bool                      <- ##ldFullCap`"tag" ;
           Let ldCap      : Cap                       <- ##ldFullCap`"cap" ;
           Let ldAddr     : Addr                      <- ##ldFullCap`"addr" ;

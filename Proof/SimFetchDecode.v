@@ -243,187 +243,28 @@ Section FetchDecodeTreeHelpers.
 End FetchDecodeTreeHelpers.
 
 (* ===========================================================================
- * 2. MEMORY FETCH CHANNEL LEMMAS (`fetchRqs`, `fetchRps`, `FetchRp`, `DeqRp`)
+ * 2. MEMORY FETCH CHANNEL LEMMAS (`fetchRps`, `FetchRp`, `FetchDeqRp`)
  * =========================================================================== *)
 
 Section MemFetchChannelLemmas.
   Variable core : string.
   Local Opaque liftAction.
 
-  (* --- 2A. `fetchRqs` is empty (`[]`) for all region lists --- *)
+  Local Abbreviation specMemTree := (specMemTree core).
+  Local Abbreviation specMemChildren := (specMemChildren core).
+  Local Abbreviation implMemTree := (implMemTree core).
+  Local Abbreviation implRegionsTree := (implRegionsTree core).
+  Local Abbreviation implRegionsChildren := (implRegionsChildren core).
+  Local Abbreviation memRegionTree := (memRegionTree core).
+  Local Abbreviation implMemRegionTree := (implMemRegionTree core).
+  Local Abbreviation implExternalMemRegionTree := (implExternalMemRegionTree core).
+  Local Abbreviation implMemRegionKindTree := (implMemRegionKindTree core).
+  Local Abbreviation memRegionKindTree := (memRegionKindTree core).
 
-  Lemma implMemRegionFetchRqActions_nil :
-    forall (r : MemRegion core),
-      implMemRegionFetchRqActions r = [].
-  Proof.
-    intros r; unfold implMemRegionFetchRqActions, implMemRegionTree.
-    destruct (r.(regionKind)); reflexivity.
-  Qed.
-
-  Lemma implCollectFetchRqActions_nil :
-    forall (rs : list (MemRegion core)),
-      implCollectFetchRqActions rs = [].
-  Proof.
-    unfold implCollectFetchRqActions.
-    induction rs as [| r rs IH]; cbn [implCollectRegionActions].
-    - reflexivity.
-    - rewrite implMemRegionFetchRqActions_nil, IH; reflexivity.
-  Qed.
-
-  Lemma implMemCollectFetchRqActions_nil :
-    forall (rs : list (MemRegion core)) (ty : Kind -> Type),
-      implMemCollectFetchRqActions rs ty = [].
-  Proof.
-    intros rs ty; unfold implMemCollectFetchRqActions.
-    rewrite implCollectFetchRqActions_nil; reflexivity.
-  Qed.
-
-  (* --- 2B. `mapCpsWithLen` and `ArrayBuilderAction` State Preservation --- *)
-
-  Lemma SemAction_mapCpsWithLen_preserves_state :
-    forall {A B : Type} {t : Tree DomainElem} {env : Env t} {K : Kind}
-           (step : A -> (B -> Action type t K) -> Action type t K)
-           (Hstep : forall (x : A) (cont : B -> Action type t K)
-                           (s s' : TreeState DomainElemState t) (v : type K),
-                      SemAction env (step x cont) s s' v ->
-                      exists y : B, SemAction env (cont y) s s' v)
-           (ls : list A)
-           (k : forall ys : list B, length ys = length ls -> Action type t K)
-           (Hk : forall (ys : list B) (Hlen : length ys = length ls)
-                        (s s' : TreeState DomainElemState t) (v : type K),
-                   SemAction env (k ys Hlen) s s' v -> s' = s)
-           (s s' : TreeState DomainElemState t) (v : type K),
-      SemAction env (mapCpsWithLen step ls k) s s' v ->
-      s' = s.
-  Proof.
-    intros A B t env K step Hstep ls.
-    induction ls as [| x xs IH]; intros k Hk s s' v Hsem; cbn [mapCpsWithLen] in Hsem.
-    - exact (Hk nil eq_refl s s' v Hsem).
-    - destruct (Hstep x _ s s' v Hsem) as [y Hy].
-      eapply (IH (fun ys Hlen => k (y :: ys) (f_equal S Hlen))); [| exact Hy].
-      intros ys Hlen s0 s0' v0 Hk0.
-      exact (Hk (y :: ys) (f_equal S Hlen) s0 s0' v0 Hk0).
-  Qed.
-
-  Lemma SemAction_ArrayBuilderAction_ReadRpMem_preserves_state :
-    forall {t : Tree DomainElem} {env : Env t} {n : nat} {k : Kind}
-           (step : FinType n -> (Expr type k -> Action type t (Array n k)) -> Action type t (Array n k))
-           (Hstep : forall (idx : FinType n) (cont : Expr type k -> Action type t (Array n k))
-                           (s s' : TreeState DomainElemState t) (v : type (Array n k)),
-                      SemAction env (step idx cont) s s' v ->
-                      exists e : Expr type k, SemAction env (cont e) s s' v)
-           (s s' : TreeState DomainElemState t) (v : type (Array n k)),
-      SemAction env (@ArrayBuilderAction type t n k step) s s' v ->
-      s' = s.
-  Proof.
-    intros t env n k step Hstep s s' v Hsem.
-    unfold ArrayBuilderAction in Hsem.
-    eapply SemAction_mapCpsWithLen_preserves_state; [exact Hstep | | exact Hsem].
-    intros ys Hlen s0 s0' v0 Hret.
-    apply InversionSemAction in Hret as [Hs0' _]; exact Hs0'.
-  Qed.
-
-  Lemma SemAction_internalMemRegionGetFetchRp_preserves_state :
-    forall (r : MemRegion core) (isAccessible : bool)
-           {env : Env (internalMemRegionTree r isAccessible)}
-           (s s' : TreeState DomainElemState (internalMemRegionTree r isAccessible))
-           (rp : type (LineReadRp r.(regionLineCfg) true)),
-      SemAction env (@internalMemRegionGetFetchRp core r isAccessible type) s s' rp ->
-      s' = s.
-  Proof.
-    intros r isAccessible env s s' rp Hsem.
-    unfold internalMemRegionGetFetchRp in Hsem.
-    apply InversionSemAction in Hsem as [midState [dataBytes [Harr Hret]]].
-    apply InversionSemAction in Hret as [Hs' _]; subst s'.
-    eapply SemAction_ArrayBuilderAction_ReadRpMem_preserves_state; [| exact Harr].
-    intros idx cont s0 s0' v0 Hrd.
-    apply InversionSemAction in Hrd.
-    eexists; exact Hrd.
-  Qed.
-
-  Lemma evalActionPropGen_liftChild1OptAction_preserves_Fst :
-    forall {rootName name : string} {c0 : Tree DomainElem} {b : bool}
-           {children rest : list (Tree DomainElem)} {k : Kind}
-           {env : Env (Node rootName (c0 :: optNode name b children :: rest))}
-           (act : Action type (Node name children) k)
-           (s : TreeState DomainElemState (Node rootName (c0 :: optNode name b children :: rest)))
-           (P : TreeState DomainElemState (Node rootName (c0 :: optNode name b children :: rest)) -> type k -> Prop),
-      evalActionPropGen env (liftChild1OptAction act) s P ->
-      exists s1 (v : type k),
-        Fst s1 = Fst s /\
-        P s1 v.
-  Proof.
-    intros rootName name c0 b children rest k env act s P H.
-    unfold liftChild1OptAction in H.
-    destruct b.
-    - rewrite (evalActionPropGen_liftAction child1Path) in H.
-      destruct (evalActionPropGen_to_SemAction _ _ _ H) as [sub1' [v [_ HP]]].
-      exists (writeSubTreeState child1Path s sub1'), v; split; [reflexivity | exact HP].
-    - cbn [evalActionPropGen] in H.
-      eexists s, _; split; [reflexivity | exact H].
-  Qed.
-
-  Lemma evalActionPropGen_liftChild1OptAction_readOnly :
-    forall {rootName name : string} {c0 : Tree DomainElem} {b : bool}
-           {children rest : list (Tree DomainElem)} {k : Kind}
-           {env : Env (Node rootName (c0 :: optNode name b children :: rest))}
-           (act : Action type (Node name children) k)
-           (Hro : forall {envSub : Env (Node name children)} sub sub' v, SemAction envSub act sub sub' v -> sub' = sub)
-           (s : TreeState DomainElemState (Node rootName (c0 :: optNode name b children :: rest)))
-           (P : TreeState DomainElemState (Node rootName (c0 :: optNode name b children :: rest)) -> type k -> Prop),
-      evalActionPropGen env (liftChild1OptAction act) s P ->
-      exists v : type k, P s v.
-  Proof.
-    intros rootName name c0 b children rest k env act Hro s P H.
-    unfold liftChild1OptAction in H.
-    destruct b.
-    - rewrite (evalActionPropGen_liftAction child1Path) in H.
-      destruct (evalActionPropGen_to_SemAction _ _ _ H) as [sub1' [v [Hact HP]]].
-      apply Hro in Hact; subst sub1'.
-      destruct s as [s0 [s1 srest]]; eexists v; exact HP.
-    - cbn [evalActionPropGen] in H.
-      eexists _; exact H.
-  Qed.
-
-  Lemma SemAction_implInternalMemRegionFetchResponsePort_preserves_spec :
-    forall (r : MemRegion core) (isAccessible : bool)
-           {env : Env (implInternalMemRegionTree r isAccessible)}
-           (s s' : TreeState DomainElemState (implInternalMemRegionTree r isAccessible))
-           (v : bits 0),
-      SemAction env (@implInternalMemRegionFetchResponsePort core r isAccessible type) s s' v ->
-      Fst s' = Fst s.
-  Proof.
-    intros r isAccessible env s s' v Hsem.
-    unfold implInternalMemRegionFetchResponsePort in Hsem.
-    rewrite SemAction_iff_evalActionPropGen in Hsem.
-    cbn [evalActionPropGen] in Hsem.
-    apply evalActionPropGen_liftChild1OptAction_preserves_Fst in Hsem as [s1 [readRp [Hs1 Hsem]]].
-    cbn [evalActionPropGen] in Hsem.
-    lazymatch type of Hsem with | (if ?b then _ else _) => destruct b end.
-    - cbn [evalActionPropGen] in Hsem.
-      apply evalActionPropGen_liftChild1OptAction_preserves_Fst in Hsem as [s2 [rpValid [Hs2 Hsem]]].
-      cbn [evalActionPropGen] in Hsem.
-      lazymatch type of Hsem with | (if ?b then _ else _) => destruct b end.
-      + cbn [evalActionPropGen] in Hsem.
-        rewrite evalActionPropGen_liftAction in Hsem.
-        destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [sub0' [rp [Hget Hsem1]]].
-        pose proof (SemAction_internalMemRegionGetFetchRp_preserves_state r isAccessible _ _ _ Hget) as Hsub0'.
-        subst sub0'.
-        rewrite writeSubTreeState_readSubTreeState in Hsem1.
-        cbn [evalActionPropGen] in Hsem1.
-        apply evalActionPropGen_liftChild1OptAction_preserves_Fst in Hsem1 as [s3 [_ [Hs3 Hsem2]]].
-        apply evalActionPropGen_liftChild1OptAction_preserves_Fst in Hsem2 as [s4 [_ [Hs4 [Hs' _]]]].
-        subst s'; congruence.
-      + cbn [evalActionPropGen] in Hsem.
-        destruct Hsem as [Hs' _]; subst s'; congruence.
-    - cbn [evalActionPropGen] in Hsem.
-      destruct Hsem as [Hs' _]; subst s'; congruence.
-  Qed.
-
-  (* --- 2C. `implRegionsReadFenceIWait`, `implRegionsFetchRp`, `implRegionsDeqRp` --- *)
+  (* --- 2A. `implRegionsReadFenceIWait`, `implRegionsFetchRp`, `implRegionsFetchDeqRp` --- *)
 
   Lemma SemAction_memRegionReadFenceIWait_preserves_state :
-    forall (r : MemRegion core)
+    forall (r : MemRegion)
            {env : Env (memRegionTree r)}
            (sr sr' : TreeState DomainElemState (memRegionTree r))
            (wait : bool),
@@ -431,35 +272,33 @@ Section MemFetchChannelLemmas.
       sr' = sr.
   Proof.
     intros r env sr sr' wait Hsem.
-    unfold memRegionReadFenceIWait, memRegionTree in *.
+    unfold memRegionReadFenceIWait, memRegionTree, memRegionKindTree in *.
     revert env sr sr' Hsem.
-    destruct (r.(regionKind)) as [isAcc initD initT | | children rdAct wrAct irqAct fiAct];
+    destruct (r.(regionKind)) as [| children rdAct wrAct irqAct];
       intros env sr sr' Hsem.
+    - unfold externalReadFenceIWait in Hsem.
+      rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction in Hsem.
+      destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [sub0' [v [Hsub [Hsr' _]]]].
+      apply InversionSemAction in Hsub; apply InversionSemAction in Hsub as [Hsub0' _].
+      subst sr' sub0'; destruct sr as [s0 srest]; reflexivity.
     - apply InversionSemAction in Hsem as [Hsr' _]; exact Hsr'.
-    - unfold externalMemRegionReadFenceIWait in Hsem.
-      rewrite SemAction_iff_evalActionPropGen in Hsem.
-      eapply evalActionPropGen_liftChild1OptAction_readOnly in Hsem as [? [Hsr' _]].
-      + symmetry; exact Hsr'.
-      + intros envSub sub sub' v Hsub; apply InversionSemAction in Hsub; apply InversionSemAction in Hsub as [? _]; assumption.
-    - unfold customMemRegionReadFenceIWait, customMemRegionTree, customMemChildren in *.
-      revert env sr sr' Hsem.
-      destruct (hasFenceIPort r.(hasExtraFetchPort)); intros env sr sr' Hsem;
-        rewrite SemAction_iff_evalActionPropGen in Hsem;
-        cbn [evalActionPropGen liftAction child0Path customMemFenceIReadWait] in Hsem;
-        destruct Hsem as [Hsr' _]; symmetry; exact Hsr'.
   Qed.
 
   Theorem SemAction_implRegionsReadFenceIWait_preserves_state :
-    forall (rs : list (MemRegion core))
+    forall (rs : list MemRegion)
            {env : Env (implRegionsTree rs)}
            (sm sm' : TreeState DomainElemState (implRegionsTree rs))
            (wait : bool),
       SemAction env (@implRegionsReadFenceIWait core type rs) sm sm' wait ->
       sm' = sm.
   Proof.
-    induction rs as [| r rs IH]; intros env sm sm' wait Hsem.
+    intros rs; unfold implRegionsReadFenceIWait, genFoldRegionActions.
+    lazymatch goal with
+    | |- context [genFoldRegionActionsAux _ _ _ ?a _] => generalize a as acc
+    end.
+    induction rs as [| r rs IH]; intros acc env sm sm' wait Hsem.
     - apply InversionSemAction in Hsem as [Hsm' _]; exact Hsm'.
-    - cbn [implRegionsReadFenceIWait] in Hsem.
+    - cbn [genFoldRegionActionsAux] in Hsem.
       rewrite SemAction_iff_evalActionPropGen in Hsem.
       cbn [evalActionPropGen] in Hsem.
       rewrite evalActionPropGen_liftAction in Hsem.
@@ -467,70 +306,48 @@ Section MemFetchChannelLemmas.
       apply SemAction_liftToImplRegion in Hdev as [spec0' [Hspec0' Hsub0']].
       pose proof (SemAction_memRegionReadFenceIWait_preserves_state r _ _ _ Hspec0') as Hspec_eq.
       rewrite Hspec_eq, writeImplRegionSpecState_projImplRegionSpecState in Hsub0'.
-      cbn [evalActionPropGen] in Hsem1.
       rewrite evalActionPropGen_liftAction in Hsem1.
       destruct (evalActionPropGen_to_SemAction _ _ _ Hsem1) as [sub1' [restWait [Hrest [Hsm' _]]]].
-      pose proof (IH _ _ _ _ Hrest) as Hsub1'.
+      pose proof (IH _ _ _ _ _ Hrest) as Hsub1'.
       subst sm' sub0' sub1'.
       destruct sm as [s0 [s1 []]]; reflexivity.
   Qed.
 
-  Lemma SemAction_implMemRegionLineReadRp_preserves_state :
-    forall (r : MemRegion core) (req : MemRequester)
-           {env : Env (implMemRegionTree r)}
-           (sr sr' : TreeState DomainElemState (implMemRegionTree r))
-           (rpOpt : type (Option (LineReadRp r.(regionLineCfg) (isInternalMem r)))),
-      SemAction env (@implMemRegionLineReadRp core r type req) sr sr' rpOpt ->
+  Corollary SemAction_implMemReadFenceIWait_preserves_state :
+    forall (rs : list MemRegion)
+           {env : Env (implMemTree rs)}
+           (sm sm' : TreeState DomainElemState (implMemTree rs))
+           (wait : bool),
+      SemAction env (liftAction child0Path (@implRegionsReadFenceIWait core type rs)) sm sm' wait ->
+      sm' = sm.
+  Proof.
+    intros rs env sm sm' wait Hsem.
+    rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction, evalActionPropGen_ex_iff in Hsem.
+    destruct Hsem as [sub0' [Hsub0' Hsm']]; subst sm'.
+    rewrite <- SemAction_iff_evalActionPropGen in Hsub0'.
+    pose proof (SemAction_implRegionsReadFenceIWait_preserves_state rs _ _ _ Hsub0') as Heq.
+    cbn [child0Path implMemTree readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child] in *.
+    rewrite Heq; destruct sm as [s0 srest]; reflexivity.
+  Qed.
+
+  Lemma SemAction_implExternalFetchLineReadRp_preserves_state :
+    forall (r : MemRegion)
+           {env : Env (implExternalMemRegionTree r)}
+           (sr sr' : TreeState DomainElemState (implExternalMemRegionTree r))
+           (rpOpt : type (Option (LineReadRp r.(regionLineCfg)))),
+      SemAction env (@implExternalFetchLineReadRp core r type) sr sr' rpOpt ->
       sr' = sr.
   Proof.
-    intros r req env sr sr' rpOpt Hsem.
-    unfold implMemRegionLineReadRp, implMemRegionTree, isInternalMem in *.
-    revert env sr sr' rpOpt Hsem.
-    destruct (r.(regionKind)) as [isAcc initD initT | | children rdAct wrAct irqAct fiAct];
-      intros env sr sr' rpOpt Hsem.
-    - unfold implInternalMemRegionLineReadRp in Hsem.
-      destruct (isFetchRequester req && hasFetchPort r.(hasExtraFetchPort)).
-      + unfold implInternalMemRegionFetchLineReadRp in Hsem.
-        rewrite SemAction_iff_evalActionPropGen in Hsem.
-        eapply evalActionPropGen_liftChild1OptAction_readOnly in Hsem as [? [Hsr' _]].
-        * symmetry; exact Hsr'.
-        * intros envSub sub sub' v Hsub; apply InversionSemAction in Hsub; apply InversionSemAction in Hsub as [? _]; assumption.
-      + unfold implInternalMemRegionDataLineReadRp, implInternalMemRegionPortReadRp in Hsem.
-        rewrite SemAction_iff_evalActionPropGen in Hsem.
-        cbn [evalActionPropGen] in Hsem.
-        lazymatch type of Hsem with | (if ?b then _ else _) => destruct b end;
-          cbn [evalActionPropGen] in Hsem;
-          destruct Hsem as [Hsr' _]; symmetry; exact Hsr'.
-    - unfold implExternalMemRegionLineReadRp in Hsem.
-      destruct (isFetchRequester req && hasFetchPort r.(hasExtraFetchPort)).
-      + unfold implExternalMemRegionFetchLineReadRp in Hsem.
-        rewrite SemAction_iff_evalActionPropGen in Hsem.
-        eapply evalActionPropGen_liftChild1OptAction_readOnly in Hsem as [? [Hsr' _]].
-        * symmetry; exact Hsr'.
-        * intros envSub sub sub' v Hsub; apply InversionSemAction in Hsub; apply InversionSemAction in Hsub as [? _]; assumption.
-      + unfold implExternalMemRegionDataLineReadRp, implExternalMemRegionPortReadRp in Hsem.
-        rewrite SemAction_iff_evalActionPropGen in Hsem.
-        cbn [evalActionPropGen] in Hsem.
-        lazymatch type of Hsem with | (if ?b then _ else _) => destruct b end;
-          cbn [evalActionPropGen] in Hsem;
-          destruct Hsem as [Hsr' _]; symmetry; exact Hsr'.
-    - unfold implCustomMemRegionLineReadRp in Hsem.
-      destruct (isFetchRequester req && hasFetchPort r.(hasExtraFetchPort)).
-      + unfold implCustomMemRegionFetchLineReadRp in Hsem.
-        rewrite SemAction_iff_evalActionPropGen in Hsem.
-        eapply evalActionPropGen_liftChild1OptAction_readOnly in Hsem as [? [Hsr' _]].
-        * symmetry; exact Hsr'.
-        * intros envSub sub sub' v Hsub; apply InversionSemAction in Hsub; apply InversionSemAction in Hsub as [? _]; assumption.
-      + unfold implCustomMemRegionDataLineReadRp in Hsem.
-        rewrite SemAction_iff_evalActionPropGen in Hsem.
-        cbn [evalActionPropGen] in Hsem.
-        lazymatch type of Hsem with | (if ?b then _ else _) => destruct b end;
-          cbn [evalActionPropGen] in Hsem;
-          destruct Hsem as [Hsr' _]; symmetry; exact Hsr'.
+    intros r env sr sr' rpOpt Hsem.
+    unfold implExternalFetchLineReadRp in Hsem.
+    rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction in Hsem.
+    destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [sub1' [v [Hrd [Hsr' _]]]].
+    apply InversionSemAction in Hrd; apply InversionSemAction in Hrd as [Hsub1' _].
+    subst sr' sub1'; destruct sr as [s0 [s1 srest]]; reflexivity.
   Qed.
 
   Lemma SemAction_implMemRegionFetchRp_preserves_state :
-    forall (r : MemRegion core) (addr : type Addr)
+    forall (r : MemRegion) (addr : type Addr)
            {env : Env (implMemRegionTree r)}
            (sr sr' : TreeState DomainElemState (implMemRegionTree r))
            (pktOpt : type (Option FetchPacket)),
@@ -538,29 +355,37 @@ Section MemFetchChannelLemmas.
       sr' = sr.
   Proof.
     intros r addr env sr sr' pktOpt Hsem.
-    unfold implMemRegionFetchRp in Hsem.
-    rewrite SemAction_iff_evalActionPropGen in Hsem.
-    cbn [evalActionPropGen] in Hsem.
-    destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [sr1 [rpOpt [Hrp Hsem1]]].
-    pose proof (SemAction_implMemRegionLineReadRp_preserves_state r ReqFetch sr sr1 rpOpt Hrp) as Hsr1.
-    subst sr1.
-    cbn [evalActionPropGen] in Hsem1.
-    lazymatch type of Hsem1 with | (if ?b then _ else _) => destruct b end;
-      cbn [evalActionPropGen] in Hsem1;
-      destruct Hsem1 as [Hsr' _]; symmetry; exact Hsr'.
+    unfold implMemRegionFetchRp, implMemRegionTree, implMemRegionKindTree in *.
+    revert env sr sr' pktOpt Hsem.
+    destruct (r.(regionKind)) as [| children rdAct wrAct irqAct];
+      intros env sr sr' pktOpt Hsem.
+    - rewrite SemAction_iff_evalActionPropGen in Hsem.
+      cbn [evalActionPropGen] in Hsem.
+      destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [sr1 [rpOpt [Hrp Hsem1]]].
+      pose proof (SemAction_implExternalFetchLineReadRp_preserves_state r sr sr1 rpOpt Hrp) as Hsr1.
+      subst sr1.
+      cbn [evalActionPropGen] in Hsem1.
+      lazymatch type of Hsem1 with | (if ?b then _ else _) => destruct b end;
+        cbn [evalActionPropGen] in Hsem1;
+        destruct Hsem1 as [Hsr' _]; symmetry; exact Hsr'.
+    - apply InversionSemAction in Hsem as [Hsr' _]; exact Hsr'.
   Qed.
 
   Theorem SemAction_implRegionsFetchRp_preserves_state :
-    forall (rs : list (MemRegion core)) (addr : type Addr)
+    forall (rs : list MemRegion) (addr : type Addr)
            {env : Env (implRegionsTree rs)}
            (sm sm' : TreeState DomainElemState (implRegionsTree rs))
            (pktOpt : type (Option FetchPacket)),
       SemAction env (@implRegionsFetchRp core type rs addr) sm sm' pktOpt ->
       sm' = sm.
   Proof.
-    induction rs as [| r rs IH]; intros addr env sm sm' pktOpt Hsem.
+    intros rs addr; unfold implRegionsFetchRp, genRouteRegionAction.
+    lazymatch goal with
+    | |- context [genRouteRegionActionAux _ _ _ _ ?a _] => generalize a as acc
+    end.
+    induction rs as [| r rs IH]; intros acc env sm sm' pktOpt Hsem.
     - apply InversionSemAction in Hsem as [Hsm' _]; exact Hsm'.
-    - cbn [implRegionsFetchRp] in Hsem.
+    - cbn [genRouteRegionActionAux] in Hsem.
       rewrite SemAction_iff_evalActionPropGen in Hsem.
       cbn [evalActionPropGen] in Hsem.
       lazymatch type of Hsem with | (if ?b then _ else _) => destruct b end.
@@ -568,100 +393,110 @@ Section MemFetchChannelLemmas.
         rewrite evalActionPropGen_liftAction in Hsem.
         destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [sub0' [devRp [Hdev Hsem1]]].
         pose proof (SemAction_implMemRegionFetchRp_preserves_state r addr _ _ _ Hdev) as Hsub0'.
-        cbn [evalActionPropGen] in Hsem1.
         rewrite evalActionPropGen_liftAction in Hsem1.
         destruct (evalActionPropGen_to_SemAction _ _ _ Hsem1) as [sub1' [restRp [Hrest [Hsm' _]]]].
-        pose proof (IH addr _ _ _ _ Hrest) as Hsub1'.
+        pose proof (IH _ _ _ _ _ Hrest) as Hsub1'.
         subst sm' sub0' sub1'.
         destruct sm as [s0 [s1 []]]; reflexivity.
       + cbn [evalActionPropGen] in Hsem.
         rewrite evalActionPropGen_liftAction in Hsem.
         destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [sub1' [restRp [Hrest [Hsm' _]]]].
-        pose proof (IH addr _ _ _ _ Hrest) as Hsub1'.
+        pose proof (IH _ _ _ _ _ Hrest) as Hsub1'.
         subst sm' sub1'.
         destruct sm as [s0 [s1 []]]; reflexivity.
   Qed.
 
-  Lemma SemAction_implMemRegionDeqRp_preserves_spec :
-    forall (r : MemRegion core) (req : MemRequester)
+  Corollary SemAction_implMemFetchRp_preserves_state :
+    forall (rs : list MemRegion) (addr : type Addr)
+           {env : Env (implMemTree rs)}
+           (sm sm' : TreeState DomainElemState (implMemTree rs))
+           (pktOpt : type (Option FetchPacket)),
+      SemAction env (liftAction child0Path (@implRegionsFetchRp core type rs addr)) sm sm' pktOpt ->
+      sm' = sm.
+  Proof.
+    intros rs addr env sm sm' pktOpt Hsem.
+    rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction, evalActionPropGen_ex_iff in Hsem.
+    destruct Hsem as [sub0' [Hsub0' Hsm']]; subst sm'.
+    rewrite <- SemAction_iff_evalActionPropGen in Hsub0'.
+    pose proof (SemAction_implRegionsFetchRp_preserves_state rs addr _ _ _ Hsub0') as Heq.
+    cbn [child0Path implMemTree readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child] in *.
+    rewrite Heq; destruct sm as [s0 srest]; reflexivity.
+  Qed.
+
+  Lemma SemAction_implMemRegionFetchDeqRp_preserves_spec :
+    forall (r : MemRegion)
            {env : Env (implMemRegionTree r)}
            (sr sr' : TreeState DomainElemState (implMemRegionTree r))
            (v : bits 0),
-      SemAction env (@implMemRegionDeqRp core r type req) sr sr' v ->
+      SemAction env (@implMemRegionFetchDeqRp core r type) sr sr' v ->
       projImplRegionSpecState core r sr' = projImplRegionSpecState core r sr.
   Proof.
-    intros r req env sr sr' v Hsem.
-    unfold implMemRegionDeqRp, projImplRegionSpecState, implMemRegionTree, memRegionTree in *.
+    intros r env sr sr' v Hsem.
+    unfold implMemRegionFetchDeqRp, implExternalFetchLineDeqRp, projImplRegionSpecState, implMemRegionTree, implMemRegionKindTree, memRegionTree, memRegionKindTree in *.
     revert env sr sr' Hsem.
-    destruct (r.(regionKind)) as [isAcc initD initT | | children rdAct wrAct irqAct fiAct];
+    destruct (r.(regionKind)) as [| children rdAct wrAct irqAct];
       intros env sr sr' Hsem.
-    - unfold implInternalMemRegionDeqRp in Hsem.
-      destruct (isFetchRequester req && hasFetchPort r.(hasExtraFetchPort)).
-      + unfold implInternalMemRegionFetchDeqRp in Hsem.
-        rewrite SemAction_iff_evalActionPropGen in Hsem.
-        apply evalActionPropGen_liftChild1OptAction_preserves_Fst in Hsem as [s1 [_ [Hs1 [Hsr' _]]]].
-        subst sr'; exact Hs1.
-      + unfold implInternalMemRegionDataDeqRp, implInternalMemRegionPortDeqRp in Hsem.
-        rewrite SemAction_iff_evalActionPropGen in Hsem;
-          cbn [evalActionPropGen] in Hsem;
-          destruct Hsem as [Hsr' _]; subst sr'; reflexivity.
-    - unfold implExternalMemRegionDeqRp in Hsem.
-      destruct (isFetchRequester req && hasFetchPort r.(hasExtraFetchPort)).
-      + unfold implExternalMemRegionFetchDeqRp in Hsem.
-        rewrite SemAction_iff_evalActionPropGen in Hsem.
-        apply evalActionPropGen_liftChild1OptAction_preserves_Fst in Hsem as [s1 [_ [Hs1 [Hsr' _]]]].
-        subst sr'; exact Hs1.
-      + unfold implExternalMemRegionDataDeqRp, implExternalMemRegionPortDeqRp in Hsem.
-        rewrite SemAction_iff_evalActionPropGen in Hsem;
-          cbn [evalActionPropGen] in Hsem;
-          destruct Hsem as [Hsr' _]; subst sr'; reflexivity.
-    - unfold implCustomMemRegionDeqRp in Hsem.
-      destruct (isFetchRequester req && hasFetchPort r.(hasExtraFetchPort)).
-      + unfold implCustomMemRegionFetchDeqRp in Hsem.
-        rewrite SemAction_iff_evalActionPropGen in Hsem.
-        apply evalActionPropGen_liftChild1OptAction_preserves_Fst in Hsem as [s1 [_ [Hs1 [Hsr' _]]]].
-        subst sr'; exact Hs1.
-      + unfold implCustomMemRegionDataDeqRp in Hsem.
-        rewrite SemAction_iff_evalActionPropGen in Hsem;
-          cbn [evalActionPropGen] in Hsem;
-          destruct Hsem as [Hsr' _]; subst sr'; reflexivity.
+    - rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction in Hsem.
+      destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [sub1' [v' [_ [Hsr' _]]]].
+      subst sr'; reflexivity.
+    - apply InversionSemAction in Hsem as [Hsr' _]; subst sr'; reflexivity.
   Qed.
 
-  Theorem SemAction_implRegionsDeqRp_preserves_spec :
-    forall (rs : list (MemRegion core)) (req : MemRequester) (addr : type Addr)
+  Theorem SemAction_implRegionsFetchDeqRp_preserves_spec :
+    forall (rs : list MemRegion) (addr : type Addr)
            {env : Env (implRegionsTree rs)}
            (sm sm' : TreeState DomainElemState (implRegionsTree rs))
            (v : bits 0),
-      SemAction env (@implRegionsDeqRp core type rs req addr) sm sm' v ->
-      StateRel.projImplMemSpecState core rs sm' = StateRel.projImplMemSpecState core rs sm.
+      SemAction env (@implRegionsFetchDeqRp core type rs addr) sm sm' v ->
+      projImplMemRegions core rs sm' = projImplMemRegions core rs sm.
   Proof.
-    induction rs as [| r rs IH]; intros req addr env sm sm' v Hsem.
+    intros rs addr; unfold implRegionsFetchDeqRp, genRouteRegionUnitAction, genRouteRegionAction.
+    lazymatch goal with
+    | |- context [genRouteRegionActionAux _ _ _ _ ?a _] => generalize a as acc
+    end.
+    induction rs as [| r rs IH]; intros acc env sm sm' v Hsem.
     - apply InversionSemAction in Hsem as [Hsm' _]; subst sm'; reflexivity.
     - destruct sm as [s0 [s1 []]].
-      cbn [implRegionsDeqRp] in Hsem.
+      cbn [genRouteRegionActionAux] in Hsem.
       rewrite SemAction_iff_evalActionPropGen in Hsem.
       cbn [evalActionPropGen] in Hsem.
       lazymatch type of Hsem with | (if ?b then _ else _) => destruct b end.
       + cbn [evalActionPropGen] in Hsem.
         rewrite evalActionPropGen_liftAction in Hsem.
         destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [sub0' [v0 [Hdeq0 Hsem1]]].
-        pose proof (SemAction_implMemRegionDeqRp_preserves_spec r req _ _ _ Hdeq0) as Hsub0'.
+        pose proof (SemAction_implMemRegionFetchDeqRp_preserves_spec r _ _ _ Hdeq0) as Hsub0'.
         rewrite evalActionPropGen_liftAction in Hsem1.
         destruct (evalActionPropGen_to_SemAction _ _ _ Hsem1) as [sub1' [v1 [Hdeq1 [Hsm' _]]]].
-        pose proof (IH req addr _ _ _ _ Hdeq1) as Hsub1'.
+        pose proof (IH _ _ _ _ _ Hdeq1) as Hsub1'.
         subst sm'.
-        cbn [StateRel.projImplMemSpecState projImplMemRegions implRegionsTree implRegionsChildren child0Path child1Path readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child Fst Snd] in Hsub0', Hsub1' |- *.
+        cbn [projImplMemRegions implRegionsTree implRegionsChildren regionsTree regionsTreeChildren child0Path child1Path readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child Fst Snd] in Hsub0', Hsub1' |- *.
         change (projImplRegionSpecState core r) with (StateRel.projImplRegionSpecState core r) in Hsub0'.
-        unfold StateRel.projImplMemSpecState in Hsub1'.
         rewrite Hsub0', Hsub1'; reflexivity.
       + cbn [evalActionPropGen] in Hsem.
         rewrite evalActionPropGen_liftAction in Hsem.
         destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [sub1' [v1 [Hdeq1 [Hsm' _]]]].
-        pose proof (IH req addr _ _ _ _ Hdeq1) as Hsub1'.
+        pose proof (IH _ _ _ _ _ Hdeq1) as Hsub1'.
         subst sm'.
-        cbn [StateRel.projImplMemSpecState projImplMemRegions implRegionsTree implRegionsChildren child0Path child1Path readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child Fst Snd] in Hsub1' |- *.
-        unfold StateRel.projImplMemSpecState in Hsub1'.
+        cbn [projImplMemRegions implRegionsTree implRegionsChildren regionsTree regionsTreeChildren child0Path child1Path readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child Fst Snd] in Hsub1' |- *.
         rewrite Hsub1'; reflexivity.
+  Qed.
+
+  Corollary SemAction_implMemFetchDeqRp_preserves_spec :
+    forall (rs : list MemRegion) (addr : type Addr)
+           {env : Env (implMemTree rs)}
+           (sm sm' : TreeState DomainElemState (implMemTree rs))
+           (v : bits 0),
+      SemAction env (liftAction child0Path (@implRegionsFetchDeqRp core type rs addr)) sm sm' v ->
+      StateRel.projImplMemSpecState core rs sm' = StateRel.projImplMemSpecState core rs sm.
+  Proof.
+    intros rs addr env sm sm' v Hsem.
+    rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction, evalActionPropGen_ex_iff in Hsem.
+    destruct Hsem as [sub0' [Hsub0' Hsm']]; subst sm'.
+    rewrite <- SemAction_iff_evalActionPropGen in Hsub0'.
+    pose proof (SemAction_implRegionsFetchDeqRp_preserves_spec rs addr _ _ _ Hsub0') as Heq.
+    unfold StateRel.projImplMemSpecState.
+    cbn [child0Path implMemTree readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child Fst] in *.
+    exact Heq.
   Qed.
 
 End MemFetchChannelLemmas.
@@ -855,7 +690,7 @@ Section CoreStageFrameLemmas.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
   Variable config : RevConfig.
-  Variable regions : list (MemRegion core).
+  Variable regions : list MemRegion.
   Variable rev : @RevokerInstance core (implRevokerExtraChildren core) regions.
 
   Local Abbreviation rTree := (RfTree core pcAddrInit).
@@ -953,8 +788,8 @@ Section CoreStageFrameLemmas.
         fetch_instFifo core pcAddrInit fetchCapacity instCapacity (c.(Snd).(Snd).(Snd).(Snd).(Fst).(Fst)) /\
       (c'.(Snd).(Snd).(Snd).(Fst).(Fst) = c.(Snd).(Snd).(Snd).(Fst).(Fst) \/
        (exec_fenceIPending core (c.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).(Fst)) = false /\
-        exists envMem alignedPc canEnq,
-          SemAction envMem (@implReadInstRq core regions type alignedPc)
+        exists (envMem : Env (implMemTree core regions)) alignedPc canEnq,
+          SemAction envMem (liftAction child0Path (@implRegionsFetchRq core type regions alignedPc))
             (c.(Snd).(Snd).(Snd).(Fst).(Fst))
             (c'.(Snd).(Snd).(Snd).(Fst).(Fst))
             canEnq)).
@@ -978,7 +813,7 @@ Section CoreStageFrameLemmas.
                     (@ImplFetch.np_mem core pcAddrInit fetchCapacity instCapacity
                                        noInstIfc withInstIfc memIfc executeIfc decTree dmTree mdTree type) _ _ _)) in Hsem.
     destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [m1 [fenceIWait [Hm1 Hsem1]]].
-    pose proof (SemAction_implRegionsReadFenceIWait_preserves_state core regions _ _ _ Hm1) as Hm1_eq.
+    pose proof (SemAction_implMemReadFenceIWait_preserves_state core regions _ _ _ Hm1) as Hm1_eq.
     subst m1.
     rewrite !writeSubTreeState_readSubTreeState in Hsem1.
     cbn [evalActionPropGen] in Hsem1.
@@ -1186,13 +1021,13 @@ Section CoreStageFrameLemmas.
   Local Ltac solve_fetchAssemble_lift :=
     intros envSub s sub' v Hsub;
     try (
-      unfold mem_getInstRp, implMemIfc, implGetInstRp in Hsub;
-      pose proof (SemAction_implRegionsFetchRp_preserves_state core regions _ _ _ _ Hsub) as HrpEq;
+      unfold mem_getInstRp, implMemIfc in Hsub;
+      pose proof (SemAction_implMemFetchRp_preserves_state core regions _ _ _ _ Hsub) as HrpEq;
       subst sub'
     );
     try (
-      unfold mem_deqInstRp, implMemIfc, implDeqInstRp in Hsub;
-      pose proof (SemAction_implRegionsDeqRp_preserves_spec core regions ReqFetch _ _ _ _ Hsub) as HdeqEq;
+      unfold mem_deqInstRp, implMemIfc in Hsub;
+      pose proof (SemAction_implMemFetchDeqRp_preserves_spec core regions _ _ _ _ Hsub) as HdeqEq;
       cbn [ImplFetch.np_mem readSubTreeState readSubTreeState_child Fst Snd] in HdeqEq
     );
     try (
@@ -1327,11 +1162,11 @@ Section FetchDecodeSystemSim.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
   Variable config : RevConfig.
-  Variable regions : list (MemRegion core).
+  Variable regions : list MemRegion.
   Variable clint : @ClintInstance core regions.
   Variable rev : @RevokerInstance core (implRevokerExtraChildren core) regions.
   Variable revSpec : @RevokerInstance core [] regions.
-  Variable plic : @PlicInstance core (S (S (length (collectIrqActions regions)))) regions.
+  Variable plic : @PlicInstance core (S (S (length (collectIrqActions core regions)))) regions.
 
   Local Abbreviation sTree := (SpecTree core pcAddrInit regions).
   Local Abbreviation iTree :=
@@ -1583,33 +1418,7 @@ Section FetchDecodeSystemSim.
     - exact (sim_setExecuteCanProceedStage s1 s1' s2 v Hsem Hrel).
   Qed.
 
-  (* --- 5C. `fetchRqs` and `fetchRps` Simulation --- *)
-
-  Lemma fetchRqs_nil :
-    @fetchRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-              dataMemCapacity mulCapacity divCapacity mulStages divStages
-              mulDivMode config regions type = [].
-  Proof.
-    unfold fetchRqs; rewrite implMemCollectFetchRqActions_nil; reflexivity.
-  Qed.
-
-  Theorem sim_fetchRqs :
-    forall {env1 : Env iTree} {env2 : Env sTree}
-           (act : Action type iTree (Bit 0))
-           (s1 s1' : IState) (s2 : SState) (v : bits 0),
-      In act
-        (@fetchRqs core pcAddrInit fetchCapacity instCapacity
-           decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions type) ->
-      SemAction env1 act s1 s1' v ->
-      sRel s1 s2 ->
-      exists s2' : SState,
-        SemActions env2 (map snd (specMod type)) s2 s2' /\
-        sRel s1' s2'.
-  Proof.
-    intros env1 env2 act s1 s1' s2 v Hin.
-    rewrite fetchRqs_nil in Hin; contradiction.
-  Qed.
+  (* --- 5C. `fetchRps` Simulation --- *)
 
   Theorem fetchRps_frame :
     forall {env1 : Env iTree}
@@ -1713,8 +1522,8 @@ Section FetchDecodeSystemSim.
         fetch_instFifo core pcAddrInit fetchCapacity instCapacity (implFetch s1) /\
       (implMem s1' = implMem s1 \/
        (exec_fenceIPending core (implExecute s1) = false /\
-        exists envMem alignedPc canEnq,
-          SemAction envMem (@implReadInstRq core regions type alignedPc)
+        exists (envMem : Env (implMemTree core regions)) alignedPc canEnq,
+          SemAction envMem (liftAction child0Path (@implRegionsFetchRq core type regions alignedPc))
             (implMem s1) (implMem s1') canEnq)).
   Proof.
     intros env1 s1 s1' v Hsem.

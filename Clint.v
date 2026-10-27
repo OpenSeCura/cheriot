@@ -103,10 +103,9 @@ Section Clint.
   Definition clintLineReadAction
              (base : Z)
              (ty : Kind -> Type)
-             (_ : ReadPortSel None)
              (addr : ty Addr)
              (_ : ty (Array (cfgLineBytes ClintLineConfig) Bool))
-             : Action ty tClint (LineReadRp ClintLineConfig false) :=
+             : Action ty tClint (LineReadRp ClintLineConfig) :=
     Let offset <- getMemOffset base ClintSizeBytes #addr ;
     ReadReg "mtime" clintMtimePath (fun mtimeVal =>
     ReadReg "mtimecmp" clintMtimecmpPath (fun mtimecmpVal =>
@@ -115,15 +114,15 @@ Section Clint.
            ITE0 (Eq #offset $(CLINT_MTIMECMP_OFFSET)) #mtimecmpVal ] ;
     Let readBytes : Array (cfgLineBytes ClintLineConfig) (Bit ByteSz) <-
       FromBit (Array (cfgLineBytes ClintLineConfig) (Bit ByteSz)) #rawData ;
-    @Return ty tClint (LineReadRp ClintLineConfig false) (STRUCT {
+    @Return ty tClint (LineReadRp ClintLineConfig) (STRUCT {
       "data" ::= #readBytes ;
-      "tag"  ::= Const ty (Array (cfgNumLineTags ClintLineConfig false) Bool) (getDefault _)
+      "tag"  ::= Const ty (Array (cfgNumLineTags ClintLineConfig) Bool) (getDefault _)
     }))).
 
   Definition clintLineWriteAction
              (base : Z)
              (ty : Kind -> Type)
-             (rq : ty (LineWriteRq ClintLineConfig false))
+             (rq : ty (LineWriteRq ClintLineConfig))
              : Action ty tClint (Bit 0) :=
     Let offset   <- getMemOffset base ClintSizeBytes (##rq`"addr") ;
     Let anyWrite : Bool <- isNotZero (ToBit (##rq`"dataMask")) ;
@@ -156,14 +155,12 @@ Section Clint.
              (base : Z)
              (pfBound : Is_true ((0 <=? base) && (base + ClintSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
              (pfAligned : Is_true (base mod (2 ^ Z.of_nat (cfgLgLineBytes ClintLineConfig)) =? 0)%Z)
-             : MemRegion dom := {|
+             : MemRegion := {|
     regionName        := "clint" ;
     regionBase        := base ;
     regionSize        := ClintSizeBytes ;
     regionLineCfg     := ClintLineConfig ;
-    isReadOnly        := false ;
-    hasExtraFetchPort := None ;
-    regionKind        := @CustomMem dom "clint" ClintSizeBytes ClintLineConfig None clintChildren (@clintLineReadAction base) (@clintLineWriteAction base) None tt ;
+    regionKind        := @CustomMem "clint" ClintLineConfig clintChildren (@clintLineReadAction base) (@clintLineWriteAction base) None ;
     regionInMemory    := pfBound ;
     regionBaseAligned := pfAligned ;
     regionSizeAligned := I
@@ -173,7 +170,7 @@ Section Clint.
    * System Integration Helpers
    * =========================================================================== *)
 
-  Record ClintInstance (regions : list (MemRegion dom)) := {
+  Record ClintInstance (regions : list MemRegion) := {
     clintIdx      : nat ;
     clintBaseAddr : Z ;
     pfBound       : Is_true ((0 <=? clintBaseAddr) && (clintBaseAddr + ClintSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
@@ -181,15 +178,15 @@ Section Clint.
     pfClint       : nth_error regions clintIdx = Some (@clintMemRegion clintBaseAddr pfBound pfAligned)
   }.
 
-  Definition clintRegion {regions} (clint : ClintInstance regions) : MemRegion dom :=
+  Definition clintRegion {regions} (clint : ClintInstance regions) : MemRegion :=
     @clintMemRegion clint.(clintBaseAddr) clint.(pfBound) clint.(pfAligned).
 
   Section ClintSystem.
-    Variable regions : list (MemRegion dom).
+    Variable regions : list MemRegion.
     Variable clint : ClintInstance regions.
     Variable ty : Kind -> Type.
 
-    Local Abbreviation memTree := (specMemTree regions).
+    Local Abbreviation memTree := (specMemTree dom regions).
 
     Definition clintAction {k : Kind} (act : Action ty tClint k) : Action ty memTree k :=
       nthRegionAction clint.(clintIdx) regions (clintRegion clint) clint.(pfClint) act.

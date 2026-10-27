@@ -43,7 +43,7 @@ Definition ImplMulStages  : nat := 2%nat.
 Definition ImplDivStages  : nat := 16%nat.
 Definition ImplMulDivMode : MulDivMode := PipelinedMul_IterDiv.
 
-Definition implConcreteRegions : list (MemRegion "core") := [
+Definition implConcreteRegions : list MemRegion := [
   ramRegion ;
   revTableRegion ;
   @clintMemRegion "core" ClintBaseAddr I I ;
@@ -62,7 +62,8 @@ Definition implConcretePlic : @PlicInstance "core" 3%nat implConcreteRegions :=
   @Build_PlicInstance "core" 3%nat implConcreteRegions 4%nat PlicBaseAddr I I I eq_refl.
 
 Definition implSysTreeInst : Tree DomainElem :=
-  implSysTree PcAddrInit
+  implSysTree "core"
+              PcAddrInit
               DefaultFetchCapacity
               DefaultInstCapacity
               DefaultDecodeCapacity
@@ -118,4 +119,3 @@ Set Extraction Output Directory "./Impl".
 Definition compiledMod (sim : bool) :=
   compile (if sim then forwardDatapathModInst else pipelinedModInst) sim.
 Extraction "Compile" kindSize Z.log2_up getDefault isEq compiledMod.
-

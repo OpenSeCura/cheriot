@@ -227,18 +227,18 @@ Section SpecCoreTree.
   Variable dom : string.
   Variable pcAddrInit : Z.
 
-  Definition specCoreTree (regions : list (MemRegion dom)) : Tree DomainElem :=
+  Definition specCoreTree (regions : list MemRegion) : Tree DomainElem :=
     Node "core" [
       Node "rf"  [ rfTree dom pcAddrInit ] ;
-      Node "mem" [ specMemTree regions ]
+      Node "mem" [ specMemTree dom regions ]
     ].
 
   Section SpecFetchDeferred.
     Variable config : RevConfig.
-    Variable regions : list (MemRegion dom).
+    Variable regions : list MemRegion.
     Variable ty : Kind -> Type.
 
-    Local Abbreviation memTree := (specMemTree regions).
+    Local Abbreviation memTree := (specMemTree dom regions).
     Local Abbreviation coreTree := (specCoreTree regions).
 
     Definition np_rf : NodePath coreTree :=
@@ -266,8 +266,7 @@ Section SpecCoreTree.
         If #hasPreFault Then (
           Return ($0 : Expr ty Inst)
         ) Else (
-          Let  instSz  : Bit LgLgNumBytesFullCapSz <- $LgNumBytesInstSz ;
-          LetA rawFull : FullCapWithTag            <- liftAction np_mem (specMemRead regions true pccAddr instSz) ;
+          LetA rawFull : FullCapWithTag            <- liftAction np_mem (specMemFetchRead regions pccAddr) ;
           Let  rawInst : Inst                      <- ##rawFull`"addr" ;
           LetL exp     : Inst                      <- preDecode rawInst ;
           Return #exp
@@ -318,7 +317,7 @@ Section SpecCoreTree.
             Let pending   : PendingLoad               <- ##ld`"pending" ;
             Let memSize   : Bit LgLgNumBytesFullCapSz <- ##pending`"memSize" ;
 
-            LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions false ldAddr memSize) ;
+            LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions ldAddr memSize) ;
             LetL outcome  : LoadOutcome       <- dispatchLoadResponse config pending memVal ;
 
             If (#outcome `? "RevLookup") Then (

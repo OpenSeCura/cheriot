@@ -76,46 +76,40 @@ Definition concreteRevConfig : RevConfig := {|
  * Concrete Memory Regions
  * =========================================================================== *)
 
-Definition ramRegion : MemRegion "core" := {|
+Definition ramRegion : MemRegion := {|
   regionName        := "ram" ;
   regionBase        := RamBase ;
   regionSize        := RamSize ;
   regionLineCfg     := RamLineConfig ;
-  isReadOnly        := false ;
-  hasExtraFetchPort := Some true ;
   regionKind        := ExternalMem ;
   regionInMemory    := I ;
   regionBaseAligned := I ;
   regionSizeAligned := I
 |}.
 
-Definition revTableRegion : MemRegion "core" := {|
+Definition revTableRegion : MemRegion := {|
   regionName        := "revTable" ;
   regionBase        := RevTableBase ;
   regionSize        := RevTableSize ;
   regionLineCfg     := RevTableLineConfig ;
-  isReadOnly        := false ;
-  hasExtraFetchPort := None ;
-  regionKind        := InternalMem false None (defaultTagsInit RevTableLineConfig RevTableSize) ;
-  regionInMemory    := I ;
-  regionBaseAligned := I ;
-  regionSizeAligned := I
-|}.
-
-Definition uartRegion : MemRegion "core" := {|
-  regionName        := "uart" ;
-  regionBase        := UartBase ;
-  regionSize        := UartSize ;
-  regionLineCfg     := UartLineConfig ;
-  isReadOnly        := false ;
-  hasExtraFetchPort := None ;
   regionKind        := ExternalMem ;
   regionInMemory    := I ;
   regionBaseAligned := I ;
   regionSizeAligned := I
 |}.
 
-Definition concreteRegions : list (MemRegion "core") := [
+Definition uartRegion : MemRegion := {|
+  regionName        := "uart" ;
+  regionBase        := UartBase ;
+  regionSize        := UartSize ;
+  regionLineCfg     := UartLineConfig ;
+  regionKind        := ExternalMem ;
+  regionInMemory    := I ;
+  regionBaseAligned := I ;
+  regionSizeAligned := I
+|}.
+
+Definition concreteRegions : list MemRegion := [
   ramRegion ;
   revTableRegion ;
   @clintMemRegion "core" ClintBaseAddr I I ;
@@ -140,7 +134,7 @@ Definition concretePlic : @PlicInstance "core" 3%nat concreteRegions :=
  * =========================================================================== *)
 
 Definition specSysTreeInst : Tree DomainElem :=
-  specSysTree PcAddrInit concreteRegions.
+  specSysTree "core" PcAddrInit concreteRegions.
 
 Definition specModInst : Mod specSysTreeInst :=
   @spec "core"

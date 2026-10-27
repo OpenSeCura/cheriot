@@ -343,11 +343,11 @@ Section DataMemStageSimulation.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
   Variable config : RevConfig.
-  Variable regions : list (MemRegion core).
+  Variable regions : list MemRegion.
   Variable clint : @ClintInstance core regions.
   Variable rev : @RevokerInstance core (implRevokerExtraChildren core) regions.
   Variable revSpec : @RevokerInstance core [] regions.
-  Variable plic : @PlicInstance core (S (S (length (collectIrqActions regions)))) regions.
+  Variable plic : @PlicInstance core (S (S (length (collectIrqActions core regions)))) regions.
 
   Local Abbreviation sTree := (SpecTree core pcAddrInit regions).
   Local Abbreviation iTree :=
@@ -1404,4 +1404,3 @@ Section DataMemStageSimulation.
   Qed.
 
 End DataMemStageSimulation.
-

@@ -40,7 +40,7 @@ Section InitStateRelLemmas.
            (fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat)
            (mulCapacity divCapacity mulStages divStages : nat)
            (mulDivMode : MulDivMode)
-           (config : RevConfig) (regions : list (MemRegion core))
+           (config : RevConfig) (regions : list MemRegion)
            (s1 : ImplState core pcAddrInit fetchCapacity instCapacity decodeCapacity
                            dataMemCapacity mulCapacity divCapacity mulStages divStages
                            mulDivMode config regions)
@@ -101,7 +101,7 @@ Section InitStateRelLemmas.
            (fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat)
            (mulCapacity divCapacity mulStages divStages : nat)
            (mulDivMode : MulDivMode)
-           (config : RevConfig) (regions : list (MemRegion core))
+           (config : RevConfig) (regions : list MemRegion)
            (s1 : ImplState core pcAddrInit fetchCapacity instCapacity decodeCapacity
                            dataMemCapacity mulCapacity divCapacity mulStages divStages
                            mulDivMode config regions),
@@ -140,11 +140,11 @@ Section ModuleActionDecomposition.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
   Variable config : RevConfig.
-  Variable regions : list (MemRegion core).
+  Variable regions : list MemRegion.
   Variable clint : @ClintInstance core regions.
   Variable rev : @RevokerInstance core (implRevokerExtraChildren core) regions.
   Variable revSpec : @RevokerInstance core [] regions.
-  Variable plic : @PlicInstance core (S (S (length (collectIrqActions regions)))) regions.
+  Variable plic : @PlicInstance core (S (S (length (collectIrqActions core regions)))) regions.
 
   Local Abbreviation sTree := (SpecTree core pcAddrInit regions).
   Local Abbreviation iTree :=
@@ -173,9 +173,6 @@ Section ModuleActionDecomposition.
        ++ [ @fetchRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                config regions rev ty ]
-       ++ @fetchRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
        ++ @fetchRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
              config regions ty
@@ -254,21 +251,6 @@ Section ModuleActionDecomposition.
        ++ @fenceIAcks core pcAddrInit fetchCapacity instCapacity decodeCapacity
              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
              config regions ty
-       ++ @targetPortRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @targetPortRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
        ++ @setCanProceedSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
              config regions ty)%list.
@@ -284,9 +266,6 @@ Section ModuleActionDecomposition.
           dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
           config regions ty
        ++ @dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @targetPortRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
              config regions ty
        ++ List.rev (
@@ -327,12 +306,6 @@ Section ModuleActionDecomposition.
        ++ @fenceIAcks core pcAddrInit fetchCapacity instCapacity decodeCapacity
              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
              config regions ty
-       ++ @targetPortRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @fetchRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
        ++ @dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
              config regions ty
@@ -359,11 +332,6 @@ Section ModuleActionDecomposition.
       act = @fetchRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
               config regions rev ty ->
-      ImplActionKind ty act
-  | IA_FetchRqs :
-      In act (@fetchRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) ->
       ImplActionKind ty act
   | IA_FetchRps :
       In act (@fetchRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -432,16 +400,6 @@ Section ModuleActionDecomposition.
       ImplActionKind ty act
   | IA_FenceIAcks :
       In act (@fenceIAcks core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) ->
-      ImplActionKind ty act
-  | IA_TargetPortRqs :
-      In act (@targetPortRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) ->
-      ImplActionKind ty act
-  | IA_TargetPortRps :
-      In act (@targetPortRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                 config regions ty) ->
       ImplActionKind ty act
@@ -581,7 +539,6 @@ Section ModuleActionDecomposition.
         try (apply IA_LoadRpAndIssueRevRqStage; exact H);
         try (apply IA_RevRpAndWriteBackStage; exact H);
         try (apply IA_Peripheral; exact H);
-        try (apply IA_FetchRqs; exact H);
         try (apply IA_FetchRps; exact H);
         try (apply IA_DataWriteRqs; exact H);
         try (apply IA_DataReadRqs; exact H);
@@ -589,12 +546,10 @@ Section ModuleActionDecomposition.
         try (apply IA_DataCrossLineSteps; exact H);
         try (apply IA_MulDivStageActions; exact H);
         try (apply IA_FenceIAcks; exact H);
-        try (apply IA_TargetPortRqs; exact H);
-        try (apply IA_TargetPortRps; exact H);
         try (apply IA_SetCanProceedSteps; exact H);
         try (apply IA_RevokerStepsSys; unfold implRevokerStepsSys; rewrite in_three_iff; solve_in_or H).
     - intros H; destruct H as
-        [H | H | H | H | H | H | H | H | H | H | H | H | H | H | H | H | H | H | H | H];
+        [H | H | H | H | H | H | H | H | H | H | H | H | H | H | H | H | H];
         try (unfold implRevokerStepsSys in H; rewrite in_three_iff in H);
         solve_in_or H.
   Qed.
@@ -621,7 +576,6 @@ Section ModuleActionDecomposition.
       try (apply IA_LoadRpAndIssueRevRqStage; exact Hin);
       try (apply IA_RevRpAndWriteBackStage; exact Hin);
       try (apply IA_Peripheral; exact Hin);
-      try (apply IA_FetchRqs; exact Hin);
       try (apply IA_FetchRps; exact Hin);
       try (apply IA_DataWriteRqs; exact Hin);
       try (apply IA_DataReadRqs; exact Hin);
@@ -630,8 +584,6 @@ Section ModuleActionDecomposition.
       try (apply IA_MulDivStageActions; exact Hin);
       try (apply IA_RevokerStepsSys; exact Hin);
       try (apply IA_FenceIAcks; exact Hin);
-      try (apply IA_TargetPortRqs; exact Hin);
-      try (apply IA_TargetPortRps; exact Hin);
       try (apply IA_SetCanProceedSteps; exact Hin).
   Qed.
 
@@ -665,9 +617,6 @@ Section ModuleActionDecomposition.
       act = @fetchRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
               config regions rev ty \/
-      In act (@fetchRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
       In act (@fetchRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                 config regions ty) \/
@@ -710,12 +659,6 @@ Section ModuleActionDecomposition.
       In act (@fenceIAcks core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                 config regions ty) \/
-      In act (@targetPortRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
-      In act (@targetPortRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
       In act (@setCanProceedSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                 config regions ty).
@@ -723,8 +666,8 @@ Section ModuleActionDecomposition.
     intros ty act Hin.
     apply In_forwardDatapathMod_ImplActionKind in Hin.
     destruct Hin as
-      [Hin | Hin | Hin | Hin | Hin | Hin | Hin | Hin | Hin | Hin |
-       Hin | Hin | Hin | Hin | Hin | Hin | Hin | Hin | Hin | Hin];
+      [Hin | Hin | Hin | Hin | Hin | Hin | Hin | Hin | Hin |
+       Hin | Hin | Hin | Hin | Hin | Hin | Hin | Hin];
       solve_in_or Hin.
   Qed.
 
@@ -737,9 +680,6 @@ Section ModuleActionDecomposition.
       act = @fetchRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
               config regions rev ty \/
-      In act (@fetchRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
       In act (@fetchRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                 config regions ty) \/
@@ -780,12 +720,6 @@ Section ModuleActionDecomposition.
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                 config regions rev ty) \/
       In act (@fenceIAcks core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
-      In act (@targetPortRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
-      In act (@targetPortRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                 config regions ty) \/
       In act (@setCanProceedSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -811,11 +745,11 @@ Section SystemModSimulation.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
   Variable config : RevConfig.
-  Variable regions : list (MemRegion core).
+  Variable regions : list MemRegion.
   Variable clint : @ClintInstance core regions.
   Variable rev : @RevokerInstance core (implRevokerExtraChildren core) regions.
   Variable revSpec : @RevokerInstance core [] regions.
-  Variable plic : @PlicInstance core (S (S (length (collectIrqActions regions)))) regions.
+  Variable plic : @PlicInstance core (S (S (length (collectIrqActions core regions)))) regions.
 
   Local Abbreviation sTree := (SpecTree core pcAddrInit regions).
   Local Abbreviation iTree :=
@@ -844,6 +778,10 @@ Section SystemModSimulation.
     (stateRel core pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
               mulDivMode config regions).
+  Local Abbreviation specMemTree := (specMemTree core).
+  Local Abbreviation memRegionTree := (memRegionTree core).
+  Local Abbreviation memRegionKindTree := (memRegionKindTree core).
+  Local Abbreviation externalMemRegionTree := (externalMemRegionTree core).
 
   (* --- 3A. Unconditional `setCanProceedSteps` Simulation --- *)
 
@@ -1011,13 +949,16 @@ Section SystemModSimulation.
   (* --- 3C. Peripheral, Fence.I Ack, and TargetPort Connections to `cRel` --- *)
 
   Lemma SimDevices_projImplMemSpecState_eq :
-    forall (rs : list (MemRegion core))
+    forall (rs : list MemRegion)
            (m : TreeState DomainElemState (@implMemTree core rs)),
       SimDevices.projImplMemSpecState core rs m =
       StateRel.projImplMemSpecState core rs m.
   Proof.
-    induction rs as [| r rs IH]; intros m; [reflexivity |].
-    cbn [SimDevices.projImplMemSpecState StateRel.projImplMemSpecState].
+    unfold SimDevices.projImplMemSpecState, StateRel.projImplMemSpecState.
+    intros rs [m0 mrest]; cbn [Fst]; clear mrest.
+    revert m0.
+    induction rs as [| r rs IH]; intros m0; [reflexivity |].
+    cbn [SimDevices.projImplRegionsSpecState StateRel.projImplMemRegions].
     rewrite IH; reflexivity.
   Qed.
 
@@ -1099,7 +1040,7 @@ Section SystemModSimulation.
   Qed.
 
   Lemma regionsFenceIMsgConservation_refl :
-    forall (rs : list (MemRegion core))
+    forall (rs : list MemRegion)
            (sm : TreeState DomainElemState (specMemTree rs)),
       regionsFenceIMsgConservation core rs sm sm.
   Proof.
@@ -1107,13 +1048,11 @@ Section SystemModSimulation.
     - exact I.
     - destruct sm as [sr [srest []]]; cbn [Fst Snd].
       split; [| apply IH].
-      unfold memRegionTree in sr.
+      unfold memRegionTree, memRegionKindTree in sr.
       revert sr.
-      destruct (r.(regionKind)) as [isAcc initD initT | | children rdAct wrAct irqAct fiAct];
-        unfold externalMemRegionTree, externalMemRegionChildren, customMemRegionTree, customMemChildren.
-      + intros _; exact I.
-      + destruct (hasFenceIPort (hasExtraFetchPort r)); intros sr; [| exact I].
-        intros _; split; reflexivity.
+      destruct (r.(regionKind)) as [| children rdAct wrAct irqAct];
+        unfold externalMemRegionTree, customMemRegionTree.
+      + intros sr _; split; reflexivity.
       + intros _; exact I.
   Qed.
 
@@ -1296,50 +1235,6 @@ Section SystemModSimulation.
         * unfold FenceIPipelineQuiescent, FenceIActive in *.
           rewrite Hexec1', Hfetch1', Hdec1', Hdm1', Hproj; exact Hquiescent.
         * rewrite Hproj; exact Hcons.
-  Qed.
-
-  (* --- 3D. Unconditional Simulation of `fetchRqs` (`fetchRqs = []`) --- *)
-
-  Lemma implMemRegionFetchRqActions_nil :
-    forall (r : MemRegion core),
-      implMemRegionFetchRqActions r = [].
-  Proof.
-    intros r.
-    unfold implMemRegionFetchRqActions, implMemRegionTree.
-    destruct (r.(regionKind)); reflexivity.
-  Qed.
-
-  Lemma implCollectFetchRqActions_nil :
-    forall (rs : list (MemRegion core)),
-      implCollectFetchRqActions rs = [].
-  Proof.
-    induction rs as [| r rs IH]; cbn [implCollectFetchRqActions implCollectRegionActions]; [reflexivity |].
-    rewrite IH, implMemRegionFetchRqActions_nil; reflexivity.
-  Qed.
-
-  Lemma fetchRqs_nil :
-    @fetchRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-              config regions type = [].
-  Proof.
-    unfold fetchRqs, implMemCollectFetchRqActions.
-    rewrite implCollectFetchRqActions_nil; reflexivity.
-  Qed.
-
-  Theorem sim_fetchRqs_stateRel :
-    forall {env1 : Env iTree} {env2 : Env sTree}
-           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
-      In act (@fetchRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions type) ->
-      SemAction env1 act s1 s1' v ->
-      sRel s1 s2 ->
-      exists s2' : SState,
-        SemActions env2 (map snd (specMod type)) s2 s2' /\
-        sRel s1' s2'.
-  Proof.
-    intros env1 env2 act s1 s1' s2 v Hin _ _.
-    rewrite fetchRqs_nil in Hin; contradiction.
   Qed.
 
   (* --- 3E. Concrete Device, TickCycle, FenceIAcks, and MulDiv Step Simulations --- *)
@@ -2037,53 +1932,11 @@ Section SystemModSimulation.
                mulDivMode config regions s1 s1' s2 Hrel).
   Qed.
 
-  Theorem sim_targetPortRqs_stateRel :
-    forall {env1 : Env iTree} {env2 : Env sTree}
-           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
-      In act
-        (@targetPortRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-           dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions type) ->
-      SemAction env1 act s1 s1' v ->
-      sRel s1 s2 ->
-      exists s2' : SState,
-        SemActions env2 (map snd (specMod type)) s2 s2' /\
-        sRel s1' s2'.
-  Proof.
-    intros env1 env2 act s1 s1' s2 v _ _ Hrel.
-    exists s2; split.
-    - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
-    - exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
-               decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-               mulDivMode config regions s1 s1' s2 Hrel).
-  Qed.
-
-  Theorem sim_targetPortRps_stateRel :
-    forall {env1 : Env iTree} {env2 : Env sTree}
-           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (s2 : SState) (v : bits 0),
-      In act
-        (@targetPortRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-           dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions type) ->
-      SemAction env1 act s1 s1' v ->
-      sRel s1 s2 ->
-      exists s2' : SState,
-        SemActions env2 (map snd (specMod type)) s2 s2' /\
-        sRel s1' s2'.
-  Proof.
-    intros env1 env2 act s1 s1' s2 v _ _ Hrel.
-    exists s2; split.
-    - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
-    - exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
-               decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-               mulDivMode config regions s1 s1' s2 Hrel).
-  Qed.
-
   (* --- 3F. Packaged Stage & Device Step Obligations and Top-Level `ModSimulation` --- *)
 
   (* Record packaging the per-group action-to-actions simulation obligations on `sRel`.
-   * Note that `setCanProceedSteps` and `fetchRqs` are discharged unconditionally by
-   * `sim_setCanProceedSteps_stateRel` and `sim_fetchRqs_stateRel` above. *)
+   * Note that `setCanProceedSteps` is discharged unconditionally by
+   * `sim_setCanProceedSteps_stateRel` above. *)
   Record StageStepSimulations {env1 : Env iTree} {env2 : Env sTree} : Prop := {
     sim_step_peripheral :
       forall act s1 s1' s2,
@@ -2220,24 +2073,6 @@ Section SystemModSimulation.
                   config regions type) ->
         SemAction env1 act s1 s1' Zmod.zero ->
         sRel s1 s2 ->
-        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
-
-    sim_step_targetPortRqs :
-      forall act s1 s1' s2,
-        In act (@targetPortRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                  config regions type) ->
-        SemAction env1 act s1 s1' Zmod.zero ->
-        sRel s1 s2 ->
-        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
-
-    sim_step_targetPortRps :
-      forall act s1 s1' s2,
-        In act (@targetPortRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                  config regions type) ->
-        SemAction env1 act s1 s1' Zmod.zero ->
-        sRel s1 s2 ->
         exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2'
   }.
 
@@ -2273,10 +2108,9 @@ Section SystemModSimulation.
     intros env1 env2 act s1 s1' Hkind Hsem s2 Hrel.
     pose proof (stageStepSimulations_holds env1 env2) as Hsim.
     destruct Hkind as
-      [Hin | -> | Hin | Hin | -> | -> | -> | -> | Hin | Hin | Hin | Hin | -> | -> | Hin | Hin | Hin | Hin | Hin | Hin].
+      [Hin | -> | Hin | -> | -> | -> | -> | Hin | Hin | Hin | Hin | -> | -> | Hin | Hin | Hin | Hin].
     - exact (sim_step_peripheral Hsim act s1 s1' s2 Hin Hsem Hrel).
     - exact (sim_step_fetchRqStage Hsim s1 s1' s2 Hsem Hrel).
-    - exact (sim_fetchRqs_stateRel act s1 s1' s2 Zmod.zero Hin Hsem Hrel).
     - exact (sim_step_fetchRps Hsim act s1 s1' s2 Hin Hsem Hrel).
     - exact (sim_step_fetchAssembleStage Hsim s1 s1' s2 Hsem Hrel).
     - exact (sim_step_decodeAndRegReadStage Hsim s1 s1' s2 Hsem Hrel).
@@ -2291,8 +2125,6 @@ Section SystemModSimulation.
     - exact (sim_step_mulDivStageActions Hsim act s1 s1' s2 Hin Hsem Hrel).
     - exact (sim_step_revokerStepsSys Hsim act s1 s1' s2 Hin Hsem Hrel).
     - exact (sim_step_fenceIAcks Hsim act s1 s1' s2 Hin Hsem Hrel).
-    - exact (sim_step_targetPortRqs Hsim act s1 s1' s2 Hin Hsem Hrel).
-    - exact (sim_step_targetPortRps Hsim act s1 s1' s2 Hin Hsem Hrel).
     - exact (sim_setCanProceedSteps_stateRel act s1 s1' s2 Zmod.zero Hin Hsem Hrel).
   Qed.
 

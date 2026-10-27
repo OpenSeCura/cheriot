@@ -440,24 +440,23 @@ Section Plic.
                     ITE0 d.(dec_isThreshClaim) threshClaimVal ]).
 
     Definition plicLineReadAction
-               (_ : ReadPortSel None)
                (addr : ty Addr)
                (dataMask : ty (Array (cfgLineBytes PlicLineConfig) Bool))
-               : Action ty tPlic (LineReadRp PlicLineConfig false) :=
+               : Action ty tPlic (LineReadRp PlicLineConfig) :=
       decodePlicLine #addr #dataMask (fun d =>
       readPlicState (fun st =>
         Let readBytes : Array (cfgLineBytes PlicLineConfig) (Bit ByteSz) <- readPlicLine st d ;
         If d.(dec_touchesClaim) Then (
           @plicClaim n ty st.(st_claim)
         ) ;
-        @Return ty tPlic (LineReadRp PlicLineConfig false) (STRUCT {
+        @Return ty tPlic (LineReadRp PlicLineConfig) (STRUCT {
           "data" ::= #readBytes ;
-          "tag"  ::= Const ty (Array (cfgNumLineTags PlicLineConfig false) Bool) (getDefault _)
+          "tag"  ::= Const ty (Array (cfgNumLineTags PlicLineConfig) Bool) (getDefault _)
         })
       )).
 
     Definition plicLineWriteAction
-               (rq : ty (LineWriteRq PlicLineConfig false))
+               (rq : ty (LineWriteRq PlicLineConfig))
                : Action ty tPlic (Bit 0) :=
       decodePlicLine (##rq`"addr") (##rq`"dataMask") (fun d =>
       readPlicState (fun st =>
@@ -510,19 +509,16 @@ Section Plic.
              (base : Z)
              (pfBound : Is_true ((0 <=? base) && (base + PlicSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
              (pfAligned : Is_true (base mod (2 ^ Z.of_nat (cfgLgLineBytes PlicLineConfig)) =? 0)%Z)
-             : MemRegion dom := {|
+             : MemRegion := {|
     regionName        := "plic" ;
     regionBase        := base ;
     regionSize        := PlicSizeBytes ;
     regionLineCfg     := PlicLineConfig ;
-    isReadOnly        := false ;
-    hasExtraFetchPort := None ;
-    regionKind        := @CustomMem dom "plic" PlicSizeBytes PlicLineConfig None
+    regionKind        := @CustomMem "plic" PlicLineConfig
                                     (plicChildren n)
                                     (@plicLineReadAction n base)
                                     (@plicLineWriteAction n base)
-                                    None
-                                    tt ;
+                                    None ;
     regionInMemory    := pfBound ;
     regionBaseAligned := pfAligned ;
     regionSizeAligned := I
@@ -532,7 +528,7 @@ Section Plic.
    * System Integration Helpers
    * =========================================================================== *)
 
-  Record PlicInstance (n : nat) (regions : list (MemRegion dom)) := {
+  Record PlicInstance (n : nat) (regions : list MemRegion) := {
     plicIdx      : nat ;
     plicBaseAddr : Z ;
     pfBound      : Is_true ((0 <=? plicBaseAddr) && (plicBaseAddr + PlicSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
@@ -541,16 +537,16 @@ Section Plic.
     pfPlic       : nth_error regions plicIdx = Some (@plicMemRegion n plicBaseAddr pfBound pfAligned)
   }.
 
-  Definition plicRegion {n regions} (plic : PlicInstance n regions) : MemRegion dom :=
+  Definition plicRegion {n regions} (plic : PlicInstance n regions) : MemRegion :=
     @plicMemRegion n plic.(plicBaseAddr) plic.(pfBound) plic.(pfAligned).
 
   Section PlicSystem.
     Variable n : nat.
-    Variable regions : list (MemRegion dom).
+    Variable regions : list MemRegion.
     Variable plic : PlicInstance n regions.
     Variable ty : Kind -> Type.
 
-    Local Abbreviation memTree := (specMemTree regions).
+    Local Abbreviation memTree := (specMemTree dom regions).
 
     Definition plicAction {k : Kind} (act : Action ty (plicTree n) k) : Action ty memTree k :=
       nthRegionAction plic.(plicIdx) regions (plicRegion plic) plic.(pfPlic) act.
@@ -575,12 +571,12 @@ Section Plic.
       end.
 
     Definition plicPendingsSteps
-               (pfCount : S (S (length (collectIrqActions regions))) = n)
+               (pfCount : S (S (length (collectIrqActions dom regions))) = n)
                : list (Action ty memTree (Bit 0)) :=
       match pendingPathsWithKind n, inServicePathsWithKind n with
       | _ :: devPends, _ :: devInsvs =>
           plicPendingStepsHelper
-            (map (fun f => f ty) (collectIrqActions regions) ++ [plicUartIrqAction])
+            (map (fun f => f ty) (collectIrqActions dom regions) ++ [plicUartIrqAction])
             devPends
             devInsvs
       | _, _ => []

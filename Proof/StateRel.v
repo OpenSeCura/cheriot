@@ -82,15 +82,22 @@ Section StateProjections.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
   Variable revCfg : RevConfig.
-  Variable regions : list (MemRegion core).
+  Variable regions : list MemRegion.
+
+  Local Abbreviation specMemTree := (specMemTree core).
+  Local Abbreviation implMemTree := (implMemTree core).
+  Local Abbreviation implRegionsTree := (implRegionsTree core).
+  Local Abbreviation memRegionTree := (memRegionTree core).
+  Local Abbreviation implMemRegionTree := (implMemRegionTree core).
+  Local Abbreviation memRegionKindTree := (memRegionKindTree core).
 
   (* --- 3A. Top-Level Tree & State Types --- *)
 
   Definition SpecTree : Tree DomainElem :=
-    specSysTree pcAddrInit regions.
+    specSysTree core pcAddrInit regions.
 
   Definition ImplTree : Tree DomainElem :=
-    implSysTree pcAddrInit fetchCapacity instCapacity decodeCapacity
+    implSysTree core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode revCfg regions.
 
@@ -163,7 +170,7 @@ Section StateProjections.
   (* --- 3B. Spec State Subtree Projections --- *)
 
   Definition spec_core (s2 : SpecState)
-    : TreeState DomainElemState (specCoreTree pcAddrInit regions) :=
+    : TreeState DomainElemState (specCoreTree core pcAddrInit regions) :=
     s2.(Fst).
 
   Definition spec_rf (s2 : SpecState) : RfState :=
@@ -211,33 +218,16 @@ Section StateProjections.
 
   (* --- 3D. Memory Region & Device Projections (`revoker`, `clint`, `plic`, `fenceIAck`, `mems`) --- *)
 
-  Definition projImplRegionSpecState (r : MemRegion core)
+  Definition projImplRegionSpecState (r : MemRegion)
     (sr : TreeState DomainElemState (implMemRegionTree r))
     : TreeState DomainElemState (memRegionTree r) :=
-    match r.(regionKind) as rk
-      return TreeState DomainElemState
-               (match rk with
-                | InternalMem isAccessible _ _ => implInternalMemRegionTree r isAccessible
-                | ExternalMem => implExternalMemRegionTree r
-                | CustomMem children _ _ _ _ => implCustomMemRegionTree r children
-                end) ->
-             TreeState DomainElemState
-               (match rk with
-                | InternalMem isAccessible _ _ => internalMemRegionTree r isAccessible
-                | ExternalMem => externalMemRegionTree r
-                | CustomMem children _ _ _ _ => customMemRegionTree r children
-                end)
-    with
-    | InternalMem isAccessible _ _ => fun s => s.(Fst)
-    | ExternalMem => fun s => s.(Fst)
-    | CustomMem children _ _ _ _ => fun s => s.(Fst)
-    end sr.
+    sr.(Fst).
 
-  Fixpoint projImplMemRegions (rs : list (MemRegion core))
-    : TreeState DomainElemState (implMemTree rs) ->
+  Fixpoint projImplMemRegions (rs : list MemRegion)
+    : TreeState DomainElemState (implRegionsTree rs) ->
       TreeState DomainElemState (specMemTree rs) :=
     match rs return
-      TreeState DomainElemState (implMemTree rs) ->
+      TreeState DomainElemState (implRegionsTree rs) ->
       TreeState DomainElemState (specMemTree rs)
     with
     | nil => fun _ => tt
@@ -247,15 +237,15 @@ Section StateProjections.
 
   Definition projImplMemSpecState
     (sm : ImplMemSubState) : SpecMemSubState :=
-    projImplMemRegions regions sm.
+    projImplMemRegions regions sm.(Fst).
 
-  (* Nth region state extraction for `specMemTree` and `implMemTree` *)
-  Fixpoint nthSpecRegionState (idx : nat) (rs : list (MemRegion core))
+  (* Nth region state extraction for `specMemTree` and `implRegionsTree` *)
+  Fixpoint nthSpecRegionState (idx : nat) (rs : list MemRegion)
     : TreeState DomainElemState (specMemTree rs) ->
-      TreeState DomainElemState (nth idx (map (@memRegionTree core) rs) (Node "" [])) :=
+      TreeState DomainElemState (nth idx (map memRegionTree rs) (Node "" [])) :=
     match rs return
       TreeState DomainElemState (specMemTree rs) ->
-      TreeState DomainElemState (nth idx (map (@memRegionTree core) rs) (Node "" []))
+      TreeState DomainElemState (nth idx (map memRegionTree rs) (Node "" []))
     with
     | nil => fun _ =>
         match idx return TreeState DomainElemState (nth idx [] (Node "" [])) with
@@ -265,19 +255,19 @@ Section StateProjections.
     | r0 :: rest =>
         match idx return
           TreeState DomainElemState (specMemTree (r0 :: rest)) ->
-          TreeState DomainElemState (nth idx (map (@memRegionTree core) (r0 :: rest)) (Node "" []))
+          TreeState DomainElemState (nth idx (map memRegionTree (r0 :: rest)) (Node "" []))
         with
         | 0%nat => fun s => s.(Fst)
         | S idx' => fun s => nthSpecRegionState idx' rest s.(Snd).(Fst)
         end
     end.
 
-  Fixpoint nthImplRegionState (idx : nat) (rs : list (MemRegion core))
-    : TreeState DomainElemState (implMemTree rs) ->
-      TreeState DomainElemState (nth idx (map (@implMemRegionTree core) rs) (Node "" [])) :=
+  Fixpoint nthImplRegionState (idx : nat) (rs : list MemRegion)
+    : TreeState DomainElemState (implRegionsTree rs) ->
+      TreeState DomainElemState (nth idx (map implMemRegionTree rs) (Node "" [])) :=
     match rs return
-      TreeState DomainElemState (implMemTree rs) ->
-      TreeState DomainElemState (nth idx (map (@implMemRegionTree core) rs) (Node "" []))
+      TreeState DomainElemState (implRegionsTree rs) ->
+      TreeState DomainElemState (nth idx (map implMemRegionTree rs) (Node "" []))
     with
     | nil => fun _ =>
         match idx return TreeState DomainElemState (nth idx [] (Node "" [])) with
@@ -286,8 +276,8 @@ Section StateProjections.
         end
     | r0 :: rest =>
         match idx return
-          TreeState DomainElemState (implMemTree (r0 :: rest)) ->
-          TreeState DomainElemState (nth idx (map (@implMemRegionTree core) (r0 :: rest)) (Node "" []))
+          TreeState DomainElemState (implRegionsTree (r0 :: rest)) ->
+          TreeState DomainElemState (nth idx (map implMemRegionTree (r0 :: rest)) (Node "" []))
         with
         | 0%nat => fun s => s.(Fst)
         | S idx' => fun s => nthImplRegionState idx' rest s.(Snd).(Fst)
@@ -295,15 +285,15 @@ Section StateProjections.
     end.
 
   Definition spec_regionAt (idx : nat) (s2 : SpecState)
-    : TreeState DomainElemState (nth idx (map (@memRegionTree core) regions) (Node "" [])) :=
+    : TreeState DomainElemState (nth idx (map memRegionTree regions) (Node "" [])) :=
     nthSpecRegionState idx regions (spec_mem s2).
 
   Definition impl_regionAt (idx : nat) (s1 : ImplState)
-    : TreeState DomainElemState (nth idx (map (@implMemRegionTree core) regions) (Node "" [])) :=
-    nthImplRegionState idx regions (impl_mem s1).
+    : TreeState DomainElemState (nth idx (map implMemRegionTree regions) (Node "" [])) :=
+    nthImplRegionState idx regions (impl_mem s1).(Fst).
 
   Definition impl_regionSpecAt (idx : nat) (s1 : ImplState)
-    : TreeState DomainElemState (nth idx (map (@memRegionTree core) regions) (Node "" [])) :=
+    : TreeState DomainElemState (nth idx (map memRegionTree regions) (Node "" [])) :=
     nthSpecRegionState idx regions (projImplMemSpecState (impl_mem s1)).
 
   (* Named projections for `mems`, `revoker`, `clint`, `plic`, `fenceIAck` *)
@@ -909,42 +899,18 @@ Section StateProjections.
     andb (evalExpr (#op `? "Fence"))
          (evalExpr ((#op `! "Fence")`"FenceI")).
 
-  (* Check whether any external/custom memory region has `fenceIWait = true` *)
-  Fixpoint anyRegionFenceIWait (rs : list (MemRegion core))
+  (* Check whether any external memory region has `fenceIWait = true` *)
+  Fixpoint anyRegionFenceIWait (rs : list MemRegion)
     : TreeState DomainElemState (specMemTree rs) -> bool :=
     match rs return TreeState DomainElemState (specMemTree rs) -> bool with
     | nil => fun _ => false
     | r :: rest => fun s =>
         let wait_r :=
           match r.(regionKind) as rk
-            return TreeState DomainElemState
-                     (match rk with
-                      | InternalMem isAccessible _ _ => internalMemRegionTree r isAccessible
-                      | ExternalMem => externalMemRegionTree r
-                      | CustomMem children _ _ _ _ => customMemRegionTree r children
-                      end) -> bool
+            return TreeState DomainElemState (memRegionKindTree r rk) -> bool
           with
-          | InternalMem _ _ _ => fun _ => false
-          | ExternalMem =>
-              match hasFenceIPort r.(hasExtraFetchPort) as b
-                return TreeState DomainElemState
-                         (Node r.(regionName)
-                            (optNode "fetch" (hasFetchPort r.(hasExtraFetchPort)) (externalMemFetchChildren r) ::
-                             optNode "fenceI" b (externalMemFenceIChildren core) ::
-                             externalMemRegionBaseChildren r)) -> bool
-              with
-              | true => fun sr => sr.(Snd).(Fst).(Fst)
-              | false => fun _ => false
-              end
-          | CustomMem children _ _ _ _ =>
-              match hasFenceIPort r.(hasExtraFetchPort) as b
-                return TreeState DomainElemState
-                         (Node r.(regionName)
-                            (if b then customMemFenceITree core :: children else children)) -> bool
-              with
-              | true => fun sr => sr.(Fst).(Fst)
-              | false => fun _ => false
-              end
+          | ExternalMem => fun sr => sr.(Fst).(Snd).(Snd).(Fst)
+          | CustomMem children _ _ _ => fun _ => false
           end s.(Fst) in
         orb wait_r (anyRegionFenceIWait rest s.(Snd).(Fst))
     end.
@@ -956,7 +922,7 @@ Section StateProjections.
     anyRegionFenceIWait regions (projImplMemSpecState (impl_mem s1)) = true.
 
   (* Message conservation between `fenceIRq`, `fenceIAck`, and `fenceIWait` across all regions *)
-  Fixpoint regionsFenceIMsgConservation (rs : list (MemRegion core))
+  Fixpoint regionsFenceIMsgConservation (rs : list MemRegion)
     : TreeState DomainElemState (specMemTree rs) ->
       TreeState DomainElemState (specMemTree rs) -> Prop :=
     match rs return
@@ -967,43 +933,17 @@ Section StateProjections.
     | r :: rest => fun s1 s2 =>
         let region_inv :=
           match r.(regionKind) as rk
-            return TreeState DomainElemState
-                     (match rk with
-                      | InternalMem isAccessible _ _ => internalMemRegionTree r isAccessible
-                      | ExternalMem => externalMemRegionTree r
-                      | CustomMem children _ _ _ _ => customMemRegionTree r children
-                      end) ->
-                   TreeState DomainElemState
-                     (match rk with
-                      | InternalMem isAccessible _ _ => internalMemRegionTree r isAccessible
-                      | ExternalMem => externalMemRegionTree r
-                      | CustomMem children _ _ _ _ => customMemRegionTree r children
-                      end) -> Prop
+            return TreeState DomainElemState (memRegionKindTree r rk) ->
+                   TreeState DomainElemState (memRegionKindTree r rk) -> Prop
           with
-          | InternalMem _ _ _ => fun _ _ => True
-          | ExternalMem =>
-              match hasFenceIPort r.(hasExtraFetchPort) as b
-                return TreeState DomainElemState
-                         (Node r.(regionName)
-                            (optNode "fetch" (hasFetchPort r.(hasExtraFetchPort)) (externalMemFetchChildren r) ::
-                             optNode "fenceI" b (externalMemFenceIChildren core) ::
-                             externalMemRegionBaseChildren r)) ->
-                       TreeState DomainElemState
-                         (Node r.(regionName)
-                            (optNode "fetch" (hasFetchPort r.(hasExtraFetchPort)) (externalMemFetchChildren r) ::
-                             optNode "fenceI" b (externalMemFenceIChildren core) ::
-                             externalMemRegionBaseChildren r)) -> Prop
-              with
-              | true => fun sr1 sr2 =>
-                  let f1 := sr1.(Snd).(Fst) in
-                  let f2 := sr2.(Snd).(Fst) in
-                  (* `fenceIRq` send trace and `fenceIAck` recv trace match when not in flight *)
-                  (~ (f1.(Fst) = true \/ existsb isFenceIMemFenceReq [] = true) ->
-                   f1.(Snd).(Fst) = f2.(Snd).(Fst) /\
-                   f1.(Snd).(Snd).(Fst) = f2.(Snd).(Snd).(Fst))
-              | false => fun _ _ => True
-              end
-          | CustomMem children _ _ _ _ => fun _ _ => True
+          | ExternalMem => fun sr1 sr2 =>
+              let f1 := sr1.(Fst) in
+              let f2 := sr2.(Fst) in
+              (* `fenceIRq` send trace and `fenceIAck` recv trace match when not in flight *)
+              (~ (f1.(Snd).(Snd).(Fst) = true \/ existsb isFenceIMemFenceReq [] = true) ->
+               f1.(Snd).(Snd).(Snd).(Fst) = f2.(Snd).(Snd).(Snd).(Fst) /\
+               f1.(Snd).(Snd).(Snd).(Snd).(Fst) = f2.(Snd).(Snd).(Snd).(Snd).(Fst))
+          | CustomMem children _ _ _ => fun _ _ => True
           end s1.(Fst) s2.(Fst) in
         region_inv /\ regionsFenceIMsgConservation rest s1.(Snd).(Fst) s2.(Snd).(Fst)
     end.
@@ -1045,13 +985,12 @@ Section StateProjections.
 
   (* Helper: `InitStateConsistent` on `implMemTree` implies `InitStateConsistent` on its projected `specMemTree` *)
   Lemma InitStateConsistent_projImplRegionSpecState :
-    forall (r : MemRegion core) (sr : TreeState DomainElemState (implMemRegionTree r)),
+    forall (r : MemRegion) (sr : TreeState DomainElemState (implMemRegionTree r)),
       InitStateConsistent (implMemRegionTree r) sr ->
       InitStateConsistent (memRegionTree r) (projImplRegionSpecState r sr).
   Proof.
     intros r sr Hinit.
-    unfold implMemRegionTree, memRegionTree, projImplRegionSpecState in sr, Hinit |- *.
-    destruct (regionKind r); exact (proj1 Hinit).
+    exact (proj1 Hinit).
   Qed.
 
   Lemma InitStateConsistent_projImplMemSpecState :
@@ -1059,10 +998,13 @@ Section StateProjections.
       InitStateConsistent ImplMemSubTree sm ->
       InitStateConsistent SpecMemSubTree (projImplMemSpecState sm).
   Proof.
-    unfold ImplMemSubState, ImplMemSubTree, SpecMemSubTree, projImplMemSpecState, implMemTree, implRegionsTree, specMemTree.
+    unfold ImplMemSubState, ImplMemSubTree, SpecMemSubTree, projImplMemSpecState, implMemTree.
+    intros [sregs srest] [Hinit _]; cbn [Fst].
+    revert sregs Hinit.
+    unfold implRegionsTree, specMemTree.
     induction regions as [| r rest IH]; intros sm Hinit; cbn in sm, Hinit |- *.
     - exact I.
-    - destruct sm as [sr [srest []]]; cbn [Fst Snd] in Hinit |- *.
+    - destruct sm as [sr [srest' []]]; cbn [Fst Snd] in Hinit |- *.
       split.
       + apply InitStateConsistent_projImplRegionSpecState; exact (proj1 Hinit).
       + split; [apply IH; exact (proj1 (proj2 Hinit)) | exact I].
@@ -1079,19 +1021,15 @@ Section StateProjections.
     - destruct sm as [sr [srest []]]; cbn [Fst Snd] in Hmem |- *.
       destruct Hmem as [Hr [Hrest _]].
       rewrite (IH srest Hrest), orb_false_r.
-      unfold memRegionTree in sr, Hr.
+      unfold memRegionTree, memRegionKindTree in sr, Hr.
       revert sr Hr.
-      destruct (regionKind r) as [isAcc initD initT | | children rdAct wrAct irqAct fiAct];
-        unfold externalMemRegionTree, externalMemRegionChildren, customMemRegionTree, customMemChildren.
+      destruct (regionKind r) as [| children rdAct wrAct irqAct];
+        unfold externalMemRegionTree, customMemRegionTree.
+      + intros sr Hr.
+        destruct sr as [sr_fetch sr_base]; cbn [InitStateConsistent Fst Snd] in Hr |- *.
+        destruct sr_fetch as [rq [rp [w rest_fetch]]]; cbn [InitStateConsistent Fst Snd] in Hr |- *.
+        exact (proj1 (proj2 (proj2 (proj1 Hr)))).
       + intros sr Hr; reflexivity.
-      + destruct (hasFenceIPort (hasExtraFetchPort r)); intros sr Hr; [| reflexivity].
-        destruct sr as [sr_fetch [sr_fi sr_base]]; cbn [InitStateConsistent Fst Snd] in Hr |- *.
-        destruct sr_fi as [w rest_fi]; cbn [InitStateConsistent Fst Snd] in Hr |- *.
-        exact (proj1 (proj1 (proj2 Hr))).
-      + destruct (hasFenceIPort (hasExtraFetchPort r)); intros sr Hr; [| reflexivity].
-        destruct sr as [sr_fi sr_children]; cbn [InitStateConsistent Fst Snd] in Hr |- *.
-        destruct sr_fi as [w rest_fi]; cbn [InitStateConsistent Fst Snd] in Hr |- *.
-        exact (proj1 (proj1 Hr)).
   Qed.
 
   Lemma InitStateConsistent_not_FenceIActive :
@@ -1317,19 +1255,19 @@ Section StateProjections.
     - exact I.
     - destruct sm1 as [sr1 [srest1 []]], sm2 as [sr2 [srest2 []]]; cbn [Fst Snd] in H1, H2 |- *.
       split.
-      + unfold memRegionTree in sr1, sr2, H1, H2.
+      + unfold memRegionTree, memRegionKindTree in sr1, sr2, H1, H2.
         destruct H1 as [Hr1 _], H2 as [Hr2 _].
         revert sr1 sr2 Hr1 Hr2.
-        destruct (regionKind r) as [isAcc initD initT | | children rdAct wrAct irqAct fiAct];
-          unfold externalMemRegionTree, externalMemRegionChildren, customMemRegionTree, customMemChildren.
-        * intros; exact I.
-        * destruct (hasFenceIPort (hasExtraFetchPort r)); intros sr1 sr2 Hr1 Hr2; [| exact I].
-          destruct sr1 as [f1_fetch [f1_fi f1_base]], sr2 as [f2_fetch [f2_fi f2_base]].
+        destruct (regionKind r) as [| children rdAct wrAct irqAct];
+          unfold externalMemRegionTree, customMemRegionTree.
+        * intros sr1 sr2 Hr1 Hr2.
+          destruct sr1 as [f1_fetch f1_base], sr2 as [f2_fetch f2_base].
           cbn [InitStateConsistent Fst Snd] in Hr1, Hr2 |- *.
-          destruct f1_fi as [w1 [rq1 [ack1 []]]], f2_fi as [w2 [rq2 [ack2 []]]].
-          cbn [InitStateConsistent InitStateElemConsistent snd optNode externalMemFenceIChildren Fst Snd] in Hr1, Hr2 |- *.
-          destruct Hr1 as [_ [[Hw1 [Hrq1 [Hack1 _]]] _]].
-          destruct Hr2 as [_ [[Hw2 [Hrq2 [Hack2 _]]] _]].
+          destruct f1_fetch as [rq1 [rp1 [w1 [fiRq1 [fiAck1 []]]]]],
+                   f2_fetch as [rq2 [rp2 [w2 [fiRq2 [fiAck2 []]]]]].
+          cbn [InitStateConsistent InitStateElemConsistent snd externalMemFetchTree Fst Snd] in Hr1, Hr2 |- *.
+          destruct Hr1 as [[_ [_ [_ [HfiRq1 [HfiAck1 _]]]]] _].
+          destruct Hr2 as [[_ [_ [_ [HfiRq2 [HfiAck2 _]]]]] _].
           intros _; split; congruence.
         * intros; exact I.
       + apply IH; [exact (proj1 (proj2 H1)) | exact (proj1 (proj2 H2))].
@@ -1416,4 +1354,3 @@ Section StateProjections.
   Qed.
 
 End StateProjections.
-

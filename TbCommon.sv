@@ -15,13 +15,16 @@
  */
 
   // =========================================================================
-  // External RAM Parameters & Storage (256 KB, 64-bit lines, 1 tag bit/line)
+  // External RAM & RevTable Parameters & Storage
   // =========================================================================
-  localparam int RamSizeBytes = 256 * 1024;
-  localparam int LineBits     = 64;
-  localparam int LineBytes    = LineBits / 8;
-  localparam int NumLines     = (RamSizeBytes * 8) / LineBits;
-  localparam int LineIdxBits  = $clog2(NumLines);
+  localparam int RamSizeBytes      = 256 * 1024;
+  localparam int RevTableSizeBytes = 4 * 1024;
+  localparam int LineBits          = 64;
+  localparam int LineBytes         = LineBits / 8;
+  localparam int NumLines          = (RamSizeBytes * 8) / LineBits;
+  localparam int LineIdxBits       = $clog2(NumLines);
+  localparam int RevTableNumLines    = (RevTableSizeBytes * 8) / LineBits;
+  localparam int RevTableLineIdxBits = $clog2(RevTableNumLines);
 
   typedef struct packed {
     logic [7 : 0][7 : 0] data;
@@ -35,6 +38,16 @@
     logic [0 : 0]        tag;
     logic [0 : 0]        tagMask;
   } ramWriteRq_t;
+
+  typedef struct packed {
+    logic [7 : 0][7 : 0] data;
+  } revTableReadRp_t;
+
+  typedef struct packed {
+    logic [31 : 0]       addr;
+    logic [7 : 0][7 : 0] data;
+    logic [7 : 0]        dataMask;
+  } revTableWriteRq_t;
 
   typedef struct packed {
     logic [15 : 0][7 : 0] data;
@@ -52,17 +65,25 @@
   localparam int TbIoWidth = $bits(uartWriteRq_t);
   typedef logic [TbIoWidth - 1 : 0] tb_io_val_t;
 
-  logic [LineBits - 1 : 0] ramData [0 : NumLines - 1];
-  logic                    ramTag  [0 : NumLines - 1];
+  logic [LineBits - 1 : 0] ramData      [0 : NumLines - 1];
+  logic                    ramTag       [0 : NumLines - 1];
+  logic [LineBits - 1 : 0] revTableData [0 : RevTableNumLines - 1];
 
   // =========================================================================
-  // External RAM & UART Emulation State
+  // External RAM, RevTable & UART Emulation State
   // =========================================================================
   logic [31 : 0] ramFetchReadAddr;
   logic          ramFetchReadRpValid;
   logic [31 : 0] ramDataReadAddr;
   logic          ramDataReadRpValid;
 
+  logic [31 : 0] revTableFetchReadAddr;
+  logic          revTableFetchReadRpValid;
+  logic [31 : 0] revTableDataReadAddr;
+  logic          revTableDataReadRpValid;
+
+  logic [31 : 0] uartFetchReadAddr;
+  logic          uartFetchReadRpValid;
   logic [31 : 0] uartReadAddr;
   logic          uartReadRpValid;
   logic          dlab;
@@ -92,15 +113,30 @@
 
   function automatic void tb_send(string name, tb_io_val_t val);
     if (has_suffix(name, "_lineReadRq")) begin
-      if (has_substr(name, "_fetch_")) begin
-        ramFetchReadAddr    = val[31 : 0];
-        ramFetchReadRpValid = 1'b1;
-      end else if (has_substr(name, "_ram_")) begin
-        ramDataReadAddr    = val[31 : 0];
-        ramDataReadRpValid = 1'b1;
+      if (has_substr(name, "_ram_")) begin
+        if (has_substr(name, "_fetch_")) begin
+          ramFetchReadAddr    = val[31 : 0];
+          ramFetchReadRpValid = 1'b1;
+        end else begin
+          ramDataReadAddr    = val[31 : 0];
+          ramDataReadRpValid = 1'b1;
+        end
+      end else if (has_substr(name, "_revTable_")) begin
+        if (has_substr(name, "_fetch_")) begin
+          revTableFetchReadAddr    = val[31 : 0];
+          revTableFetchReadRpValid = 1'b1;
+        end else begin
+          revTableDataReadAddr    = val[31 : 0];
+          revTableDataReadRpValid = 1'b1;
+        end
       end else if (has_substr(name, "_uart_")) begin
-        uartReadAddr    = val[31 : 0];
-        uartReadRpValid = 1'b1;
+        if (has_substr(name, "_fetch_")) begin
+          uartFetchReadAddr    = val[31 : 0];
+          uartFetchReadRpValid = 1'b1;
+        end else begin
+          uartReadAddr    = val[31 : 0];
+          uartReadRpValid = 1'b1;
+        end
       end
     end else if (has_suffix(name, "_lineWriteRq")) begin
       if (has_substr(name, "_ram_")) begin
@@ -141,6 +177,20 @@
             end
           end
         end
+      end else if (has_substr(name, "_revTable_")) begin
+        revTableWriteRq_t                   wr;
+        logic [31 : 0]                      wrAddr;
+        logic [RevTableLineIdxBits - 1 : 0] wrIdx;
+
+        wr     = val[$bits(revTableWriteRq_t) - 1 : 0];
+        wrAddr = wr.addr;
+        wrIdx  = wrAddr[RevTableLineIdxBits + 2 : 3];
+
+        for (int b = 0; b < LineBytes; b++) begin
+          if (wr.dataMask[b]) begin
+            revTableData[wrIdx][b*8 +: 8] = wr.data[b];
+          end
+        end
       end else if (has_substr(name, "_uart_")) begin
         uartWriteRq_t wr;
         wr = val[$bits(uartWriteRq_t) - 1 : 0];
@@ -158,12 +208,24 @@
         end
       end
     end else if (has_suffix(name, "_lineReadRpReady")) begin
-      if (has_substr(name, "_fetch_")) begin
-        ramFetchReadRpValid = 1'b0;
-      end else if (has_substr(name, "_ram_")) begin
-        ramDataReadRpValid = 1'b0;
+      if (has_substr(name, "_ram_")) begin
+        if (has_substr(name, "_fetch_")) begin
+          ramFetchReadRpValid = 1'b0;
+        end else begin
+          ramDataReadRpValid = 1'b0;
+        end
+      end else if (has_substr(name, "_revTable_")) begin
+        if (has_substr(name, "_fetch_")) begin
+          revTableFetchReadRpValid = 1'b0;
+        end else begin
+          revTableDataReadRpValid = 1'b0;
+        end
       end else if (has_substr(name, "_uart_")) begin
-        uartReadRpValid = 1'b0;
+        if (has_substr(name, "_fetch_")) begin
+          uartFetchReadRpValid = 1'b0;
+        end else begin
+          uartReadRpValid = 1'b0;
+        end
       end
     end
   endfunction
@@ -175,12 +237,24 @@
         has_suffix(name, "_fenceIAck")) begin
       return tb_io_val_t'(1'b1);
     end else if (has_suffix(name, "_lineReadRpValid")) begin
-      if (has_substr(name, "_fetch_")) begin
-        return tb_io_val_t'(ramFetchReadRpValid);
-      end else if (has_substr(name, "_ram_")) begin
-        return tb_io_val_t'(ramDataReadRpValid);
+      if (has_substr(name, "_ram_")) begin
+        if (has_substr(name, "_fetch_")) begin
+          return tb_io_val_t'(ramFetchReadRpValid);
+        end else begin
+          return tb_io_val_t'(ramDataReadRpValid);
+        end
+      end else if (has_substr(name, "_revTable_")) begin
+        if (has_substr(name, "_fetch_")) begin
+          return tb_io_val_t'(revTableFetchReadRpValid);
+        end else begin
+          return tb_io_val_t'(revTableDataReadRpValid);
+        end
       end else begin
-        return tb_io_val_t'(uartReadRpValid);
+        if (has_substr(name, "_fetch_")) begin
+          return tb_io_val_t'(uartFetchReadRpValid);
+        end else begin
+          return tb_io_val_t'(uartReadRpValid);
+        end
       end
     end else if (has_suffix(name, "_lineReadRp")) begin
       if (has_substr(name, "_ram_")) begin
@@ -196,16 +270,30 @@
         rp.data   = ramData[idx];
         rp.tag[0] = ramTag[idx];
         return tb_io_val_t'(rp);
+      end else if (has_substr(name, "_revTable_")) begin
+        revTableReadRp_t                    rp;
+        logic [31 : 0]                      addr;
+        logic [RevTableLineIdxBits - 1 : 0] idx;
+        if (has_substr(name, "_fetch_")) begin
+          addr = revTableFetchReadAddr;
+        end else begin
+          addr = revTableDataReadAddr;
+        end
+        idx     = addr[RevTableLineIdxBits + 2 : 3];
+        rp.data = revTableData[idx];
+        return tb_io_val_t'(rp);
       end else begin
         uartReadRp_t rp;
         rp = '0;
-        if (uartReadAddr == 32'h1000_0000) begin
-          rp.data[0] = rxBufValid ? rxBuf : 8'h00;
-          if (rxBufValid) begin
-            rxBufValid = 1'b0;
+        if (!has_substr(name, "_fetch_")) begin
+          if (uartReadAddr == 32'h1000_0000) begin
+            rp.data[0] = rxBufValid ? rxBuf : 8'h00;
+            if (rxBufValid) begin
+              rxBufValid = 1'b0;
+            end
+          end else if (uartReadAddr == 32'h1000_0010) begin
+            rp.data[4] = rxBufValid ? 8'h21 : 8'h20;
           end
-        end else if (uartReadAddr == 32'h1000_0010) begin
-          rp.data[4] = rxBufValid ? 8'h21 : 8'h20;
         end
         return tb_io_val_t'(rp);
       end
@@ -223,17 +311,26 @@
       ramData[i] = '0;
       ramTag[i]  = 1'b0;
     end
+    for (int i = 0; i < RevTableNumLines; i++) begin
+      revTableData[i] = '0;
+    end
 
-    ramFetchReadAddr    = 32'h0;
-    ramFetchReadRpValid = 1'b0;
-    ramDataReadAddr     = 32'h0;
-    ramDataReadRpValid  = 1'b0;
-    uartReadAddr        = 32'h0;
-    uartReadRpValid     = 1'b0;
-    dlab                = 1'b0;
-    ie                  = 8'h0;
-    rxBufValid          = 1'b0;
-    rxBuf               = 8'h0;
+    ramFetchReadAddr         = 32'h0;
+    ramFetchReadRpValid      = 1'b0;
+    ramDataReadAddr          = 32'h0;
+    ramDataReadRpValid       = 1'b0;
+    revTableFetchReadAddr    = 32'h0;
+    revTableFetchReadRpValid = 1'b0;
+    revTableDataReadAddr     = 32'h0;
+    revTableDataReadRpValid  = 1'b0;
+    uartFetchReadAddr        = 32'h0;
+    uartFetchReadRpValid     = 1'b0;
+    uartReadAddr             = 32'h0;
+    uartReadRpValid          = 1'b0;
+    dlab                     = 1'b0;
+    ie                       = 8'h0;
+    rxBufValid               = 1'b0;
+    rxBuf                    = 8'h0;
 
     if ($value$plusargs("bin=%s", binFile)) begin
       $readmemh(binFile, ramData);
