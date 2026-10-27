@@ -671,54 +671,6 @@ Section DataMemStageSimulation.
     repeat split; assumption.
   Qed.
 
-  Theorem dataCrossLineSteps_frame :
-    forall {env1 : Env iTree}
-           (act : Action type iTree (Bit 0)) (s1 s1' : IState) (v : bits 0),
-      In act
-        (@dataCrossLineSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-           dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions type) ->
-      SemAction env1 act s1 s1' v ->
-      flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                  dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions s1' =
-        flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                    dataMemCapacity mulCapacity divCapacity mulStages divStages
-                    mulDivMode config regions s1 /\
-      impl_execute core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                   dataMemCapacity mulCapacity divCapacity mulStages divStages
-                   mulDivMode config regions s1' =
-        impl_execute core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                     dataMemCapacity mulCapacity divCapacity mulStages divStages
-                     mulDivMode config regions s1 /\
-      impl_fetch core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                 dataMemCapacity mulCapacity divCapacity mulStages divStages
-                 mulDivMode config regions s1' =
-        impl_fetch core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                   dataMemCapacity mulCapacity divCapacity mulStages divStages
-                   mulDivMode config regions s1 /\
-      impl_decode core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                  dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions s1' =
-        impl_decode core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                    dataMemCapacity mulCapacity divCapacity mulStages divStages
-                    mulDivMode config regions s1 /\
-      impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                   dataMemCapacity mulCapacity divCapacity mulStages divStages
-                   mulDivMode config regions s1' =
-        impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                     dataMemCapacity mulCapacity divCapacity mulStages divStages
-                     mulDivMode config regions s1.
-  Proof.
-    intros env1 act s1 s1' v Hin Hsem.
-    unfold dataCrossLineSteps in Hin.
-    apply in_map_iff in Hin as [mAct [<- _]].
-    destruct (SemAction_lift_np_mem_core_frame mAct s1 s1' v Hsem)
-      as [Hrf [_ [_ [Hfetch [Hdecode [Hexec [Hdm Hmd]]]]]]].
-    unfold flushMulDiv; rewrite Hrf, Hmd.
-    repeat split; assumption.
-  Qed.
-
   (* --- 3C. `loadRqOrStoreOrFenceStage` Simulation --- *)
 
   (* Case 1: Stuttering step of `loadRqOrStoreOrFenceStage`
@@ -1367,27 +1319,6 @@ Section DataMemStageSimulation.
            (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act
         (@dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-           dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions type) ->
-      SemAction env1 act s1 s1' v ->
-      sRel s1 s2 ->
-      exists s2' : SState,
-        SemActions env2 (map snd (specMod type)) s2 s2' /\
-        sRel s1' s2'.
-  Proof.
-    intros env1 env2 act s1 s1' s2 v _ _ Hrel.
-    exists s2; split; [apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2) |].
-    exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
-             decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-             mulDivMode config regions s1 s1' s2 Hrel).
-  Qed.
-
-  Theorem sim_dataCrossLineSteps_stateRel :
-    forall {env1 : Env iTree} {env2 : Env sTree}
-           (act : Action type iTree (Bit 0))
-           (s1 s1' : IState) (s2 : SState) (v : bits 0),
-      In act
-        (@dataCrossLineSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
       SemAction env1 act s1 s1' v ->

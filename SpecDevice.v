@@ -154,6 +154,61 @@ Record MemRegion := {
     lia.
   Qed.
 
+  Definition CapPacket : Kind :=
+    STRUCT_TYPE {
+      "data" :: Array (Z.to_nat NumBytesFullCapSz) (Bit 8) ;
+      "tag"  :: Bool
+    }.
+
+  Definition memMergeCapPacket {ty : Kind -> Type}
+    (addr : Expr ty Addr)
+    (pkt0 pkt1 : Expr ty CapPacket)
+    : Expr ty CapPacket :=
+    let capOffset := TruncLsb TagAddrWidth LgNumBytesFullCapSz addr in
+    let add1 := FromBit (Array (Z.to_nat NumBytesFullCapSz) Bool)
+                  (Not (Srl (ConstBit (InvDefault _)) capOffset)) in
+    STRUCT {
+      "data" ::= ArrayBuilder (fun i =>
+                   ITE (ReadArrayConst add1 i)
+                       (ReadArrayConst (pkt1`"data") i)
+                       (ReadArrayConst (pkt0`"data") i)) ;
+      "tag"  ::= pkt0`"tag"
+    }.
+
+  Definition memAssembleCapRead {ty : Kind -> Type}
+    (addr : Expr ty Addr)
+    (memSize : Expr ty (Bit LgLgNumBytesFullCapSz))
+    (pkt : Expr ty CapPacket)
+    : LetExpr ty FullCapWithTag :=
+    LetE capOffset : Bit LgNumBytesFullCapSz <- TruncLsb TagAddrWidth LgNumBytesFullCapSz addr ;
+    LetE isCapAligned : Bool <- isZero #capOffset ;
+    LetE isCap : Bool <- And [ Eq memSize $LgNumBytesFullCapSz ; #isCapAligned ] ;
+    LetE rawData : Bit FullCapSz <- ToBit (pkt`"data") ;
+    @RetE ty FullCapWithTag (STRUCT {
+      "tag"  ::= And [ #isCap ; pkt`"tag" ] ;
+      "cap"  ::= FromBit Cap (TruncMsb CapSz AddrSz #rawData) ;
+      "addr" ::= TruncLsb CapSz AddrSz #rawData
+    }).
+
+  Definition memDisassembleCapWrite {ty : Kind -> Type}
+    (addr : Expr ty Addr)
+    (stVal : Expr ty FullCapWithTag)
+    (memSize : Expr ty (Bit LgLgNumBytesFullCapSz))
+    : LetExpr ty CapPacket :=
+    LetE capOffset : Bit LgNumBytesFullCapSz <- TruncLsb TagAddrWidth LgNumBytesFullCapSz addr ;
+    LetE isCapAligned : Bool <- isZero #capOffset ;
+    LetE isCap : Bool <- And [ Eq memSize $LgNumBytesFullCapSz ; #isCapAligned ] ;
+    LetE rawData : Bit FullCapSz <-
+      ITE #isCap
+          {< ToBit (stVal`"cap"), stVal`"addr" >}
+          (ZeroExtendTo FullCapSz (stVal`"addr")) ;
+    LetE capBytes : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <-
+      FromBit (Array (Z.to_nat NumBytesFullCapSz) (Bit 8)) #rawData ;
+    @RetE ty CapPacket (STRUCT {
+      "data" ::= #capBytes ;
+      "tag"  ::= And [ #isCap ; stVal`"tag" ]
+    }).
+
   Section MemAddrHelpers.
     Variable r : MemRegion.
     Variable ty : Kind -> Type.
@@ -189,10 +244,11 @@ Record MemRegion := {
       FromBit (Array nTags Bool)
         (Not (Sll (ConstBit (InvDefault _)) (memTagSlot addr))).
 
-    Definition memTagMasks
+    Definition memTagMask
+      (isSecond : Expr ty Bool)
       (addr : Expr ty Addr)
       (memSize : Expr ty (Bit LgLgNumBytesFullCapSz))
-      : LetExpr ty (Pair (Array nTags Bool) (Array nTags Bool)) :=
+      : LetExpr ty (Array nTags Bool) :=
       if hasTags r then
         let wTagCnt := (lgNumLineTagsZ + 2)%Z in
         let w := kindSize (Array nTags Bool) in
@@ -206,108 +262,64 @@ Record MemRegion := {
         LetE baseMask : Bit (w + w)%Z <-
           Not (Sll (ConstBit (InvDefault (Bit (w + w)%Z))) #numTagsActive) ;
         LetE shiftedMask : Bit (w + w)%Z <- Sll #baseMask (memTagSlot addr) ;
-        @RetE ty (Pair (Array nTags Bool) (Array nTags Bool)) (STRUCT {
-          "fst" ::= FromBit (Array nTags Bool) (TruncLsb w w #shiftedMask) ;
-          "snd" ::= FromBit (Array nTags Bool) (TruncMsb w w #shiftedMask)
-        })
+        LetE maskBits : Bit w <-
+          ITE isSecond (TruncMsb w w #shiftedMask) (TruncLsb w w #shiftedMask) ;
+        RetE (FromBit (Array nTags Bool) #maskBits)
       else
         RetE ConstDef.
 
-    Definition memMergeLineReadRp
+    Definition memExtractCapPacket
       (addr : Expr ty Addr)
-      (rp0 rp1 : Expr ty (LineReadRp r.(regionLineCfg)))
-      : Expr ty (LineReadRp r.(regionLineCfg)) :=
-      let add1    := memAdd1 addr in
-      let add1Tag := memAdd1Tag addr in
-      STRUCT {
-        "data" ::= ArrayBuilder (fun i =>
-                     ITE (ReadArrayConst add1 i)
-                         (ReadArrayConst (rp1`"data") i)
-                         (ReadArrayConst (rp0`"data") i)) ;
-        "tag"  ::= ArrayBuilder (fun t =>
-                     ITE (ReadArrayConst add1Tag t)
-                         (ReadArrayConst (rp1`"tag") t)
-                         (ReadArrayConst (rp0`"tag") t))
-      }.
-
-    Definition memExtractReadCap
-      (addr : Expr ty Addr)
-      (memSize : Expr ty (Bit LgLgNumBytesFullCapSz))
       (rp : Expr ty (LineReadRp r.(regionLineCfg)))
-      : LetExpr ty FullCapWithTag :=
-      LetE capOffset : Bit LgNumBytesFullCapSz <- TruncLsb TagAddrWidth LgNumBytesFullCapSz addr ;
-      LetE isCapAligned : Bool <- isZero #capOffset ;
-      LetE isCap : Bool <- And [ Eq memSize $LgNumBytesFullCapSz ; #isCapAligned ] ;
-      LETE rotData : Array lBytes (Bit 8) <- ArrayRotr (rp`"data") (memLineOffset addr) ;
+      : LetExpr ty CapPacket :=
       LetE dataBytes : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <-
-        slice #rotData (Const ty (Bit lgLineBytesZ) Zmod.zero) (Z.to_nat NumBytesFullCapSz) ;
-      LetE rawData : Bit FullCapSz <- ToBit #dataBytes ;
+        slice (rp`"data") (memLineOffset addr) (Z.to_nat NumBytesFullCapSz) ;
       LetE rawTag : Bool <-
         if hasTags r then
           ReadArray (rp`"tag") (memTagSlot addr)
         else
           ConstBool false ;
-      @RetE ty FullCapWithTag (STRUCT {
-        "tag"  ::= And [ #isCap ; #rawTag ] ;
-        "cap"  ::= FromBit Cap (TruncMsb CapSz AddrSz #rawData) ;
-        "addr" ::= TruncLsb CapSz AddrSz #rawData
+      @RetE ty CapPacket (STRUCT {
+        "data" ::= #dataBytes ;
+        "tag"  ::= #rawTag
       }).
 
-    Definition memDataMasks
+    Definition memDataMask
+      (isSecond : Expr ty Bool)
       (addr : Expr ty Addr)
       (memSize : Expr ty (Bit LgLgNumBytesFullCapSz))
-      : LetExpr ty (Pair (Array lBytes Bool) (Array lBytes Bool)) :=
+      : LetExpr ty (Array lBytes Bool) :=
       LetE numBytesActive : Bit (lgLineBytesZ + 1)%Z <-
         Sll $1 (ZeroExtend (lgLineBytesZ + 1 - LgLgNumBytesFullCapSz)%Z memSize) ;
       LetE fullMask : Bit (kindSize (Array lBytes Bool)) <-
         rotateLeft (Not (Sll (ConstBit (InvDefault _)) #numBytesActive)) (memLineOffset addr) ;
       LetE add1Bits : Bit (kindSize (Array lBytes Bool)) <-
         ToBit (memAdd1 addr) ;
-      @RetE ty (Pair (Array lBytes Bool) (Array lBytes Bool)) (STRUCT {
-        "fst" ::= FromBit (Array lBytes Bool) (And [ #fullMask ; Not #add1Bits ]) ;
-        "snd" ::= FromBit (Array lBytes Bool) (And [ #fullMask ; #add1Bits ])
-      }).
+      LetE lineSelMask : Bit (kindSize (Array lBytes Bool)) <-
+        ITE isSecond #add1Bits (Not #add1Bits) ;
+      RetE (FromBit (Array lBytes Bool) (And [ #fullMask ; #lineSelMask ])).
 
-    Definition memBuildLineWriteRqs
+    Definition memBuildLineWriteRq
+      (isSecond : Expr ty Bool)
       (addr : Expr ty Addr)
-      (stVal : Expr ty FullCapWithTag)
+      (capPkt : Expr ty CapPacket)
       (memSize : Expr ty (Bit LgLgNumBytesFullCapSz))
-      : LetExpr ty (Pair (LineWriteRq r.(regionLineCfg)) (LineWriteRq r.(regionLineCfg))) :=
-      LetE capOffset : Bit LgNumBytesFullCapSz <- TruncLsb TagAddrWidth LgNumBytesFullCapSz addr ;
-      LetE isCapAligned : Bool <- isZero #capOffset ;
-      LetE isCap : Bool <- And [ Eq memSize $LgNumBytesFullCapSz ; #isCapAligned ] ;
-      LetE rawData : Bit FullCapSz <-
-        ITE #isCap
-            {< ToBit (stVal`"cap"), stVal`"addr" >}
-            (ZeroExtendTo FullCapSz (stVal`"addr")) ;
-      LetE capBytes : Array (Z.to_nat NumBytesFullCapSz) (Bit 8) <-
-        FromBit (Array (Z.to_nat NumBytesFullCapSz) (Bit 8)) #rawData ;
-      LetE baseData : Array lBytes (Bit 8) <- embedCapBytes lBytes #capBytes ;
+      : LetExpr ty (LineWriteRq r.(regionLineCfg)) :=
+      LetE baseData : Array lBytes (Bit 8) <- embedCapBytes lBytes (capPkt`"data") ;
       LETE rotData : Array lBytes (Bit 8) <- ArrayRotl #baseData (memLineOffset addr) ;
-      LETE dataMasks : Pair (Array lBytes Bool) (Array lBytes Bool) <- memDataMasks addr memSize ;
+      LETE dataMask : Array lBytes Bool <- memDataMask isSecond addr memSize ;
       LetE tagData : Array nTags Bool <-
         if hasTags r then
-          UpdateArray ConstDef (memTagSlot addr) (And [ #isCap ; stVal`"tag" ])
+          UpdateArray ConstDef (memTagSlot addr) (capPkt`"tag")
         else
           ConstDef ;
-      LETE tagMasks : Pair (Array nTags Bool) (Array nTags Bool) <- memTagMasks addr memSize ;
-      LetE rq0 : LineWriteRq r.(regionLineCfg) <- STRUCT {
-        "addr"     ::= memLineAddr addr ;
+      LETE tagMask : Array nTags Bool <- memTagMask isSecond addr memSize ;
+      @RetE ty (LineWriteRq r.(regionLineCfg)) (STRUCT {
+        "addr"     ::= ITE isSecond (memNextLineAddr addr) (memLineAddr addr) ;
         "data"     ::= #rotData ;
-        "dataMask" ::= ##dataMasks`"fst" ;
+        "dataMask" ::= #dataMask ;
         "tag"      ::= #tagData ;
-        "tagMask"  ::= ##tagMasks`"fst"
-      } ;
-      LetE rq1 : LineWriteRq r.(regionLineCfg) <- STRUCT {
-        "addr"     ::= memNextLineAddr addr ;
-        "data"     ::= #rotData ;
-        "dataMask" ::= ##dataMasks`"snd" ;
-        "tag"      ::= #tagData ;
-        "tagMask"  ::= ##tagMasks`"snd"
-      } ;
-      @RetE ty (Pair (LineWriteRq r.(regionLineCfg)) (LineWriteRq r.(regionLineCfg))) (STRUCT {
-        "fst" ::= #rq0 ;
-        "snd" ::= #rq1
+        "tagMask"  ::= #tagMask
       }).
 
     Definition memCrossesLine
@@ -327,10 +339,9 @@ Record MemRegion := {
   Arguments memLineAddr r [ty] addr.
   Arguments memNextLineAddr r [ty] addr.
   Arguments memTagSlot r [ty] addr.
-  Arguments memDataMasks r [ty] addr memSize.
-  Arguments memMergeLineReadRp r [ty] addr rp0 rp1.
-  Arguments memExtractReadCap r [ty] addr memSize rp.
-  Arguments memBuildLineWriteRqs r [ty] addr stVal memSize.
+  Arguments memDataMask r [ty] isSecond addr memSize.
+  Arguments memExtractCapPacket r [ty] addr rp.
+  Arguments memBuildLineWriteRq r [ty] isSecond addr capPkt memSize.
   Arguments memCrossesLine r [ty] addr memSize.
 
   (* ===========================================================================
@@ -653,16 +664,19 @@ Section SpecDevice.
       | ExternalMem =>
           Let  addr0   : Addr                        <- memLineAddr r #addr ;
           LetA rp0     : LineReadRp r.(regionLineCfg) <- externalFetchLineRead r addr0 ;
+          LetL pkt0    : CapPacket                   <- memExtractCapPacket r #addr #rp0 ;
           Let  crosses : Bool                        <- memCrossesLine r #addr ($LgNumBytesInstSz : Expr ty (Bit LgLgNumBytesFullCapSz)) ;
-          LetIf rp1 : LineReadRp r.(regionLineCfg) <-
+          LetIf pkt1 : CapPacket <-
             If #crosses Then (
-              Let addr1 : Addr <- memNextLineAddr r #addr ;
-              externalFetchLineRead r addr1
+              Let  addr1 : Addr                        <- memNextLineAddr r #addr ;
+              LetA rp1   : LineReadRp r.(regionLineCfg) <- externalFetchLineRead r addr1 ;
+              LetL pkt1  : CapPacket                   <- memExtractCapPacket r #addr #rp1 ;
+              Return #pkt1
             ) Else (
               Return ConstDef
             ) ;
-          Let  rp  : LineReadRp r.(regionLineCfg) <- memMergeLineReadRp r #addr #rp0 #rp1 ;
-          LetL res : FullCapWithTag               <- memExtractReadCap r #addr ($LgNumBytesInstSz : Expr ty (Bit LgLgNumBytesFullCapSz)) #rp ;
+          Let  pkt : CapPacket      <- ITE #crosses (memMergeCapPacket #addr #pkt0 #pkt1) #pkt0 ;
+          LetL res : FullCapWithTag <- memAssembleCapRead #addr ($LgNumBytesInstSz : Expr ty (Bit LgLgNumBytesFullCapSz)) #pkt ;
           Return #res
       | CustomMem _ _ _ _ =>
           Random res : FullCapWithTag ;
@@ -672,36 +686,37 @@ Section SpecDevice.
     Definition memRegionRead
                (addr : ty Addr)
                (memSize : ty (Bit LgLgNumBytesFullCapSz))
-               : Action ty tR FullCapWithTag :=
-      LetL dataMasks : Pair (Array (lineBytes r) Bool) (Array (lineBytes r) Bool) <- memDataMasks r #addr #memSize ;
+               : Action ty tR CapPacket :=
       Let  addr0     : Addr                        <- memLineAddr r #addr ;
-      Let  dataMask0 : Array (lineBytes r) Bool    <- ##dataMasks`"fst" ;
+      LetL dataMask0 : Array (lineBytes r) Bool    <- memDataMask r (ConstBool false) #addr #memSize ;
       LetA rp0       : LineReadRp r.(regionLineCfg) <- memRegionLineRead r addr0 dataMask0 ;
+      LetL pkt0      : CapPacket                   <- memExtractCapPacket r #addr #rp0 ;
       Let  crosses   : Bool                        <- memCrossesLine r #addr #memSize ;
-      LetIf rp1 : LineReadRp r.(regionLineCfg) <-
+      LetIf pkt1 : CapPacket <-
         If #crosses Then (
-          Let addr1     : Addr                     <- memNextLineAddr r #addr ;
-          Let dataMask1 : Array (lineBytes r) Bool <- ##dataMasks`"snd" ;
-          memRegionLineRead r addr1 dataMask1
+          Let  addr1     : Addr                        <- memNextLineAddr r #addr ;
+          LetL dataMask1 : Array (lineBytes r) Bool    <- memDataMask r (ConstBool true) #addr #memSize ;
+          LetA rp1       : LineReadRp r.(regionLineCfg) <- memRegionLineRead r addr1 dataMask1 ;
+          LetL pkt1      : CapPacket                   <- memExtractCapPacket r #addr #rp1 ;
+          Return #pkt1
         ) Else (
           Return ConstDef
         ) ;
-      Let  rp  : LineReadRp r.(regionLineCfg) <- memMergeLineReadRp r #addr #rp0 #rp1 ;
-      LetL res : FullCapWithTag               <- memExtractReadCap r #addr #memSize #rp ;
-      Return #res.
+      Let  pkt : CapPacket <- ITE #crosses (memMergeCapPacket #addr #pkt0 #pkt1) #pkt0 ;
+      Return #pkt.
 
     Definition memRegionWrite
                (addr : ty Addr)
-               (stVal : ty FullCapWithTag)
+               (capPkt : ty CapPacket)
                (memSize : ty (Bit LgLgNumBytesFullCapSz))
                : Action ty tR (Bit 0) :=
-      LetL rqs     : Pair (LineWriteRq r.(regionLineCfg)) (LineWriteRq r.(regionLineCfg)) <-
-        memBuildLineWriteRqs r #addr #stVal #memSize ;
-      Let  rq0     : LineWriteRq r.(regionLineCfg) <- ##rqs`"fst" ;
+      LetL rq0     : LineWriteRq r.(regionLineCfg) <-
+        memBuildLineWriteRq r (ConstBool false) #addr #capPkt #memSize ;
       Act (memRegionLineWrite r rq0) ;
       Let  crosses : Bool                          <- memCrossesLine r #addr #memSize ;
       If #crosses Then (
-        Let rq1 : LineWriteRq r.(regionLineCfg) <- ##rqs`"snd" ;
+        LetL rq1 : LineWriteRq r.(regionLineCfg) <-
+          memBuildLineWriteRq r (ConstBool true) #addr #capPkt #memSize ;
         memRegionLineWrite r rq1
       ) ;
       Retv.
@@ -710,7 +725,7 @@ Section SpecDevice.
 
   Arguments memRegionFetchRead r [ty] addr.
   Arguments memRegionRead r [ty] addr memSize.
-  Arguments memRegionWrite r [ty] addr stVal memSize.
+  Arguments memRegionWrite r [ty] addr capPkt memSize.
 
   (* ===========================================================================
    * Composite Memory Tree & System Routing
@@ -736,8 +751,11 @@ Section SpecDevice.
                (addr : ty Addr)
                (memSize : ty (Bit LgLgNumBytesFullCapSz))
                : Action ty (specMemTree regions) FullCapWithTag :=
-      genRouteRegionAction memRegionTree (fun r => memRegionRead r addr memSize)
-        (@Or _ _) addr regions.
+      LetA pkt : CapPacket <-
+        genRouteRegionAction memRegionTree (fun r => memRegionRead r addr memSize)
+          (@Or _ _) addr regions ;
+      LetL res : FullCapWithTag <- memAssembleCapRead #addr #memSize #pkt ;
+      Return #res.
 
     Definition specMemWrite
                (regions : list MemRegion)
@@ -745,7 +763,8 @@ Section SpecDevice.
                (stVal : ty FullCapWithTag)
                (memSize : ty (Bit LgLgNumBytesFullCapSz))
                : Action ty (specMemTree regions) (Bit 0) :=
-      genRouteRegionUnitAction memRegionTree (fun r => memRegionWrite r addr stVal memSize)
+      LetL capPkt : CapPacket <- memDisassembleCapWrite #addr #stVal #memSize ;
+      genRouteRegionUnitAction memRegionTree (fun r => memRegionWrite r addr capPkt memSize)
         addr regions.
 
     Definition specMemReadFenceIWait
@@ -838,7 +857,7 @@ Arguments memRegionSendFenceIRq {dom} r {ty}.
 
 Arguments memRegionFetchRead {dom} r [ty] addr.
 Arguments memRegionRead {dom} r [ty] addr memSize.
-Arguments memRegionWrite {dom} r [ty] addr stVal memSize.
+Arguments memRegionWrite {dom} r [ty] addr capPkt memSize.
 
 Arguments nthRegionAction {dom ty} idx regions r0 pf {k} act.
 Arguments specMemFetchRead {dom} [ty] regions addr.

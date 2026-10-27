@@ -260,10 +260,6 @@ Section ImplDom.
         map (fun act => liftAction np_mem act)
             (implMemCollectDataWriteRqActions core regions ty).
 
-      Definition dataCrossLineSteps : list (Action ty sysTree (Bit 0)) :=
-        map (fun act => liftAction np_mem act)
-            (implMemCollectDataCrossLineActions core regions ty).
-
       Definition fenceIAcks : list (Action ty sysTree (Bit 0)) :=
         map (fun act => liftAction np_mem act)
             (implMemCollectFenceIAckActions core regions ty).
@@ -284,7 +280,6 @@ Section ImplDom.
              aluAndExecuteNonDeferredStage ty ;
              loadRqOrStoreOrFenceStage ty ]
         ++ dataWriteRqs ty ++ dataReadRqs ty ++ dataReadRps ty
-        ++ dataCrossLineSteps ty
         ++ dataWriteRqs ty ++ dataReadRqs ty ++ dataReadRps ty
         ++ [ loadRpAndIssueRevRqStage ty ]
         ++ dataReadRqs ty ++ dataReadRps ty
@@ -310,9 +305,8 @@ Section ImplDom.
              ++ repeat (fetchAssembleStage ty) issueWidth
              ++ repeat (decodeAndRegReadStage ty) issueWidth
              ++ repeat (aluAndExecuteNonDeferredStage ty) issueWidth
-             ++ [ loadRqOrStoreOrFenceStage ty ]
-             ++ dataCrossLineSteps ty
-             ++ [ loadRpAndIssueRevRqStage ty ;
+             ++ [ loadRqOrStoreOrFenceStage ty ;
+                  loadRpAndIssueRevRqStage ty ;
                   revRpAndWriteBackStage ty ]
              ++ mulDivStageActions ty
            )

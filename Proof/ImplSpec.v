@@ -197,9 +197,6 @@ Section ModuleActionDecomposition.
        ++ @dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
              config regions ty
-       ++ @dataCrossLineSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
        ++ @dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
              config regions ty
@@ -283,11 +280,8 @@ Section ModuleActionDecomposition.
                          config regions clint rev plic ty) issueWidth
             ++ [ @loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                    config regions rev ty ]
-            ++ @dataCrossLineSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                  config regions ty
-            ++ [ @loadRpAndIssueRevRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
+                    config regions rev ty ;
+                 @loadRpAndIssueRevRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                     config regions rev ty ;
                  @revRpAndWriteBackStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -320,7 +314,7 @@ Section ModuleActionDecomposition.
     rewrite map_map; cbn [snd]; apply map_id.
   Qed.
 
-  (* --- 2B. Stage and Device Action Group Classification (`ImplActionKind`) --- *)
+  (* --- 2B. Top-Level Action Classification (`ImplActionKind`) --- *)
 
   Inductive ImplActionKind (ty : Kind -> Type) (act : Action ty iTree (Bit 0)) : Prop :=
   | IA_Peripheral :
@@ -370,11 +364,6 @@ Section ModuleActionDecomposition.
       ImplActionKind ty act
   | IA_DataReadRps :
       In act (@dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) ->
-      ImplActionKind ty act
-  | IA_DataCrossLineSteps :
-      In act (@dataCrossLineSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                 config regions ty) ->
       ImplActionKind ty act
@@ -543,13 +532,12 @@ Section ModuleActionDecomposition.
         try (apply IA_DataWriteRqs; exact H);
         try (apply IA_DataReadRqs; exact H);
         try (apply IA_DataReadRps; exact H);
-        try (apply IA_DataCrossLineSteps; exact H);
         try (apply IA_MulDivStageActions; exact H);
         try (apply IA_FenceIAcks; exact H);
         try (apply IA_SetCanProceedSteps; exact H);
         try (apply IA_RevokerStepsSys; unfold implRevokerStepsSys; rewrite in_three_iff; solve_in_or H).
     - intros H; destruct H as
-        [H | H | H | H | H | H | H | H | H | H | H | H | H | H | H | H | H];
+        [H | H | H | H | H | H | H | H | H | H | H | H | H | H | H | H];
         try (unfold implRevokerStepsSys in H; rewrite in_three_iff in H);
         solve_in_or H.
   Qed.
@@ -563,7 +551,7 @@ Section ModuleActionDecomposition.
     rewrite map_snd_pipelinedMod in Hin.
     rewrite !in_app_iff in Hin.
     repeat rewrite <- in_rev in Hin.
-    rewrite !in_app_iff, !in_two_iff, !in_singleton_iff in Hin.
+    rewrite !in_app_iff, !in_three_iff, !in_singleton_iff in Hin.
     repeat lazymatch type of Hin with
     | _ \/ _ => destruct Hin as [Hin | Hin]
     end;
@@ -580,7 +568,6 @@ Section ModuleActionDecomposition.
       try (apply IA_DataWriteRqs; exact Hin);
       try (apply IA_DataReadRqs; exact Hin);
       try (apply IA_DataReadRps; exact Hin);
-      try (apply IA_DataCrossLineSteps; exact Hin);
       try (apply IA_MulDivStageActions; exact Hin);
       try (apply IA_RevokerStepsSys; exact Hin);
       try (apply IA_FenceIAcks; exact Hin);
@@ -641,9 +628,6 @@ Section ModuleActionDecomposition.
       In act (@dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                 config regions ty) \/
-      In act (@dataCrossLineSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
       act = @loadRpAndIssueRevRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
               config regions rev ty \/
@@ -667,7 +651,7 @@ Section ModuleActionDecomposition.
     apply In_forwardDatapathMod_ImplActionKind in Hin.
     destruct Hin as
       [Hin | Hin | Hin | Hin | Hin | Hin | Hin | Hin | Hin |
-       Hin | Hin | Hin | Hin | Hin | Hin | Hin | Hin];
+       Hin | Hin | Hin | Hin | Hin | Hin | Hin];
       solve_in_or Hin.
   Qed.
 
@@ -702,9 +686,6 @@ Section ModuleActionDecomposition.
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                 config regions ty) \/
       In act (@dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
-      In act (@dataCrossLineSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                 config regions ty) \/
       act = @loadRpAndIssueRevRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -2023,15 +2004,6 @@ Section SystemModSimulation.
         sRel s1 s2 ->
         exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
 
-    sim_step_dataCrossLineSteps :
-      forall act s1 s1' s2,
-        In act (@dataCrossLineSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                  config regions type) ->
-        SemAction env1 act s1 s1' Zmod.zero ->
-        sRel s1 s2 ->
-        exists s2', SemActions env2 (map snd (specMod type)) s2 s2' /\ sRel s1' s2' ;
-
     sim_step_loadRpAndIssueRevRqStage :
       forall s1 s1' s2,
         SemAction env1 (@loadRpAndIssueRevRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -2108,7 +2080,7 @@ Section SystemModSimulation.
     intros env1 env2 act s1 s1' Hkind Hsem s2 Hrel.
     pose proof (stageStepSimulations_holds env1 env2) as Hsim.
     destruct Hkind as
-      [Hin | -> | Hin | -> | -> | -> | -> | Hin | Hin | Hin | Hin | -> | -> | Hin | Hin | Hin | Hin].
+      [Hin | -> | Hin | -> | -> | -> | -> | Hin | Hin | Hin | -> | -> | Hin | Hin | Hin | Hin].
     - exact (sim_step_peripheral Hsim act s1 s1' s2 Hin Hsem Hrel).
     - exact (sim_step_fetchRqStage Hsim s1 s1' s2 Hsem Hrel).
     - exact (sim_step_fetchRps Hsim act s1 s1' s2 Hin Hsem Hrel).
@@ -2119,7 +2091,6 @@ Section SystemModSimulation.
     - exact (sim_step_dataWriteRqs Hsim act s1 s1' s2 Hin Hsem Hrel).
     - exact (sim_step_dataReadRqs Hsim act s1 s1' s2 Hin Hsem Hrel).
     - exact (sim_step_dataReadRps Hsim act s1 s1' s2 Hin Hsem Hrel).
-    - exact (sim_step_dataCrossLineSteps Hsim act s1 s1' s2 Hin Hsem Hrel).
     - exact (sim_step_loadRpAndIssueRevRqStage Hsim s1 s1' s2 Hsem Hrel).
     - exact (sim_step_revRpAndWriteBackStage Hsim s1 s1' s2 Hsem Hrel).
     - exact (sim_step_mulDivStageActions Hsim act s1 s1' s2 Hin Hsem Hrel).
