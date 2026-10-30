@@ -26,10 +26,11 @@
   localparam int RevTableNumLines    = (RevTableSizeBytes * 8) / LineBits;
   localparam int RevTableLineIdxBits = $clog2(RevTableNumLines);
 
+  // Every region uses the global line layout: 8 data bytes and one tag per line
   typedef struct packed {
     logic [7 : 0][7 : 0] data;
     logic [0 : 0]        tag;
-  } ramReadRp_t;
+  } lineReadRp_t;
 
   typedef struct packed {
     logic [31 : 0]       addr;
@@ -37,30 +38,14 @@
     logic [7 : 0]        dataMask;
     logic [0 : 0]        tag;
     logic [0 : 0]        tagMask;
-  } ramWriteRq_t;
+  } lineWriteRq_t;
 
-  typedef struct packed {
-    logic [7 : 0][7 : 0] data;
-  } revTableReadRp_t;
-
-  typedef struct packed {
-    logic [31 : 0]       addr;
-    logic [7 : 0][7 : 0] data;
-    logic [7 : 0]        dataMask;
-  } revTableWriteRq_t;
-
-  typedef struct packed {
-    logic [15 : 0][7 : 0] data;
-    logic [1 : 0]         tag;
-  } uartReadRp_t;
-
-  typedef struct packed {
-    logic [31 : 0]        addr;
-    logic [15 : 0][7 : 0] data;
-    logic [15 : 0]        dataMask;
-    logic [1 : 0]         tag;
-    logic [1 : 0]         tagMask;
-  } uartWriteRq_t;
+  typedef lineReadRp_t  ramReadRp_t;
+  typedef lineWriteRq_t ramWriteRq_t;
+  typedef lineReadRp_t  revTableReadRp_t;
+  typedef lineWriteRq_t revTableWriteRq_t;
+  typedef lineReadRp_t  uartReadRp_t;
+  typedef lineWriteRq_t uartWriteRq_t;
 
   localparam int TbIoWidth = $bits(uartWriteRq_t);
   typedef logic [TbIoWidth - 1 : 0] tb_io_val_t;
@@ -192,18 +177,21 @@
           end
         end
       end else if (has_substr(name, "_uart_")) begin
+        // UART registers are 4 bytes apart: THR (0x0) and IER (0x4) are in the line at 0x0,
+        // LCR (0xC, holding DLAB) is byte 4 of the line at 0x8
         uartWriteRq_t wr;
         wr = val[$bits(uartWriteRq_t) - 1 : 0];
         if (wr.addr == 32'h1000_0000) begin
-          if (wr.dataMask[12]) begin
-            dlab = wr.data[12][7];
-          end
           if (wr.dataMask[0] && !dlab) begin
             $write("%c", wr.data[0]);
             $fflush(32'h8000_0001);
           end
           if (wr.dataMask[4] && !dlab) begin
             ie = wr.data[4];
+          end
+        end else if (wr.addr == 32'h1000_0008) begin
+          if (wr.dataMask[4]) begin
+            dlab = wr.data[4][7];
           end
         end
       end
@@ -280,6 +268,7 @@
           addr = revTableDataReadAddr;
         end
         idx     = addr[RevTableLineIdxBits + 2 : 3];
+        rp      = '0;
         rp.data = revTableData[idx];
         return tb_io_val_t'(rp);
       end else begin

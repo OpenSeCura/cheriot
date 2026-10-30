@@ -198,6 +198,13 @@ Section ImplRevoker.
       ) ;
       Retv.
 
+    (* Retry the current position: back to Idle without advancing `scanAddr`, so the
+     * next Idle step re-reads the cap at `scanAddr` (and clears the snoop flag). *)
+    Local Definition retryPosition : Action ty memTree (Bit 0) :=
+      revAct (WriteReg pRevPhase (mkRevPhase "Idle") Retv).
+
+    (* A core store hit `scanAddr` since the cap read (snoop hit): the position is
+     * retried, whatever the rev bit was. *)
     Definition implRevokerWaitRevBitRp : Action ty memTree (Bit 0) :=
       LetA revPhase : RevPhase <- revAct (ReadReg "revPhase" pRevPhase (fun v => Return #v)) ;
       If (##revPhase `? "WaitRevBitRp") Then (
@@ -206,11 +213,17 @@ Section ImplRevoker.
         LetA ldBase         : Bit (AddrSz + 1) <- revAct (ReadReg "scanBase" pRevScanBase (fun v => Return #v)) ;
         LetA revOpt         : Option Bool      <- getDeqRevBitRp ldBase ;
         If (##revOpt`"valid") Then (
+          LetA snoopHit : Bool <- revAct (ReadReg "snoopHit" pRevStoreSnoopHit (fun v => Return #v)) ;
           Let revBit : Bool <- ##revOpt`"data" ;
-          If #revBit Then (
-            revAct (WriteReg pRevPhase (mkRevPhase "WriteCap") Retv)
+          If #snoopHit Then (
+            retryPosition
           ) Else (
-            advanceScanAndReset nextScanAddrMsb
+            If #revBit Then (
+              revAct (WriteReg pRevPhase (mkRevPhase "WriteCap") Retv)
+            ) Else (
+              advanceScanAndReset nextScanAddrMsb
+            ) ;
+            Retv
           ) ;
           Retv
         ) ;
@@ -227,7 +240,7 @@ Section ImplRevoker.
         Let capSz           : Bit LgLgNumBytesFullCapSz <- $LgNumBytesFullCapSz ;
         LetA snoopHit       : Bool                      <- revAct (ReadReg "snoopHit" pRevStoreSnoopHit (fun v => Return #v)) ;
         If #snoopHit Then (
-          advanceScanAndReset nextScanAddrMsb
+          retryPosition
         ) Else (
           LetA savedCap   : FullCapWithTag <- revAct (ReadReg "savedCap" pRevScanCap (fun v => Return #v)) ;
           Let untaggedCap : FullCapWithTag <- STRUCT {

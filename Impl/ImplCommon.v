@@ -34,8 +34,9 @@ Local Open Scope guru_scope.
 Definition EpochSz : Z := 1.
 Definition Epoch   : Kind := Bit EpochSz.
 
-Definition NumFetchParcels : nat  := Eval compute in Z.to_nat (FullCapSz / CompInstSz).
-Definition LgFetchParcels  : Z    := Eval compute in Z.log2_up (FullCapSz / CompInstSz).
+(* A fetch packet is a whole memory line of 16-bit parcels *)
+Definition LgFetchParcels  : Z    := Eval compute in (LgLineBytes - Z.log2 (CompInstSz / 8)).
+Definition NumFetchParcels : nat  := Eval compute in Z.to_nat (2 ^ LgFetchParcels).
 Definition FetchPacket     : Kind := Array NumFetchParcels (Bit CompInstSz).
 
 Definition PreBranchInfo := STRUCT_TYPE {

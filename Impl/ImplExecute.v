@@ -134,8 +134,9 @@ Section ExecuteStage.
    *
    * - Precondition: decodeToAluBuf is non-empty, the target input FIFO
    *                 (dataMem / mul / div) is not full when applicable, and
-   *                 if an enabled interrupt is pending, the dataMem (Mem/Fence)
-   *                 pipeline is empty.
+   *                 if an enabled interrupt is pending (or a virtual CSR is
+   *                 read), the dataMem (Mem/Fence) pipeline is empty and no
+   *                 accepted store is still waiting in the memory.
    * - Action:       Dequeue d2aEntry { aluIn, predPc, execEpoch } from
    *                 decodeToAluBuf.
    *                 - If execEpoch != currExecEpoch: drop entry and clear its
@@ -158,6 +159,7 @@ Section ExecuteStage.
       LetA d2aHead          : Option DecodeToAluEntry <- liftAction np_decode (decodeIfc ty).(decode_first) ;
       LetA dataMemIn_isFull : Bool                    <- liftAction np_dataMem (dataMemIfc ty).(dataMem_isFull) ;
       LetA dataMem_isEmpty  : Bool                    <- liftAction np_dataMem (dataMemIfc ty).(dataMem_isEmpty) ;
+      LetA mem_noWriteRq    : Bool                    <- liftAction np_mem (memIfc ty).(mem_noWriteRq) ;
       LetA mulIn_isFull     : Bool                    <- liftAction np_mulDiv (mulDivIfc ty).(mulDiv_isFullMul) ;
       LetA divIn_isFull     : Bool                    <- liftAction np_mulDiv (mulDivIfc ty).(mulDiv_isFullDiv) ;
       LetA currExecEpoch    : Epoch                   <- liftAction np_execute (@readExecEpoch ty) ;
@@ -216,7 +218,7 @@ Section ExecuteStage.
                waitFalse)
         ) Else (
           If #isInterrupt Then (
-            If #dataMem_isEmpty Then (
+            If (And [ #dataMem_isEmpty ; #mem_noWriteRq ]) Then (
               Act (liftAction np_decode (decodeIfc ty).(decode_deq)) ;
               LetA execOut         : ExecuteOut      <- liftAction np_rf (executeInterrupt pcc meip mtip) ;
               Let  nextPcc         : FullECapWithTag <- ##execOut`"nextPcc" ;
@@ -265,7 +267,7 @@ Section ExecuteStage.
               Retv
             ) Else (
               If (And [ Or [ Not #isMemOrFence ; Not #dataMemIn_isFull ] ;
-                        Or [ Not #isVirtCsr ; #dataMem_isEmpty ] ]) Then (
+                        Or [ Not #isVirtCsr ; And [ #dataMem_isEmpty ; #mem_noWriteRq ] ] ]) Then (
                 Act (liftAction np_decode (decodeIfc ty).(decode_deq)) ;
                 LetA execOut         : ExecuteOut      <- liftAction np_rf (executeNonSequential pcc meip mtip aluOut) ;
                 Let  nextPcc         : FullECapWithTag <- ##execOut`"nextPcc" ;

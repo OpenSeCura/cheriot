@@ -93,6 +93,15 @@ Definition LgLgNumBytesFullCapSz := Eval compute in Z.log2_up (LgNumBytesFullCap
 Definition TagAddrWidth : Z := Eval compute in (AddrSz - LgNumBytesFullCapSz).
 Definition LgNumBytesInstSz : Z := Eval compute in Z.log2_up (InstSz / 8).
 
+(* Global memory line geometry: every memory region uses lines of 2^LgLineBytes bytes. A line holds
+ * 2^LgNumLineTags capabilities, each with its own tag, so a line must be at least as big as a
+ * capability (checked by LgLineBytesGeCap). *)
+Definition LgLineBytes   : Z   := 3.
+Definition LineBytes     : nat := Eval compute in Z.to_nat (2 ^ LgLineBytes).
+Definition LgNumLineTags : Z   := Eval compute in (LgLineBytes - LgNumBytesFullCapSz).
+Definition NumLineTags   : nat := Eval compute in Z.to_nat (2 ^ LgNumLineTags).
+Definition LgLineBytesGeCap : Is_true (LgNumBytesFullCapSz <=? LgLineBytes)%Z := I.
+
 Definition isCompressed ty (inst: ty Inst) : Expr ty Bool := Not (isAllOnes (TruncLsb (InstSz-2) 2 #inst)).
 Definition getCd ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[11:7].
 Definition getMemSize ty (inst: ty Inst) : Expr ty (Bit LgLgNumBytesFullCapSz) := #inst`[13:12].
@@ -168,6 +177,7 @@ Definition InstGroup := STRUCT_TYPE {
 
 Definition FunctionalUnits := STRUCT_TYPE {
   "AdderBeforeBoundsCheck" :: Bool ;
+  "AdderAccessEnd" :: Bool ;
   "AdderToOutput" :: Bool ;
   "ComparatorGeneral" :: Bool ;
   "CjalrUnit" :: Bool ;
@@ -963,6 +973,7 @@ Definition AluControl := STRUCT_TYPE {
   (* ComparatorTopOrRep *)
   "ComparatorTopOrRep_checkLte" :: Bool ;
   "ComparatorTopOrRep_addr_AdderBeforeBoundsCheck" :: Bool ;
+  "ComparatorTopOrRep_addr_AdderAccessEnd" :: Bool ;
   (* ComparatorTopOrRep_addr_cs2Addr = SealOrSetAddr *)
   (* ComparatorTopOrRep_addr_cs1OType = Unseal *)
   (* ComparatorTopOrRep_addr_cs1Top = CTestSubset (* default option *) *)

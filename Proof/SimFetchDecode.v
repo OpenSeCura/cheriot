@@ -334,7 +334,7 @@ Section MemFetchChannelLemmas.
     forall (r : MemRegion)
            {env : Env (implExternalMemRegionTree r)}
            (sr sr' : TreeState DomainElemState (implExternalMemRegionTree r))
-           (rpOpt : type (Option (LineReadRp r.(regionLineCfg)))),
+           (rpOpt : type (Option LineReadRp)),
       SemAction env (@implExternalFetchLineReadRp core r type) sr sr' rpOpt ->
       sr' = sr.
   Proof.
@@ -347,14 +347,14 @@ Section MemFetchChannelLemmas.
   Qed.
 
   Lemma SemAction_implMemRegionFetchRp_preserves_state :
-    forall (r : MemRegion) (addr : type Addr)
+    forall (r : MemRegion)
            {env : Env (implMemRegionTree r)}
            (sr sr' : TreeState DomainElemState (implMemRegionTree r))
            (pktOpt : type (Option FetchPacket)),
-      SemAction env (@implMemRegionFetchLineReadRp core r type addr) sr sr' pktOpt ->
+      SemAction env (@implMemRegionFetchLineReadRp core r type) sr sr' pktOpt ->
       sr' = sr.
   Proof.
-    intros r addr env sr sr' pktOpt Hsem.
+    intros r env sr sr' pktOpt Hsem.
     unfold implMemRegionFetchLineReadRp, implMemRegionTree, implMemRegionKindTree in *.
     revert env sr sr' pktOpt Hsem.
     destruct (r.(regionKind)) as [| children rdAct wrAct irqAct];
@@ -379,7 +379,13 @@ Section MemFetchChannelLemmas.
       SemAction env (@implRegionsFetchLineReadRp core type rs addr) sm sm' pktOpt ->
       sm' = sm.
   Proof.
-    intros rs addr; unfold implRegionsFetchLineReadRp, genRouteRegionAction.
+    intros rs addr env sm sm' pktOpt Hsem.
+    unfold implRegionsFetchLineReadRp in Hsem.
+    rewrite SemAction_iff_evalActionPropGen in Hsem; cbn [evalActionPropGen] in Hsem.
+    destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [smMid [rpOpt [Hroute HP]]].
+    cbn [evalActionPropGen] in HP; destruct HP as [HsmMid _]; subst sm'.
+    clear Hsem pktOpt; revert env sm smMid rpOpt Hroute.
+    unfold genRouteRegionAction.
     lazymatch goal with
     | |- context [genRouteRegionActionAux _ _ _ _ ?a _] => generalize a as acc
     end.
@@ -392,7 +398,7 @@ Section MemFetchChannelLemmas.
       + cbn [evalActionPropGen] in Hsem.
         rewrite evalActionPropGen_liftAction in Hsem.
         destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [sub0' [devRp [Hdev Hsem1]]].
-        pose proof (SemAction_implMemRegionFetchRp_preserves_state r addr _ _ _ Hdev) as Hsub0'.
+        pose proof (SemAction_implMemRegionFetchRp_preserves_state r _ _ _ Hdev) as Hsub0'.
         rewrite evalActionPropGen_liftAction in Hsem1.
         destruct (evalActionPropGen_to_SemAction _ _ _ Hsem1) as [sub1' [restRp [Hrest [Hsm' _]]]].
         pose proof (IH _ _ _ _ _ Hrest) as Hsub1'.

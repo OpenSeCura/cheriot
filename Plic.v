@@ -39,11 +39,6 @@ Definition PLIC_THRESHOLD_OFFSET : Z := 0x200000.
 Definition PLIC_CLAIM_OFFSET     : Z := 0x200004.
 Definition PlicSizeBytes         : Z := 0x400000. (* 4 MB *)
 Definition PlicOffsetSz          : Z := Eval compute in Z.log2_up PlicSizeBytes.
-Definition PlicLineConfig        : LineConfig := {|
-  cfgLgLineBytes := Z.to_nat LgNumBytesFullCapSz ;
-  cfgHasTags     := false ;
-  cfgLinePf      := I
-|}.
 
 (* ===========================================================================
  * Tree Structure (Ordered by MMIO Offset)
@@ -378,7 +373,7 @@ Section Plic.
 
     Definition decodePlicLine {ans : Kind}
                (addr : Expr ty Addr)
-               (dataMask : Expr ty (Array (cfgLineBytes PlicLineConfig) Bool))
+               (dataMask : Expr ty (Array LineBytes Bool))
                (k : PlicLineDecode -> Action ty tPlic ans)
                : Action ty tPlic ans :=
       Let offset        <- getMemOffset base PlicSizeBytes addr ;
@@ -423,7 +418,7 @@ Section Plic.
     Definition readPlicLine
                (st : PlicState ty n)
                (d : PlicLineDecode)
-               : Expr ty (Array (cfgLineBytes PlicLineConfig) (Bit ByteSz)) :=
+               : Expr ty (Array LineBytes (Bit ByteSz)) :=
       let thresh         := st.(st_thresh) in
       let claim          := st.(st_claim) in
       let prios          := st.(st_prios) in
@@ -433,7 +428,7 @@ Section Plic.
       let pendVal        := sliceLineWords (boolArrayToWordArray #pends) d.(dec_pendWordIdx) in
       let enVal          := sliceLineWords #enWords d.(dec_enWordIdx) in
       let threshClaimVal := {< #claim, #thresh >} in
-      FromBit (Array (cfgLineBytes PlicLineConfig) (Bit ByteSz))
+      FromBit (Array LineBytes (Bit ByteSz))
               (Or [ ITE0 d.(dec_isPrio)        prioVal ;
                     ITE0 d.(dec_isPending)     pendVal ;
                     ITE0 d.(dec_isEnable)      enVal ;
@@ -441,27 +436,27 @@ Section Plic.
 
     Definition plicLineReadAction
                (addr : ty Addr)
-               (dataMask : ty (Array (cfgLineBytes PlicLineConfig) Bool))
-               : Action ty tPlic (LineReadRp PlicLineConfig) :=
+               (dataMask : ty (Array LineBytes Bool))
+               : Action ty tPlic LineReadRp :=
       decodePlicLine #addr #dataMask (fun d =>
       readPlicState (fun st =>
-        Let readBytes : Array (cfgLineBytes PlicLineConfig) (Bit ByteSz) <- readPlicLine st d ;
+        Let readBytes : Array LineBytes (Bit ByteSz) <- readPlicLine st d ;
         If d.(dec_touchesClaim) Then (
           @plicClaim n ty st.(st_claim)
         ) ;
-        @Return ty tPlic (LineReadRp PlicLineConfig) (STRUCT {
+        @Return ty tPlic LineReadRp (STRUCT {
           "data" ::= #readBytes ;
-          "tag"  ::= Const ty (Array (cfgNumLineTags PlicLineConfig) Bool) (getDefault _)
+          "tag"  ::= Const ty (Array NumLineTags Bool) (getDefault _)
         })
       )).
 
     Definition plicLineWriteAction
-               (rq : ty (LineWriteRq PlicLineConfig))
+               (rq : ty LineWriteRq)
                : Action ty tPlic (Bit 0) :=
       decodePlicLine (##rq`"addr") (##rq`"dataMask") (fun d =>
       readPlicState (fun st =>
-        Let oldBytes : Array (cfgLineBytes PlicLineConfig) (Bit ByteSz) <- readPlicLine st d ;
-        Let newBytes : Array (cfgLineBytes PlicLineConfig) (Bit ByteSz) <-
+        Let oldBytes : Array LineBytes (Bit ByteSz) <- readPlicLine st d ;
+        Let newBytes : Array LineBytes (Bit ByteSz) <-
           ArrayBuilder (fun i =>
             ITE (ReadArrayConst (##rq`"dataMask") i)
                 (ReadArrayConst (##rq`"data") i)
@@ -508,13 +503,13 @@ Section Plic.
              (n : nat)
              (base : Z)
              (pfBound : Is_true ((0 <=? base) && (base + PlicSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
-             (pfAligned : Is_true (base mod (2 ^ Z.of_nat (cfgLgLineBytes PlicLineConfig)) =? 0)%Z)
+             (pfAligned : Is_true (base mod (2 ^ LgLineBytes) =? 0)%Z)
              : MemRegion := {|
     regionName        := "plic" ;
     regionBase        := base ;
     regionSize        := PlicSizeBytes ;
-    regionLineCfg     := PlicLineConfig ;
-    regionKind        := @CustomMem "plic" PlicLineConfig
+    regionHasTags     := false ;
+    regionKind        := @CustomMem "plic"
                                     (plicChildren n)
                                     (@plicLineReadAction n base)
                                     (@plicLineWriteAction n base)
@@ -532,7 +527,7 @@ Section Plic.
     plicIdx      : nat ;
     plicBaseAddr : Z ;
     pfBound      : Is_true ((0 <=? plicBaseAddr) && (plicBaseAddr + PlicSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
-    pfAligned    : Is_true (plicBaseAddr mod (2 ^ Z.of_nat (cfgLgLineBytes PlicLineConfig)) =? 0)%Z ;
+    pfAligned    : Is_true (plicBaseAddr mod (2 ^ LgLineBytes) =? 0)%Z ;
     pfNumSources : Is_true (n <=? 1024)%nat ;
     pfPlic       : nth_error regions plicIdx = Some (@plicMemRegion n plicBaseAddr pfBound pfAligned)
   }.

@@ -56,44 +56,10 @@ Section InitStateRelLemmas.
   Proof.
     intros core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
            mulCapacity divCapacity mulStages divStages mulDivMode config regions
-           s1 s2 Hinit1 Hrel.
-    pose proof (InitStateConsistent_impl_rf core pcAddrInit fetchCapacity instCapacity
-                  decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions s1 Hinit1) as Hrf1.
-    pose proof (InitStateConsistent_impl_mem core pcAddrInit fetchCapacity instCapacity
-                  decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions s1 Hinit1) as Hmem1.
-    pose proof (InitStateConsistent_impl_dataMem core pcAddrInit fetchCapacity instCapacity
-                  decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions s1 Hinit1) as Hdm1.
-    pose proof (InitStateConsistent_DataMemEmpty core dataMemCapacity
-                  (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                                dataMemCapacity mulCapacity divCapacity mulStages divStages
-                                mulDivMode config regions s1) Hdm1) as Hemp.
-    pose proof (stateRel_dataMemEmpty_rf core pcAddrInit fetchCapacity instCapacity
-                  decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions s1 s2 Hinit1 Hrel Hemp) as Hrf_eq.
-    pose proof (InitStateConsistent_flushMulDiv core pcAddrInit fetchCapacity instCapacity
-                  decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions s1 Hinit1) as Hflush.
-    pose proof (InitStateConsistent_projImplMemSpecState core regions
-                  (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                            dataMemCapacity mulCapacity divCapacity mulStages divStages
-                            mulDivMode config regions s1) Hmem1) as Hmem1_proj.
-    pose proof (sr_mem_rel core pcAddrInit fetchCapacity instCapacity
-                  decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions s1 s2 Hrel Hinit1) as HmemRel.
-    pose proof (TreeContentRel_InitStateConsistent
-                  (SpecMemSubTree core regions)
-                  (StateRel.projImplMemSpecState core regions
-                     (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                               dataMemCapacity mulCapacity divCapacity mulStages divStages
-                               mulDivMode config regions s1))
-                  (spec_mem core pcAddrInit regions s2)
-                  Hmem1_proj HmemRel) as Hmem2.
-    assert (Hrf2 : InitStateConsistent (RfTree core pcAddrInit) (spec_rf core pcAddrInit regions s2))
-      by (rewrite Hrf_eq, Hflush; exact Hrf1).
-    exact (conj (conj (conj Hrf2 I) (conj (conj Hmem2 I) I)) I).
+           s1 s2 _ Hrel.
+    (* The spec core's `secondLine` register is not determined by the register-file and
+     * memory relations, so the spec-side conjunct of `sr_fenceI` is used directly. *)
+    destruct Hrel as [_ _ [_ Hinit2] _ _ _]; exact Hinit2.
   Qed.
 
   Theorem exists_initStateRel :
@@ -129,7 +95,7 @@ Section InitStateRelLemmas.
 End InitStateRelLemmas.
 
 (* ===========================================================================
- * 2. ACTION MEMBERSHIP DECOMPOSITION FOR `forwardDatapathMod` AND `pipelinedMod`
+ * 2. ACTION MEMBERSHIP DECOMPOSITION FOR `pipelinedMod`
  * =========================================================================== *)
 
 Section ModuleActionDecomposition.
@@ -152,111 +118,12 @@ Section ModuleActionDecomposition.
               dataMemCapacity mulCapacity divCapacity mulStages divStages
               mulDivMode config regions).
 
-  Local Abbreviation fwdMod :=
-    (@forwardDatapathMod core pcAddrInit fetchCapacity instCapacity decodeCapacity
-       dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-       config regions clint rev plic).
-
   Local Abbreviation pipeMod :=
     (@pipelinedMod core pcAddrInit issueWidth fetchCapacity instCapacity decodeCapacity
        dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
        config regions clint rev plic).
 
-  (* --- 2A. Unfolding `map snd` of `forwardDatapathMod` and `pipelinedMod` --- *)
-
-  Lemma map_snd_forwardDatapathMod :
-    forall (ty : Kind -> Type),
-      map snd (fwdMod ty) =
-      (@implPeripheralSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-          dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-          config regions clint plic ty
-       ++ [ @fetchRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-               config regions rev ty ]
-       ++ @fetchRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ [ @fetchAssembleStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-               config regions rev ty ;
-            @decodeAndRegReadStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-               config regions rev ty ;
-            @aluAndExecuteNonDeferredStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-               config regions clint rev plic ty ;
-            @loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-               config regions rev ty ]
-       ++ @dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ [ @loadRpAndIssueRevRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-               config regions rev ty ]
-       ++ @dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ [ @revRpAndWriteBackStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-               config regions rev ty ]
-       ++ @mulDivStageActions core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ [ @implRevokerIdleStepSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
-               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-               config regions rev ty ]
-       ++ @dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ [ @implRevokerCapRpRevBitRqStepSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
-               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-               config regions rev ty ]
-       ++ @dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ [ @implRevokerRevBitRpWriteCapStepSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
-               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-               config regions rev ty ]
-       ++ @dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @fenceIAcks core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty
-       ++ @setCanProceedSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-             dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-             config regions ty)%list.
-  Proof.
-    intros ty; unfold forwardDatapathMod, forwardDatapathList.
-    rewrite map_map; cbn [snd]; rewrite map_id.
-    unfold fetchRps, dataWriteRqs, dataReadRqs, dataReadRps.
-    rewrite <- !app_assoc; reflexivity.
-  Qed.
+  (* --- 2A. Unfolding `map snd` of `pipelinedMod` --- *)
 
   Lemma map_snd_pipelinedMod :
     forall (ty : Kind -> Type),
@@ -476,7 +343,7 @@ Section ModuleActionDecomposition.
     intros ty act; unfold setCanProceedSteps; cbn [In]; intuition congruence.
   Qed.
 
-  (* --- 2D. Membership Decomposition for `forwardDatapathMod` and `pipelinedMod` --- *)
+  (* --- 2D. Membership Decomposition for `pipelinedMod` --- *)
 
   Lemma in_singleton_iff :
     forall (A : Type) (x y : A), In x [y] <-> x = y.
@@ -517,41 +384,6 @@ Section ModuleActionDecomposition.
         in find_or
     end.
 
-  Theorem In_forwardDatapathMod_ImplActionKind :
-    forall (ty : Kind -> Type) (act : Action ty iTree (Bit 0)),
-      In act (map snd (fwdMod ty)) <->
-      ImplActionKind ty act.
-  Proof.
-    intros ty act.
-    rewrite map_snd_forwardDatapathMod.
-    rewrite !in_app_iff, !in_four_iff, !in_singleton_iff.
-    split.
-    - intros H.
-      repeat lazymatch type of H with
-      | _ \/ _ => destruct H as [H | H]
-      end;
-        try (apply IA_FetchRqStage; exact H);
-        try (apply IA_FetchAssembleStage; exact H);
-        try (apply IA_DecodeAndRegReadStage; exact H);
-        try (apply IA_AluAndExecuteStage; exact H);
-        try (apply IA_LoadRqOrStoreOrFenceStage; exact H);
-        try (apply IA_LoadRpAndIssueRevRqStage; exact H);
-        try (apply IA_RevRpAndWriteBackStage; exact H);
-        try (apply IA_Peripheral; exact H);
-        try (apply IA_FetchRps; exact H);
-        try (apply IA_DataWriteRqs; exact H);
-        try (apply IA_DataReadRqs; exact H);
-        try (apply IA_DataReadRps; exact H);
-        try (apply IA_MulDivStageActions; exact H);
-        try (apply IA_FenceIAcks; exact H);
-        try (apply IA_SetCanProceedSteps; exact H);
-        try (apply IA_RevokerStepsSys; unfold implRevokerStepsSys; rewrite in_three_iff; solve_in_or H).
-    - intros H; destruct H as
-        [H | H | H | H | H | H | H | H | H | H | H | H | H | H | H | H];
-        try (unfold implRevokerStepsSys in H; rewrite in_three_iff in H);
-        solve_in_or H.
-  Qed.
-
   Theorem In_pipelinedMod_ImplActionKind :
     forall (ty : Kind -> Type) (act : Action ty iTree (Bit 0)),
       In act (map snd (pipeMod ty)) ->
@@ -586,144 +418,6 @@ Section ModuleActionDecomposition.
       try (apply IA_SetCanProceedSteps; exact Hin).
   Qed.
 
-  Corollary In_pipelinedMod_In_forwardDatapathMod :
-    forall (ty : Kind -> Type) (act : Action ty iTree (Bit 0)),
-      In act (map snd (pipeMod ty)) ->
-      In act (map snd (fwdMod ty)).
-  Proof.
-    intros ty act Hin.
-    apply In_forwardDatapathMod_ImplActionKind.
-    exact (In_pipelinedMod_ImplActionKind ty act Hin).
-  Qed.
-
-  Theorem pipelinedMod_simulates_forwardDatapathMod :
-    forall (env1 env2 : Env iTree)
-           (env2Exists : EnvInhabited env2)
-           (envConsistent : EnvConsistent env1 env2 (fun s1 s2 => s1 = s2)),
-      ModSimulation env1 env2 pipeMod fwdMod (fun s1 s2 => s1 = s2) env2Exists envConsistent.
-  Proof.
-    intros env1 env2 env2Exists envConsistent.
-    apply SubsetActionModSimulation.
-    exact In_pipelinedMod_In_forwardDatapathMod.
-  Qed.
-
-  Theorem In_forwardDatapathMod_decomp :
-    forall (ty : Kind -> Type) (act : Action ty iTree (Bit 0)),
-      In act (map snd (fwdMod ty)) ->
-      In act (@implPeripheralSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions clint plic ty) \/
-      act = @fetchRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-              config regions rev ty \/
-      In act (@fetchRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
-      act = @fetchAssembleStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-              config regions rev ty \/
-      act = @decodeAndRegReadStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-              config regions rev ty \/
-      act = @aluAndExecuteNonDeferredStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-              config regions clint rev plic ty \/
-      act = @loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-              config regions rev ty \/
-      In act (@dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
-      In act (@dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
-      In act (@dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
-      act = @loadRpAndIssueRevRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-              config regions rev ty \/
-      act = @revRpAndWriteBackStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-              config regions rev ty \/
-      In act (@mulDivStageActions core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
-      In act (@implRevokerStepsSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions rev ty) \/
-      In act (@fenceIAcks core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
-      In act (@setCanProceedSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty).
-  Proof.
-    intros ty act Hin.
-    apply In_forwardDatapathMod_ImplActionKind in Hin.
-    destruct Hin as
-      [Hin | Hin | Hin | Hin | Hin | Hin | Hin | Hin | Hin |
-       Hin | Hin | Hin | Hin | Hin | Hin | Hin];
-      solve_in_or Hin.
-  Qed.
-
-  Theorem In_pipelinedMod_decomp :
-    forall (ty : Kind -> Type) (act : Action ty iTree (Bit 0)),
-      In act (map snd (pipeMod ty)) ->
-      In act (@implPeripheralSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions clint plic ty) \/
-      act = @fetchRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-              config regions rev ty \/
-      In act (@fetchRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
-      act = @fetchAssembleStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-              config regions rev ty \/
-      act = @decodeAndRegReadStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-              config regions rev ty \/
-      act = @aluAndExecuteNonDeferredStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-              config regions clint rev plic ty \/
-      act = @loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-              config regions rev ty \/
-      In act (@dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
-      In act (@dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
-      In act (@dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
-      act = @loadRpAndIssueRevRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-              config regions rev ty \/
-      act = @revRpAndWriteBackStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
-              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-              config regions rev ty \/
-      In act (@mulDivStageActions core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
-      In act (@implRevokerStepsSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions rev ty) \/
-      In act (@fenceIAcks core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty) \/
-      In act (@setCanProceedSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-                config regions ty).
-  Proof.
-    intros ty act Hin.
-    apply In_forwardDatapathMod_decomp.
-    exact (In_pipelinedMod_In_forwardDatapathMod ty act Hin).
-  Qed.
-
 End ModuleActionDecomposition.
 
 (* ===========================================================================
@@ -755,10 +449,6 @@ Section SystemModSimulation.
                dataMemCapacity mulCapacity divCapacity mulStages divStages
                mulDivMode config regions).
   Local Abbreviation specMod := (@spec core pcAddrInit config regions clint revSpec plic).
-  Local Abbreviation fwdMod :=
-    (@forwardDatapathMod core pcAddrInit fetchCapacity instCapacity decodeCapacity
-       dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
-       config regions clint rev plic).
   Local Abbreviation pipeMod :=
     (@pipelinedMod core pcAddrInit issueWidth fetchCapacity instCapacity decodeCapacity
        dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
@@ -2111,22 +1801,6 @@ Section SystemModSimulation.
     - exact (sim_setCanProceedSteps_stateRel act s1 s1' s2 Zmod.zero Hin Hsem Hrel).
   Qed.
 
-  Theorem forwardDatapath_actionToActions_sim :
-    forall {env1 : Env iTree} {env2 : Env sTree}
-           (act : Action type iTree (Bit 0)) (s1 s1' : IState),
-      In act (map snd (fwdMod type)) ->
-      SemAction env1 act s1 s1' Zmod.zero ->
-      forall s2 : SState,
-        sRel s1 s2 ->
-        exists s2' : SState,
-          SemActions env2 (map snd (specMod type)) s2 s2' /\
-          sRel s1' s2'.
-  Proof.
-    intros env1 env2 act s1 s1' Hin Hsem s2 Hrel.
-    apply In_forwardDatapathMod_ImplActionKind in Hin.
-    exact (ImplActionKind_actionToActions_sim act s1 s1' Hin Hsem s2 Hrel).
-  Qed.
-
   Theorem pipelined_actionToActions_sim :
     forall {env1 : Env iTree} {env2 : Env sTree}
            (act : Action type iTree (Bit 0)) (s1 s1' : IState),
@@ -2146,49 +1820,12 @@ Section SystemModSimulation.
     exact (ImplActionKind_actionToActions_sim act s1 s1' Hin Hsem s2 Hrel).
   Qed.
 
-  (* Top-level `ModSimulation` theorem for `forwardDatapathMod` against `spec` *)
-  Theorem forwardDatapathMod_simulates_spec :
-    forall (env1 : Env iTree) (env2 : Env sTree)
-           (env2Exists : EnvInhabited env2)
-           (envConsistent : EnvConsistent env1 env2 sRel),
-      ModSimulation env1 env2 fwdMod specMod sRel env2Exists envConsistent.
-  Proof.
-    intros env1 env2 env2Exists envConsistent.
-    apply ActionToActionsModSimulation.
-    - exact (stateRel_InitStateConsistent core pcAddrInit fetchCapacity instCapacity
-               decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-               mulDivMode config regions).
-    - exact forwardDatapath_actionToActions_sim.
-  Qed.
-
-  (* End-to-end `SemMod` refinement for `forwardDatapathMod` using `initStateRel` *)
-  Theorem forwardDatapathMod_SemMod_refines_spec :
-    forall (env1 : Env iTree) (env2 : Env sTree)
-           (env2Exists : EnvInhabited env2)
-           (envConsistent : EnvConsistent env1 env2 sRel)
-           (old1 new1 : IState) (old2 : SState),
-      InitStateConsistent sTree old2 ->
-      SemMod env1 fwdMod old1 new1 ->
-      exists new2 : SState,
-        SemMod env2 specMod old2 new2 /\
-        sRel new1 new2.
-  Proof.
-    intros env1 env2 env2Exists envConsistent old1 new1 old2 Hinit2 Hsem1.
-    inversion Hsem1 as [? ? Hinit1 _]; subst.
-    pose proof (initStateRel core pcAddrInit fetchCapacity instCapacity decodeCapacity
-                  dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions old1 old2 Hinit1 Hinit2) as Hrel0.
-    exact (forwardDatapathMod_simulates_spec env1 env2 env2Exists envConsistent old1 new1 Hsem1 old2 Hrel0).
-  Qed.
-
   (* Top-level `ModSimulation` theorem for `pipelinedMod` against `spec` *)
   Theorem pipelinedMod_simulates_spec :
-    forall (env1 : Env iTree) (env2 : Env sTree)
-           (env2Exists : EnvInhabited env2)
-           (envConsistent : EnvConsistent env1 env2 sRel),
-      ModSimulation env1 env2 pipeMod specMod sRel env2Exists envConsistent.
+    forall (env1 : Env iTree) (env2 : Env sTree),
+      ModSimulation env1 env2 pipeMod specMod sRel.
   Proof.
-    intros env1 env2 env2Exists envConsistent.
+    intros env1 env2.
     apply ActionToActionsModSimulation.
     - exact (stateRel_InitStateConsistent core pcAddrInit fetchCapacity instCapacity
                decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
@@ -2199,8 +1836,6 @@ Section SystemModSimulation.
   (* End-to-end `SemMod` refinement for `pipelinedMod` using `initStateRel` *)
   Theorem pipelinedMod_SemMod_refines_spec :
     forall (env1 : Env iTree) (env2 : Env sTree)
-           (env2Exists : EnvInhabited env2)
-           (envConsistent : EnvConsistent env1 env2 sRel)
            (old1 new1 : IState) (old2 : SState),
       InitStateConsistent sTree old2 ->
       SemMod env1 pipeMod old1 new1 ->
@@ -2208,12 +1843,12 @@ Section SystemModSimulation.
         SemMod env2 specMod old2 new2 /\
         sRel new1 new2.
   Proof.
-    intros env1 env2 env2Exists envConsistent old1 new1 old2 Hinit2 Hsem1.
+    intros env1 env2 old1 new1 old2 Hinit2 Hsem1.
     inversion Hsem1 as [? ? Hinit1 _]; subst.
     pose proof (initStateRel core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions old1 old2 Hinit1 Hinit2) as Hrel0.
-    exact (pipelinedMod_simulates_spec env1 env2 env2Exists envConsistent old1 new1 Hsem1 old2 Hrel0).
+    exact (pipelinedMod_simulates_spec env1 env2 old1 new1 Hsem1 old2 Hrel0).
   Qed.
 
 End SystemModSimulation.

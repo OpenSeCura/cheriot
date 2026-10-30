@@ -95,9 +95,9 @@ Section ImplBranchPredictor.
     Variable ty : Kind -> Type.
 
     Definition implNoInst_getPred (pc : ty Addr) : Action ty implNoInstTree NoInstPredOut :=
-      Let alignedPc  : Addr               <- {< TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz #pc,
-                                                Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
-      Let nextPktPc  : Addr               <- Add [ #alignedPc ; $NumBytesFullCapSz ] ;
+      Let alignedPc  : Addr               <- {< TruncMsb (AddrSz - LgLineBytes) LgLineBytes #pc,
+                                                Const ty (Bit LgLineBytes) Zmod.zero >} ;
+      Let nextPktPc  : Addr               <- Add [ #alignedPc ; $(Z.of_nat LineBytes) ] ;
       Let exitParcel : Bit LgFetchParcels <- Const ty (Bit LgFetchParcels) (InvDefault _) ;
       @Return ty _ NoInstPredOut (STRUCT {
         "exitParcel" ::= #exitParcel ;

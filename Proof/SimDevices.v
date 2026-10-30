@@ -498,7 +498,8 @@ Section MemProjection.
     Node ""
       [ implRegionsExtraTree regions ;
         Leaf "state"     (dom, EReg (Build_Reg MemState (Some (getDefault _)) false)) ;
-        Leaf "requester" (dom, EReg (Build_Reg Requester (Some (getDefault _)) false)) ].
+        Leaf "requester" (dom, EReg (Build_Reg Requester (Some (getDefault _)) false)) ;
+        Leaf "readRp"    (dom, EReg (Build_Reg (Option LineReadRp) (Some (getDefault _)) false)) ].
 
   Definition projImplMemSpecState (regions : list MemRegion)
     (s : TreeState DomainElemState (implMemTree regions))
@@ -753,7 +754,8 @@ Section SystemDevicesSim.
           @specTickCycle core pcAddrInit regions type ;
           @specTickTimer core pcAddrInit regions clint type ;
           @specSampleMtipStep core pcAddrInit regions clint type ;
-          @specStep core pcAddrInit config regions clint plic type ]
+          @specStep core pcAddrInit config regions clint plic type ;
+          @specSecondLine core pcAddrInit config regions type ]
      ++ @specFenceIAckSteps core pcAddrInit regions type)%list.
   Proof.
     unfold specMod, spec.
@@ -1513,3 +1515,1117 @@ Section SystemDevicesSim.
         apply in_map_iff; exists fRest; split; [reflexivity | exact HfRest].
   Qed.
 End SystemDevicesSim.
+
+(* ===========================================================================
+ * 5. CONCRETE `ExternalMem` ENVIRONMENT (`Env`) & HANDSHAKE INVARIANTS
+ * =========================================================================== *)
+
+Section ExternalMemEnvAndHandshake.
+  Variable dom : string.
+
+  (* --- 5A. Store Versions (`maskUpdateSameTuple`, `applyLineWriteRq`, `evalLineWriteRqTrace`) --- *)
+
+  Fixpoint maskUpdateList {A : Type} {n : nat}
+    (idx : nat) (upds : list A) (masks : list bool) (acc : SameTuple A n) : SameTuple A n :=
+    match masks, upds with
+    | true :: ms, u :: us => maskUpdateList (S idx) us ms (updSameTupleNat acc idx u)
+    | false :: ms, _ :: us => maskUpdateList (S idx) us ms acc
+    | _, _ => acc
+    end.
+
+  Definition maskUpdateSameTuple {A : Type} {n : nat}
+    (upd val : SameTuple A n) (mask : SameTuple bool n) : SameTuple A n :=
+    maskUpdateList 0%nat upd.(tupleElems) mask.(tupleElems) val.
+
+  Definition applyLineWriteRq
+    (lineAddr : bits AddrSz)
+    (w : type LineWriteRq)
+    (rp : type LineReadRp) : type LineReadRp :=
+    let w_addr     := w.(Fst) in
+    let w_data     := w.(Snd).(Fst) in
+    let w_dataMask := w.(Snd).(Snd).(Fst) in
+    let w_tag      := w.(Snd).(Snd).(Snd).(Fst) in
+    let w_tagMask  := w.(Snd).(Snd).(Snd).(Snd).(Fst) in
+    if Zmod.eqb w_addr lineAddr then
+      let newData := maskUpdateSameTuple w_data rp.(Fst) w_dataMask in
+      let newTag  := maskUpdateSameTuple w_tag rp.(Snd).(Fst) w_tagMask in
+      (newData ,, (newTag ,, tt))
+    else
+      rp.
+
+  Fixpoint evalLineWriteRqTrace
+    (initLine : bits AddrSz -> type LineReadRp)
+    (writes : list (type LineWriteRq))
+    (lineAddr : bits AddrSz) : type LineReadRp :=
+    match writes with
+    | [] => initLine lineAddr
+    | w :: ws => applyLineWriteRq lineAddr w (evalLineWriteRqTrace initLine ws lineAddr)
+    end.
+
+  Lemma evalLineWriteRqTrace_app_baseLine :
+    forall (initLine : bits AddrSz -> type LineReadRp)
+           (ws_used ws_base : list (type LineWriteRq))
+           (lineAddr : bits AddrSz),
+      evalLineWriteRqTrace
+        (fun _ => evalLineWriteRqTrace initLine ws_base lineAddr)
+        ws_used lineAddr =
+      evalLineWriteRqTrace initLine (ws_used ++ ws_base)%list lineAddr.
+  Proof.
+    intros initLine ws_used ws_base lineAddr.
+    induction ws_used as [| w rest IH]; cbn [evalLineWriteRqTrace app].
+    - reflexivity.
+    - rewrite IH; reflexivity.
+  Qed.
+
+  (* --- 5B. Data Read Constraint (`EnvDataLineReadRpAt`) --- *)
+
+  (* A data response for the request for `lineAddr` is the latest version of that line
+   * after `writes` (newest first). *)
+  Definition EnvDataLineReadRpAt
+    (initLine : bits AddrSz -> type LineReadRp)
+    (writes : list (type LineWriteRq))
+    (lineAddr : bits AddrSz)
+    (rp : type LineReadRp) : Prop :=
+    rp = evalLineWriteRqTrace initLine writes lineAddr.
+
+  (* The spec answers each data request in the same action: the newest request, after
+   * all of its writes. *)
+  Definition EnvDataLineReadRpConstraint (r : MemRegion)
+    (initLine : bits AddrSz -> type LineReadRp)
+    (sr : TreeState DomainElemState (externalMemRegionTree dom r))
+    (rp : type LineReadRp) : Prop :=
+    EnvDataLineReadRpAt initLine sr.(Snd).(Snd).(Snd).(Fst) (hd Zmod.zero sr.(Snd).(Fst)) rp.
+
+  Lemma EnvDataLineReadRpAt_inhabited :
+    forall (initLine : bits AddrSz -> type LineReadRp)
+           (writes : list (type LineWriteRq))
+           (lineAddr : bits AddrSz),
+      exists rp, EnvDataLineReadRpAt initLine writes lineAddr rp.
+  Proof.
+    intros initLine writes lineAddr.
+    eexists; reflexivity.
+  Qed.
+
+  Lemma EnvDataLineReadRpConstraint_inhabited :
+    forall (r : MemRegion)
+           (initLine : bits AddrSz -> type LineReadRp)
+           (sr : TreeState DomainElemState (externalMemRegionTree dom r)),
+      exists rp, EnvDataLineReadRpConstraint r initLine sr rp.
+  Proof.
+    intros r initLine sr.
+    apply EnvDataLineReadRpAt_inhabited.
+  Qed.
+
+  (* --- 5C. `fence.i` Request/Ack Counting (`count_true`, `RegionFenceICountInv`) --- *)
+
+  Fixpoint count_true (l : list bool) : nat :=
+    match l with
+    | [] => 0%nat
+    | true :: tl => S (count_true tl)
+    | false :: tl => count_true tl
+    end.
+
+  Definition RegionFenceICountInv (r : MemRegion)
+    (sr : TreeState DomainElemState (externalMemRegionTree dom r)) : Prop :=
+    let sf         := sr.(Fst) in
+    let fenceIWait := sf.(Snd).(Snd).(Fst) in
+    let fenceIRq   := sf.(Snd).(Snd).(Snd).(Fst) in
+    let fenceIAck  := sf.(Snd).(Snd).(Snd).(Snd).(Fst) in
+    if fenceIWait then
+      length fenceIRq = S (count_true fenceIAck)
+    else
+      length fenceIRq = count_true fenceIAck.
+
+  Lemma RegionFenceICountInv_wait_false_iff :
+    forall (r : MemRegion)
+           (sr : TreeState DomainElemState (externalMemRegionTree dom r)),
+      RegionFenceICountInv r sr ->
+      (sr.(Fst).(Snd).(Snd).(Fst) = false <->
+       length sr.(Fst).(Snd).(Snd).(Snd).(Fst) =
+         count_true sr.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst)).
+  Proof.
+    intros r sr Hinv.
+    unfold RegionFenceICountInv in Hinv.
+    destruct (sr.(Fst).(Snd).(Snd).(Fst)); split; intros H; try discriminate; try lia; reflexivity.
+  Qed.
+
+  Lemma RegionFenceICountInv_wait_true_iff :
+    forall (r : MemRegion)
+           (sr : TreeState DomainElemState (externalMemRegionTree dom r)),
+      RegionFenceICountInv r sr ->
+      (sr.(Fst).(Snd).(Snd).(Fst) = true <->
+       length sr.(Fst).(Snd).(Snd).(Snd).(Fst) =
+         (count_true sr.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst) + 1)%nat).
+  Proof.
+    intros r sr Hinv.
+    unfold RegionFenceICountInv in Hinv.
+    destruct (sr.(Fst).(Snd).(Snd).(Fst)); split; intros H; try discriminate; try lia; reflexivity.
+  Qed.
+
+  Lemma InitStateConsistent_RegionFenceICountInv :
+    forall (r : MemRegion)
+           (sr : TreeState DomainElemState (externalMemRegionTree dom r)),
+      InitStateConsistent (externalMemRegionTree dom r) sr ->
+      RegionFenceICountInv r sr.
+  Proof.
+    intros r [[rq [rp [wait [fiRq [fiAck []]]]]] sdata]
+           [[_ [_ [Hwait [HfiRq [HfiAck _]]]]] _].
+    cbn in Hwait, HfiRq, HfiAck.
+    unfold RegionFenceICountInv; cbn [Fst Snd].
+    subst wait fiRq fiAck; reflexivity.
+  Qed.
+
+  (* --- 5D. `fence.i` Environment Constraints (`EnvFenceIAckConstraint`, `EnvFetchLineReadRpConstraint`) --- *)
+
+  (* `fenceIWriteCount c` is the region's write count at the moment its ack count reached
+   * `c` (`c >= 1`). Before any ack the snapshot is the initial memory (count 0), so the
+   * oracle is never consulted at 0. *)
+  Definition fenceISnapshotCount (fenceIWriteCount : nat -> nat) (fenceIAck : list bool) : nat :=
+    match count_true fenceIAck with
+    | 0%nat => 0%nat
+    | c => fenceIWriteCount c
+    end.
+
+  (* `fenceIAck = true` only while a request is outstanding (`nFenceIRq` requests,
+   * `fenceIAck` acks so far) and when the write count `nWrites` is the one fixed by
+   * `fenceIWriteCount` for the ack count this ack produces (`S (count_true fenceIAck)`:
+   * the trace does not contain the ack being answered yet). *)
+  Definition EnvFenceIAckAt
+    (fenceIWriteCount : nat -> nat)
+    (nFenceIRq : nat) (fenceIAck : list bool) (nWrites : nat)
+    (ack : bool) : Prop :=
+    ack = true ->
+    (nFenceIRq > count_true fenceIAck)%nat /\
+    nWrites = fenceIWriteCount (S (count_true fenceIAck)).
+
+  Definition EnvFenceIAckConstraint (r : MemRegion)
+    (fenceIWriteCount : nat -> nat)
+    (sr : TreeState DomainElemState (externalMemRegionTree dom r))
+    (ack : bool) : Prop :=
+    EnvFenceIAckAt fenceIWriteCount
+      (length sr.(Fst).(Snd).(Snd).(Snd).(Fst)) sr.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst)
+      (length sr.(Snd).(Snd).(Snd).(Fst)) ack.
+
+  Lemma EnvFenceIAckAt_inhabited :
+    forall (fenceIWriteCount : nat -> nat) (nFenceIRq : nat) (fenceIAck : list bool) (nWrites : nat),
+      exists ack, EnvFenceIAckAt fenceIWriteCount nFenceIRq fenceIAck nWrites ack.
+  Proof.
+    intros fenceIWriteCount nFenceIRq fenceIAck nWrites.
+    exists false; intros H; discriminate H.
+  Qed.
+
+  Lemma EnvFenceIAckConstraint_inhabited :
+    forall (r : MemRegion)
+           (fenceIWriteCount : nat -> nat)
+           (sr : TreeState DomainElemState (externalMemRegionTree dom r)),
+      exists ack, EnvFenceIAckConstraint r fenceIWriteCount sr ack.
+  Proof.
+    intros r fenceIWriteCount sr.
+    apply EnvFenceIAckAt_inhabited.
+  Qed.
+
+  Definition isSuffix {A : Type} (sub full : list A) : Prop :=
+    exists pref, full = (pref ++ sub)%list.
+
+  (* The 16-bit instruction parcel `p` of a line response: data bytes `2p` and `2p+1`. *)
+  Definition rpParcel (rp : type LineReadRp) (p : nat) : list (bits 8) :=
+    firstn 2 (skipn (2 * p) rp.(Fst).(tupleElems)).
+
+  (* Post-`fence.iAck` fetch constraint for a response to the request for `lineAddr`,
+   * per 16-bit parcel (`fenceIAck` and `writes` are newest first):
+   * - `n_at := fenceISnapshotCount fenceIWriteCount fenceIAck` is the write count at the
+   *   last `fence.iAck` (0 before any ack: the initial memory).
+   * - `writes_after := firstn (length writes - n_at) writes` is the prefix of `writes` that
+   *   occurred after the last `fence.iAck`.
+   * - `writes_at_fenceI := skipn (length writes - n_at) writes` is the history of writes up
+   *   to the last `fence.iAck`.
+   * - `baseLine` evaluates the committed state at `fence.iAck` (where all older stores to
+   *   an address prior to the last store at `fence.iAck` are overwritten and irrelevant).
+   * - Each parcel of `rp` independently comes from some allowed version: `baseLine` plus
+   *   an oldest-first prefix `ws_used` of `writes_after`, chosen per parcel.
+   * - Tag bits are unconstrained: instruction fetch never uses them. *)
+  Definition EnvFetchLineReadRpAt
+    (initLine : bits AddrSz -> type LineReadRp)
+    (fenceIWriteCount : nat -> nat)
+    (fenceIAck : list bool)
+    (writes : list (type LineWriteRq))
+    (lineAddr : bits AddrSz)
+    (rp : type LineReadRp) : Prop :=
+    let n_after          := (length writes - fenceISnapshotCount fenceIWriteCount fenceIAck)%nat in
+    let writes_after     := firstn n_after writes in
+    let writes_at_fenceI := skipn n_after writes in
+    let baseLine         := evalLineWriteRqTrace initLine writes_at_fenceI lineAddr in
+    forall p : nat,
+      exists ws_used,
+        isSuffix ws_used writes_after /\
+        rpParcel rp p =
+          rpParcel (evalLineWriteRqTrace (fun _ => baseLine) ws_used lineAddr) p.
+
+  (* The spec answers each fetch request in the same action, so its response is for the
+   * newest request, `hd fetchRqs`. *)
+  Definition EnvFetchLineReadRpConstraint (r : MemRegion)
+    (initLine : bits AddrSz -> type LineReadRp)
+    (fenceIWriteCount : nat -> nat)
+    (sr : TreeState DomainElemState (externalMemRegionTree dom r))
+    (rp : type LineReadRp) : Prop :=
+    EnvFetchLineReadRpAt initLine fenceIWriteCount
+      sr.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst) sr.(Snd).(Snd).(Snd).(Fst)
+      (hd Zmod.zero sr.(Fst).(Fst)) rp.
+
+  Lemma EnvFetchLineReadRpAt_inhabited :
+    forall (initLine : bits AddrSz -> type LineReadRp)
+           (fenceIWriteCount : nat -> nat)
+           (fenceIAck : list bool)
+           (writes : list (type LineWriteRq))
+           (lineAddr : bits AddrSz),
+      exists rp, EnvFetchLineReadRpAt initLine fenceIWriteCount fenceIAck writes lineAddr rp.
+  Proof.
+    intros initLine fenceIWriteCount fenceIAck writes lineAddr.
+    unfold EnvFetchLineReadRpAt.
+    eexists; intros p; exists []; split.
+    - exists (firstn (length writes - fenceISnapshotCount fenceIWriteCount fenceIAck) writes).
+      rewrite app_nil_r; reflexivity.
+    - reflexivity.
+  Qed.
+
+  Lemma EnvFetchLineReadRpConstraint_inhabited :
+    forall (r : MemRegion)
+           (initLine : bits AddrSz -> type LineReadRp)
+           (fenceIWriteCount : nat -> nat)
+           (sr : TreeState DomainElemState (externalMemRegionTree dom r)),
+      exists rp, EnvFetchLineReadRpConstraint r initLine fenceIWriteCount sr rp.
+  Proof.
+    intros r initLine fenceIWriteCount sr.
+    apply EnvFetchLineReadRpAt_inhabited.
+  Qed.
+
+  Lemma firstn_app_S :
+    forall {A : Type} (n : nat) (x : A) (l : list A),
+      firstn (S n) (x :: l) = (x :: firstn n l)%list.
+  Proof.
+    reflexivity.
+  Qed.
+
+  Lemma skipn_cons_S :
+    forall {A : Type} (n : nat) (x : A) (l : list A),
+      skipn (S n) (x :: l) = skipn n l.
+  Proof.
+    reflexivity.
+  Qed.
+
+  (* Monotonicity of `EnvFetchLineReadRpAt` when newer stores `ws_new` are prepended
+   * to `writes` without an intervening `fence.iAck`: any response `rp` valid at
+   * `t_fetch` remains valid at `t_exec`. *)
+  Lemma EnvFetchLineReadRpAt_prepend_stores :
+    forall (initLine : bits AddrSz -> type LineReadRp)
+           (fenceIWriteCount : nat -> nat)
+           (ws_new : list (type LineWriteRq))
+           (acks1 acks2 : list bool)
+           (writes1 writes2 : list (type LineWriteRq))
+           (lineAddr : bits AddrSz)
+           (rp : type LineReadRp),
+      (length writes1 >= fenceISnapshotCount fenceIWriteCount acks1)%nat ->
+      count_true acks2 = count_true acks1 ->
+      writes2 = (ws_new ++ writes1)%list ->
+      EnvFetchLineReadRpAt initLine fenceIWriteCount acks1 writes1 lineAddr rp ->
+      EnvFetchLineReadRpAt initLine fenceIWriteCount acks2 writes2 lineAddr rp.
+  Proof.
+    intros initLine fenceIWriteCount ws_new acks1 acks2 writes1 writes2 lineAddr rp
+           Hlen Hack Hwrites Henv1.
+    assert (Hsnap : fenceISnapshotCount fenceIWriteCount acks2 =
+                    fenceISnapshotCount fenceIWriteCount acks1)
+      by (unfold fenceISnapshotCount; rewrite Hack; reflexivity).
+    unfold EnvFetchLineReadRpAt in Henv1 |- *.
+    rewrite Hsnap, Hwrites, length_app.
+    set (N := fenceISnapshotCount fenceIWriteCount acks1) in *.
+    set (W := writes1) in *.
+    replace (length ws_new + length W - N)%nat
+       with (length ws_new + (length W - N))%nat by lia.
+    assert (Hfirstn : firstn (length ws_new + (length W - N)) (ws_new ++ W) =
+                      (ws_new ++ firstn (length W - N) W)%list).
+    { clear -W N.
+      induction ws_new as [| w rest IH]; cbn.
+      - reflexivity.
+      - f_equal; exact IH. }
+    assert (Hskipn : skipn (length ws_new + (length W - N)) (ws_new ++ W) =
+                     skipn (length W - N) W).
+    { clear -W N.
+      induction ws_new as [| w rest IH]; cbn.
+      - reflexivity.
+      - exact IH. }
+    rewrite Hfirstn, Hskipn.
+    intros p; destruct (Henv1 p) as [ws_used [[pref Hpref] Hrp]].
+    exists ws_used; split; [| exact Hrp].
+    exists (ws_new ++ pref)%list.
+    rewrite <- app_assoc, <- Hpref; reflexivity.
+  Qed.
+
+  Lemma EnvFetchLineReadRpConstraint_prepend_stores :
+    forall (r : MemRegion)
+           (initLine : bits AddrSz -> type LineReadRp)
+           (fenceIWriteCount : nat -> nat)
+           (ws_new : list (type LineWriteRq))
+           (sr1 sr2 : TreeState DomainElemState (externalMemRegionTree dom r))
+           (rp : type LineReadRp),
+      (length sr1.(Snd).(Snd).(Snd).(Fst) >=
+       fenceISnapshotCount fenceIWriteCount sr1.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst))%nat ->
+      hd Zmod.zero sr2.(Fst).(Fst) = hd Zmod.zero sr1.(Fst).(Fst) ->
+      count_true sr2.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst) =
+        count_true sr1.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst) ->
+      sr2.(Snd).(Snd).(Snd).(Fst) = (ws_new ++ sr1.(Snd).(Snd).(Snd).(Fst))%list ->
+      EnvFetchLineReadRpConstraint r initLine fenceIWriteCount sr1 rp ->
+      EnvFetchLineReadRpConstraint r initLine fenceIWriteCount sr2 rp.
+  Proof.
+    intros r initLine fenceIWriteCount ws_new sr1 sr2 rp Hlen Haddr Hack Hwrites Henv1.
+    unfold EnvFetchLineReadRpConstraint in Henv1 |- *.
+    rewrite Haddr.
+    exact (EnvFetchLineReadRpAt_prepend_stores initLine fenceIWriteCount ws_new _ _ _ _ _ rp
+             Hlen Hack Hwrites Henv1).
+  Qed.
+
+  (* --- 5E. Ready/Valid Handshake & Request/Response Conservation --- *)
+
+  (* Requests the memory accepted: the entries of `xs` whose paired ready in `rdys` is
+   * true. Both lists are newest first and paired index by index (each request is sent
+   * together with the receive of its ready). *)
+  Fixpoint acceptedOf {A : Type} (xs : list A) (rdys : list bool) : list A :=
+    match xs, rdys with
+    | x :: xs', true :: rdys' => x :: acceptedOf xs' rdys'
+    | _ :: xs', false :: rdys' => acceptedOf xs' rdys'
+    | _, _ => []
+    end.
+
+  (* The memory answers accepted requests in order: with `nRps` responses so far, the
+   * next response is for the oldest accepted request not yet answered. *)
+  Definition fifoRq {A : Type} (d : A) (accs : list A) (nRps : nat) : A :=
+    nth (length accs - S nRps) accs d.
+
+  (* Accepted fetch requests of an impl region (newest first), and the line address the
+   * next fetch response is for. *)
+  Definition implFetchAccRqs (r : MemRegion)
+    (ir : TreeState DomainElemState (implExternalMemRegionTree dom r)) : list (bits AddrSz) :=
+    acceptedOf ir.(Fst).(Fst).(Fst) ir.(Snd).(Fst).(Fst).
+
+  Definition implFetchLineAddr (r : MemRegion)
+    (ir : TreeState DomainElemState (implExternalMemRegionTree dom r)) : bits AddrSz :=
+    fifoRq Zmod.zero (implFetchAccRqs r ir) (length ir.(Fst).(Fst).(Snd).(Fst)).
+
+  Definition EnvFetchLineReadRpValidConstraint (r : MemRegion)
+    (ir : TreeState DomainElemState (implExternalMemRegionTree dom r))
+    (valid : bool) : Prop :=
+    let sr := ir.(Fst) in
+    let fetch_lineReadRp := sr.(Fst).(Snd).(Fst) in
+    valid = true -> (length (implFetchAccRqs r ir) > length fetch_lineReadRp)%nat.
+
+  (* Data requests and writes are sent by the port actions together with the receive of
+   * `lineReadRqReady` / `lineWriteRqReady`; only accepted ones reach the memory. *)
+  Definition implDataAccRqs (r : MemRegion)
+    (ir : TreeState DomainElemState (implExternalMemRegionTree dom r)) : list (bits AddrSz) :=
+    acceptedOf ir.(Fst).(Snd).(Fst) ir.(Snd).(Snd).(Fst).
+
+  Definition implAccWrites (r : MemRegion)
+    (ir : TreeState DomainElemState (implExternalMemRegionTree dom r))
+    : list (type LineWriteRq) :=
+    acceptedOf ir.(Fst).(Snd).(Snd).(Snd).(Fst) ir.(Snd).(Snd).(Snd).(Fst).
+
+  Definition implDataLineAddr (r : MemRegion)
+    (ir : TreeState DomainElemState (implExternalMemRegionTree dom r)) : bits AddrSz :=
+    fifoRq Zmod.zero (implDataAccRqs r ir) (length ir.(Fst).(Snd).(Snd).(Fst)).
+
+  Definition EnvDataLineReadRpValidConstraint (r : MemRegion)
+    (ir : TreeState DomainElemState (implExternalMemRegionTree dom r))
+    (valid : bool) : Prop :=
+    let sr := ir.(Fst) in
+    let data_lineReadRp := sr.(Snd).(Snd).(Fst) in
+    valid = true -> (length (implDataAccRqs r ir) > length data_lineReadRp)%nat.
+
+  Lemma EnvFetchLineReadRpValidConstraint_inhabited :
+    forall (r : MemRegion) (ir : TreeState DomainElemState (implExternalMemRegionTree dom r)),
+      exists valid, EnvFetchLineReadRpValidConstraint r ir valid.
+  Proof.
+    intros r ir; exists false; intros H; discriminate H.
+  Qed.
+
+  Lemma EnvDataLineReadRpValidConstraint_inhabited :
+    forall (r : MemRegion) (ir : TreeState DomainElemState (implExternalMemRegionTree dom r)),
+      exists valid, EnvDataLineReadRpValidConstraint r ir valid.
+  Proof.
+    intros r ir; exists false; intros H; discriminate H.
+  Qed.
+
+  (* Ready/valid bookkeeping of an impl ExternalMem region. Data responses leave the region
+   * as soon as they are received (into the memory's single data response buffer), so only
+   * the fetch side keeps a response here. *)
+  Definition ImplExternalRegionHandshakeInv (r : MemRegion)
+    (ir : TreeState DomainElemState (implExternalMemRegionTree dom r)) : Prop :=
+    let sr := ir.(Fst) in
+    let ifetch := ir.(Snd).(Fst) in
+    let idata := ir.(Snd).(Snd) in
+    let fetch_lineReadRp := sr.(Fst).(Snd).(Fst) in
+    let fetch_lineReadRpValid := ifetch.(Snd).(Fst) in
+    let fetch_lineReadRpReady := ifetch.(Snd).(Snd).(Fst) in
+    let fetch_readRp := ifetch.(Snd).(Snd).(Snd).(Fst) in
+    let data_lineReadRp := sr.(Snd).(Snd).(Fst) in
+    let data_lineReadRpValid := idata.(Snd).(Snd).(Fst) in
+    let data_lineReadRpReady := idata.(Snd).(Snd).(Snd).(Fst) in
+    length fetch_lineReadRp = length fetch_lineReadRpReady /\
+    length fetch_lineReadRp = count_true fetch_lineReadRpValid /\
+    (fetch_readRp.(Snd).(Fst) = true ->
+     fetch_readRp.(Fst) = hd (getDefault _) fetch_lineReadRp /\ fetch_lineReadRp <> []) /\
+    length data_lineReadRp = length data_lineReadRpReady /\
+    length data_lineReadRp = count_true data_lineReadRpValid.
+
+  Lemma InitStateConsistent_ImplExternalRegionHandshakeInv :
+    forall (r : MemRegion)
+           (ir : TreeState DomainElemState (implExternalMemRegionTree dom r)),
+      InitStateConsistent (implExternalMemRegionTree dom r) ir ->
+      ImplExternalRegionHandshakeInv r ir.
+  Proof.
+    intros r [[[f_rq [f_rp [f_wait [f_fiRq [f_fiAck []]]]]]
+               [d_rq [d_rp [d_wr []]]]]
+              [[if_rqRdy [if_rpVal [if_rpRdy [if_rdRp []]]]]
+               [id_rqRdy [id_wrRdy [id_rpVal [id_rpRdy [id_portRq []]]]]]]]
+           [[[_ [Hf_rp _]] [Hd_rq [Hd_rp [Hd_wr _]]]]
+            [[_ [Hif_rpVal [Hif_rpRdy [Hif_rdRp _]]]]
+             [Hid_rqRdy [Hid_wrRdy [Hid_rpVal [Hid_rpRdy [Hid_portRq _]]]]]]].
+    cbn in
+      Hf_rp, Hd_rq, Hd_rp, Hd_wr, Hif_rpVal, Hif_rpRdy, Hif_rdRp,
+      Hid_rqRdy, Hid_wrRdy, Hid_rpVal, Hid_rpRdy, Hid_portRq.
+    subst f_rp d_rq d_rp d_wr if_rpVal if_rpRdy if_rdRp id_rqRdy id_wrRdy id_rpVal id_rpRdy id_portRq.
+    unfold ImplExternalRegionHandshakeInv; cbn.
+    refine (conj eq_refl (conj eq_refl (conj (fun Hfalse => _) (conj eq_refl eq_refl))));
+      discriminate Hfalse.
+  Qed.
+
+  Lemma externalSendFenceIRq_preserves_RegionFenceICountInv :
+    forall (r : MemRegion) {env : Env (externalMemRegionTree dom r)}
+           (sr sr' : TreeState DomainElemState (externalMemRegionTree dom r)) (v : bits 0),
+      sr.(Fst).(Snd).(Snd).(Fst) = false ->
+      RegionFenceICountInv r sr ->
+      SemAction env (@externalSendFenceIRq dom r type) sr sr' v ->
+      RegionFenceICountInv r sr' /\
+      sr'.(Snd) = sr.(Snd).
+  Proof.
+    intros r env sr sr' v Hwait Hinv Hsem.
+    unfold externalSendFenceIRq in Hsem.
+    rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction in Hsem.
+    cbn in Hsem.
+    destruct Hsem as [<- _].
+    unfold RegionFenceICountInv in Hinv |- *; cbn [Fst Snd length].
+    rewrite Hwait in Hinv.
+    split; [f_equal; exact Hinv | reflexivity].
+  Qed.
+
+  Definition pExtFetchFenceIAck : RecvPath (externalMemFetchTree dom) :=
+    Eval cbn in (getChildRecvPathTree (externalMemFetchTree dom) "fenceIAck").
+
+  Lemma externalFenceIAckStep_preserves_RegionFenceICountInv :
+    forall (r : MemRegion) {env : Env (externalMemRegionTree dom r)}
+           (fenceIWriteCount : nat -> nat)
+           (sr sr' : TreeState DomainElemState (externalMemRegionTree dom r)) (v : bits 0),
+      RegionFenceICountInv r sr ->
+      (length sr.(Snd).(Snd).(Snd).(Fst) >=
+       fenceISnapshotCount fenceIWriteCount sr.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst))%nat ->
+      (forall ack,
+         subEnv child0Path env sr (sr.(Fst)) pExtFetchFenceIAck ack ->
+         EnvFenceIAckConstraint r fenceIWriteCount sr ack) ->
+      SemAction env (@externalFenceIAckStep dom r type) sr sr' v ->
+      RegionFenceICountInv r sr' /\
+      (length sr'.(Snd).(Snd).(Snd).(Fst) >=
+       fenceISnapshotCount fenceIWriteCount sr'.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst))%nat /\
+      sr'.(Snd) = sr.(Snd).
+  Proof.
+    intros r env fenceIWriteCount sr sr' v Hinv Hwlen HenvAck Hsem.
+    unfold externalFenceIAckStep in Hsem.
+    rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction in Hsem.
+    cbn in Hsem.
+    destruct (sr.(Fst).(Snd).(Snd).(Fst)) eqn:Hwait.
+    - destruct Hsem as [ack [Hack Hrest]].
+      pose proof (HenvAck ack Hack) as HcAck.
+      unfold EnvFenceIAckConstraint, EnvFenceIAckAt in HcAck.
+      unfold RegionFenceICountInv in Hinv; rewrite Hwait in Hinv.
+      destruct ack; cbn in Hrest; destruct Hrest as [<- _].
+      + destruct (HcAck eq_refl) as [_ Hweq].
+        unfold RegionFenceICountInv, fenceISnapshotCount; cbn [Fst Snd count_true].
+        refine (conj Hinv (conj _ eq_refl)).
+        rewrite Hweq; exact (Nat.le_refl _).
+      + unfold RegionFenceICountInv; cbn [Fst Snd count_true].
+        exact (conj Hinv (conj Hwlen eq_refl)).
+    - cbn in Hsem.
+      destruct Hsem as [<- _].
+      exact (conj Hinv (conj Hwlen eq_refl)).
+  Qed.
+
+  Lemma implExternalFetchLineDeqRp_preserves_HandshakeInv :
+    forall (r : MemRegion) {env : Env (implExternalMemRegionTree dom r)}
+           (ir ir' : TreeState DomainElemState (implExternalMemRegionTree dom r)) (v : bits 0),
+      ImplExternalRegionHandshakeInv r ir ->
+      SemAction env (@implExternalFetchLineDeqRp dom r type) ir ir' v ->
+      ImplExternalRegionHandshakeInv r ir' /\
+      ir'.(Fst) = ir.(Fst).
+  Proof.
+    intros r env ir ir' v Hinv Hsem.
+    unfold implExternalFetchLineDeqRp in Hsem.
+    rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction in Hsem.
+    cbn in Hsem.
+    destruct Hsem as [<- _].
+    unfold ImplExternalRegionHandshakeInv in Hinv |- *; cbn [Fst Snd].
+    destruct Hinv as [H1 [H2 [_ [H4 H5]]]].
+    refine (conj _ eq_refl).
+    refine (conj H1 (conj H2 (conj _ (conj H4 H5)))).
+    intros Hfalse; discriminate Hfalse.
+  Qed.
+
+  Lemma implExternalFetchLineReadRq_preserves_HandshakeInv :
+    forall (r : MemRegion) {env : Env (implExternalMemRegionTree dom r)}
+           (addr : bits AddrSz)
+           (ir ir' : TreeState DomainElemState (implExternalMemRegionTree dom r)) (v : bool),
+      ImplExternalRegionHandshakeInv r ir ->
+      SemAction env (@implExternalFetchLineReadRq dom r type addr) ir ir' v ->
+      ImplExternalRegionHandshakeInv r ir' /\
+      ir'.(Fst).(Fst).(Snd) = ir.(Fst).(Fst).(Snd) /\
+      ir'.(Fst).(Snd) = ir.(Fst).(Snd).
+  Proof.
+    intros r env addr ir ir' v Hinv Hsem.
+    unfold implExternalFetchLineReadRq, externalFetchLineReadRq in Hsem.
+    rewrite SemAction_iff_evalActionPropGen in Hsem.
+    cbn [evalActionPropGen] in Hsem.
+    rewrite !evalActionPropGen_liftAction in Hsem.
+    cbn in Hsem.
+    destruct Hsem as [rdy [_ [<- _]]].
+    unfold ImplExternalRegionHandshakeInv in Hinv |- *; cbn [Fst Snd].
+    exact (conj Hinv (conj eq_refl eq_refl)).
+  Qed.
+
+  Opaque liftAction.
+
+  Lemma implExternalFetchLineRpPort_preserves_HandshakeInv :
+    forall (r : MemRegion) {env : Env (implExternalMemRegionTree dom r)}
+           (ir ir' : TreeState DomainElemState (implExternalMemRegionTree dom r)) (v : bits 0),
+      ImplExternalRegionHandshakeInv r ir ->
+      SemAction env (@implExternalFetchLineRpPort dom r type) ir ir' v ->
+      ImplExternalRegionHandshakeInv r ir' /\
+      ir'.(Fst).(Fst).(Snd).(Snd) = ir.(Fst).(Fst).(Snd).(Snd) /\
+      ir'.(Fst).(Snd) = ir.(Fst).(Snd).
+  Proof.
+    intros r env
+           [[[f_rq [f_rp [f_wait [f_fiRq [f_fiAck []]]]]]
+             [d_rq [d_rp [d_wr []]]]]
+            [[if_rqRdy [if_rpVal [if_rpRdy [[if_rdRpData [if_rdRpVal []]] []]]]]
+             [id_rqRdy [id_wrRdy [id_rpVal [id_rpRdy [id_portRq []]]]]]]]
+           ir' v Hinv Hsem.
+    unfold implExternalFetchLineRpPort, implExternalFetchLineReadRp, externalFetchLineReadRp in Hsem.
+    rewrite SemAction_iff_evalActionPropGen in Hsem; cbn in Hsem.
+    rewrite evalActionPropGen_liftAction in Hsem; cbn in Hsem.
+    destruct if_rdRpVal; cbn in Hsem.
+    - destruct Hsem as [<- _].
+      exact (conj Hinv (conj eq_refl eq_refl)).
+    - rewrite evalActionPropGen_liftAction in Hsem; cbn in Hsem.
+      destruct Hsem as [valid [_ HvalidBranch]].
+      destruct valid; cbn in HvalidBranch.
+      + rewrite !evalActionPropGen_liftAction in HvalidBranch; cbn in HvalidBranch.
+        destruct HvalidBranch as [rp [_ HrpBranch]].
+        rewrite evalActionPropGen_liftAction in HrpBranch; cbn in HrpBranch.
+        destruct HrpBranch as [<- _].
+        unfold ImplExternalRegionHandshakeInv in Hinv |- *; cbn [Fst Snd length count_true hd] in Hinv |- *.
+        destruct Hinv as [H1 [H2 [H3 [H4 H5]]]].
+        refine (conj _ (conj eq_refl eq_refl)).
+        refine (conj (f_equal S H1) (conj (f_equal S H2) (conj _ (conj H4 H5)))).
+        intros _; split; [reflexivity | intro Hnil; discriminate Hnil].
+      + destruct HvalidBranch as [<- _].
+        unfold ImplExternalRegionHandshakeInv in Hinv |- *; cbn [Fst Snd length count_true] in Hinv |- *.
+        destruct Hinv as [H1 [H2 [H3 [H4 H5]]]].
+        refine (conj _ (conj eq_refl eq_refl)).
+        refine (conj H1 (conj H2 (conj _ (conj H4 H5)))).
+        intros Hfalse; discriminate Hfalse.
+  Qed.
+
+  (* The data response port receives the response of the outstanding line read, if it has
+   * arrived, and returns it (tag-masked for a region without tags) to the memory. *)
+  Lemma implExternalLineRpPort_preserves_HandshakeInv :
+    forall (r : MemRegion) {env : Env (implExternalMemRegionTree dom r)}
+           (ir ir' : TreeState DomainElemState (implExternalMemRegionTree dom r))
+           (v : type (Option LineReadRp)),
+      ImplExternalRegionHandshakeInv r ir ->
+      SemAction env (@implExternalLineRpPort dom r type) ir ir' v ->
+      ImplExternalRegionHandshakeInv r ir' /\
+      ir'.(Fst).(Fst) = ir.(Fst).(Fst) /\
+      ir'.(Fst).(Snd).(Snd).(Snd) = ir.(Fst).(Snd).(Snd).(Snd) /\
+      (v.(Snd).(Fst) = true ->
+       v.(Fst) = evalExpr (maskRegionReadRp r (Var type LineReadRp (hd (getDefault _) ir'.(Fst).(Snd).(Snd).(Fst)))) /\
+       ir'.(Fst).(Snd).(Snd).(Fst) <> []).
+  Proof.
+    intros r env
+           [[[f_rq [f_rp [f_wait [f_fiRq [f_fiAck []]]]]]
+             [d_rq [d_rp [d_wr []]]]]
+            [[if_rqRdy [if_rpVal [if_rpRdy [if_rdRp []]]]]
+             [id_rqRdy [id_wrRdy [id_rpVal [id_rpRdy [id_portRq []]]]]]]]
+           ir' v Hinv Hsem.
+    unfold implExternalLineRpPort, externalLineReadRp in Hsem.
+    rewrite SemAction_iff_evalActionPropGen in Hsem; cbn in Hsem.
+    destruct Hsem as [valid [_ HvalidBranch]].
+    destruct valid; cbn in HvalidBranch.
+    - rewrite evalActionPropGen_liftAction in HvalidBranch; cbn in HvalidBranch.
+      destruct HvalidBranch as [rp [_ [<- <-]]].
+      unfold ImplExternalRegionHandshakeInv in Hinv |- *; cbn [Fst Snd length count_true hd] in Hinv |- *.
+      destruct Hinv as [H1 [H2 [H3 [H4 H5]]]].
+      refine (conj (conj H1 (conj H2 (conj H3 (conj (f_equal S H4) (f_equal S H5)))))
+                   (conj eq_refl (conj eq_refl _))).
+      intros _; split; [reflexivity | intro Hnil; discriminate Hnil].
+    - destruct HvalidBranch as [<- <-].
+      refine (conj Hinv (conj eq_refl (conj eq_refl _))).
+      intros Hfalse; discriminate Hfalse.
+  Qed.
+
+  Transparent liftAction.
+
+  (* The staging and port actions below only move requests between `portRq` and the
+   * region's spec-part request traces, and the invariant mentions none of those values.
+   * So the proofs keep `evalExpr` opaque and case on the `if` guards as opaque booleans:
+   * no request value is evaluated. *)
+  Ltac caseIfGuard H :=
+    lazymatch type of H with context [if ?c then _ else _] => destruct c end;
+    cbn -[evalExpr] in H.
+
+  Lemma implExternalLineReadRq_preserves_HandshakeInv :
+    forall (r : MemRegion) {env : Env (implExternalMemRegionTree dom r)}
+           (addr : bits AddrSz)
+           (ir ir' : TreeState DomainElemState (implExternalMemRegionTree dom r)) (v : bool),
+      ImplExternalRegionHandshakeInv r ir ->
+      SemAction env (@implExternalLineReadRq dom r type addr) ir ir' v ->
+      ImplExternalRegionHandshakeInv r ir' /\
+      ir'.(Fst) = ir.(Fst).
+  Proof.
+    intros r env addr
+           [[[f_rq [f_rp [f_wait [f_fiRq [f_fiAck []]]]]]
+             [d_rq [d_rp [d_wr []]]]]
+            [[if_rqRdy [if_rpVal [if_rpRdy [if_rdRp []]]]]
+             [id_rqRdy [id_wrRdy [id_rpVal [id_rpRdy [id_portRq []]]]]]]]
+           ir' v Hinv Hsem.
+    unfold implExternalLineReadRq in Hsem.
+    rewrite SemAction_iff_evalActionPropGen in Hsem; cbn -[evalExpr] in Hsem.
+    unfold ImplExternalRegionHandshakeInv in Hinv |- *; cbn [Fst Snd] in Hinv.
+    caseIfGuard Hsem; destruct Hsem as [<- _]; cbn [Fst Snd];
+      exact (conj Hinv eq_refl).
+  Qed.
+
+  Lemma implExternalLineWriteRq_preserves_HandshakeInv :
+    forall (r : MemRegion) {env : Env (implExternalMemRegionTree dom r)}
+           (rq : type LineWriteRq)
+           (ir ir' : TreeState DomainElemState (implExternalMemRegionTree dom r)) (v : bool),
+      ImplExternalRegionHandshakeInv r ir ->
+      SemAction env (@implExternalLineWriteRq dom r type rq) ir ir' v ->
+      ImplExternalRegionHandshakeInv r ir' /\
+      ir'.(Fst) = ir.(Fst).
+  Proof.
+    intros r env rq
+           [[[f_rq [f_rp [f_wait [f_fiRq [f_fiAck []]]]]]
+             [d_rq [d_rp [d_wr []]]]]
+            [[if_rqRdy [if_rpVal [if_rpRdy [if_rdRp []]]]]
+             [id_rqRdy [id_wrRdy [id_rpVal [id_rpRdy [id_portRq []]]]]]]]
+           ir' v Hinv Hsem.
+    unfold implExternalLineWriteRq in Hsem.
+    rewrite SemAction_iff_evalActionPropGen in Hsem; cbn -[evalExpr] in Hsem.
+    unfold ImplExternalRegionHandshakeInv in Hinv |- *; cbn [Fst Snd] in Hinv.
+    caseIfGuard Hsem; destruct Hsem as [<- _]; cbn [Fst Snd];
+      exact (conj Hinv eq_refl).
+  Qed.
+
+  Lemma implExternalLineReadRqPort_preserves_HandshakeInv :
+    forall (r : MemRegion) {env : Env (implExternalMemRegionTree dom r)}
+           (ir ir' : TreeState DomainElemState (implExternalMemRegionTree dom r)) (v : bits 0),
+      ImplExternalRegionHandshakeInv r ir ->
+      SemAction env (@implExternalLineReadRqPort dom r type) ir ir' v ->
+      ImplExternalRegionHandshakeInv r ir' /\
+      ir'.(Fst).(Fst) = ir.(Fst).(Fst) /\
+      ir'.(Fst).(Snd).(Snd) = ir.(Fst).(Snd).(Snd).
+  Proof.
+    intros r env
+           [[[f_rq [f_rp [f_wait [f_fiRq [f_fiAck []]]]]]
+             [d_rq [d_rp [d_wr []]]]]
+            [[if_rqRdy [if_rpVal [if_rpRdy [if_rdRp []]]]]
+             [id_rqRdy [id_wrRdy [id_rpVal [id_rpRdy [id_portRq []]]]]]]]
+           ir' v Hinv Hsem.
+    unfold implExternalLineReadRqPort, externalLineReadRq in Hsem.
+    rewrite SemAction_iff_evalActionPropGen in Hsem; cbn -[evalExpr] in Hsem.
+    unfold ImplExternalRegionHandshakeInv in Hinv |- *; cbn [Fst Snd] in Hinv.
+    caseIfGuard Hsem.
+    - destruct Hsem as [extRdy [_ Hsem]].
+      caseIfGuard Hsem; destruct Hsem as [<- _]; cbn [Fst Snd];
+        exact (conj Hinv (conj eq_refl eq_refl)).
+    - destruct Hsem as [<- _]; cbn [Fst Snd];
+        exact (conj Hinv (conj eq_refl eq_refl)).
+  Qed.
+
+  Lemma implExternalLineWriteRqPort_preserves_HandshakeInv :
+    forall (r : MemRegion) {env : Env (implExternalMemRegionTree dom r)}
+           (ir ir' : TreeState DomainElemState (implExternalMemRegionTree dom r)) (v : bits 0),
+      ImplExternalRegionHandshakeInv r ir ->
+      SemAction env (@implExternalLineWriteRqPort dom r type) ir ir' v ->
+      ImplExternalRegionHandshakeInv r ir' /\
+      ir'.(Fst).(Fst) = ir.(Fst).(Fst) /\
+      ir'.(Fst).(Snd).(Fst) = ir.(Fst).(Snd).(Fst) /\
+      ir'.(Fst).(Snd).(Snd).(Fst) = ir.(Fst).(Snd).(Snd).(Fst).
+  Proof.
+    intros r env
+           [[[f_rq [f_rp [f_wait [f_fiRq [f_fiAck []]]]]]
+             [d_rq [d_rp [d_wr []]]]]
+            [[if_rqRdy [if_rpVal [if_rpRdy [if_rdRp []]]]]
+             [id_rqRdy [id_wrRdy [id_rpVal [id_rpRdy [id_portRq []]]]]]]]
+           ir' v Hinv Hsem.
+    unfold implExternalLineWriteRqPort, externalLineWrite in Hsem.
+    rewrite SemAction_iff_evalActionPropGen in Hsem; cbn -[evalExpr] in Hsem.
+    unfold ImplExternalRegionHandshakeInv in Hinv |- *; cbn [Fst Snd] in Hinv.
+    caseIfGuard Hsem.
+    - destruct Hsem as [extRdy [_ Hsem]].
+      caseIfGuard Hsem; destruct Hsem as [<- _]; cbn [Fst Snd];
+        exact (conj Hinv (conj eq_refl (conj eq_refl eq_refl))).
+    - destruct Hsem as [<- _]; cbn [Fst Snd];
+        exact (conj Hinv (conj eq_refl (conj eq_refl eq_refl))).
+  Qed.
+
+End ExternalMemEnvAndHandshake.
+
+(* ===========================================================================
+ * 6. CONCRETE SYSTEM ENVIRONMENTS (`specEnv`, `implEnv`)
+ * ===========================================================================
+ * Each env answers a receive exactly when the memory-version invariant of
+ * section 5 allows the answer, evaluated on the receiving side's own state:
+ * - data `lineReadRp`: the latest store version (`EnvDataLineReadRpAt`);
+ * - fetch `lineReadRp`: the snapshot at the last `fence.iAck` plus an oldest-first
+ *   prefix of the later stores, per 16-bit parcel (`EnvFetchLineReadRpAt`);
+ * - `fenceIAck = true`: only while a request is outstanding, at the write count
+ *   fixed by `fenceIWriteCount` (`EnvFenceIAckAt`).
+ * The spec answers its newest request (it answers in the same action) and counts all
+ * of its writes. The impl memory sees only accepted requests and writes (sent with
+ * ready = true) and answers accepted requests in order (`implFetchLineAddr`,
+ * `implDataLineAddr`, `implAccWrites`).
+ * `implEnv` also allows `lineReadRpValid = true` only while a request is outstanding
+ * (`EnvFetchLineReadRpValidConstraint`, `EnvDataLineReadRpValidConstraint`).
+ * Every other receive port (ready signals, `CustomMem` children) is unconstrained.
+ * Both envs share `initLine` (the initial external memory contents). Each takes a
+ * `fenceIWriteCount` oracle indexed by region position; the top-level theorem
+ * quantifies over the impl's and picks the spec's per run. *)
+
+(* --- 6A. Env Combinators (`EnvCtx`, `envCtxCons`, `envNodeCons`) --- *)
+
+Section EnvCombinators.
+  (* An env fragment for subtree `t` whose leaf constraints read a context `S`
+   * (e.g. the state of the enclosing memory region).
+   * `Env t` is definitionally `EnvCtx (TreeState DomainElemState t) t`. *)
+  Definition EnvCtx (S : Type) (t : Tree DomainElem) : Type :=
+    S -> forall x : RecvPath t, type (getRecvKind x) -> Prop.
+
+  Definition envCtxTrue {S : Type} {t : Tree DomainElem} : EnvCtx S t :=
+    fun _ _ _ => True.
+
+  Definition envCtxLeaf {S : Type} {name d : string} {k : Kind}
+    (P : S -> type k -> Prop) : EnvCtx S (Leaf name (d, ERecv k)) :=
+    fun s _ v => P s v.
+
+  Definition envCtxMap {S S' : Type} {t : Tree DomainElem}
+    (f : S -> S') (e : EnvCtx S' t) : EnvCtx S t :=
+    fun s => e (f s).
+
+  (* Context-sharing cons: dispatch on the first step of the receive path. *)
+  Definition envCtxCons {S : Type} {name : string}
+    {c : Tree DomainElem} {cs : list (Tree DomainElem)}
+    (e0 : EnvCtx S c) (er : EnvCtx S (Node name cs)) : EnvCtx S (Node name (c :: cs)) :=
+    fun s x =>
+      match x.(recvPath) as rp return
+        forall pf : Is_true (isRecvElem (@getLeafElem (Node name (c :: cs)) rp)),
+          type (getRecvKind (@Build_RecvPath (Node name (c :: cs)) rp pf)) -> Prop
+      with
+      | inl p => fun pf v => e0 s (@Build_RecvPath c p pf) v
+      | inr q => fun pf v => er s (@Build_RecvPath (Node name cs) q pf) v
+      end x.(recvPathPf).
+
+  (* State-splitting cons: child `c` sees its own state, the rest sees the rest. *)
+  Definition envNodeCons {name : string}
+    {c : Tree DomainElem} {cs : list (Tree DomainElem)}
+    (e0 : Env c) (er : Env (Node name cs)) : Env (Node name (c :: cs)) :=
+    envCtxCons
+      (envCtxMap (fun s : TreeState DomainElemState (Node name (c :: cs)) => s.(Fst)) e0)
+      (envCtxMap (fun s : TreeState DomainElemState (Node name (c :: cs)) => s.(Snd)) er).
+
+  Definition EnvCtxInhabited {S : Type} {t : Tree DomainElem} (e : EnvCtx S t) : Prop :=
+    forall s x, exists v, e s x v.
+
+  Lemma envCtxTrue_inhabited :
+    forall (S : Type) (t : Tree DomainElem), EnvCtxInhabited (@envCtxTrue S t).
+  Proof.
+    intros S t s x; exists (getDefault _); exact I.
+  Qed.
+
+  Lemma envCtxLeaf_inhabited :
+    forall (S : Type) (name d : string) (k : Kind) (P : S -> type k -> Prop),
+      (forall s, exists v, P s v) ->
+      EnvCtxInhabited (@envCtxLeaf S name d k P).
+  Proof.
+    intros S name d k P HP s x; exact (HP s).
+  Qed.
+
+  Lemma envCtxMap_inhabited :
+    forall (S S' : Type) (t : Tree DomainElem) (f : S -> S') (e : EnvCtx S' t),
+      EnvCtxInhabited e -> EnvCtxInhabited (envCtxMap f e).
+  Proof.
+    intros S S' t f e He s x; exact (He (f s) x).
+  Qed.
+
+  Lemma envCtxCons_inhabited :
+    forall (S : Type) (name : string) (c : Tree DomainElem) (cs : list (Tree DomainElem))
+           (e0 : EnvCtx S c) (er : EnvCtx S (Node name cs)),
+      EnvCtxInhabited e0 -> EnvCtxInhabited er -> EnvCtxInhabited (envCtxCons e0 er).
+  Proof.
+    intros S name c cs e0 er H0 Hr s [rp pf].
+    destruct rp as [p | q].
+    - exact (H0 s (@Build_RecvPath c p pf)).
+    - exact (Hr s (@Build_RecvPath (Node name cs) q pf)).
+  Qed.
+
+  Lemma envNodeCons_inhabited :
+    forall (name : string) (c : Tree DomainElem) (cs : list (Tree DomainElem))
+           (e0 : Env c) (er : Env (Node name cs)),
+      EnvCtxInhabited e0 -> EnvCtxInhabited er -> EnvCtxInhabited (envNodeCons e0 er).
+  Proof.
+    intros name c cs e0 er H0 Hr.
+    apply envCtxCons_inhabited; apply envCtxMap_inhabited; assumption.
+  Qed.
+End EnvCombinators.
+
+(* --- 6B. Region Envs (`specRegionsEnv`, `implMemEnv`) --- *)
+
+Section RegionEnvs.
+  Variable dom : string.
+  Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
+
+  (* `fwc` is the region's own `fenceIWriteCount` oracle (ack index -> write count).
+   * The external-memory envs read a context `S` (the receiving side's region state):
+   * `getSr` gives the region's spec-part traces, `writesOf` the writes the memory has
+   * accepted (newest first), and `fetchAddr` / `dataAddr` the lines the next fetch and
+   * data responses are for. *)
+
+  (* `externalMemFetchTree`: [ lineReadRq; lineReadRp; fenceIWait; fenceIRq; fenceIAck ] *)
+  Definition extFetchEnvCtx {S : Type} (r : MemRegion) (fwc : nat -> nat)
+    (getSr : S -> TreeState DomainElemState (externalMemRegionTree dom r))
+    (writesOf : S -> list (type LineWriteRq))
+    (fetchAddr : S -> bits AddrSz)
+    : EnvCtx S (externalMemFetchTree dom) :=
+    envCtxCons envCtxTrue
+     (envCtxCons (envCtxLeaf (k := LineReadRp) (fun s rp =>
+                    EnvFetchLineReadRpAt (initLine r) fwc
+                      (getSr s).(Fst).(Snd).(Snd).(Snd).(Snd).(Fst)
+                      (writesOf s) (fetchAddr s) rp))
+      (envCtxCons envCtxTrue
+       (envCtxCons envCtxTrue
+        (envCtxCons (envCtxLeaf (k := Bool) (fun s ack =>
+                       EnvFenceIAckAt fwc
+                         (length (getSr s).(Fst).(Snd).(Snd).(Snd).(Fst))
+                         (getSr s).(Fst).(Snd).(Snd).(Snd).(Snd).(Fst)
+                         (length (writesOf s)) ack))
+         envCtxTrue)))).
+
+  (* `externalMemRegionTree`: [ fetch; lineReadRq; lineReadRp; lineWriteRq ] *)
+  Definition extRegionEnvCtx {S : Type} (r : MemRegion) (fwc : nat -> nat)
+    (getSr : S -> TreeState DomainElemState (externalMemRegionTree dom r))
+    (writesOf : S -> list (type LineWriteRq))
+    (fetchAddr dataAddr : S -> bits AddrSz)
+    : EnvCtx S (externalMemRegionTree dom r) :=
+    envCtxCons (extFetchEnvCtx r fwc getSr writesOf fetchAddr)
+     (envCtxCons envCtxTrue
+      (envCtxCons (envCtxLeaf (k := LineReadRp) (fun s rp =>
+                     EnvDataLineReadRpAt (initLine r) (writesOf s) (dataAddr s) rp))
+       (envCtxCons envCtxTrue envCtxTrue))).
+
+  (* The spec answers each request in the same action (the newest request), after all
+   * of its writes. *)
+  Definition specExtRegionEnv (r : MemRegion) (fwc : nat -> nat) : Env (externalMemRegionTree dom r) :=
+    extRegionEnvCtx r fwc (fun sr => sr) (fun sr => sr.(Snd).(Snd).(Snd).(Fst))
+      (fun sr => hd Zmod.zero sr.(Fst).(Fst)) (fun sr => hd Zmod.zero sr.(Snd).(Fst)).
+
+  (* `implExternalMemFetchTree`: [ lineReadRqReady; lineReadRpValid; lineReadRpReady; readRp ] *)
+  Definition implExtFetchEnv (r : MemRegion)
+    : EnvCtx (TreeState DomainElemState (implExternalMemRegionTree dom r)) (implExternalMemFetchTree dom) :=
+    envCtxCons envCtxTrue
+     (envCtxCons (envCtxLeaf (k := Bool) (fun ir valid =>
+                    EnvFetchLineReadRpValidConstraint dom r ir valid))
+      envCtxTrue).
+
+  (* `implExternalMemRegionTree`:
+   *   [ externalMemRegionTree; fetch; lineReadRqReady; lineWriteRqReady;
+   *     lineReadRpValid; lineReadRpReady; portRq ]
+   * The impl memory sees only accepted writes, and answers accepted requests in order
+   * (`implFetchLineAddr`, `implDataLineAddr`). *)
+  Definition implExtRegionEnv (r : MemRegion) (fwc : nat -> nat) : Env (implExternalMemRegionTree dom r) :=
+    envCtxCons
+      (extRegionEnvCtx r fwc
+         (fun ir : TreeState DomainElemState (implExternalMemRegionTree dom r) => ir.(Fst))
+         (implAccWrites dom r) (implFetchLineAddr dom r) (implDataLineAddr dom r))
+      (envCtxCons (implExtFetchEnv r)
+       (envCtxCons envCtxTrue
+        (envCtxCons envCtxTrue
+         (envCtxCons (envCtxLeaf (k := Bool) (fun ir valid =>
+                        EnvDataLineReadRpValidConstraint dom r ir valid))
+          envCtxTrue)))).
+
+  Definition specRegionEnv (r : MemRegion) (fwc : nat -> nat) : Env (memRegionTree dom r) :=
+    match r.(regionKind) as k return Env (memRegionKindTree dom r k) with
+    | ExternalMem => specExtRegionEnv r fwc
+    | CustomMem _ _ _ _ => envCtxTrue
+    end.
+
+  Definition implRegionEnv (r : MemRegion) (fwc : nat -> nat) : Env (implMemRegionTree dom r) :=
+    match r.(regionKind) as k return Env (implMemRegionKindTree dom r k) with
+    | ExternalMem => implExtRegionEnv r fwc
+    | CustomMem _ _ _ _ => envCtxTrue
+    end.
+
+  (* `fwcs i` is the oracle of the region at position `i` of the list. *)
+  Fixpoint specRegionsEnv (fwcs : nat -> nat -> nat) (regions : list MemRegion)
+    : Env (specMemTree dom regions) :=
+    match regions as rs return Env (specMemTree dom rs) with
+    | [] => envCtxTrue
+    | r :: rs =>
+        envNodeCons (specRegionEnv r (fwcs 0%nat))
+                    (envNodeCons (specRegionsEnv (fun i => fwcs (S i)) rs) envCtxTrue)
+    end.
+
+  Fixpoint implRegionsEnv (fwcs : nat -> nat -> nat) (regions : list MemRegion)
+    : Env (implRegionsTree dom regions) :=
+    match regions as rs return Env (implRegionsTree dom rs) with
+    | [] => envCtxTrue
+    | r :: rs =>
+        envNodeCons (implRegionEnv r (fwcs 0%nat))
+                    (envNodeCons (implRegionsEnv (fun i => fwcs (S i)) rs) envCtxTrue)
+    end.
+
+  (* `implMemTree`: [ implRegionsTree; state; requester; readRp ] *)
+  Definition implMemEnv (fwcs : nat -> nat -> nat) (regions : list MemRegion)
+    : Env (implMemTree dom regions) :=
+    envNodeCons (implRegionsEnv fwcs regions) envCtxTrue.
+
+  Lemma extRegionEnvCtx_inhabited :
+    forall (S : Type) r fwc
+           (getSr : S -> TreeState DomainElemState (externalMemRegionTree dom r))
+           (writesOf : S -> list (type LineWriteRq))
+           (fetchAddr dataAddr : S -> bits AddrSz),
+      EnvCtxInhabited (extRegionEnvCtx r fwc getSr writesOf fetchAddr dataAddr).
+  Proof.
+    intros S r fwc getSr writesOf fetchAddr dataAddr; unfold extRegionEnvCtx, extFetchEnvCtx.
+    repeat first [ apply envCtxCons_inhabited | apply envCtxLeaf_inhabited | apply envCtxTrue_inhabited ].
+    all: intros s;
+      first [ apply EnvFetchLineReadRpAt_inhabited
+            | apply EnvFenceIAckAt_inhabited
+            | apply EnvDataLineReadRpAt_inhabited ].
+  Qed.
+
+  Lemma specExtRegionEnv_inhabited :
+    forall r fwc, EnvCtxInhabited (specExtRegionEnv r fwc).
+  Proof.
+    intros r fwc; apply extRegionEnvCtx_inhabited.
+  Qed.
+
+  Lemma implExtRegionEnv_inhabited :
+    forall r fwc, EnvCtxInhabited (implExtRegionEnv r fwc).
+  Proof.
+    intros r fwc; unfold implExtRegionEnv, implExtFetchEnv.
+    apply envCtxCons_inhabited; [apply extRegionEnvCtx_inhabited |].
+    repeat first [ apply envCtxCons_inhabited | apply envCtxLeaf_inhabited | apply envCtxTrue_inhabited ].
+    all: intros s;
+      first [ apply EnvFetchLineReadRpValidConstraint_inhabited
+            | apply EnvDataLineReadRpValidConstraint_inhabited ].
+  Qed.
+
+  Lemma specRegionEnv_inhabited :
+    forall r fwc, EnvCtxInhabited (specRegionEnv r fwc).
+  Proof.
+    intros r fwc; unfold specRegionEnv, memRegionTree.
+    destruct (regionKind r).
+    - apply specExtRegionEnv_inhabited.
+    - apply envCtxTrue_inhabited.
+  Qed.
+
+  Lemma implRegionEnv_inhabited :
+    forall r fwc, EnvCtxInhabited (implRegionEnv r fwc).
+  Proof.
+    intros r fwc; unfold implRegionEnv, implMemRegionTree.
+    destruct (regionKind r).
+    - apply implExtRegionEnv_inhabited.
+    - apply envCtxTrue_inhabited.
+  Qed.
+
+  Lemma specRegionsEnv_inhabited :
+    forall regions fwcs, EnvCtxInhabited (specRegionsEnv fwcs regions).
+  Proof.
+    induction regions as [| r rs IH]; intros fwcs; cbn [specRegionsEnv].
+    - apply envCtxTrue_inhabited.
+    - apply envNodeCons_inhabited; [apply specRegionEnv_inhabited |].
+      apply envNodeCons_inhabited; [apply IH | apply envCtxTrue_inhabited].
+  Qed.
+
+  Lemma implRegionsEnv_inhabited :
+    forall regions fwcs, EnvCtxInhabited (implRegionsEnv fwcs regions).
+  Proof.
+    induction regions as [| r rs IH]; intros fwcs; cbn [implRegionsEnv].
+    - apply envCtxTrue_inhabited.
+    - apply envNodeCons_inhabited; [apply implRegionEnv_inhabited |].
+      apply envNodeCons_inhabited; [apply IH | apply envCtxTrue_inhabited].
+  Qed.
+
+  Lemma implMemEnv_inhabited :
+    forall regions fwcs, EnvCtxInhabited (implMemEnv fwcs regions).
+  Proof.
+    intros regions fwcs; apply envNodeCons_inhabited;
+      [apply implRegionsEnv_inhabited | apply envCtxTrue_inhabited].
+  Qed.
+End RegionEnvs.
+
+(* --- 6C. System Envs (`specEnv`, `implEnv`) --- *)
+
+Section SysEnvs.
+  Variable core : string.
+  Variable pcAddrInit : Z.
+  Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity : nat.
+  Variable mulStages divStages : nat.
+  Variable mulDivMode : MulDivMode.
+  Variable config : RevConfig.
+  Variable regions : list MemRegion.
+  Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
+  (* `fenceIWriteCount i k`: write count of the region at position `i` at its `k`-th ack. *)
+  Variable fenceIWriteCount : nat -> nat -> nat.
+
+  Local Abbreviation sTree := (@specSysTree core pcAddrInit regions).
+  Local Abbreviation iTree := (@implSysTree core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions).
+
+  (* `specSysTree`: sys [ core [ rf; mem [ specMemTree ]; secondLine ] ] *)
+  Definition specEnv : Env sTree :=
+    envNodeCons
+      (envNodeCons envCtxTrue
+        (envNodeCons (envNodeCons (specRegionsEnv core initLine fenceIWriteCount regions) envCtxTrue)
+          envCtxTrue))
+      envCtxTrue.
+
+  (* `implSysTree`: sys [ core [ rf; waitBits; bp; mem [ implMemTree ];
+   *                             fetch; decode; execute; dataMem; mulDiv ] ] *)
+  Definition implEnv : Env iTree :=
+    envNodeCons
+      (envNodeCons envCtxTrue
+        (envNodeCons envCtxTrue
+          (envNodeCons envCtxTrue
+            (envNodeCons (envNodeCons (implMemEnv core initLine fenceIWriteCount regions) envCtxTrue)
+              envCtxTrue))))
+      envCtxTrue.
+
+  Lemma specEnv_inhabited : EnvInhabited specEnv.
+  Proof.
+    change (EnvCtxInhabited specEnv); unfold specEnv.
+    repeat first [ apply envNodeCons_inhabited | apply envCtxTrue_inhabited | apply specRegionsEnv_inhabited ].
+  Qed.
+
+  Lemma implEnv_inhabited : EnvInhabited implEnv.
+  Proof.
+    change (EnvCtxInhabited implEnv); unfold implEnv.
+    repeat first [ apply implRegionsEnv_inhabited | apply envNodeCons_inhabited | apply envCtxTrue_inhabited ].
+  Qed.
+End SysEnvs.
+

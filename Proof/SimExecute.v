@@ -875,7 +875,8 @@ Section ExecuteStageSimulation.
           @specTickCycle core pcAddrInit regions type ;
           @specTickTimer core pcAddrInit regions clint type ;
           @specSampleMtipStep core pcAddrInit regions clint type ;
-          @specStep core pcAddrInit config regions clint plic type ]
+          @specStep core pcAddrInit config regions clint plic type ;
+          @specSecondLine core pcAddrInit config regions type ]
      ++ @specFenceIAckSteps core pcAddrInit regions type)%list.
   Proof.
     unfold specMod, spec.

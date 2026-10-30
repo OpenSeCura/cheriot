@@ -70,6 +70,30 @@ Definition LoadOutcomeType := [
 ].
 Definition LoadOutcome := TaggedUnion LoadOutcomeType.
 
+(* Second line of a data access that spills into the next line. specExecuteDeferred accesses the
+ * first line and leaves the second one here, and specSecondLineStep accesses it later. Only
+ * non-capability accesses can spill (capability accesses must be aligned), so no tags are kept:
+ * a load keeps the data of its first line, and a store keeps the data and masks of its second line,
+ * whose tags it clears. *)
+Definition SecondLineLoad := STRUCT_TYPE {
+  "addr"      :: Addr ;
+  "pending"   :: PendingLoad ;
+  "firstLine" :: Array LineBytes (Bit 8)
+}.
+
+Definition SecondLineStore := STRUCT_TYPE {
+  "addr"     :: Addr ;
+  "data"     :: Array LineBytes (Bit 8) ;
+  "dataMask" :: Array LineBytes Bool ;
+  "tagMask"  :: Array NumLineTags Bool
+}.
+
+Definition SecondLineType := [
+  ("Load"%string,  SecondLineLoad) ;
+  ("Store"%string, SecondLineStore)
+].
+Definition SecondLine := TaggedUnion SecondLineType.
+
 (* ===========================================================================
  * Pure Combinational Helpers & Dispatchers
  * =========================================================================== *)
@@ -230,7 +254,8 @@ Section SpecCoreTree.
   Definition specCoreTree (regions : list MemRegion) : Tree DomainElem :=
     Node "core" [
       Node "rf"  [ rfTree dom pcAddrInit ] ;
-      Node "mem" [ specMemTree dom regions ]
+      Node "mem" [ specMemTree dom regions ] ;
+      Leaf "secondLine" (dom, EReg (Build_Reg (Option SecondLine) (Some (getDefault _)) false))
     ].
 
   Section SpecFetchDeferred.
@@ -247,6 +272,15 @@ Section SpecCoreTree.
     Definition np_mem : NodePath coreTree :=
       Eval cbn in (getNodePath coreTree "core.mem.").
 
+    Definition pSecondLine : RegPath coreTree :=
+      Eval cbn in (getChildRegPathTree coreTree "secondLine").
+
+    Definition readSecondLine : Action ty coreTree (Option SecondLine) :=
+      ReadReg "secondLine" pSecondLine (fun v => Return #v).
+
+    Definition writeSecondLine (v : Expr ty (Option SecondLine)) : Action ty coreTree (Bit 0) :=
+      WriteReg pSecondLine v Retv.
+
     Local Abbreviation readRevBit := (readRevBit config regions).
 
     (* ===========================================================================
@@ -262,19 +296,30 @@ Section SpecCoreTree.
       Let  baseBndsExc : Bool                      <- Ult (ZeroExtendTo (AddrSz + 1) #pccAddr) (##pccECap`"base") ;
       Let  hasPreFault : Bool                      <- Or [ #tagExc ; #sealExc ; #permExc ; #baseBndsExc ] ;
 
-      LetIf expInst : Inst <-
+      Let  pccTop      : Bit (AddrSz + 2)          <- ##pccECap`"top" ;
+
+      (* An instruction with a pre-fault is not fetched and reads as 0 (a compressed, 2-byte
+       * instruction); otherwise specMemFetchRead fetches it and does the top check *)
+      LetIf fetchRd : FetchReadRes <-
         If #hasPreFault Then (
-          Return ($0 : Expr ty Inst)
+          Let  compLgBytes : Bit LgLgNumBytesFullCapSz <- $(Z.log2 (CompInstSz / 8)) ;
+          LetL instEnd0    : Bit (AddrSz + 2)          <- AdderAccessEnd pccAddr compLgBytes ;
+          @Return _ _ FetchReadRes (STRUCT {
+            "inst"   ::= ($0 : Expr ty Inst) ;
+            "topExc" ::= Ugt #instEnd0 #pccTop
+          })
         ) Else (
-          LetA rawFull : FullCapWithTag            <- liftAction np_mem (specMemFetchRead regions pccAddr) ;
-          Let  rawInst : Inst                      <- ##rawFull`"addr" ;
+          LetA rd      : FetchReadRes              <- liftAction np_mem (specMemFetchRead regions pccAddr pccTop) ;
+          Let  rawInst : Inst                      <- ##rd`"inst" ;
           LetL exp     : Inst                      <- preDecode rawInst ;
-          Return #exp
+          @Return _ _ FetchReadRes (STRUCT {
+            "inst"   ::= #exp ;
+            "topExc" ::= ##rd`"topExc"
+          })
         ) ;
 
-      Let isComp       : Bool <- isCompressed expInst ;
-      Let instBytesLen : Addr <- ITE #isComp $(CompInstSz / 8) $(InstSz / 8) ;
-      Let topBndsExc   : Bool <- Ugt (ZeroExtendTo (AddrSz + 2) (Add [ #pccAddr ; #instBytesLen ])) (##pccECap`"top") ;
+      Let expInst      : Inst <- ##fetchRd`"inst" ;
+      Let topBndsExc   : Bool <- ##fetchRd`"topExc" ;
       Let boundsExc    : Bool <- Or [ #baseBndsExc ; #topBndsExc ] ;
 
       Let fetchOut : FetchOut <- STRUCT {
@@ -290,7 +335,35 @@ Section SpecCoreTree.
       Return #fetchOut.
 
     (* ===========================================================================
+     * specCompleteLoad (Revocation Check and Writeback of a Loaded Value)
+     * =========================================================================== *)
+    Definition specCompleteLoad (pending : ty PendingLoad) (memVal : ty FullCapWithTag)
+      : Action ty coreTree (Bit 0) :=
+      LetL outcome : LoadOutcome <- dispatchLoadResponse config pending memVal ;
+      If (#outcome `? "RevLookup") Then (
+        Let  revInfo : RevCmd           <- #outcome `! "RevLookup" ;
+        Let  revBase : Bit (AddrSz + 1) <- ##revInfo`"base" ;
+        Let  pr      : PendingRev       <- ##revInfo`"pendingRev" ;
+        LetA revBit  : Bool             <- liftAction np_mem (readRevBit revBase) ;
+        LetL wbInfo  : WbCmd            <- dispatchRevResponse pr revBit ;
+        If (isNotZero (##wbInfo`"dstIdx")) Then (
+          liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
+        ) ;
+        Retv
+      ) Else (
+        Let wbInfo : WbCmd <- #outcome `! "Writeback" ;
+        If (isNotZero (##wbInfo`"dstIdx")) Then (
+          liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
+        ) ;
+        Retv
+      ) ;
+      Retv.
+
+    (* ===========================================================================
      * specExecuteDeferred (Executing Deferred DataMem or MulDiv)
+     *
+     * A load or store accesses the line holding its address. If it spills into the next line
+     * (memCrossesLine), the second line is left in secondLine for specSecondLineStep.
      * =========================================================================== *)
     Definition specExecuteDeferred (dstIdx : ty (Bit RegIdxSzReal))
                                    (addr : ty Addr)
@@ -310,32 +383,37 @@ Section SpecCoreTree.
             Let stVal     : FullCapWithTag            <- ##st`"stVal" ;
             Let memSize   : Bit LgLgNumBytesFullCapSz <- ##st`"memSize" ;
 
-            liftAction np_mem (specMemWrite regions stAddr stVal memSize)
+            Act (liftAction np_mem (specMemWrite regions stAddr stVal memSize)) ;
+            If (memCrossesLine #stAddr #memSize) Then (
+              LetL capPkt : CapPacket       <- memDisassembleCapWrite #stAddr #stVal #memSize ;
+              LetL rq1    : LineWriteRq     <- memBuildLineWriteRq (ConstBool true) #stAddr #capPkt #memSize ;
+              Let  second : SecondLineStore <- STRUCT {
+                "addr"     ::= ##rq1`"addr" ;
+                "data"     ::= ##rq1`"data" ;
+                "dataMask" ::= ##rq1`"dataMask" ;
+                "tagMask"  ::= ##rq1`"tagMask"
+              } ;
+              writeSecondLine (mkSome (UNION (SecondLineType, "Store" ::= #second)))
+            ) ;
+            Retv
           ) Else (
             Let ld        : LoadCmd                   <- ##memAct `! "Load" ;
             Let ldAddr    : Addr                      <- ##ld`"addr" ;
             Let pending   : PendingLoad               <- ##ld`"pending" ;
             Let memSize   : Bit LgLgNumBytesFullCapSz <- ##pending`"memSize" ;
 
-            LetA memVal   : FullCapWithTag    <- liftAction np_mem (specMemRead regions ldAddr memSize) ;
-            LetL outcome  : LoadOutcome       <- dispatchLoadResponse config pending memVal ;
-
-            If (#outcome `? "RevLookup") Then (
-              Let  revInfo : RevCmd           <- #outcome `! "RevLookup" ;
-              Let  revBase : Bit (AddrSz + 1) <- ##revInfo`"base" ;
-              Let  pr      : PendingRev       <- ##revInfo`"pendingRev" ;
-              LetA revBit  : Bool             <- liftAction np_mem (readRevBit revBase) ;
-              LetL wbInfo  : WbCmd            <- dispatchRevResponse pr revBit ;
-              If (isNotZero (##wbInfo`"dstIdx")) Then (
-                liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
-              ) ;
-              Retv
+            LetA rp0      : LineReadRp <- liftAction np_mem (specMemReadFirstLine regions ldAddr memSize) ;
+            If (memCrossesLine #ldAddr #memSize) Then (
+              Let second : SecondLineLoad <- STRUCT {
+                "addr"      ::= #ldAddr ;
+                "pending"   ::= #pending ;
+                "firstLine" ::= ##rp0`"data"
+              } ;
+              writeSecondLine (mkSome (UNION (SecondLineType, "Load" ::= #second)))
             ) Else (
-              Let wbInfo : WbCmd <- #outcome `! "Writeback" ;
-              If (isNotZero (##wbInfo`"dstIdx")) Then (
-                liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
-              ) ;
-              Retv
+              LetL pkt    : CapPacket      <- memExtractCapPacket #ldAddr #rp0 ;
+              LetL memVal : FullCapWithTag <- memAssembleCapRead #ldAddr #memSize #pkt ;
+              specCompleteLoad pending memVal
             ) ;
             Retv
           ) ;
@@ -363,6 +441,46 @@ Section SpecCoreTree.
           Retv
         ) ;
         Retv
+      ) ;
+      Retv.
+
+    (* ===========================================================================
+     * specSecondLineStep (Second Line of a Data Access Spilling into the Next Line)
+     *
+     * A store writes its recorded second line, clearing that line's tags. A load reads the
+     * second line, merges it with its recorded first line, and writes back the loaded value.
+     * =========================================================================== *)
+    Definition specSecondLineStep : Action ty coreTree (Bit 0) :=
+      LetA secondOpt : Option SecondLine <- readSecondLine ;
+      If (##secondOpt`"valid") Then (
+        Let second : SecondLine <- ##secondOpt`"data" ;
+        If (#second `? "Store") Then (
+          Let st : SecondLineStore <- #second `! "Store" ;
+          Let rq : LineWriteRq     <- STRUCT {
+            "addr"     ::= ##st`"addr" ;
+            "data"     ::= ##st`"data" ;
+            "dataMask" ::= ##st`"dataMask" ;
+            "tag"      ::= Const ty (Array NumLineTags Bool) (getDefault _) ;
+            "tagMask"  ::= ##st`"tagMask"
+          } ;
+          liftAction np_mem (specMemLineWrite regions rq)
+        ) Else (
+          Let  ld      : SecondLineLoad            <- #second `! "Load" ;
+          Let  ldAddr  : Addr                      <- ##ld`"addr" ;
+          Let  pending : PendingLoad               <- ##ld`"pending" ;
+          Let  memSize : Bit LgLgNumBytesFullCapSz <- ##pending`"memSize" ;
+          LetA rp1     : LineReadRp                <- liftAction np_mem (specMemReadSecondLine regions ldAddr memSize) ;
+          Let  rp0     : LineReadRp                <- STRUCT {
+            "data" ::= ##ld`"firstLine" ;
+            "tag"  ::= Const ty (Array NumLineTags Bool) (getDefault _)
+          } ;
+          LetL pkt0    : CapPacket                 <- memExtractCapPacket #ldAddr #rp0 ;
+          LetL pkt1    : CapPacket                 <- memExtractCapPacket #ldAddr #rp1 ;
+          Let  pkt     : CapPacket                 <- memMergeCapPacket #ldAddr #pkt0 #pkt1 ;
+          LetL memVal  : FullCapWithTag            <- memAssembleCapRead #ldAddr #memSize #pkt ;
+          specCompleteLoad pending memVal
+        ) ;
+        writeSecondLine (Const ty (Option SecondLine) (getDefault _))
       ) ;
       Retv.
 

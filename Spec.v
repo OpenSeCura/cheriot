@@ -96,12 +96,23 @@ Section SpecDom.
         map (fun act => liftAction np_mem (act ty)) (collectFenceIAckActions core regions).
 
       (* ===========================================================================
+       * Second Line of a Data Access Spilling into the Next Line
+       * =========================================================================== *)
+
+      Definition specSecondLine : Action ty sysTree (Bit 0) :=
+        liftAction np_core (specSecondLineStep core pcAddrInit config regions ty).
+
+      (* ===========================================================================
        * Atomic Core Pipeline Step (specStep)
+       *
+       * No instruction starts (and no interrupt is taken) while the second line of the previous
+       * data access is pending.
        * =========================================================================== *)
 
       Definition specStep : Action ty sysTree (Bit 0) :=
         LetA fenceIWait : Bool <- liftAction np_mem (specMemReadFenceIWait regions) ;
-        If (Not #fenceIWait) Then (
+        LetA secondLine : Option SecondLine <- liftAction np_core (readSecondLine core pcAddrInit regions ty) ;
+        If (And [ Not #fenceIWait ; Not (##secondLine`"valid") ]) Then (
           (* MEIP and MTIP are sampled from PLIC and CLINT here, where both domains are reachable. *)
           LetA meip : Bool <- liftAction np_mem (plicMeipSystem plic ty) ;
           LetA mtip : Bool <- liftAction np_mem (readClintMtipAction clint ty) ;
@@ -151,7 +162,8 @@ Section SpecDom.
             specTickCycle ty ;
             specTickTimer ty ;
             specSampleMtipStep ty ;
-            specStep ty
+            specStep ty ;
+            specSecondLine ty
           ]
           ++ specFenceIAckSteps ty
         )%list.

@@ -70,18 +70,12 @@ Section Revoker.
   Definition revokerInterruptRequestedPath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "interruptRequested").
   Definition revokerScanAddrPath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "scanAddr").
 
-  Definition RevokerLineConfig : LineConfig := {|
-    cfgLgLineBytes := Z.to_nat LgNumBytesFullCapSz ;
-    cfgHasTags     := false ;
-    cfgLinePf      := I
-  |}.
-
   Local Abbreviation numLineWords := (Z.to_nat (NumBytesFullCapSz / NumBytesXlen)).
 
   Definition readRevokerLine
              {ty : Kind -> Type} {ans : Kind}
              (offset : Expr ty (Bit RevokerOffsetSz))
-             (k : ty (Array (cfgLineBytes RevokerLineConfig) (Bit ByteSz)) -> Action ty tRev ans)
+             (k : ty (Array LineBytes (Bit ByteSz)) -> Action ty tRev ans)
              : Action ty tRev ans :=
     ReadReg "base" revokerBasePath (fun baseVal =>
     ReadReg "top" revokerTopPath (fun topVal =>
@@ -101,8 +95,8 @@ Section Revoker.
         Or [ ITE0 (Eq offset $(REVOKER_BASE_LINE_OFFSET))      {< topWord, baseWord >} ;
              ITE0 (Eq offset $(REVOKER_CONTROL_LINE_OFFSET))   {< epochWord, controlWord >} ;
              ITE0 (Eq offset $(REVOKER_INTERRUPT_LINE_OFFSET)) {< reqWord, statusWord >} ] ;
-      Let lineBytes : Array (cfgLineBytes RevokerLineConfig) (Bit ByteSz) <-
-        FromBit (Array (cfgLineBytes RevokerLineConfig) (Bit ByteSz)) #readData ;
+      Let lineBytes : Array LineBytes (Bit ByteSz) <-
+        FromBit (Array LineBytes (Bit ByteSz)) #readData ;
       k lineBytes
     )))))).
 
@@ -110,24 +104,24 @@ Section Revoker.
              (base : Z)
              (ty : Kind -> Type)
              (addr : ty Addr)
-             (_ : ty (Array (cfgLineBytes RevokerLineConfig) Bool))
-             : Action ty tRev (LineReadRp RevokerLineConfig) :=
+             (_ : ty (Array LineBytes Bool))
+             : Action ty tRev LineReadRp :=
     Let offset : Bit RevokerOffsetSz <- getMemOffset base RevokerSizeBytes #addr ;
     readRevokerLine #offset (fun readBytes =>
-      @Return ty tRev (LineReadRp RevokerLineConfig) (STRUCT {
+      @Return ty tRev LineReadRp (STRUCT {
         "data" ::= #readBytes ;
-        "tag"  ::= Const ty (Array (cfgNumLineTags RevokerLineConfig) Bool) (getDefault _)
+        "tag"  ::= Const ty (Array NumLineTags Bool) (getDefault _)
       })
     ).
 
   Definition revokerLineWriteAction
              (base : Z)
              (ty : Kind -> Type)
-             (rq : ty (LineWriteRq RevokerLineConfig))
+             (rq : ty LineWriteRq)
              : Action ty tRev (Bit 0) :=
     Let offset : Bit RevokerOffsetSz <- getMemOffset base RevokerSizeBytes (##rq`"addr") ;
     readRevokerLine #offset (fun oldBytes =>
-      Let newBytes : Array (cfgLineBytes RevokerLineConfig) (Bit ByteSz) <-
+      Let newBytes : Array LineBytes (Bit ByteSz) <-
         ArrayBuilder (fun i =>
           ITE (ReadArrayConst (##rq`"dataMask") i)
               (ReadArrayConst (##rq`"data") i)
@@ -172,13 +166,13 @@ Section Revoker.
   Definition revokerMemRegion
              (base : Z)
              (pfBound : Is_true ((0 <=? base) && (base + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
-             (pfAligned : Is_true (base mod (2 ^ Z.of_nat (cfgLgLineBytes RevokerLineConfig)) =? 0)%Z)
+             (pfAligned : Is_true (base mod (2 ^ LgLineBytes) =? 0)%Z)
              : MemRegion := {|
     regionName        := "revoker" ;
     regionBase        := base ;
     regionSize        := RevokerSizeBytes ;
-    regionLineCfg     := RevokerLineConfig ;
-    regionKind        := @CustomMem "revoker" RevokerLineConfig revokerChildren
+    regionHasTags     := false ;
+    regionKind        := @CustomMem "revoker" revokerChildren
                                     (@revokerLineReadAction base)
                                     (@revokerLineWriteAction base)
                                     (Some (fun ty => revokerLocalInterrupt)) ;
@@ -191,7 +185,7 @@ Section Revoker.
     revokerIdx      : nat ;
     revokerBaseAddr : Z ;
     pfBound         : Is_true ((0 <=? revokerBaseAddr) && (revokerBaseAddr + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
-    pfAligned       : Is_true (revokerBaseAddr mod (2 ^ Z.of_nat (cfgLgLineBytes RevokerLineConfig)) =? 0)%Z ;
+    pfAligned       : Is_true (revokerBaseAddr mod (2 ^ LgLineBytes) =? 0)%Z ;
     pfRevoker       : nth_error regions revokerIdx = Some (@revokerMemRegion revokerBaseAddr pfBound pfAligned)
   }.
 

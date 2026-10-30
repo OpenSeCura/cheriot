@@ -99,6 +99,9 @@ Section Alu.
     LETE AdderBeforeBoundsCheckOut : Addr <-
       AdderBeforeBoundsCheck AdderBeforeBoundsCheck_base AdderBeforeBoundsCheck_offset ;
 
+    LETE AdderAccessEndOut : Bit (AddrSz + 2) <-
+      AdderAccessEnd AdderBeforeBoundsCheckOut memSize ;
+
     LetE AdderToOutput_base : Bit Xlen <-
       caseDefault (k := Bit Xlen) [
           (##aluControl`"AdderToOutput_base_pccAddr", #pccAddr) ;
@@ -134,6 +137,7 @@ Section Alu.
       caseDefault (k := Bit (AddrSz + 2)) [
           (##aluControl`"ComparatorTopOrRep_addr_AdderBeforeBoundsCheck",
            ZeroExtendTo (AddrSz + 2) #AdderBeforeBoundsCheckOut) ;
+          (##aluControl`"ComparatorTopOrRep_addr_AdderAccessEnd", #AdderAccessEndOut) ;
           (##aluControl`"SealOrSetAddr", ZeroExtendTo (AddrSz + 2) #cs2Addr) ;
           (##aluControl`"Unseal", ZeroExtendTo (AddrSz + 2) #cs1OType) ]
         #cs1Top ;

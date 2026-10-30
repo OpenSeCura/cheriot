@@ -117,17 +117,17 @@ Section FetchStage.
   |}.
 
   Definition alignPacketAddr {ty : Kind -> Type} (addr : ty Addr) : Expr ty Addr :=
-    {< TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz #addr,
-       Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >}.
+    {< TruncMsb (AddrSz - LgLineBytes) LgLineBytes #addr,
+       Const ty (Bit LgLineBytes) Zmod.zero >}.
 
   Definition getPacketParcel {ty : Kind -> Type} (addr : ty Addr) : Expr ty (Bit LgFetchParcels) :=
-    TruncMsb LgFetchParcels (LgNumBytesFullCapSz - LgFetchParcels)
-      (TruncLsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz #addr).
+    TruncMsb LgFetchParcels (LgLineBytes - LgFetchParcels)
+      (TruncLsb (AddrSz - LgLineBytes) LgLineBytes #addr).
 
   Definition getParcelAddr {ty : Kind -> Type} (alignedPc : ty Addr) (p : ty (Bit LgFetchParcels)) : Expr ty Addr :=
-    {< TruncMsb (AddrSz - LgNumBytesFullCapSz) LgNumBytesFullCapSz #alignedPc,
+    {< TruncMsb (AddrSz - LgLineBytes) LgLineBytes #alignedPc,
        #p,
-       Const ty (Bit (LgNumBytesFullCapSz - LgFetchParcels)) Zmod.zero >}.
+       Const ty (Bit (LgLineBytes - LgFetchParcels)) Zmod.zero >}.
 
   Definition isParcelCompressed {ty : Kind -> Type} (p : ty (Bit CompInstSz)) : Expr ty Bool :=
     Not (isAllOnes (TruncLsb (CompInstSz - 2) 2 #p)).
@@ -297,25 +297,34 @@ Section FetchStage.
       Let  parcelK            : Bit CompInstSz             <- ReadArray #pkt #k ;
       Let  isCompParcel       : Bool                       <- isParcelCompressed parcelK ;
       Let  isLastK            : Bool                       <- isAllOnes #k ;
-      Let  initStraddle       : Bool                       <- And [ Not #hasStraddle ; Not #isCompParcel ; #isLastK ] ;
+
+      Let  instPc             : Addr                       <- ITE #hasStraddle (Sub #alignedPc $2) #instPcK ;
+      Let  isCompInst         : Bool                       <- And [ Not #hasStraddle ; #isCompParcel ] ;
+      Let  stepBytes          : Addr                       <- ITE #isCompInst $(CompInstSz / 8) $(InstSz / 8) ;
+      Let  seqPc              : Addr                       <- Add [ #instPc ; #stepBytes ] ;
+      Let  instLgBytes        : Bit LgLgNumBytesFullCapSz  <-
+        ITE #isCompInst $(Z.log2 (CompInstSz / 8)) $(Z.log2 (InstSz / 8)) ;
+      LetL instEnd            : Bit (AddrSz + 2)           <- AdderAccessEnd instPc instLgBytes ;
+
+      Let  pccECap            : ECap                       <- ##pcc`"ecap" ;
+      Let  topExc             : Bool                       <- Ugt #instEnd (##pccECap`"top") ;
+
+      (* A 4-byte instruction in the last parcel spills into the next line. It is saved as a
+       * straddle and completed with the next packet, unless it fails the top check: then the
+       * next line is not fetched, the instruction ends this line, and its upper parcel reads
+       * as 0 (as in specMemFetchRead). *)
+      Let  crossesLine        : Bool                       <- And [ Not #hasStraddle ; Not #isCompParcel ; #isLastK ] ;
+      Let  initStraddle       : Bool                       <- And [ #crossesLine ; Not #topExc ] ;
 
       Let  kPlus1             : Bit LgFetchParcels         <- Add [ #k ; $1 ] ;
       Let  currInstLastParcel : Bit LgFetchParcels         <-
-        ITE0 (Not #hasStraddle) (ITE (Or [ #isCompParcel ; #initStraddle ]) #k #kPlus1) ;
+        ITE0 (Not #hasStraddle) (ITE (Or [ #isCompParcel ; #isLastK ]) #k #kPlus1) ;
 
       Let  highParcelIdx      : Bit LgFetchParcels         <- ITE0 (Not #hasStraddle) #kPlus1 ;
-      Let  highParcel         : Bit CompInstSz             <- ReadArray #pkt #highParcelIdx ;
+      Let  highParcel         : Bit CompInstSz             <- ITE0 (Not #crossesLine) (ReadArray #pkt #highParcelIdx) ;
       Let  lowParcel          : Bit CompInstSz             <- ITE #hasStraddle (##straddle`"lowParcel") #parcelK ;
       Let  rawInst            : Inst                       <- {< #highParcel, #lowParcel >} ;
       LetL expInst            : Inst                       <- preDecode rawInst ;
-
-      Let  instPc             : Addr                       <- ITE #hasStraddle (Sub #alignedPc $2) #instPcK ;
-      Let  stepBytes          : Addr                       <-
-        ITE (And [ Not #hasStraddle ; #isCompParcel ]) $(CompInstSz / 8) $(InstSz / 8) ;
-      Let  seqPc              : Addr                       <- Add [ #instPc ; #stepBytes ] ;
-
-      Let  pccECap            : ECap                       <- ##pcc`"ecap" ;
-      Let  topExc             : Bool                       <- Ugt (ZeroExtendTo (AddrSz + 2) #seqPc) (##pccECap`"top") ;
       Let  stradExc           : FetchException             <- ##straddle`"fetchExc" ;
       Let  pktExc             : FetchException             <- ITE #hasStraddle #stradExc #preExc ;
       Let  combExc            : FetchException             <- #pktExc `{ "bounds" <- Or [ ##pktExc`"bounds" ; #topExc ] } ;
@@ -359,7 +368,7 @@ Section FetchStage.
                 liftAction np_instFifo (@enq dom instCapacity AssembledInst ty asmInst)
               ) Else (
                 Let  instPred       : Addr <- ITE (Eq #currInstLastParcel #exitParcel) (##entry`"predPc") #seqPc ;
-                Let  seqNextPktAddr : Addr <- Add [ #alignedPc ; $NumBytesFullCapSz ] ;
+                Let  seqNextPktAddr : Addr <- Add [ #alignedPc ; $(Z.of_nat LineBytes) ] ;
                 Let  defaultPredPc  : Addr <- ITE #initStraddle #seqNextPktAddr #instPred ;
 
                 LetIf l2PredPc : Addr <-

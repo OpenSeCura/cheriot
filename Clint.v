@@ -54,12 +54,6 @@ Section Clint.
   Definition clintMtipPath        : RegPath tClint := Eval cbn in (getChildRegPathTree tClint "mtip").
   Definition clintSampledMtipPath : RegPath tClint := Eval cbn in (getChildRegPathTree tClint "sampledMtip").
 
-  Definition ClintLineConfig : LineConfig := {|
-    cfgLgLineBytes := Z.to_nat LgNumBytesFullCapSz ;
-    cfgHasTags     := false ;
-    cfgLinePf      := I
-  |}.
-
   (* ===========================================================================
    * CLINT Atomic Actions
    * =========================================================================== *)
@@ -104,30 +98,30 @@ Section Clint.
              (base : Z)
              (ty : Kind -> Type)
              (addr : ty Addr)
-             (_ : ty (Array (cfgLineBytes ClintLineConfig) Bool))
-             : Action ty tClint (LineReadRp ClintLineConfig) :=
+             (_ : ty (Array LineBytes Bool))
+             : Action ty tClint LineReadRp :=
     Let offset <- getMemOffset base ClintSizeBytes #addr ;
     ReadReg "mtime" clintMtimePath (fun mtimeVal =>
     ReadReg "mtimecmp" clintMtimecmpPath (fun mtimecmpVal =>
     Let rawData : Bit DXlen <-
       Or [ ITE0 (Eq #offset $(CLINT_MTIME_OFFSET))    #mtimeVal ;
            ITE0 (Eq #offset $(CLINT_MTIMECMP_OFFSET)) #mtimecmpVal ] ;
-    Let readBytes : Array (cfgLineBytes ClintLineConfig) (Bit ByteSz) <-
-      FromBit (Array (cfgLineBytes ClintLineConfig) (Bit ByteSz)) #rawData ;
-    @Return ty tClint (LineReadRp ClintLineConfig) (STRUCT {
+    Let readBytes : Array LineBytes (Bit ByteSz) <-
+      FromBit (Array LineBytes (Bit ByteSz)) #rawData ;
+    @Return ty tClint LineReadRp (STRUCT {
       "data" ::= #readBytes ;
-      "tag"  ::= Const ty (Array (cfgNumLineTags ClintLineConfig) Bool) (getDefault _)
+      "tag"  ::= Const ty (Array NumLineTags Bool) (getDefault _)
     }))).
 
   Definition clintLineWriteAction
              (base : Z)
              (ty : Kind -> Type)
-             (rq : ty (LineWriteRq ClintLineConfig))
+             (rq : ty LineWriteRq)
              : Action ty tClint (Bit 0) :=
     Let offset   <- getMemOffset base ClintSizeBytes (##rq`"addr") ;
     Let anyWrite : Bool <- isNotZero (ToBit (##rq`"dataMask")) ;
     let mergeReg (oldVal : Expr ty (Bit DXlen)) : Expr ty (Bit DXlen) :=
-      let oldBytes := FromBit (Array (cfgLineBytes ClintLineConfig) (Bit ByteSz)) oldVal in
+      let oldBytes := FromBit (Array LineBytes (Bit ByteSz)) oldVal in
       ToBit (ArrayBuilder (fun i =>
         ITE (ReadArrayConst (##rq`"dataMask") i)
             (ReadArrayConst (##rq`"data") i)
@@ -154,13 +148,13 @@ Section Clint.
   Definition clintMemRegion
              (base : Z)
              (pfBound : Is_true ((0 <=? base) && (base + ClintSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
-             (pfAligned : Is_true (base mod (2 ^ Z.of_nat (cfgLgLineBytes ClintLineConfig)) =? 0)%Z)
+             (pfAligned : Is_true (base mod (2 ^ LgLineBytes) =? 0)%Z)
              : MemRegion := {|
     regionName        := "clint" ;
     regionBase        := base ;
     regionSize        := ClintSizeBytes ;
-    regionLineCfg     := ClintLineConfig ;
-    regionKind        := @CustomMem "clint" ClintLineConfig clintChildren (@clintLineReadAction base) (@clintLineWriteAction base) None ;
+    regionHasTags     := false ;
+    regionKind        := @CustomMem "clint" clintChildren (@clintLineReadAction base) (@clintLineWriteAction base) None ;
     regionInMemory    := pfBound ;
     regionBaseAligned := pfAligned ;
     regionSizeAligned := I
@@ -174,7 +168,7 @@ Section Clint.
     clintIdx      : nat ;
     clintBaseAddr : Z ;
     pfBound       : Is_true ((0 <=? clintBaseAddr) && (clintBaseAddr + ClintSizeBytes <=? Z.shiftl 1 AddrSz))%Z ;
-    pfAligned     : Is_true (clintBaseAddr mod (2 ^ Z.of_nat (cfgLgLineBytes ClintLineConfig)) =? 0)%Z ;
+    pfAligned     : Is_true (clintBaseAddr mod (2 ^ LgLineBytes) =? 0)%Z ;
     pfClint       : nth_error regions clintIdx = Some (@clintMemRegion clintBaseAddr pfBound pfAligned)
   }.
 

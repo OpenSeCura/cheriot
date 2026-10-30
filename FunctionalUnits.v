@@ -107,6 +107,7 @@ Cjalr
     Note: executeNonSequential seals cOType of link capability when cd = c1 / cra
     Note: This doesn't generate exceptions; just clears tag.
           The new MePrevPcc can help identify caller
+    Note: ControlFlow clears bit 0 of the jump target (cs1.addr + simm12)
     Functional Units:
       a) AdderBeforeBoundsCheck (computing jump target address cs1.addr + simm12)
       b) AdderToOutput (computing return link address PC + 2 / PC + 4)
@@ -159,11 +160,12 @@ Load
     Can cause exceptions
     Functional Units:
       a) AdderBeforeBoundsCheck (memory address cs1.addr + simm12 -> routed to dstValue.addr)
-      b) ComparatorTopOrRep (checking top AdderBeforeBoundsCheck < cs1.top)
-      c) ComparatorBase (checking base AdderBeforeBoundsCheck >= cs1.base)
-      d) AddrBoundsCheck (ands the two comparator outputs correctly)
-      e) DataMem (outputs memory operation info: memSize and LoadOp {isUnsigned, isLM, isLG})
-      f) Exception (outputs exception if bounds/tag/permission/alignment violation)
+      b) AdderAccessEnd (exclusive end of the access AdderBeforeBoundsCheck + 2^memSize, without wrapping)
+      c) ComparatorTopOrRep (checking top AdderAccessEnd <= cs1.top)
+      d) ComparatorBase (checking base AdderBeforeBoundsCheck >= cs1.base)
+      e) AddrBoundsCheck (ands the two comparator outputs correctly)
+      f) DataMem (outputs memory operation info: memSize and LoadOp {isUnsigned, isLM, isLG})
+      g) Exception (outputs exception if bounds/tag/permission/alignment violation)
 
 Store
 * SB rs2, store_imm(cs1)
@@ -173,12 +175,13 @@ Store
     Can cause exceptions
     Functional Units:
       a) AdderBeforeBoundsCheck (memory address cs1.addr + store_imm -> routed to dstValue.addr)
-      b) ComparatorTopOrRep (checking top AdderBeforeBoundsCheck < cs1.top)
-      c) ComparatorBase (checking base AdderBeforeBoundsCheck >= cs1.base)
-      d) AddrBoundsCheck (ands the two comparator outputs correctly)
-      e) EncodeCap (compresses cs2.ecap into cs2.cap for storing)
-      f) DataMem (outputs memory operation info: memSize and Store {tag, cap, addr})
-      g) Exception (outputs exception if bounds/tag/permission/alignment violation)
+      b) AdderAccessEnd (exclusive end of the access AdderBeforeBoundsCheck + 2^memSize, without wrapping)
+      c) ComparatorTopOrRep (checking top AdderAccessEnd <= cs1.top)
+      d) ComparatorBase (checking base AdderBeforeBoundsCheck >= cs1.base)
+      e) AddrBoundsCheck (ands the two comparator outputs correctly)
+      f) EncodeCap (compresses cs2.ecap into cs2.cap for storing)
+      g) DataMem (outputs memory operation info: memSize and Store {tag, cap, addr})
+      h) Exception (outputs exception if bounds/tag/permission/alignment violation)
 
 MulDiv
 * MUL cd, cs1, cs2
@@ -275,12 +278,14 @@ Scr
     Note: Decoder will cause exceptions if no ASR
     Note: ScrSanitizer will untag invalid capability, but not overwrite ecap
     Note: ScrSanitizer only checks for LSB = 1'b0 for MePcc and Mtcc (MePrevPcc needs no sanitizing)
+    Note: ScrCsr also clears the LSB of the address written to MePcc and Mtcc, so the PCC loaded
+          from them by a trap or mret is always even
     Note: cs1 = c0 makes this a pure read; ScrCsr_Write gates the write
     Note: Decode raises IllegalInst on a write to a read-only SCR (MePrevPcc)
     Note: SCR read, GPR writeback of old SCR value, and SCR write happen in executeNonSequential
     Functional Units:
       a) ScrSanitizer (check if the last LSB bit is 0 for certain SCR writes)
-      b) ScrCsr (creates ScrCsrPayload with SCR write info using ScrSanitizer tag)
+      b) ScrCsr (creates ScrCsrPayload with SCR write info using ScrSanitizer tag; clears the LSB for MePcc/Mtcc)
 
 Lui
 * LUI rd, uimm20
@@ -382,6 +387,11 @@ AdderBeforeBoundsCheck:
         store_imm (Store),
         simm12 (Cjalr, Load, CIncAddr & isImm)
 
+AdderAccessEnd:
+  Outputs: exclusive end address (AddrSz + 2 bits wide, so it never wraps)
+  addr: AdderBeforeBoundsCheck (Load, Store)
+  lgSize: memSize (Load, Store)
+
 AdderToOutput:
   - ADD : Cjal, Cjalr, AddSub (when ADD/ADDI)
   - SUB : AddSub (when SUB/CSub), CGetLen
@@ -465,9 +475,10 @@ AdderBeforeRepCheck:
 
 ComparatorTopOrRep:
   Outputs: lt, eq
-  - LTEUnsigned : CTestSubset, CSetBounds
-  - LTUnsigned  : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, Load, Store, Seal, Unseal
-  addr: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetBounds, Load, Store),
+  - LTEUnsigned : CTestSubset, CSetBounds, Load, Store
+  - LTUnsigned  : Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr, Seal, Unseal
+  addr: AdderBeforeBoundsCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetBounds),
+        AdderAccessEnd (Load, Store),
         cs2.addr (Seal, CSetAddr), cs1.otype (Unseal), cs1.top (CTestSubset)
   topRep: AdderBeforeRepCheck (Branch, Cjal, AuiPcc, AuiCgp, CIncAddr, CSetAddr),
         cs2.top (Seal, Unseal, CTestSubset), cs1.top (CSetBounds, Load, Store)
@@ -700,11 +711,12 @@ Section DecodeInstGroup.
       (* "AdderBeforeRepCheck_exp_isPccExpNotCs1Exp" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc" ] ; *)
 
-      "ComparatorTopOrRep_checkLte" ::= Or [ ##group`"CTestSubset"; ##group`"CSetBounds" ] ;
+      "ComparatorTopOrRep_checkLte" ::=
+        Or [ ##group`"CTestSubset"; ##group`"CSetBounds"; ##group`"Load"; ##group`"Store" ] ;
       "ComparatorTopOrRep_addr_AdderBeforeBoundsCheck" ::=
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
-              ##group`"CIncAddr"; ##group`"CSetBounds"; ##group`"Load";
-              ##group`"Store" ] ;
+              ##group`"CIncAddr"; ##group`"CSetBounds" ] ;
+      "ComparatorTopOrRep_addr_AdderAccessEnd" ::= Or [ ##group`"Load"; ##group`"Store" ] ;
       (* "ComparatorTopOrRep_addr_cs2Addr" ::= Or [ ##group`"Seal"; ##group`"CSetAddr" ] ; *)
       (* "ComparatorTopOrRep_addr_cs1OType" ::= ##group`"Unseal" ; *)
       (* "ComparatorTopOrRep_addr_cs1Top" ::= ##group`"CTestSubset" ; *)
@@ -857,6 +869,7 @@ Section GetFunctionalUnits.
         Or [ ##group`"Branch"; ##group`"Cjal"; ##group`"AuiPcc"; ##group`"AuiCgp";
              ##group`"CIncAddr"; ##group`"Cjalr"; ##group`"CSetBounds";
              ##group`"Load"; ##group`"Store" ] ;
+      "AdderAccessEnd" ::= Or [ ##group`"Load"; ##group`"Store" ] ;
       "AdderToOutput" ::= Or [ ##group`"Cjal"; ##group`"Cjalr"; ##group`"AddSub"; ##group`"CGetLen" ] ;
       "ComparatorGeneral" ::= Or [ ##group`"Branch"; ##group`"Slt"; ##group`"CSetEqual" ] ;
       "CjalrUnit" ::= ##group`"Cjalr" ;
@@ -903,6 +916,14 @@ Section FunctionalUnits.
   Definition AdderBeforeBoundsCheck (base offset : ty Addr) : LetExpr ty Addr :=
     LetE sum : Addr <- Add [ #base; #offset ];
     RetE #sum.
+
+  (* Exclusive end of an access of 2^lgSize bytes starting at addr; it is computed with two extra
+     bits so that it never wraps around *)
+  Definition AdderAccessEnd (addr : ty Addr) (lgSize : ty (Bit LgLgNumBytesFullCapSz))
+  : LetExpr ty (Bit (AddrSz + 2)) :=
+    LetE size : Bit (AddrSz + 2) <- Sll $1 #lgSize ;
+    LetE accessEnd : Bit (AddrSz + 2) <- Add [ ZeroExtendTo (AddrSz + 2) #addr; #size ] ;
+    RetE #accessEnd.
 
   Definition AdderToOutput (isSub : ty Bool) (base offset : ty (Bit Xlen)) : LetExpr ty (Bit Xlen) :=
     LetE op2 : Bit Xlen <- ITE #isSub (Not #offset) #offset;
@@ -1541,7 +1562,8 @@ Section FunctionalUnits.
                     (pccTag : ty Bool) (pccEcap : ty ECap)
                     (inst : ty Inst)
   : LetExpr ty (Option CfPayload) :=
-    LetE pccAddrOut : Addr <- #addrIn ;
+    LetE pccAddrOut : Addr <-
+      ITE #isCjalr {< TruncMsb (AddrSz - 1) 1 #addrIn, Const ty (Bit 1) Zmod.zero >} #addrIn ;
     LetE pccTagOut : Bool <-
       caseDefault (k := Bool) [
           (Or [ #isBranch ; #isCjal ], #inBounds) ;
@@ -1608,8 +1630,16 @@ Section FunctionalUnits.
       ITE #isScr
           (UNION (ScrCsrIdx, "Scr" ::= #scrIdx))
           (UNION (ScrCsrIdx, "Csr" ::= #csrIdx)) ;
+    (* MePcc and Mtcc hold instruction addresses, which are always even *)
+    LetE scrAddr      : Bit ScrAddrSz <- getScr inst ;
+    LetE isSpecialPcc : Bool <-
+      And [ #isScr ;
+            Or [ Eq #scrAddr $(getScrAddr "MePcc"%string) ;
+                 Eq #scrAddr $(getScrAddr "Mtcc"%string) ] ] ;
+    LetE specialAddr  : Addr <-
+      ITE #isSpecialPcc {< TruncMsb (AddrSz - 1) 1 #operand, Const ty (Bit 1) Zmod.zero >} #operand ;
     LetE NewSpecialVal : FullECapWithTag <-
-      STRUCT { "tag" ::= #newTag; "ecap" ::= #cs1Ecap; "addr" ::= #operand } ;
+      STRUCT { "tag" ::= #newTag; "ecap" ::= #cs1Ecap; "addr" ::= #specialAddr } ;
     LetE scrCsrPayload : ScrCsrPayload <- STRUCT {
       "SpecialDest"  ::= #scrCsrIdx ;
       "SpecialValue" ::= #NewSpecialVal ;
