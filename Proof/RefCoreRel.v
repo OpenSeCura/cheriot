@@ -253,16 +253,16 @@ Section CoreRel.
   Definition sRev (s2 : SState) := specRevState core pre post revBase revPfB revPfA (sMem s2).
   Definition iRev (s1 : IState) := implRevState core pre post revBase revPfB revPfA (iRegions s1).
 
-  (* Impl revoker: [ base; top; control; epoch; intStatus; intReq; scanAddr; revPhase;
+  (* Impl revoker: [ base; top; control; epoch; intStatus; intReq; scanAddr; sweepTop; revPhase;
    * revScanCap; revScanBase; revStoreSnoopHit ] *)
   Definition iRevPhase (s1 : IState) : type RevPhase :=
-    (iRev s1).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).
-  Definition iRevScanCap (s1 : IState) : type FullCapWithTag :=
     (iRev s1).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).
-  Definition iRevScanBase (s1 : IState) : type (Bit (AddrSz + 1)) :=
+  Definition iRevScanCap (s1 : IState) : type FullCapWithTag :=
     (iRev s1).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).
-  Definition iRevSnoopHit (s1 : IState) : bool :=
+  Definition iRevScanBase (s1 : IState) : type (Bit (AddrSz + 1)) :=
     (iRev s1).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).
+  Definition iRevSnoopHit (s1 : IState) : bool :=
+    (iRev s1).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).
 
   (* --- 4. Ghost State --- *)
 
@@ -641,20 +641,20 @@ Section CoreRel.
   (* --- 9b. The Revoker (C8) --- *)
 
   (* An architectural revoker state: [ base; top; control; epoch; intStatus; intRequested;
-   * scanAddr ] *)
+   * scanAddr; sweepTop ] *)
   Local Abbreviation RevArch := (TS (Node "revoker" (revokerChildren core []))).
 
-  Definition revTopOf (x : RevArch) : bits TagAddrWidth := x.(Snd).(Fst).
+  Definition revSweepTopOf (x : RevArch) : bits TagAddrWidth := x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).
   Definition revEpochOf (x : RevArch) : bits Xlen := x.(Snd).(Snd).(Snd).(Fst).
   Definition iRevArch (s1 : IState) : RevArch := projImplRevokerArchState core (iRev s1).
 
   Definition scanFull (a : bits TagAddrWidth) : type Addr :=
     evalExpr ({< Var type (Bit TagAddrWidth) a, Const type (Bit LgNumBytesFullCapSz) Zmod.zero >}).
 
-  (* The sweep is on (odd epoch) and position `sa` is below `top` *)
+  (* The sweep is on (odd epoch) and position `sa` is below the sweep's copy of `top` *)
   Definition revSweepingAt (x : RevArch) (sa : bits TagAddrWidth) : Prop :=
     evalExpr (FromBit Bool (TruncLsb (Xlen - 1) 1 (Var type (Bit Xlen) (revEpochOf x)))) = true /\
-    evalExpr (Uge (Var type (Bit TagAddrWidth) sa) (Var type (Bit TagAddrWidth) (revTopOf x))) = false.
+    evalExpr (Uge (Var type (Bit TagAddrWidth) sa) (Var type (Bit TagAddrWidth) (revSweepTopOf x))) = false.
 
   (* A loaded capability: [ tag; cap; addr ] *)
   Definition capECap (c : type FullCapWithTag) : type ECap :=

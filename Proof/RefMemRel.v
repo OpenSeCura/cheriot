@@ -44,7 +44,7 @@ Local Open Scope guru_scope.
  *    device steps see them:
  *    - CLINT: equal except `sampledMtip`, where the spec may lag (spec -> impl);
  *    - PLIC: equal except `meip`, where the spec may lag;
- *    - revoker: the spec's 7 registers are the projection of the impl's 11,
+ *    - revoker: the spec's 8 registers are the projection of the impl's 12,
  *      except for `scanAddr` (`RevOff`). *)
 
 Local Abbreviation TS t := (TreeState DomainElemState t).
@@ -151,7 +151,7 @@ Section SpecialRegions.
   Definition PlicInv {n} (xi : PlicS n) : Prop :=
     plicMeipOf xi = true -> plicClaimOf xi <> Zmod.zero.
 
-  (* Revoker: 7 architectural registers (spec) vs 7 + 4 (impl) *)
+  (* Revoker: 8 architectural registers (spec) vs 8 + 4 (impl) *)
   Local Abbreviation RevS := (TS (Node "revoker" (revokerChildren core []))).
   Local Abbreviation RevI := (TS (implRevokerTree core)).
 
@@ -159,7 +159,8 @@ Section SpecialRegions.
 
   Definition revWithScanAddr (a : bits TagAddrWidth) (x : RevS) : RevS :=
     (x.(Fst) ,, (x.(Snd).(Fst) ,, (x.(Snd).(Snd).(Fst) ,, (x.(Snd).(Snd).(Snd).(Fst) ,,
-     (x.(Snd).(Snd).(Snd).(Snd).(Fst) ,, (x.(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,, (a ,, tt))))))).
+     (x.(Snd).(Snd).(Snd).(Snd).(Fst) ,, (x.(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,,
+     (a ,, (x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,, tt)))))))).
 
   Definition RevRel (o : RevOff) (xs : RevS) (xi : RevI) : Prop :=
     projImplRevokerArchState core xi = revWithScanAddr (revOffAddr o (revScanAddr xs)) xs.

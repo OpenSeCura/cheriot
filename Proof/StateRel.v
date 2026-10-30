@@ -330,8 +330,8 @@ Section StateProjections.
   Definition impl_fenceIAck (fenceIAckIdx : nat) (s1 : ImplState) :=
     impl_regionSpecAt fenceIAckIdx s1.
 
-  (* Projection from `implRevokerTree core` (7 base leaves + 4 extra leaves)
-   * onto `revokerTree core []` (the 7 architectural revoker registers). *)
+  (* Projection from `implRevokerTree core` (8 base leaves + 4 extra leaves)
+   * onto `revokerTree core []` (the 8 architectural revoker registers). *)
   Definition projImplRevokerArchState
     (s_rev : TreeState DomainElemState (implRevokerTree core))
     : TreeState DomainElemState (Node "revoker" (revokerChildren core [])) :=
@@ -341,7 +341,8 @@ Section StateProjections.
     (s_rev.(Snd).(Snd).(Snd).(Fst) ,,
     (s_rev.(Snd).(Snd).(Snd).(Snd).(Fst) ,,
     (s_rev.(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,,
-    (s_rev.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,, tt))))))).
+    (s_rev.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,,
+    (s_rev.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,, tt)))))))).
 
   (* --- 3E. Pipeline Stage Register & FIFO Projections --- *)
 

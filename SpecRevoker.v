@@ -58,7 +58,10 @@ Section Revoker.
        Leaf "epoch" (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false)) ;
        Leaf "interruptStatus" (dom, EReg (Build_Reg Bool (Some false) false)) ;
        Leaf "interruptRequested" (dom, EReg (Build_Reg Bool (Some false) false)) ;
-       Leaf "scanAddr" (dom, EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero) false)) ] ++ extraChildren)%list.
+       Leaf "scanAddr" (dom, EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero) false)) ;
+       (* The sweep's copy of top, taken at the kick: software may write top during a sweep,
+        * the sweep in progress ends at the top it started with *)
+       Leaf "sweepTop" (dom, EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero) false)) ] ++ extraChildren)%list.
 
   Local Abbreviation tRev := (Node "revoker" revokerChildren).
 
@@ -69,6 +72,7 @@ Section Revoker.
   Definition revokerInterruptStatusPath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "interruptStatus").
   Definition revokerInterruptRequestedPath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "interruptRequested").
   Definition revokerScanAddrPath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "scanAddr").
+  Definition revokerSweepTopPath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "sweepTop").
 
   Local Abbreviation numLineWords := (Z.to_nat (NumBytesFullCapSz / NumBytesXlen)).
 
@@ -132,10 +136,10 @@ Section Revoker.
         Act (WriteReg revokerTopPath #newTop Retv) ;
         Retv
       ) ;
+      (* The epoch (word 1 of this line) is read-only: only the revoker changes it *)
       If (Eq #offset $(REVOKER_CONTROL_LINE_OFFSET)) Then (
         Let newKick : Bool <- FromBit Bool (TruncLsb (Xlen - 1) 1 ((##newWords) $[0%nat])) ;
         Act (WriteReg revokerControlPath #newKick Retv) ;
-        Act (WriteReg revokerEpochPath ((##newWords) $[1%nat]) Retv) ;
         Retv
       ) ;
       If (Eq #offset $(REVOKER_INTERRUPT_LINE_OFFSET)) Then (
@@ -239,6 +243,12 @@ Section Revoker.
     Local Definition writeRevokerScanAddr (v : ty (Bit TagAddrWidth)) : Action ty memTree (Bit 0) :=
       revokerAction (WriteReg revokerScanAddrPath #v Retv).
 
+    Local Definition readRevokerSweepTop : Action ty memTree (Bit TagAddrWidth) :=
+      revokerAction (ReadReg "sweepTop" revokerSweepTopPath (fun v => Return #v)).
+
+    Local Definition writeRevokerSweepTop (v : ty (Bit TagAddrWidth)) : Action ty memTree (Bit 0) :=
+      revokerAction (WriteReg revokerSweepTopPath #v Retv).
+
     Local Abbreviation readRevBit := (readRevBit config regions).
 
     Definition specRevokerStep : Action ty memTree (Bit 0) :=
@@ -248,7 +258,7 @@ Section Revoker.
       If #isOddEpoch Then (
         (* SWEEPING STATE: epoch is odd *)
         LetA scanAddrMsb : Bit TagAddrWidth <- readRevokerScanAddr ;
-        LetA topAddrMsb  : Bit TagAddrWidth <- readRevokerTop ;
+        LetA topAddrMsb  : Bit TagAddrWidth <- readRevokerSweepTop ;
         Let scanAddr     : Addr <- {< #scanAddrMsb, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
         Let isDone       : Bool <- Uge #scanAddrMsb #topAddrMsb ;
 
@@ -281,7 +291,7 @@ Section Revoker.
           Act (writeRevokerScanAddr nextScanAddrMsb) ;
           Retv
         ) Else (
-          (* SWEEP COMPLETE: scanAddr reached top *)
+          (* SWEEP COMPLETE: scanAddr reached the sweep's copy of top *)
           (* Transition epoch from odd (sweeping) to even (idle) *)
           Let nextEpoch : Bit Xlen <- Add [ #epoch ; $1 ] ;
           Act (writeRevokerEpoch nextEpoch) ;
@@ -301,9 +311,12 @@ Section Revoker.
         Act (writeRevokerInterruptStatus bFalse) ;
         LetA isKicked : Bool <- readRevokerControl ;
         If #isKicked Then (
-          (* Start sweep: initialize scanAddr to base and advance epoch to odd *)
+          (* Start sweep: initialize scanAddr to base, take the sweep's copy of top and
+           * advance epoch to odd *)
           LetA baseAddrMsb : Bit TagAddrWidth <- readRevokerBase ;
           Act (writeRevokerScanAddr baseAddrMsb) ;
+          LetA topAddrMsb : Bit TagAddrWidth <- readRevokerTop ;
+          Act (writeRevokerSweepTop topAddrMsb) ;
           Let oddEpoch : Bit Xlen <-
             {< TruncMsb (Xlen - 1) 1 #epoch, Const ty (Bit 1) (bits.of_Z 1 1) >} ;
           Act (writeRevokerEpoch oddEpoch) ;

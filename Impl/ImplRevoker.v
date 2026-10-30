@@ -61,6 +61,7 @@ Section ImplRevoker.
   Local Definition pInterruptStatus    : RegPath implRevokerTree := Eval cbv in (revokerInterruptStatusPath dom implRevokerExtraChildren).
   Local Definition pInterruptRequested : RegPath implRevokerTree := Eval cbv in (revokerInterruptRequestedPath dom implRevokerExtraChildren).
   Local Definition pScanAddr           : RegPath implRevokerTree := Eval cbv in (revokerScanAddrPath dom implRevokerExtraChildren).
+  Local Definition pSweepTop           : RegPath implRevokerTree := Eval cbv in (revokerSweepTopPath dom implRevokerExtraChildren).
   Local Definition pRevPhase           : RegPath implRevokerTree := Eval cbv in (getChildRegPathTree implRevokerTree "revPhase").
   Local Definition pRevScanCap         : RegPath implRevokerTree := Eval cbv in (getChildRegPathTree implRevokerTree "revScanCap").
   Local Definition pRevScanBase        : RegPath implRevokerTree := Eval cbv in (getChildRegPathTree implRevokerTree "revScanBase").
@@ -114,7 +115,7 @@ Section ImplRevoker.
         Let isOddEpoch : Bool <- FromBit Bool (TruncLsb (Xlen - 1) 1 #epoch) ;
         If #isOddEpoch Then (
           LetA scanAddrMsb : Bit TagAddrWidth <- revAct (ReadReg "scanAddr" pScanAddr (fun v => Return #v)) ;
-          LetA topAddrMsb  : Bit TagAddrWidth <- revAct (ReadReg "top" pTop (fun v => Return #v)) ;
+          LetA topAddrMsb  : Bit TagAddrWidth <- revAct (ReadReg "sweepTop" pSweepTop (fun v => Return #v)) ;
           Let scanAddr     : Addr             <- {< #scanAddrMsb, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
           Let isDone       : Bool             <- Uge #scanAddrMsb #topAddrMsb ;
           If (Not #isDone) Then (
@@ -126,7 +127,7 @@ Section ImplRevoker.
             ) ;
             Retv
           ) Else (
-            (* Sweep complete: scanAddrMsb reached topAddrMsb *)
+            (* Sweep complete: scanAddrMsb reached the sweep's copy of top *)
             Let nextEpoch : Bit Xlen <- Add [ #epoch ; $1 ] ;
             Act (revAct (WriteReg pEpoch #nextEpoch Retv)) ;
             LetA intReq : Bool <- revAct (ReadReg "interruptRequested" pInterruptRequested (fun v => Return #v)) ;
@@ -144,6 +145,8 @@ Section ImplRevoker.
           If #isKicked Then (
             LetA baseAddrMsb : Bit TagAddrWidth <- revAct (ReadReg "base" pBase (fun v => Return #v)) ;
             Act (revAct (WriteReg pScanAddr #baseAddrMsb Retv)) ;
+            LetA topAddrMsb : Bit TagAddrWidth <- revAct (ReadReg "top" pTop (fun v => Return #v)) ;
+            Act (revAct (WriteReg pSweepTop #topAddrMsb Retv)) ;
             Let oddEpoch : Bit Xlen <-
               {< TruncMsb (Xlen - 1) 1 #epoch, Const ty (Bit 1) (bits.of_Z 1 1) >} ;
             Act (revAct (WriteReg pEpoch #oddEpoch Retv)) ;

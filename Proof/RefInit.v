@@ -226,11 +226,12 @@ Section RegionInit.
       InitStateConsistent (implRevokerTree core) xi ->
       RevRel core RevEq xs xi.
   Proof.
-    intros [b [t [c [ep [ist [irq [sc []]]]]]]] [b' [t' [c' [ep' [ist' [irq' [sc' [ph [cap [bs [hit []]]]]]]]]]]]
+    intros [b [t [c [ep [ist [irq [sc [st []]]]]]]]]
+           [b' [t' [c' [ep' [ist' [irq' [sc' [st' [ph [cap [bs [hit []]]]]]]]]]]]]
            Hxs Hxi.
     cbn in Hxs, Hxi.
-    destruct Hxs as [Hb [Ht [Hc [Hep [Hist [Hirq [Hsc _]]]]]]].
-    destruct Hxi as [Hb' [Ht' [Hc' [Hep' [Hist' [Hirq' [Hsc' _]]]]]]].
+    destruct Hxs as [Hb [Ht [Hc [Hep [Hist [Hirq [Hsc [Hst _]]]]]]]].
+    destruct Hxi as [Hb' [Ht' [Hc' [Hep' [Hist' [Hirq' [Hsc' [Hst' _]]]]]]]].
     subst.
     unfold RevRel, projImplRevokerArchState, revWithScanAddr, revScanAddr, revOffAddr; cbn.
     reflexivity.
@@ -497,9 +498,9 @@ Section RefInitMain.
                       (nth_error_app_cons_len pre (implRevRegion core revBase revPfB revPfA) post)
                       IMEM.(Fst)).(Fst)) in *.
         clearbody xi.
-        destruct xi as [b [t [c [ep [ist [irq [sc [ph [cap [bs [hit []]]]]]]]]]]].
+        destruct xi as [b [t [c [ep [ist [irq [sc [st [ph [cap [bs [hit []]]]]]]]]]]]].
         cbn in Hrev.
-        destruct Hrev as [_ [_ [_ [_ [_ [_ [_ [Hph _]]]]]]]].
+        destruct Hrev as [_ [_ [_ [_ [_ [_ [_ [_ [Hph _]]]]]]]]].
         cbn; rewrite Hph.
         split; reflexivity. }
       pose proof (proj1 (proj2 (proj2 (proj1 H2)))) as Hsl; cbn in Hsl.
@@ -613,9 +614,9 @@ Section RefInitMain.
                     (nth_error_app_cons_len pre (implRevRegion core revBase revPfB revPfA) post)
                     IMEM.(Fst)).(Fst)) in *.
       clearbody xi.
-      destruct xi as [b [t [c [ep [ist [irq [sc [ph [cap [bs [hit []]]]]]]]]]]].
+      destruct xi as [b [t [c [ep [ist [irq [sc [st [ph [cap [bs [hit []]]]]]]]]]]]].
       cbn in Hrev.
-      destruct Hrev as [_ [_ [_ [_ [_ [_ [_ [Hph _]]]]]]]].
+      destruct Hrev as [_ [_ [_ [_ [_ [_ [_ [_ [Hph _]]]]]]]]].
       cbn [Fst Snd]; rewrite Hph.
       split; [intros Hc; discriminate Hc |].
       split; [intros Hc; discriminate Hc |].

@@ -47,6 +47,8 @@ While `cheriot-sail` is the defacto standard specification, our ISA specificatio
    - In CHERIoT RTOS, `ECALL` (`mcause = 11`) simply invokes the scheduler (`scheduler::exception_entry`) to expire any elapsed timers (`Timer::expiretimers()`) and switch to the next runnable thread (`Thread::schedule()`), advancing `mepcc` by 4 on return.
    - Since `WFI` is executed in the idle thread loop (`wfi; j .Lidle_loop` in `boot.S`) when all user threads are sleeping, treating `WFI` as `ECALL` causes the idle thread to immediately yield into the scheduler, poll `mtime` to wake up any threads whose timeout has elapsed, and switch threads without requiring dedicated `WFI` stall state.
 
+8. **Revoker's epoch is read-only**:
+   - This prevents conflicts if software tries to write the epoch mid-sweep
 <!--
 ---
 
