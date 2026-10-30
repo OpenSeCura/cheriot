@@ -41,8 +41,8 @@ Record MemIfc {ty : Kind -> Type} := {
 
   (* 2. Data Load Channel *)
   mem_readMemRq    : ty Addr -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree Bool ;
-  mem_getMemRp     : ty Addr -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree (Option FullCapWithTag) ;
-  mem_deqMemRp     : ty Addr -> Action ty memTree (Bit 0) ;
+  mem_getMemRp     : Action ty memTree (Option FullCapWithTag) ;
+  mem_deqMemRp     : Action ty memTree (Bit 0) ;
 
   (* 3. Revocation Bit Memory Channel *)
   mem_readRevBitRq   : ty (Bit (AddrSz + 1)) -> Action ty memTree Bool ;
@@ -761,8 +761,6 @@ Section ImplDevice.
 
       Definition implMemReadRp
                  (req : MemRequester)
-                 (addr : ty Addr)
-                 (memSize : ty (Bit LgLgNumBytesFullCapSz))
                  : Action ty implMemTree (Option FullCapWithTag) :=
         ReadReg "state" pMemState (fun state =>
         ReadReg "requester" pMemRequester (fun requester =>
@@ -773,7 +771,7 @@ Section ImplDevice.
           ) ;
         Return #resOpt)).
 
-      Definition implMemDeqRp (addr : ty Addr) : Action ty implMemTree (Bit 0) :=
+      Definition implMemDeqRp : Action ty implMemTree (Bit 0) :=
         WriteReg pMemState (UNION (MemStateList, "Idle" ::= ($0 : Expr ty (Bit 0)))) Retv.
 
       Definition implMemWrite
@@ -855,12 +853,10 @@ Section ImplDevice.
 
       Definition implGetDeqRevBitRpFor (req : MemRequester) (base : ty (Bit (AddrSz + 1))) : Action ty implMemTree (Option Bool) :=
         LetL lookup      : RevBitLookup              <- computeRevBitAddr revConfig base ;
-        Let  revByteAddr : Addr                      <- ##lookup`"revByteAddr" ;
-        Let  sz0         : Bit LgLgNumBytesFullCapSz <- $0 ;
-        LetA rpOpt       : Option FullCapWithTag     <- implMemReadRp req revByteAddr sz0 ;
+        LetA rpOpt       : Option FullCapWithTag     <- implMemReadRp req ;
         LetIf rOpt : Option Bool <-
           If (##rpOpt`"valid") Then (
-            Act (implMemDeqRp revByteAddr) ;
+            Act implMemDeqRp ;
             Let revCap  : FullCapWithTag <- ##rpOpt`"data" ;
             Let revByte : Bit 8          <- TruncLsb (AddrSz - 8) 8 (##revCap`"addr") ;
             Let revBit  : Bool           <- extractRevBit lookup #revByte ;

@@ -210,13 +210,11 @@ Section DataMemStages.
 
     If (#state `? "LoadRp") Then (
       Let  ld        : LoadCmd                   <- #state `! "LoadRp" ;
-      Let  ldAddr    : Addr                      <- ##ld`"addr" ;
       Let  pl        : PendingLoad               <- ##ld`"pending" ;
-      Let  memSize   : Bit LgLgNumBytesFullCapSz <- ##pl`"memSize" ;
-      LetA memValOpt : Option FullCapWithTag     <- liftAction np_mem ((memIfc ty).(mem_getMemRp) ldAddr memSize) ;
+      LetA memValOpt : Option FullCapWithTag     <- liftAction np_mem ((memIfc ty).(mem_getMemRp)) ;
 
       If (##memValOpt`"valid") Then (
-        Act (liftAction np_mem ((memIfc ty).(mem_deqMemRp) ldAddr)) ;
+        Act (liftAction np_mem ((memIfc ty).(mem_deqMemRp))) ;
         Let  memVal  : FullCapWithTag <- ##memValOpt`"data" ;
         LetL outcome : LoadOutcome    <- dispatchLoadResponse config pl memVal ;
 

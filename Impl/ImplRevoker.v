@@ -97,8 +97,8 @@ Section ImplRevoker.
     Variable memTree      : Tree DomainElem.
     Variable revAct       : forall {k : Kind}, Action ty implRevokerTree k -> Action ty memTree k.
     Variable readMemRq      : ty Addr -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree Bool.
-    Variable getMemRp       : ty Addr -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree (Option FullCapWithTag).
-    Variable deqMemRp       : ty Addr -> Action ty memTree (Bit 0).
+    Variable getMemRp       : Action ty memTree (Option FullCapWithTag).
+    Variable deqMemRp       : Action ty memTree (Bit 0).
     Variable readRevBitRq   : ty (Bit (AddrSz + 1)) -> Action ty memTree Bool.
     Variable getDeqRevBitRp : ty (Bit (AddrSz + 1)) -> Action ty memTree (Option Bool).
     Variable writeMem       : ty Addr -> ty FullCapWithTag -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree Bool.
@@ -160,12 +160,10 @@ Section ImplRevoker.
       LetA revPhase : RevPhase <- revAct (ReadReg "revPhase" pRevPhase (fun v => Return #v)) ;
       If (##revPhase `? "WaitCapRp") Then (
         LetA scanAddrMsb    : Bit TagAddrWidth          <- revAct (ReadReg "scanAddr" pScanAddr (fun v => Return #v)) ;
-        Let scanAddr        : Addr                      <- {< #scanAddrMsb, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
         Let nextScanAddrMsb : Bit TagAddrWidth          <- Add [ #scanAddrMsb ; $1 ] ;
-        Let capSz           : Bit LgLgNumBytesFullCapSz <- $LgNumBytesFullCapSz ;
-        LetA rpOpt          : Option FullCapWithTag     <- getMemRp scanAddr capSz ;
+        LetA rpOpt          : Option FullCapWithTag     <- getMemRp ;
         If (##rpOpt`"valid") Then (
-          Act (deqMemRp scanAddr) ;
+          Act deqMemRp ;
           Let  ldFullCap   : FullCapWithTag   <- ##rpOpt`"data" ;
           Let  ldTag       : Bool             <- ##ldFullCap`"tag" ;
           Let  ldCap       : Cap              <- ##ldFullCap`"cap" ;
