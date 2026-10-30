@@ -315,14 +315,23 @@ Section ModuleActionDecomposition.
       act = @implRevokerIdleStepSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
               config regions rev ty \/
-      act = @implRevokerCapRpRevBitRqStepSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      act = @implRevokerWaitCapRpStepSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
               config regions rev ty \/
-      act = @implRevokerRevBitRpWriteCapStepSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      act = @implRevokerWaitRevBitRqStepSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
+              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+              config regions rev ty \/
+      act = @implRevokerWaitRevBitRpStepSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
+              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+              config regions rev ty \/
+      act = @implRevokerWriteCapStepSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
               config regions rev ty.
   Proof.
-    intros ty act; unfold implRevokerStepsSys; cbn [In]; intuition congruence.
+    intros ty act.
+    unfold implRevokerStepsSys, implRevokerSteps, implRevokerIdleStepSys, implRevokerWaitCapRpStepSys,
+      implRevokerWaitRevBitRqStepSys, implRevokerWaitRevBitRpStepSys, implRevokerWriteCapStepSys.
+    cbn [map In]; intuition congruence.
   Qed.
 
   Lemma In_setCanProceedSteps_decomp :

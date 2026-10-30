@@ -68,6 +68,8 @@ Definition rpWaitCapRp (p : type RevPhase) : bool := evalExpr ((Var type RevPhas
 Definition rpWaitRevBitRq (p : type RevPhase) : bool := evalExpr ((Var type RevPhase p) `? "WaitRevBitRq").
 Definition rpWaitRevBitRp (p : type RevPhase) : bool := evalExpr ((Var type RevPhase p) `? "WaitRevBitRp").
 Definition rpWriteCap (p : type RevPhase) : bool := evalExpr ((Var type RevPhase p) `? "WriteCap").
+Definition rpCheck (p : type RevPhase) : bool :=
+  orb (rpWaitRevBitRq p) (orb (rpWaitRevBitRp p) (rpWriteCap p)).
 
 Definition slIsLoad (sl : type SecondLine) : bool := evalExpr ((Var type SecondLine sl) `? "Load").
 Definition slIsStore (sl : type SecondLine) : bool := evalExpr ((Var type SecondLine sl) `? "Store").
@@ -634,6 +636,75 @@ Section CoreRel.
     (dmLoadRq (iDmSt s1) = true -> g_cnwb g = None) /\
     (dmRevRq (iDmSt s1) = true -> g_cnwb g = Some (revWb (sMem s2) (dmRevRqV (iDmSt s1)))).
 
+  (* --- 9b. The Revoker (C8) --- *)
+
+  (* An architectural revoker state: [ base; top; control; epoch; intStatus; intRequested;
+   * scanAddr ] *)
+  Local Abbreviation RevArch := (TS (Node "revoker" (revokerChildren core []))).
+
+  Definition revTopOf (x : RevArch) : bits TagAddrWidth := x.(Snd).(Fst).
+  Definition revEpochOf (x : RevArch) : bits Xlen := x.(Snd).(Snd).(Snd).(Fst).
+  Definition iRevArch (s1 : IState) : RevArch := projImplRevokerArchState core (iRev s1).
+
+  Definition scanFull (a : bits TagAddrWidth) : type Addr :=
+    evalExpr ({< Var type (Bit TagAddrWidth) a, Const type (Bit LgNumBytesFullCapSz) Zmod.zero >}).
+
+  (* The sweep is on (odd epoch) and position `sa` is below `top` *)
+  Definition revSweepingAt (x : RevArch) (sa : bits TagAddrWidth) : Prop :=
+    evalExpr (FromBit Bool (TruncLsb (Xlen - 1) 1 (Var type (Bit Xlen) (revEpochOf x)))) = true /\
+    evalExpr (Uge (Var type (Bit TagAddrWidth) sa) (Var type (Bit TagAddrWidth) (revTopOf x))) = false.
+
+  (* A loaded capability: [ tag; cap; addr ] *)
+  Definition capECap (c : type FullCapWithTag) : type ECap :=
+    evalLetExpr (@DecodeCap type c.(Snd).(Fst) c.(Snd).(Snd).(Fst)).
+  Definition capNeedsCheck (c : type FullCapWithTag) : bool :=
+    evalExpr (@needsRevocationCheck type config (capECap c) c.(Fst)).
+  Definition capBase (c : type FullCapWithTag) : type (Bit (AddrSz + 1)) :=
+    evalExpr ((Var type ECap (capECap c))`"base").
+  Definition untagCap (c : type FullCapWithTag) : type FullCapWithTag :=
+    (false ,, (c.(Snd).(Fst) ,, (c.(Snd).(Snd).(Fst) ,, tt))).
+
+  (* The value a single-line read of `sz` bytes at `a` gets from line response `rp` *)
+  Definition lineVal (a : type Addr) (sz : type (Bit LgLgNumBytesFullCapSz)) (rp : type LineReadRp)
+    : type FullCapWithTag :=
+    evalLetExpr (memAssembleCapRead (Var type Addr a) (Var type (Bit LgLgNumBytesFullCapSz) sz)
+                   (Var type CapPacket (specPkt a rp))).
+
+  (* The revoker's write waiting in the memory is the spec revoker step's write at position `sa`
+   * (the impl's scanAddr is one ahead) *)
+  Definition RevWriteOK (s1 : IState) (s2 : SState) (addr : type Addr) (pkt : type CapPacket) : Prop :=
+    exists sa, revScanAddr core (iRevArch s1) = Zmod.add sa Zmod.one /\ addr = scanFull sa /\
+      revSweepingAt (iRevArch s1) sa /\
+      capNeedsCheck (memValAt (sMem s2) addr capSz) = true /\
+      revBitOf (sMem s2) (capBase (memValAt (sMem s2) addr capSz)) = true /\
+      pkt = disassembleW addr (untagCap (memValAt (sMem s2) addr capSz)) capSz.
+
+  (* The values of the revoker's reads in flight are the spec memory's *)
+  Definition RevAccRel (g : Ghost) (s1 : IState) (s2 : SState) : Prop :=
+    match g_acc g with
+    | AccRevCap (RdArrived _ rp) => lineVal (iScanAddr s1) capSz rp = memValAt (sMem s2) (iScanAddr s1) capSz
+    | AccRevCap (RdReady res) => res = memValAt (sMem s2) (iScanAddr s1) capSz
+    | AccRevBit (RdArrived _ rp) =>
+        lineVal (revByteAddrOf (iRevScanBase s1)) byteSz rp =
+          memValAt (sMem s2) (revByteAddrOf (iRevScanBase s1)) byteSz
+    | AccRevBit (RdReady res) => res = memValAt (sMem s2) (revByteAddrOf (iRevScanBase s1)) byteSz
+    | AccRevWrite addr pkt _ => RevWriteOK s1 s2 addr pkt
+    | _ => True
+    end.
+
+  (* While a position is processed the sweep is on at scanAddr. From the cap read on, the saved
+   * cap needs a check and is the cap at scanAddr unless a store hit it; at WriteCap its rev bit
+   * is set. *)
+  Definition RevokerRel (g : Ghost) (s1 : IState) (s2 : SState) : Prop :=
+    (rpIdle (iRevPhase s1) = false -> revSweepingAt (iRevArch s1) (revScanAddr core (iRevArch s1))) /\
+    (rpCheck (iRevPhase s1) = true ->
+       capNeedsCheck (iRevScanCap s1) = true /\ iRevScanBase s1 = capBase (iRevScanCap s1)) /\
+    (rpCheck (iRevPhase s1) = true -> iRevSnoopHit s1 = false ->
+       memValAt (sMem s2) (iScanAddr s1) capSz = iRevScanCap s1) /\
+    (rpWriteCap (iRevPhase s1) = true -> iRevSnoopHit s1 = false ->
+       revBitOf (sMem s2) (iRevScanBase s1) = true) /\
+    RevAccRel g s1 s2.
+
   (* --- 10. dataMem's Queue --- *)
 
   Definition isPlainFence (q : type MemFenceReq) : bool :=
@@ -876,7 +947,8 @@ Section CoreRel.
     rr_fence  : FenceRel g s1 ;
     rr_score  : ScoreRel g s1 ;
     rr_front  : FrontRel g s1 s2 ;
-    rr_wf     : WfRel g s1 s2
+    rr_wf     : WfRel g s1 s2 ;
+    rr_rev    : RevokerRel g s1 s2
   }.
 
   Definition RefRel (s1 : IState) (s2 : SState) : Prop := exists g, RefRelG g s1 s2.
@@ -994,6 +1066,28 @@ Section CoreRel.
       end.
   Qed.
 
+  (* The revoker facts read only the revoker state, the access in flight and the line contents *)
+  Lemma RevokerRel_frame :
+    forall g g' (s1 s1' : IState) (s2 s2' : SState),
+      g_acc g' = g_acc g -> iRev s1' = iRev s1 ->
+      (forall L, lineContent specRegions (sMem s2') L = lineContent specRegions (sMem s2) L) ->
+      RevokerRel g s1 s2 -> RevokerRel g' s1' s2'.
+  Proof.
+    intros g g' s1 s1' s2 s2' Eacc HR Hlc H.
+    assert (Hmv : forall a sz, memValAt (sMem s2') a sz = memValAt (sMem s2) a sz)
+      by (intros a sz; apply memValAt_ext; exact Hlc).
+    assert (Hrb : forall b, revBitOf (sMem s2') b = revBitOf (sMem s2) b)
+      by (intros b; apply revBitOf_ext; exact Hlc).
+    unfold RevokerRel, RevAccRel, RevWriteOK in *; rewrite Eacc.
+    revert H.
+    destruct (g_acc g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
+                          | rc [[|]|[|]|[|]|[|] rp|res] | [[|]|[|]|[|]|[|] rp|res]
+                          | [[|]|[|]|[|]|[|] rp|res] | addr pkt [[|]|[|]]];
+      intros H; cbv beta iota in *;
+      unfold iRevArch, iRevPhase, iRevScanCap, iRevScanBase, iRevSnoopHit, iScanAddr in *;
+      rewrite HR, ?Hmv, ?Hrb; exact H.
+  Qed.
+
   (* A step that changes only the region states (impl) and the spec memory, keeping the
    * ports, the impl revoker, the line contents and (monotonically) the fetch view *)
   Lemma RefRelG_regions_frame :
@@ -1010,7 +1104,7 @@ Section CoreRel.
       RefRelG g s1 s2 -> RefRelG g s1' s2'.
   Proof.
     intros g s1 s1' s2 s2' mi' ms' E1 E2 HP HR Hlc Hext Hmem Hlat H.
-    destruct H as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw].
+    destruct H as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     pose proof (proj2 (proj2 Hm)) as Hsnap.
     assert (Hrw : forall rc, revWb (sMem s2') rc = revWb (sMem s2) rc)
       by (intros rc; apply revWb_ext; exact Hlc).
@@ -1046,6 +1140,182 @@ Section CoreRel.
         intros Hlive; rewrite E1 in Hlive.
         exact (LineAllowed_fetchViewExt core initLine specRegions fwcs _ _ _ _ Hsnap Hext (Hl' Hlive)).
     - unfold WfRel in *; rewrite HP; rewrite E1; exact Hw.
+    - exact (RevokerRel_frame g g s1 s1' s2 s2' eq_refl HR Hlc Hrk).
+  Qed.
+
+  (* --- 16b. Steps While a fence.i Waits --- *)
+
+  (* A region's spec part with its fetch subtree's fenceIWait and fenceIAck trace replaced *)
+  Definition setAcksS (r : MemRegion) (x : TS (externalMemRegionTree core r)) (w : bool) (a : list bool)
+    : TS (externalMemRegionTree core r) :=
+    ((x.(Fst).(Fst) ,, (x.(Fst).(Snd).(Fst) ,, (w ,, (x.(Fst).(Snd).(Snd).(Snd).(Fst) ,,
+       (a ,, x.(Fst).(Snd).(Snd).(Snd).(Snd).(Snd)))))) ,, x.(Snd)).
+
+  Definition setAcksI (r : MemRegion) (y : TS (implExternalMemRegionTree core r)) (w : bool) (a : list bool)
+    : TS (implExternalMemRegionTree core r) :=
+    (setAcksS r y.(Fst) w a ,, y.(Snd)).
+
+  (* A port predicate that reads neither fenceIWait nor the fenceIAck trace *)
+  Definition AckInsensitive (P : forall r, TS (implExternalMemRegionTree core r) -> Prop) : Prop :=
+    forall r y w a, P r (setAcksI r y w a) = P r y.
+
+  Lemma RegionPort_conj :
+    forall (P Q : forall r, TS (implExternalMemRegionTree core r) -> Prop) r (y : TS (implMemRegionTree core r)),
+      RegionPort P r y -> RegionPort Q r y -> RegionPort (fun r y => P r y /\ Q r y) r y.
+  Proof.
+    intros P Q r; unfold RegionPort, implMemRegionTree.
+    destruct (regionKind r); intros y H1 H2; [exact (conj H1 H2) | exact I].
+  Qed.
+
+  Lemma AllPorts_conj :
+    forall (P Q : forall r, TS (implExternalMemRegionTree core r) -> Prop) l (mi : TS (implRegionsTree core l)),
+      AllPorts P l mi -> AllPorts Q l mi -> AllPorts (fun r y => P r y /\ Q r y) l mi.
+  Proof.
+    intros P Q l; induction l as [| r l IH]; intros mi HP HQ; cbn [AllPorts] in *; [exact I |].
+    destruct HP as [HP0 HP1], HQ as [HQ0 HQ1].
+    exact (conj (RegionPort_conj P Q r _ HP0 HQ0) (IH _ HP1 HQ1)).
+  Qed.
+
+  Lemma filter_all_false :
+    forall {A : Type} (p : A -> bool) (l : list A), Forall (fun a => p a = false) l -> filter p l = [].
+  Proof.
+    intros A p l; induction l as [| a l IH]; intros H; [reflexivity |].
+    inversion H as [| ? ? Ha Hl]; subst; cbn [filter]; rewrite Ha; exact (IH Hl).
+  Qed.
+
+  Lemma filter_combine_all_false :
+    forall {A B : Type} (p : A -> bool) (l1 : list A) (l2 : list B),
+      Forall (fun a => p a = false) l1 -> filter (fun ab => p (fst ab)) (combine l1 l2) = [].
+  Proof.
+    intros A B p l1; induction l1 as [| a l1 IH]; intros l2 H; [reflexivity |].
+    destruct l2 as [| b l2]; [reflexivity |].
+    inversion H as [| ? ? Ha Hl]; subst; cbn [combine filter fst]; rewrite Ha; exact (IH l2 Hl).
+  Qed.
+
+  Lemma liveInsts_noLive : forall g s1, NoLive s1 -> liveInsts g s1 = [].
+  Proof.
+    intros g s1 [N1 [N2 _]]; unfold liveInsts.
+    rewrite (filter_combine_all_false (daLive s1) (iD2a s1) (g_d2aFo g) N1), (filter_all_false (aiLive s1) _ N2).
+    reflexivity.
+  Qed.
+
+  Lemma FrontierRel_noStraddle :
+    forall s1 s2 s2' fp, optValid (iStraddle s1) = false -> FrontierRel s1 s2 fp -> FrontierRel s1 s2' fp.
+  Proof.
+    intros s1 s2 s2' fp Hs H; unfold FrontierRel in *; cbv zeta in *; rewrite Hs in *; exact H.
+  Qed.
+
+  (* `AccessRel_frame` with only the four port views it reads *)
+  Lemma AccessRel_frame_ports :
+    forall g (s1 s1' : IState) (s2 s2' : SState),
+      PortsQuiet s1' = PortsQuiet s1 ->
+      (forall L, PortsReadStaged L s1' = PortsReadStaged L s1) ->
+      (forall L, PortsReadOut L s1' = PortsReadOut L s1) ->
+      (forall L rq, PortsWriteStaged L rq s1' = PortsWriteStaged L rq s1) ->
+      iRev s1' = iRev s1 -> iMemSt s1' = iMemSt s1 -> iReadRp s1' = iReadRp s1 ->
+      iRequester s1' = iRequester s1 -> iDmSt s1' = iDmSt s1 -> sSecond s2' = sSecond s2 ->
+      (forall L, lineContent specRegions (sMem s2') L = lineContent specRegions (sMem s2) L) ->
+      AccessRel g s1 s2 -> AccessRel g s1' s2'.
+  Proof.
+    intros g s1 s1' s2 s2' Q1 Q2 Q3 Q4 HR Emst Erp Ereq Edm Esec Hlc Ha.
+    assert (Hslw : forall pl v, specLoadWb (sMem s2') pl v = specLoadWb (sMem s2) pl v)
+      by (intros pl v; apply specLoadWb_ext; exact Hlc).
+    assert (Hrw : forall rc, revWb (sMem s2') rc = revWb (sMem s2) rc)
+      by (intros rc; apply revWb_ext; exact Hlc).
+    unfold AccessRel in *.
+    revert Ha.
+    destruct (g_acc g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
+                          | rc [[|]|[|]|[|]|[|] rp|res] | [[|]|[|]|[|]|[|] rp|res]
+                          | [[|]|[|]|[|]|[|] rp|res] | addr pkt [[|]|[|]]];
+      intros Ha;
+      unfold WrStageRel, RdStageRel, revNotReading, dmNotAccessing, iRevPhase, iScanAddr, iRevScanBase in *;
+      cbv beta iota zeta in *;
+      rewrite ?Q1, ?Q2, ?Q3, ?Q4, ?HR, ?Hrw, ?Emst, ?Erp, ?Ereq, ?Edm, ?Esec;
+      try setoid_rewrite Hslw;
+      lazymatch goal with
+      | |- context [s1'] => fail 1 "AccessRel_frame_ports: an impl observation is left"
+      | |- context [s2'] => fail 1 "AccessRel_frame_ports: a spec observation is left"
+      | _ => exact Ha
+      end.
+  Qed.
+
+  (* A step that changes only the region states (impl) and the spec memory while some
+   * fenceIWait is set: then no instruction is live or pending and no straddle waits
+   * (`FenceRel`), so the fetch view of the spec memory is not read *)
+  Lemma RefRelG_wait_frame :
+    forall g (s1 s1' : IState) (s2 s2' : SState) mi' ms',
+      s1' = writeSubTreeState (Impl.np_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions)
+              s1 (mi' ,, (iMem s1).(Snd)) ->
+      s2' = writeSubTreeState (Spec.np_mem core pcAddrInit specRegions) s2 ms' ->
+      ~ NoFenceIWait s1 ->
+      (forall P, AckInsensitive P -> AllPorts P implRegions (iRegions s1') = AllPorts P implRegions (iRegions s1)) ->
+      iRev s1' = iRev s1 ->
+      (forall L, lineContent specRegions (sMem s2') L = lineContent specRegions (sMem s2) L) ->
+      AllPorts (fun r y => RegionFenceICountInv core r y.(Fst)) implRegions (iRegions s1') ->
+      MemRelC g s1' s2' -> LatchRel g s2' ->
+      RefRelG g s1 s2 -> RefRelG g s1' s2'.
+  Proof.
+    intros g s1 s1' s2 s2' mi' ms' E1 E2 Hq HP HR Hlc Hfc Hmem Hlat H.
+    destruct H as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
+    destruct (proj2 Hf Hq) as [Hpend [Hnl [Hstr Hnone]]].
+    assert (Hrw : forall rc, revWb (sMem s2') rc = revWb (sMem s2) rc)
+      by (intros rc; apply revWb_ext; exact Hlc).
+    assert (Edm : iDmSt s1' = iDmSt s1) by (rewrite E1; reflexivity).
+    constructor.
+    - rewrite E1, E2; exact Hrf.
+    - exact Hmem.
+    - exact Hlat.
+    - unfold ReplayRel; intros G1 e G2 rfe Hg _.
+      exfalso; apply (Hnone e); rewrite Hg; apply in_or_app; right; left; reflexivity.
+    - rewrite E2; exact He.
+    - refine (AccessRel_frame_ports g s1 s1' s2 s2' _ _ _ _ HR _ _ _ Edm _ Hlc Ha).
+      + unfold PortsQuiet; apply HP; intros r y w a; reflexivity.
+      + intros L; unfold PortsReadStaged; apply HP; intros r y w a; reflexivity.
+      + intros L; unfold PortsReadOut; apply HP; intros r y w a; reflexivity.
+      + intros L rq; unfold PortsWriteStaged; apply HP; intros r y w a; reflexivity.
+      + rewrite E1; reflexivity.
+      + rewrite E1; reflexivity.
+      + rewrite E1; reflexivity.
+      + rewrite E2; reflexivity.
+    - unfold CnwbRel in *; destruct Hc as [Hc1 Hc2]; rewrite Edm, Hrw; exact (conj Hc1 Hc2).
+    - rewrite E1; exact Hd.
+    - unfold FenceRel; split.
+      + rewrite E1; exact (proj1 Hf).
+      + intros _; rewrite E1; exact (conj Hpend (conj Hnl (conj Hstr Hnone))).
+    - rewrite E1; exact Hs.
+    - unfold FrontRel in *.
+      destruct Hfr as [F1 [F2 [F3 [F4 [F5 [F6 F7]]]]]].
+      split; [rewrite E1; exact F1 |]; split; [rewrite E1; exact F2 |]; split; [rewrite E1; exact F3 |].
+      split; [rewrite E1; exact F4 |]; split; [rewrite E1; exact F5 |].
+      split.
+      + unfold LiveChain in *.
+        assert (Hlv' : liveInsts g s1' = []) by (rewrite E1; exact (liveInsts_noLive g s1 Hnl)).
+        rewrite Hlv'; rewrite (liveInsts_noLive g s1 Hnl) in F6; cbn [LiveChainG] in F6 |- *.
+        pose proof (FrontierRel_noStraddle s1 s2 s2' _ Hstr F6) as F6'.
+        rewrite E1; exact F6'.
+      + unfold FetchRespRel in *.
+        rewrite HP by (intros r y w a; reflexivity).
+        revert F7; apply AllPorts_impl; intros r y HC; cbv zeta in HC |- *.
+        destruct HC as [C [HC1 [HC2 HC3]]].
+        exists C; split; [rewrite E1; exact HC1 | split; [exact HC2 |]].
+        intros Hv; destruct (HC3 Hv) as [f [E' [HE _]]].
+        exists f, E'; split; [rewrite E1; exact HE |].
+        intros Hlv; exfalso.
+        assert (Hin : In f (iFetchBuf s1)).
+        { assert (Hin0 : In f (fbInRegion s1 r)) by (rewrite HE; left; reflexivity).
+          unfold fbInRegion in Hin0; apply filter_In in Hin0; exact (proj1 Hin0). }
+        destruct Hnl as [_ [_ Hfb]]; rewrite Forall_forall in Hfb.
+        rewrite E1 in Hlv; change (fbLive s1 f = true) in Hlv.
+        rewrite (Hfb f Hin) in Hlv; discriminate Hlv.
+    - unfold WfRel in *.
+      destruct Hw as [W1 [W2 [W3 [W4 W5]]]].
+      split; [rewrite E1; exact W1 |]; split; [rewrite E1; exact W2 |]; split; [rewrite E1; exact W3 |].
+      split; [rewrite E1; exact W4 |].
+      refine (AllPorts_conj (fun r y => ImplExternalRegionHandshakeInv core r y) _ _ _ _ Hfc).
+      rewrite HP by (intros r y w a; reflexivity).
+      revert W5; apply AllPorts_impl; intros r y [Hy _]; exact Hy.
+    - exact (RevokerRel_frame g g s1 s1' s2 s2' eq_refl HR Hlc Hrk).
   Qed.
 
   (* --- 17. The mcycle Tick --- *)
@@ -1191,7 +1461,7 @@ Section CoreRel.
   Proof.
     intros g s1 s1' s2 E1 Hne H.
     destruct (tick_impl_facts s1 s1' E1) as [Hflush Hpcc].
-    destruct H as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw].
+    destruct H as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     constructor.
     - unfold RfRel in *; cbn [g_chain g_rf0 g_cnwb] in *.
       destruct Hrf as [R1 [R2 [R3 R4]]].
@@ -1229,6 +1499,7 @@ Section CoreRel.
     - eapply ScoreRel_tick; [exact E1 | reflexivity | exact Hs].
     - eapply FrontRel_tick; [exact E1 | reflexivity | exact (proj2 (proj2 Hm)) | exact Hfr].
     - rewrite E1; exact Hw.
+    - refine (RevokerRel_frame g _ s1 s1' s2 s2 eq_refl _ (fun L => eq_refl) Hrk); rewrite E1; reflexivity.
   Qed.
 
   Local Abbreviation NPRFS := (Spec.np_rf core pcAddrInit specRegions).
@@ -1245,7 +1516,7 @@ Section CoreRel.
   Proof.
     intros g s1 s1' s2 s2' E1 E2 Hnil H.
     destruct (tick_impl_facts s1 s1' E1) as [Hflush Hpcc].
-    destruct H as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw].
+    destruct H as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     assert (Hsec : sSecond s2' = sSecond s2) by (rewrite E2; reflexivity).
     assert (Hsm : sMem s2' = sMem s2) by (rewrite E2; reflexivity).
     constructor.
@@ -1272,6 +1543,8 @@ Section CoreRel.
     - eapply ScoreRel_tick; [exact E1 | reflexivity | exact Hs].
     - rewrite E2; eapply FrontRel_tick; [exact E1 | reflexivity | exact (proj2 (proj2 Hm)) | exact Hfr].
     - rewrite E1; exact Hw.
+    - refine (RevokerRel_frame g _ s1 s1' s2 s2' eq_refl _ _ Hrk);
+        [rewrite E1; reflexivity | intros L; rewrite Hsm; reflexivity].
   Qed.
 
 End CoreRel.

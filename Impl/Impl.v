@@ -115,19 +115,24 @@ Section ImplDom.
       Definition implSampleMtipStep : Action ty sysTree (Bit 0) :=
         liftAction np_mem (implClintAction (clintSampleMtip core ty)).
 
+      (* One rule per revoker phase (`implRevokerSteps`), in phase order *)
+      Definition implRevokerStepsSys : list (Action ty sysTree (Bit 0)) :=
+        map (fun act => liftAction np_mem act) (@implRevokerSteps core config regions ty rev).
+
       Definition implRevokerIdleStepSys : Action ty sysTree (Bit 0) :=
         liftAction np_mem (@implRevokerIdleStep core regions ty rev).
 
-      Definition implRevokerCapRpRevBitRqStepSys : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (@implRevokerCapRpRevBitRqStep core config regions ty rev).
+      Definition implRevokerWaitCapRpStepSys : Action ty sysTree (Bit 0) :=
+        liftAction np_mem (@implRevokerWaitCapRpStep core config regions ty rev).
 
-      Definition implRevokerRevBitRpWriteCapStepSys : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (@implRevokerRevBitRpWriteCapStep core config regions ty rev).
+      Definition implRevokerWaitRevBitRqStepSys : Action ty sysTree (Bit 0) :=
+        liftAction np_mem (@implRevokerWaitRevBitRqStep core config regions ty rev).
 
-      Definition implRevokerStepsSys : list (Action ty sysTree (Bit 0)) :=
-        [ implRevokerIdleStepSys ;
-          implRevokerCapRpRevBitRqStepSys ;
-          implRevokerRevBitRpWriteCapStepSys ].
+      Definition implRevokerWaitRevBitRpStepSys : Action ty sysTree (Bit 0) :=
+        liftAction np_mem (@implRevokerWaitRevBitRpStep core config regions ty rev).
+
+      Definition implRevokerWriteCapStepSys : Action ty sysTree (Bit 0) :=
+        liftAction np_mem (@implRevokerWriteCapStep core regions ty rev).
 
       Definition implPlicClaimStep : Action ty sysTree (Bit 0) :=
         liftAction np_mem (implPlicAction (@updateClaim core nIrq ty)).
@@ -310,9 +315,9 @@ Section ImplDom.
         ++ mulDivStageActions ty
         ++ [ implRevokerIdleStepSys ty ]
         ++ [ readRqStep ty ] ++ readRqPorts ty ++ readRpPorts ty ++ [ readRpStep ty ]
-        ++ [ implRevokerCapRpRevBitRqStepSys ty ]
+        ++ [ implRevokerWaitCapRpStepSys ty ; implRevokerWaitRevBitRqStepSys ty ]
         ++ [ readRqStep ty ] ++ readRqPorts ty ++ readRpPorts ty ++ [ readRpStep ty ]
-        ++ [ implRevokerRevBitRpWriteCapStepSys ty ]
+        ++ [ implRevokerWaitRevBitRpStepSys ty ; implRevokerWriteCapStepSys ty ]
         ++ [ writeRqStep ty ] ++ writeRqPorts ty
         ++ fenceIAcks ty
         ++ setCanProceedSteps ty)%list.

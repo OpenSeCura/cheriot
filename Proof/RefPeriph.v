@@ -985,7 +985,7 @@ Section FenceAckRegion.
   Variable core : string.
 
   (* The effect of one ack step on a region's spec part: `None` when `fenceIWait` was clear,
-   * `Some ack` when the ack was received *)
+   * `Some ack` when the ack was received (fenceIWait was set) *)
   Definition AckUpd {r : MemRegion} (o : option bool) (s s' : TS (externalMemRegionTree core r)) : Prop :=
     match o with
     | None => s'.(Snd) = s.(Snd) /\ s'.(Fst) = s.(Fst)
@@ -993,17 +993,20 @@ Section FenceAckRegion.
         s'.(Snd) = s.(Snd) /\ s'.(Fst).(Fst) = s.(Fst).(Fst) /\ s'.(Fst).(Snd).(Fst) = s.(Fst).(Snd).(Fst) /\
         s'.(Fst).(Snd).(Snd).(Fst) = negb b /\
         s'.(Fst).(Snd).(Snd).(Snd).(Fst) = s.(Fst).(Snd).(Snd).(Snd).(Fst) /\
-        s'.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst) = b :: s.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst)
+        s'.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst) = b :: s.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst) /\
+        s.(Fst).(Snd).(Snd).(Fst) = true
     end.
 
-  (* Same fenceIWait and an env that accepts the impl's ack: the spec takes the same step *)
+  (* Same fenceIWait and an env that accepts the impl's ack: the spec takes the same step;
+   * the impl env accepted the ack received *)
   Lemma extFenceIAck_sim :
     forall r (envI envS : Env (externalMemRegionTree core r)) (x z z' : TS (externalMemRegionTree core r)) v,
       x.(Fst).(Snd).(Snd).(Fst) = z.(Fst).(Snd).(Snd).(Fst) ->
       (forall ack, subEnv child0Path envI z z.(Fst) (pExtFetchFenceIAck core) ack ->
                    subEnv child0Path envS x x.(Fst) (pExtFetchFenceIAck core) ack) ->
       SemAction envI (@externalFenceIAckStep core r type) z z' v ->
-      exists o x', SemAction envS (@externalFenceIAckStep core r type) x x' v /\ AckUpd o z z' /\ AckUpd o x x'.
+      exists o x', SemAction envS (@externalFenceIAckStep core r type) x x' v /\ AckUpd o z z' /\ AckUpd o x x' /\
+        (forall b, o = Some b -> subEnv child0Path envI z z.(Fst) (pExtFetchFenceIAck core) b).
   Proof.
     intros r envI envS x z z' v Hw Henv Hsem.
     unfold externalFenceIAckStep in Hsem.
@@ -1020,7 +1023,8 @@ Section FenceAckRegion.
         destruct ack; cbn in Hrest |- *; destruct Hrest as [_ Hv];
           (split; [repeat split; cbn; first [reflexivity | exact HwaitS] | exact Hv]). }
       destruct (evalActionPropGen_to_SemAction _ _ _ HS) as [x' [v' [HsemS [Hupd Hv']]]]; subst v'.
-      exists (Some ack), x'; split; [exact HsemS | split; [| exact Hupd]].
+      exists (Some ack), x'; split; [exact HsemS | split; [| split; [exact Hupd |
+        intros b Eb; injection Eb as Eb; subst b; exact Hack]]].
       destruct ack; cbn in Hrest; destruct Hrest as [<- _]; repeat split; cbn; first [reflexivity | exact Hwait].
     - cbn in Hsem; destruct Hsem as [Hz Hv].
       assert (HS : evalActionPropGen envS (@externalFenceIAckStep core r type) x
@@ -1029,7 +1033,7 @@ Section FenceAckRegion.
         destruct (x.(Fst).(Snd).(Snd).(Fst)) eqn:HwaitS; [exfalso; congruence |].
         cbn; split; [split; reflexivity | exact Hv]. }
       destruct (evalActionPropGen_to_SemAction _ _ _ HS) as [x' [v' [HsemS [Hupd Hv']]]]; subst v'.
-      exists None, x'; split; [exact HsemS | split; [| exact Hupd]].
+      exists None, x'; split; [exact HsemS | split; [| split; [exact Hupd | intros b Eb; discriminate Eb]]].
       subst z'; split; reflexivity.
   Qed.
 
@@ -1041,7 +1045,7 @@ Section FenceAckRegion.
   Proof.
     intros r o x x' y z' [E1 [E2 [E3 E4]]] Hz Hx.
     destruct o as [b |]; cbn [AckUpd] in Hz, Hx.
-    - destruct Hz as [Z1 [Z2 [Z3 [Z4 [Z5 Z6]]]]], Hx as [X1 [X2 [X3 [X4 [X5 X6]]]]].
+    - destruct Hz as [Z1 [Z2 [Z3 [Z4 [Z5 [Z6 _]]]]]], Hx as [X1 [X2 [X3 [X4 [X5 [X6 _]]]]]].
       unfold ExtRel, implAccWrites in *; cbn [Fst Snd] in *.
       split; [rewrite X1, Z1; exact E1 |].
       split; [rewrite X4, Z4; reflexivity |].
@@ -1052,8 +1056,9 @@ Section FenceAckRegion.
       rewrite X1, Z1, X2, Z2; exact (conj E1 (conj E2 (conj E3 E4))).
   Qed.
   (* The env condition at one region: for an ExternalMem region, an ack the impl env accepts is
-   * accepted by the spec env when the region states are related *)
-  Definition AckEnvAt (r : MemRegion) :
+   * accepted by the spec env when the region states are related, and it meets the constraint
+   * of the region's write count oracle `fwc` *)
+  Definition AckEnvAt (r : MemRegion) (fwc : nat -> nat) :
     Env (memRegionTree core r) -> Env (implMemRegionTree core r) ->
     TS (memRegionTree core r) -> TS (implMemRegionTree core r) -> Prop :=
     match r.(regionKind) as k
@@ -1063,18 +1068,232 @@ Section FenceAckRegion.
     | ExternalMem => fun eS eI x y =>
         ExtRel core r x y ->
         forall ack, subEnv child0Path (subEnv child0Path eI y) y.(Fst) y.(Fst).(Fst) (pExtFetchFenceIAck core) ack ->
-                    subEnv child0Path eS x x.(Fst) (pExtFetchFenceIAck core) ack
+                    subEnv child0Path eS x x.(Fst) (pExtFetchFenceIAck core) ack /\
+                    EnvFenceIAckAt fwc (length x.(Fst).(Snd).(Snd).(Snd).(Fst)) x.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst)
+                                   (length x.(Snd).(Snd).(Snd).(Fst)) ack
     | CustomMem _ _ _ _ => fun _ _ _ _ => True
     end.
 
-  Fixpoint EnvAckRel (l : list MemRegion) : Env (specMemTree core l) -> Env (implRegionsTree core l) -> Prop :=
+  (* `fwcs i`: the oracle of the region at position `i` *)
+  Fixpoint EnvAckRel (fwcs : nat -> nat -> nat) (l : list MemRegion)
+    : Env (specMemTree core l) -> Env (implRegionsTree core l) -> Prop :=
     match l as l0 return Env (specMemTree core l0) -> Env (implRegionsTree core l0) -> Prop with
     | [] => fun _ _ => True
     | r :: rs => fun envS envI =>
-        (forall ms mi, AckEnvAt r (subEnv child0Path envS ms) (subEnv child0Path envI mi) ms.(Fst) mi.(Fst)) /\
-        (forall ms mi, EnvAckRel rs (subEnv child1Path envS ms) (subEnv child1Path envI mi))
+        (forall ms mi, AckEnvAt r (fwcs 0%nat) (subEnv child0Path envS ms) (subEnv child0Path envI mi) ms.(Fst) mi.(Fst)) /\
+        (forall ms mi, EnvAckRel (fun i => fwcs (S i)) rs (subEnv child1Path envS ms) (subEnv child1Path envI mi))
     end.
 End FenceAckRegion.
+
+(* --- Region Changes Confined to fenceIWait and the fenceIAck Trace --- *)
+
+Section AckFrameSec.
+  Variable core : string.
+  Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
+
+  Local Abbreviation WaitClearP :=
+    (fun r (y : TS (implExternalMemRegionTree core r)) => y.(Fst).(Fst).(Snd).(Snd).(Fst) = false).
+  Local Abbreviation FenceICntP :=
+    (fun r (y : TS (implExternalMemRegionTree core r)) => RegionFenceICountInv core r y.(Fst)).
+
+  Lemma prod_ext : forall {A B : Type} (p q : A ** B), p.(Fst) = q.(Fst) -> p.(Snd) = q.(Snd) -> p = q.
+  Proof. intros A B [a b] [c d]; cbn; intros -> ->; reflexivity. Qed.
+
+  Definition RegionAckFrameS (r : MemRegion) : TS (memRegionTree core r) -> TS (memRegionTree core r) -> Prop :=
+    match r.(regionKind) as k return TS (memRegionKindTree core r k) -> TS (memRegionKindTree core r k) -> Prop with
+    | ExternalMem => fun x x' => exists w a, x' = setAcksS core r x w a
+    | CustomMem _ _ _ _ => fun x x' => x' = x
+    end.
+
+  Definition RegionAckFrameI (r : MemRegion) : TS (implMemRegionTree core r) -> TS (implMemRegionTree core r) -> Prop :=
+    match r.(regionKind) as k
+      return TS (implMemRegionKindTree core r k) -> TS (implMemRegionKindTree core r k) -> Prop
+    with
+    | ExternalMem => fun y y' => exists w a, y' = setAcksI core r y w a
+    | CustomMem _ _ _ _ => fun y y' => y' = y
+    end.
+
+  Fixpoint AckFrameS (l : list MemRegion) : TS (specMemTree core l) -> TS (specMemTree core l) -> Prop :=
+    match l as l0 return TS (specMemTree core l0) -> TS (specMemTree core l0) -> Prop with
+    | [] => fun _ _ => True
+    | r :: rs => fun ms ms' => RegionAckFrameS r ms.(Fst) ms'.(Fst) /\ AckFrameS rs ms.(Snd).(Fst) ms'.(Snd).(Fst)
+    end.
+
+  Fixpoint AckFrameI (l : list MemRegion) : TS (implRegionsTree core l) -> TS (implRegionsTree core l) -> Prop :=
+    match l as l0 return TS (implRegionsTree core l0) -> TS (implRegionsTree core l0) -> Prop with
+    | [] => fun _ _ => True
+    | r :: rs => fun mi mi' => RegionAckFrameI r mi.(Fst) mi'.(Fst) /\ AckFrameI rs mi.(Snd).(Fst) mi'.(Snd).(Fst)
+    end.
+
+  Lemma RegionAckFrameS_refl : forall r x, RegionAckFrameS r x x.
+  Proof.
+    intros r; unfold RegionAckFrameS, memRegionTree; destruct (regionKind r); intros x; [| reflexivity].
+    exists x.(Fst).(Snd).(Snd).(Fst), x.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst); reflexivity.
+  Qed.
+
+  Lemma RegionAckFrameI_refl : forall r y, RegionAckFrameI r y y.
+  Proof.
+    intros r; unfold RegionAckFrameI, implMemRegionTree; destruct (regionKind r); intros y; [| reflexivity].
+    exists y.(Fst).(Fst).(Snd).(Snd).(Fst), y.(Fst).(Fst).(Snd).(Snd).(Snd).(Snd).(Fst); reflexivity.
+  Qed.
+
+  Lemma AckFrameS_refl : forall l ms, AckFrameS l ms ms.
+  Proof.
+    induction l as [| r rs IH]; intros ms; cbn [AckFrameS]; [exact I | exact (conj (RegionAckFrameS_refl r _) (IH _))].
+  Qed.
+
+  Lemma AckFrameI_refl : forall l mi, AckFrameI l mi mi.
+  Proof.
+    induction l as [| r rs IH]; intros mi; cbn [AckFrameI]; [exact I | exact (conj (RegionAckFrameI_refl r _) (IH _))].
+  Qed.
+
+  Lemma AllPorts_ackFrame :
+    forall P, AckInsensitive core P ->
+      forall l mi mi', AckFrameI l mi mi' -> AllPorts core P l mi' = AllPorts core P l mi.
+  Proof.
+    intros P HP; induction l as [| r rs IH]; intros mi mi' H; cbn [AckFrameI AllPorts] in *; [reflexivity |].
+    destruct H as [H0 H1]; rewrite (IH _ _ H1); f_equal.
+    revert H0; generalize (mi'.(Fst)) (mi.(Fst)); unfold RegionAckFrameI, RegionPort, implMemRegionTree.
+    destruct (regionKind r); intros y' y Hy; [destruct Hy as [w [a ->]]; exact (HP r y w a) | reflexivity].
+  Qed.
+
+  Lemma lineContent_ackFrame :
+    forall l ms ms', AckFrameS l ms ms' -> forall L, lineContent core initLine l ms' L = lineContent core initLine l ms L.
+  Proof.
+    induction l as [| r rs IH]; intros ms ms' H L; cbn [AckFrameS lineContent] in *; [reflexivity |].
+    destruct H as [H0 H1]; rewrite (IH _ _ H1).
+    destruct (isRegionAddrB r L); [| reflexivity].
+    revert H0; generalize (ms'.(Fst)) (ms.(Fst)); unfold RegionAckFrameS, RegionLineContent, memRegionTree.
+    destruct (regionKind r); intros x' x Hx; [destruct Hx as [w [a ->]]; reflexivity | reflexivity].
+  Qed.
+
+  Lemma regionStateAtS_ackFrame :
+    forall l j r0 (pf : nth_error l j = Some r0) (ms ms' : TS (specMemTree core l)),
+      AckFrameS l ms ms' -> isCustomR r0 ->
+      regionStateAt (memRegionTree core) j l r0 pf ms' = regionStateAt (memRegionTree core) j l r0 pf ms.
+  Proof.
+    induction l as [| r rs IH]; intros [| j'] r0 pf ms ms' H Hc; try discriminate pf;
+      cbn [AckFrameS] in H; destruct H as [H0 H1].
+    - cbn [regionStateAt].
+      set (Heq := match pf in (_ = o) return match o with Some r0' => r0' = r | None => False end
+                  with eq_refl => eq_refl end).
+      clearbody Heq; clear pf; destruct Heq.
+      cbv beta iota.
+      revert H0; generalize (ms'.(Fst)) (ms.(Fst)); unfold RegionAckFrameS, isCustomR, memRegionTree in *.
+      destruct (regionKind r0); [contradiction | intros x' x Hx; exact Hx].
+    - cbn [regionStateAt]; exact (IH j' r0 pf _ _ H1 Hc).
+  Qed.
+
+  Lemma regionStateAtI_ackFrame :
+    forall l j r0 (pf : nth_error l j = Some r0) (mi mi' : TS (implRegionsTree core l)),
+      AckFrameI l mi mi' -> isCustomR r0 ->
+      regionStateAt (implMemRegionTree core) j l r0 pf mi' = regionStateAt (implMemRegionTree core) j l r0 pf mi.
+  Proof.
+    induction l as [| r rs IH]; intros [| j'] r0 pf mi mi' H Hc; try discriminate pf;
+      cbn [AckFrameI] in H; destruct H as [H0 H1].
+    - cbn [regionStateAt].
+      set (Heq := match pf in (_ = o) return match o with Some r0' => r0' = r | None => False end
+                  with eq_refl => eq_refl end).
+      clearbody Heq; clear pf; destruct Heq.
+      cbv beta iota.
+      revert H0; generalize (mi'.(Fst)) (mi.(Fst)); unfold RegionAckFrameI, isCustomR, implMemRegionTree in *.
+      destruct (regionKind r0); [contradiction | intros y' y Hy; exact Hy].
+    - cbn [regionStateAt]; exact (IH j' r0 pf _ _ H1 Hc).
+  Qed.
+
+  (* The effect of an ack step on its region (spec part `x`, impl region `y`) *)
+  Definition RegionFenceFrame (r : MemRegion) (fwc : nat -> nat)
+    (x x' : TS (memRegionTree core r)) (y y' : TS (implMemRegionTree core r)) : Prop :=
+    ((x' = x /\ y' = y) \/ ~ RegionPort core WaitClearP r y) /\
+    RegionAckFrameS r x x' /\ RegionAckFrameI r y y' /\
+    (RegionSnapshotOK core r fwc x -> RegionSnapshotOK core r fwc x') /\
+    (RegionPort core FenceICntP r y -> RegionPort core FenceICntP r y').
+
+  (* ... and on the region lists: either nothing changed or some impl region waits for an ack *)
+  Definition FenceFrame (fwcs : nat -> nat -> nat) (lS lI : list MemRegion)
+    (ms ms' : TS (specMemTree core lS)) (mi mi' : TS (implRegionsTree core lI)) : Prop :=
+    ((ms' = ms /\ mi' = mi) \/ ~ AllPorts core WaitClearP lI mi) /\
+    AckFrameS lS ms ms' /\ AckFrameI lI mi mi' /\
+    (SnapshotOK core fwcs lS ms -> SnapshotOK core fwcs lS ms') /\
+    (AllPorts core FenceICntP lI mi -> AllPorts core FenceICntP lI mi').
+
+  Lemma FenceFrame_head :
+    forall fwcs r rsS rsI (ms ms' : TS (specMemTree core (r :: rsS))) (mi mi' : TS (implRegionsTree core (r :: rsI))),
+      RegionFenceFrame r (fwcs 0%nat) ms.(Fst) ms'.(Fst) mi.(Fst) mi'.(Fst) ->
+      ms'.(Snd) = ms.(Snd) -> mi'.(Snd) = mi.(Snd) ->
+      FenceFrame fwcs (r :: rsS) (r :: rsI) ms ms' mi mi'.
+  Proof.
+    intros fwcs r rsS rsI ms ms' mi mi' [Fd [FS [FI [Fsn Ffc]]]] Es Ei.
+    unfold FenceFrame; cbn [AckFrameS AckFrameI SnapshotOK AllPorts].
+    split; [| split; [split; [exact FS | rewrite Es; apply AckFrameS_refl] |
+             split; [split; [exact FI | rewrite Ei; apply AckFrameI_refl] |
+             split; [intros [H0 H1]; split; [exact (Fsn H0) | rewrite Es; exact H1] |
+                     intros [H0 H1]; split; [exact (Ffc H0) | rewrite Ei; exact H1]]]]].
+    destruct Fd as [[Ex Ey] | Hw].
+    - left; split; apply prod_ext; assumption.
+    - right; intros [H0 _]; exact (Hw H0).
+  Qed.
+
+  Lemma FenceFrame_tail :
+    forall fwcs rS rI rsS rsI (ms : TS (specMemTree core (rS :: rsS))) (mi : TS (implRegionsTree core (rI :: rsI)))
+           (ms'' : TS (specMemTree core rsS)) (mi'' : TS (implRegionsTree core rsI)),
+      FenceFrame (fun i => fwcs (S i)) rsS rsI ms.(Snd).(Fst) ms'' mi.(Snd).(Fst) mi'' ->
+      FenceFrame fwcs (rS :: rsS) (rI :: rsI) ms (ms.(Fst) ,, (ms'' ,, ms.(Snd).(Snd)))
+                 mi (mi.(Fst) ,, (mi'' ,, mi.(Snd).(Snd))).
+  Proof.
+    intros fwcs rS rI rsS rsI ms mi ms'' mi'' [Fd [FS [FI [Fsn Ffc]]]].
+    unfold FenceFrame; cbn [AckFrameS AckFrameI SnapshotOK AllPorts Fst Snd].
+    split; [| split; [split; [apply RegionAckFrameS_refl | exact FS] |
+             split; [split; [apply RegionAckFrameI_refl | exact FI] |
+             split; [intros [H0 H1]; split; [exact H0 | exact (Fsn H1)] |
+                     intros [H0 H1]; split; [exact H0 | exact (Ffc H1)]]]]].
+    destruct Fd as [[-> ->] | Hw]; [left; split; reflexivity | right; intros [_ H1]; exact (Hw H1)].
+  Qed.
+
+  (* What one ack step does to an ExternalMem region, given the ack constraint of the env *)
+  Lemma extFenceFrame :
+    forall r fwc o (x x' : TS (externalMemRegionTree core r)) (y : TS (implExternalMemRegionTree core r)) z',
+      @AckUpd core r o y.(Fst) z' -> @AckUpd core r o x x' ->
+      (forall b, o = Some b ->
+         EnvFenceIAckAt fwc (length x.(Fst).(Snd).(Snd).(Snd).(Fst)) x.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst)
+                        (length x.(Snd).(Snd).(Snd).(Fst)) b) ->
+      ((x' = x /\ (z' ,, y.(Snd)) = y) \/ y.(Fst).(Fst).(Snd).(Snd).(Fst) <> false) /\
+      (exists w a, x' = setAcksS core r x w a) /\
+      (exists w a, (z' ,, y.(Snd)) = setAcksI core r y w a) /\
+      ((length x.(Snd).(Snd).(Snd).(Fst) >= fenceISnapshotCount fwc x.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst))%nat ->
+       (length x'.(Snd).(Snd).(Snd).(Fst) >= fenceISnapshotCount fwc x'.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst))%nat) /\
+      (RegionFenceICountInv core r y.(Fst) -> RegionFenceICountInv core r z').
+  Proof.
+    intros r fwc o x x' y z' Hz Hx Henv.
+    destruct o as [b |]; cbn [AckUpd] in Hz, Hx.
+    - destruct Hz as [Z1 [Z2 [Z3 [Z4 [Z5 [Z6 Zw]]]]]], Hx as [X1 [X2 [X3 [X4 [X5 [X6 Xw]]]]]].
+      assert (Ex : x' = setAcksS core r x (negb b) (b :: x.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst))).
+      { revert X1 X2 X3 X4 X5 X6; destruct x' as [[q [p [w [fr [ak u]]]]] sn]; cbn [Fst Snd].
+        intros -> -> -> -> -> ->; unfold setAcksS; destruct u.
+        destruct (x.(Fst).(Snd).(Snd).(Snd).(Snd).(Snd)); reflexivity. }
+      assert (Ez : z' = setAcksS core r y.(Fst) (negb b) (b :: y.(Fst).(Fst).(Snd).(Snd).(Snd).(Snd).(Fst))).
+      { revert Z1 Z2 Z3 Z4 Z5 Z6; destruct z' as [[q [p [w [fr [ak u]]]]] sn]; cbn [Fst Snd].
+        intros -> -> -> -> -> ->; unfold setAcksS; destruct u.
+        destruct (y.(Fst).(Fst).(Snd).(Snd).(Snd).(Snd).(Snd)); reflexivity. }
+      split; [right; rewrite Zw; discriminate |].
+      split; [exists (negb b), (b :: x.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst)); exact Ex |].
+      split; [exists (negb b), (b :: y.(Fst).(Fst).(Snd).(Snd).(Snd).(Snd).(Fst)); rewrite Ez; reflexivity |].
+      split.
+      + intros Hs; rewrite X1, X6.
+        destruct b; unfold fenceISnapshotCount in *; cbn [count_true] in *; [| exact Hs].
+        destruct (Henv true eq_refl eq_refl) as [_ Hw]; rewrite Hw; lia.
+      + unfold RegionFenceICountInv; cbv zeta; rewrite Zw, Z4, Z5, Z6.
+        destruct b; cbn [negb count_true]; intros H; exact H.
+    - destruct Hz as [Z1 Z2], Hx as [X1 X2].
+      assert (Ex : x' = x) by (apply prod_ext; assumption).
+      assert (Ez : z' = y.(Fst)) by (apply prod_ext; assumption).
+      subst x' z'.
+      split; [left; split; reflexivity |].
+      split; [exists x.(Fst).(Snd).(Snd).(Fst), x.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst); reflexivity |].
+      split; [exists y.(Fst).(Fst).(Snd).(Snd).(Fst), y.(Fst).(Fst).(Snd).(Snd).(Snd).(Snd).(Fst); reflexivity |].
+      split; intros H; exact H.
+  Qed.
+End AckFrameSec.
 
 (* --- fence.i Acks along the Region Lists --- *)
 
@@ -1089,17 +1308,18 @@ Section FenceList.
   Local Abbreviation iRevR := (implRevRegion core revBase revPfB revPfA).
 
   Lemma fenceHead_rel :
-    forall i r rsS rsI (ms : TS (specMemTree core (r :: rsS))) (mi mi' : TS (implRegionsTree core (r :: rsI)))
+    forall i r rsS rsI fwcs (ms : TS (specMemTree core (r :: rsS))) (mi mi' : TS (implRegionsTree core (r :: rsI)))
            (f : forall ty, Action ty (memRegionTree core r) (Bit 0)) envI envS v,
       In f (memRegionFenceIAckActions core r) ->
       RegionRelAt core cp pp i r ms.(Fst) mi.(Fst) ->
-      AckEnvAt core r (subEnv child0Path envS ms) (subEnv child0Path envI mi) ms.(Fst) mi.(Fst) ->
+      AckEnvAt core r (fwcs 0%nat) (subEnv child0Path envS ms) (subEnv child0Path envI mi) ms.(Fst) mi.(Fst) ->
       SemAction envI (liftAction child0Path (liftToImplRegion (f type))) mi mi' v ->
       exists ms',
         SemAction envS (liftAction child0Path (f type)) ms ms' v /\
-        RegionRelAt core cp pp i r ms'.(Fst) mi'.(Fst) /\ ms'.(Snd) = ms.(Snd) /\ mi'.(Snd) = mi.(Snd).
+        RegionRelAt core cp pp i r ms'.(Fst) mi'.(Fst) /\ ms'.(Snd) = ms.(Snd) /\ mi'.(Snd) = mi.(Snd) /\
+        FenceFrame core fwcs (r :: rsS) (r :: rsI) ms ms' mi mi'.
   Proof.
-    intros i r rsS rsI ms mi mi' f envI envS v Hf Hrel Henv Hsem.
+    intros i r rsS rsI fwcs ms mi mi' f envI envS v Hf Hrel Henv Hsem.
     apply SemAction_liftAction_iff in Hsem as [y' [Hy' ->]].
     unfold liftToImplRegion in Hy'.
     apply SemAction_liftAction_iff in Hy' as [z' [Hz' ->]].
@@ -1110,26 +1330,32 @@ Section FenceList.
     unfold RegionRelAt, AckEnvAt in Hrel, Henv; cbn [regionKind] in Hrel, Henv.
     pose proof Hrel as [_ [Hw _]].
     destruct (extFenceIAck_sim core _ (subEnv child0Path (subEnv child0Path envI mi) mi.(Fst)) (subEnv child0Path envS ms)
-                ms.(Fst) mi.(Fst).(Fst) z' v Hw (Henv Hrel) Hz') as [o [x' [HsS [HuZ HuX]]]].
-    exists (x' ,, ms.(Snd)); split; [| split; [| split; reflexivity]].
+                ms.(Fst) mi.(Fst).(Fst) z' v Hw (fun ack H => proj1 (Henv Hrel ack H)) Hz')
+      as [o [x' [HsS [HuZ [HuX Hacc]]]]].
+    pose proof (extFenceFrame core _ (fwcs 0%nat) o ms.(Fst) x' mi.(Fst) z' HuZ HuX
+                  (fun b Eb => proj2 (Henv Hrel b (Hacc b Eb)))) as [Fd [FS [FI [Fsn Ffc]]]].
+    exists (x' ,, ms.(Snd)); split; [| split; [| split; [reflexivity | split; [reflexivity |]]]].
     - apply SemAction_liftAction_iff; exists x'; split; [exact HsS | reflexivity].
     - unfold RegionRelAt; cbn [regionKind].
       first [exact (ExtRel_ack core _ o _ x' _ z' Hrel HuZ HuX)
             | eapply ExtRel_ack; [exact Hrel | exact HuZ | exact HuX]].
+    - apply FenceFrame_head; [| reflexivity | reflexivity].
+      exact (conj Fd (conj FS (conj FI (conj Fsn Ffc)))).
   Qed.
 
   Lemma fencePost_rel :
-    forall l i (ms : TS (specMemTree core l)) (mi mi' : TS (implRegionsTree core l)) k
+    forall l i fwcs (ms : TS (specMemTree core l)) (mi mi' : TS (implRegionsTree core l)) k
            (aS : forall ty, Action ty (specMemTree core l) (Bit 0))
            (aI : forall ty, Action ty (implRegionsTree core l) (Bit 0)) envI envS v,
       nth_error (collectFenceIAckActions core l) k = Some aS ->
       nth_error (implCollectFenceIAckActions core l) k = Some aI ->
       MemRelPost core cp pp i l ms mi ->
-      EnvAckRel core l envS envI ->
+      EnvAckRel core fwcs l envS envI ->
       SemAction envI (aI type) mi mi' v ->
-      exists ms', SemAction envS (aS type) ms ms' v /\ MemRelPost core cp pp i l ms' mi'.
+      exists ms', SemAction envS (aS type) ms ms' v /\ MemRelPost core cp pp i l ms' mi' /\
+                  FenceFrame core fwcs l l ms ms' mi mi'.
   Proof.
-    induction l as [| r rs IH]; intros i ms mi mi' k aS aI envI envS v HkS HkI Hrel Henv Hsem;
+    induction l as [| r rs IH]; intros i fwcs ms mi mi' k aS aI envI envS v HkS HkI Hrel Henv Hsem;
       [unfold collectFenceIAckActions in HkS; destruct k; cbn in HkS; discriminate HkS |].
     unfold collectFenceIAckActions in HkS; cbn [genCollectRegionActions] in HkS.
     unfold implCollectFenceIAckActions, implCollectRegionActions in HkI; cbn [genCollectRegionActions] in HkI.
@@ -1146,9 +1372,9 @@ Section FenceList.
       assert (Ef : f' = f) by (pose proof (eq_trans (eq_sym Hf') Hf) as E; injection E as E; exact E).
       subst f'; cbv beta in Hsem |- *.
       assert (HfIn : In f (memRegionFenceIAckActions core r)) by (eapply nth_error_In; exact Hf).
-      destruct (fenceHead_rel i r rs rs ms mi mi' f envI envS v HfIn Hrel0 (Henv0 ms mi) Hsem)
-        as [ms' [Hs' [Hr' [E1 E2]]]].
-      exists ms'; split; [exact Hs' |].
+      destruct (fenceHead_rel i r rs rs fwcs ms mi mi' f envI envS v HfIn Hrel0 (Henv0 ms mi) Hsem)
+        as [ms' [Hs' [Hr' [E1 [E2 Hfr]]]]].
+      exists ms'; split; [exact Hs' |]; split; [| exact Hfr].
       cbn [MemRelPost]; split; [exact Hr' |].
       rewrite E1, E2; exact Hrel1.
     - rewrite nth_error_app2 in HkS by (rewrite length_map; exact Hge).
@@ -1157,38 +1383,41 @@ Section FenceList.
       apply option_map_Some_inv in HkS as [aS' [HaS' HkS]]; subst aS.
       apply option_map_Some_inv in HkI as [aI' [HaI' HkI]]; subst aI; cbv beta in Hsem |- *.
       apply SemAction_liftAction_iff in Hsem as [mi'' [Hmi'' ->]].
-      destruct (IH (S i) ms.(Snd).(Fst) mi.(Snd).(Fst) mi'' _ aS' aI' _ _ v HaS' HaI' Hrel1 (Henv1 ms mi) Hmi'')
-        as [ms'' [Hs'' Hr'']].
-      exists (ms.(Fst) ,, (ms'' ,, ms.(Snd).(Snd))); split.
+      destruct (IH (S i) (fun j => fwcs (S j)) ms.(Snd).(Fst) mi.(Snd).(Fst) mi'' _ aS' aI' _ _ v HaS' HaI' Hrel1
+                  (Henv1 ms mi) Hmi'') as [ms'' [Hs'' [Hr'' Hfr'']]].
+      exists (ms.(Fst) ,, (ms'' ,, ms.(Snd).(Snd))); split; [| split].
       + apply SemAction_liftAction_iff; exists ms''; split; [exact Hs'' | reflexivity].
       + cbn [MemRelPost]; split; [exact Hrel0 | exact Hr''].
+      + exact (FenceFrame_tail core fwcs r r rs rs ms mi ms'' mi'' Hfr'').
   Qed.
 
   (* The env condition along `l ++ rev :: post`, skipping the revoker position *)
-  Fixpoint EnvAckPre (l : list MemRegion)
+  Fixpoint EnvAckPre (fwcs : nat -> nat -> nat) (l : list MemRegion)
     : Env (specMemTree core (l ++ sRevR :: post)) -> Env (implRegionsTree core (l ++ iRevR :: post)) -> Prop :=
     match l as l0
       return Env (specMemTree core (l0 ++ sRevR :: post)) -> Env (implRegionsTree core (l0 ++ iRevR :: post)) -> Prop
     with
-    | [] => fun envS envI => forall ms mi, EnvAckRel core post (subEnv child1Path envS ms) (subEnv child1Path envI mi)
+    | [] => fun envS envI =>
+        forall ms mi, EnvAckRel core (fun i => fwcs (S i)) post (subEnv child1Path envS ms) (subEnv child1Path envI mi)
     | r :: rs => fun envS envI =>
-        (forall ms mi, AckEnvAt core r (subEnv child0Path envS ms) (subEnv child0Path envI mi) ms.(Fst) mi.(Fst)) /\
-        (forall ms mi, EnvAckPre rs (subEnv child1Path envS ms) (subEnv child1Path envI mi))
+        (forall ms mi, AckEnvAt core r (fwcs 0%nat) (subEnv child0Path envS ms) (subEnv child0Path envI mi) ms.(Fst) mi.(Fst)) /\
+        (forall ms mi, EnvAckPre (fun i => fwcs (S i)) rs (subEnv child1Path envS ms) (subEnv child1Path envI mi))
     end.
 
   Lemma fencePre_rel :
-    forall l i (ms : TS (specMemTree core (l ++ sRevR :: post)))
+    forall l i fwcs (ms : TS (specMemTree core (l ++ sRevR :: post)))
            (mi mi' : TS (implRegionsTree core (l ++ iRevR :: post))) k
            (aS : forall ty, Action ty (specMemTree core (l ++ sRevR :: post)) (Bit 0))
            (aI : forall ty, Action ty (implRegionsTree core (l ++ iRevR :: post)) (Bit 0)) envI envS v,
       nth_error (collectFenceIAckActions core (l ++ sRevR :: post)) k = Some aS ->
       nth_error (implCollectFenceIAckActions core (l ++ iRevR :: post)) k = Some aI ->
       MemRelPre core cp pp i l sRevR iRevR post ms mi ->
-      EnvAckPre l envS envI ->
+      EnvAckPre fwcs l envS envI ->
       SemAction envI (aI type) mi mi' v ->
-      exists ms', SemAction envS (aS type) ms ms' v /\ MemRelPre core cp pp i l sRevR iRevR post ms' mi'.
+      exists ms', SemAction envS (aS type) ms ms' v /\ MemRelPre core cp pp i l sRevR iRevR post ms' mi' /\
+                  FenceFrame core fwcs (l ++ sRevR :: post) (l ++ iRevR :: post) ms ms' mi mi'.
   Proof.
-    induction l as [| r rs IH]; intros i ms mi mi' k aS aI envI envS v HkS HkI Hrel Henv Hsem.
+    induction l as [| r rs IH]; intros i fwcs ms mi mi' k aS aI envI envS v HkS HkI Hrel Henv Hsem.
     - unfold collectFenceIAckActions in HkS; cbn [genCollectRegionActions app] in HkS.
       unfold implCollectFenceIAckActions, implCollectRegionActions in HkI; cbn [genCollectRegionActions app] in HkI.
       cbn [MemRelPre EnvAckPre] in Hrel, Henv.
@@ -1198,11 +1427,12 @@ Section FenceList.
       apply option_map_Some_inv in HkS as [aS' [HaS' HkS]]; subst aS.
       apply option_map_Some_inv in HkI as [aI' [HaI' HkI]]; subst aI; cbv beta in Hsem |- *.
       apply SemAction_liftAction_iff in Hsem as [mi'' [Hmi'' ->]].
-      destruct (fencePost_rel post (S i) ms.(Snd).(Fst) mi.(Snd).(Fst) mi'' _ aS' aI' _ _ v HaS' HaI' Hrel
-                  (Henv ms mi) Hmi'') as [ms'' [Hs'' Hr'']].
-      exists (ms.(Fst) ,, (ms'' ,, ms.(Snd).(Snd))); split.
+      destruct (fencePost_rel post (S i) (fun j => fwcs (S j)) ms.(Snd).(Fst) mi.(Snd).(Fst) mi'' _ aS' aI' _ _ v
+                  HaS' HaI' Hrel (Henv ms mi) Hmi'') as [ms'' [Hs'' [Hr'' Hfr'']]].
+      exists (ms.(Fst) ,, (ms'' ,, ms.(Snd).(Snd))); split; [| split].
       + apply SemAction_liftAction_iff; exists ms''; split; [exact Hs'' | reflexivity].
       + exact Hr''.
+      + exact (FenceFrame_tail core fwcs sRevR iRevR post post ms mi ms'' mi'' Hfr'').
     - unfold collectFenceIAckActions in HkS; cbn [genCollectRegionActions app] in HkS.
       unfold implCollectFenceIAckActions, implCollectRegionActions in HkI; cbn [genCollectRegionActions app] in HkI.
       unfold implMemRegionFenceIAckActions in HkI.
@@ -1218,9 +1448,9 @@ Section FenceList.
         assert (Ef : f' = f) by (pose proof (eq_trans (eq_sym Hf') Hf) as E; injection E as E; exact E).
         subst f'; cbv beta in Hsem |- *.
         assert (HfIn : In f (memRegionFenceIAckActions core r)) by (eapply nth_error_In; exact Hf).
-        destruct (fenceHead_rel i r _ _ ms mi mi' f envI envS v HfIn Hrel0 (Henv0 ms mi) Hsem)
-          as [ms' [Hs' [Hr' [E1 E2]]]].
-        exists ms'; split; [exact Hs' |].
+        destruct (fenceHead_rel i r _ _ fwcs ms mi mi' f envI envS v HfIn Hrel0 (Henv0 ms mi) Hsem)
+          as [ms' [Hs' [Hr' [E1 [E2 Hfr]]]]].
+        exists ms'; split; [exact Hs' |]; split; [| exact Hfr].
         cbn [MemRelPre]; split; [exact Hr' |].
         rewrite E1, E2; exact Hrel1.
       + rewrite nth_error_app2 in HkS by (rewrite length_map; exact Hge).
@@ -1229,13 +1459,237 @@ Section FenceList.
         apply option_map_Some_inv in HkS as [aS' [HaS' HkS]]; subst aS.
         apply option_map_Some_inv in HkI as [aI' [HaI' HkI]]; subst aI; cbv beta in Hsem |- *.
         apply SemAction_liftAction_iff in Hsem as [mi'' [Hmi'' ->]].
-        destruct (IH (S i) ms.(Snd).(Fst) mi.(Snd).(Fst) mi'' _ aS' aI' _ _ v HaS' HaI' Hrel1 (Henv1 ms mi) Hmi'')
-          as [ms'' [Hs'' Hr'']].
-        exists (ms.(Fst) ,, (ms'' ,, ms.(Snd).(Snd))); split.
+        destruct (IH (S i) (fun j => fwcs (S j)) ms.(Snd).(Fst) mi.(Snd).(Fst) mi'' _ aS' aI' _ _ v HaS' HaI' Hrel1
+                    (Henv1 ms mi) Hmi'') as [ms'' [Hs'' [Hr'' Hfr'']]].
+        exists (ms.(Fst) ,, (ms'' ,, ms.(Snd).(Snd))); split; [| split].
         * apply SemAction_liftAction_iff; exists ms''; split; [exact Hs'' | reflexivity].
         * cbn [MemRelPre]; split; [exact Hrel0 | exact Hr''].
+        * exact (FenceFrame_tail core fwcs r r _ _ ms mi ms'' mi'' Hfr'').
+  Qed.
+
+  Lemma length_implFenceCollect :
+    forall l, length (implCollectFenceIAckActions core l) = length (collectFenceIAckActions core l).
+  Proof.
+    induction l as [| r rs IH]; [reflexivity |].
+    unfold implCollectFenceIAckActions, implCollectRegionActions, collectFenceIAckActions in *;
+      cbn [genCollectRegionActions].
+    rewrite !length_app, !length_map.
+    apply (f_equal2 Nat.add); [unfold implMemRegionFenceIAckActions; apply length_map | exact IH].
+  Qed.
+
+  Lemma length_fenceCollect_rev :
+    forall l, length (collectFenceIAckActions core (l ++ iRevR :: post)) =
+              length (collectFenceIAckActions core (l ++ sRevR :: post)).
+  Proof.
+    induction l as [| r rs IH]; unfold collectFenceIAckActions in *; cbn [genCollectRegionActions app];
+      rewrite !length_app, !length_map; [reflexivity | apply (f_equal2 Nat.add); [reflexivity | exact IH]].
   Qed.
 End FenceList.
+
+(* --- The ack Constraint of the Region Envs --- *)
+
+Section FenceEnv.
+  Variable core : string.
+  Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
+
+  Lemma specExtEnv_ack :
+    forall r fwc (x : TS (externalMemRegionTree core r)) ack,
+      EnvFenceIAckAt fwc (length x.(Fst).(Snd).(Snd).(Snd).(Fst)) x.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst)
+                     (length x.(Snd).(Snd).(Snd).(Fst)) ack ->
+      subEnv child0Path (specExtRegionEnv core initLine r fwc) x x.(Fst) (pExtFetchFenceIAck core) ack.
+  Proof.
+    intros r fwc x ack H.
+    unfold subEnv, cast_recv_inv, specExtRegionEnv, extRegionEnvCtx, extFetchEnvCtx.
+    cbn -[eq_rect EnvFenceIAckAt].
+    rewrite !eq_rect_Kind_refl.
+    exact H.
+  Qed.
+
+  Lemma implExtEnv_ack :
+    forall r fwc (y : TS (implExternalMemRegionTree core r)) ack,
+      subEnv child0Path (subEnv child0Path (implExtRegionEnv core initLine r fwc) y) y.(Fst) y.(Fst).(Fst)
+        (pExtFetchFenceIAck core) ack ->
+      EnvFenceIAckAt fwc (length y.(Fst).(Fst).(Snd).(Snd).(Snd).(Fst)) y.(Fst).(Fst).(Snd).(Snd).(Snd).(Snd).(Fst)
+                     (length (implAccWrites core r y)) ack.
+  Proof.
+    intros r fwc y ack H.
+    unfold subEnv, cast_recv_inv, implExtRegionEnv, extRegionEnvCtx, extFetchEnvCtx in H.
+    cbn -[eq_rect EnvFenceIAckAt implAccWrites] in H.
+    rewrite !eq_rect_Kind_refl in H.
+    exact H.
+  Qed.
+End FenceEnv.
+
+(* --- The Real Region Envs along the Region Lists --- *)
+
+Section FenceEnvList.
+  Variable core : string.
+  Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
+
+  Lemma Is_true_pi : forall (b : bool) (p q : Is_true b), p = q.
+  Proof. intros [|] p q; [destruct p, q; reflexivity | destruct p]. Qed.
+
+  Lemma subEnvS0 :
+    forall r rs (env : Env (specMemTree core (r :: rs))) (ms : TS (specMemTree core (r :: rs))) sub
+           (x : RecvPath (memRegionTree core r)) (v : type (getRecvKind x)),
+      subEnv child0Path env ms sub x v = env (writeSubTreeState child0Path ms sub) (embedRecvPath child0Path x) v.
+  Proof. intros; unfold subEnv; f_equal; unfold cast_recv_inv; apply eq_rect_Kind_refl. Qed.
+
+  Lemma subEnvS1 :
+    forall r rs (env : Env (specMemTree core (r :: rs))) (ms : TS (specMemTree core (r :: rs))) sub
+           (x : RecvPath (specMemTree core rs)) (v : type (getRecvKind x)),
+      subEnv child1Path env ms sub x v = env (writeSubTreeState child1Path ms sub) (embedRecvPath child1Path x) v.
+  Proof. intros; unfold subEnv; f_equal; unfold cast_recv_inv; apply eq_rect_Kind_refl. Qed.
+
+  Lemma subEnvI0 :
+    forall r rs (env : Env (implRegionsTree core (r :: rs))) (mi : TS (implRegionsTree core (r :: rs))) sub
+           (x : RecvPath (implMemRegionTree core r)) (v : type (getRecvKind x)),
+      subEnv child0Path env mi sub x v = env (writeSubTreeState child0Path mi sub) (embedRecvPath child0Path x) v.
+  Proof. intros; unfold subEnv; f_equal; unfold cast_recv_inv; apply eq_rect_Kind_refl. Qed.
+
+  Lemma subEnvI1 :
+    forall r rs (env : Env (implRegionsTree core (r :: rs))) (mi : TS (implRegionsTree core (r :: rs))) sub
+           (x : RecvPath (implRegionsTree core rs)) (v : type (getRecvKind x)),
+      subEnv child1Path env mi sub x v = env (writeSubTreeState child1Path mi sub) (embedRecvPath child1Path x) v.
+  Proof. intros; unfold subEnv; f_equal; unfold cast_recv_inv; apply eq_rect_Kind_refl. Qed.
+
+  (* The spec memory env accepts what the regions env accepts (same path, same value) *)
+  Definition SpecEnvOK (l : list MemRegion) (fwcs : nat -> nat -> nat) (env : Env (specMemTree core l)) : Prop :=
+    forall s (lp : LeafPath (specMemTree core l)) pf' (v : type (getRecvKindFromPath lp)),
+      (forall pf, specRegionsEnv core initLine fwcs l s (@Build_RecvPath (specMemTree core l) lp pf) v) ->
+      env s (@Build_RecvPath (specMemTree core l) lp pf') v.
+
+  (* The impl regions env accepts only what the regions env accepts *)
+  Definition ImplEnvOK (l : list MemRegion) (fwcs : nat -> nat -> nat) (env : Env (implRegionsTree core l)) : Prop :=
+    forall s (lp : LeafPath (implRegionsTree core l)) pf (v : type (getRecvKindFromPath lp)),
+      env s (@Build_RecvPath (implRegionsTree core l) lp pf) v ->
+      forall pf', implRegionsEnv core initLine fwcs l s (@Build_RecvPath (implRegionsTree core l) lp pf') v.
+
+  Lemma SpecEnvOK_head :
+    forall r rs fwcs (env : Env (specMemTree core (r :: rs))) (ms : TS (specMemTree core (r :: rs))),
+      SpecEnvOK (r :: rs) fwcs env ->
+      forall sub (x : RecvPath (memRegionTree core r)) (v : type (getRecvKind x)),
+        specRegionEnv core initLine r (fwcs 0%nat) sub x v -> subEnv child0Path env ms sub x v.
+  Proof.
+    intros r rs fwcs env ms H sub [lp q] v Hx.
+    rewrite subEnvS0.
+    apply H; intros pf.
+    cbn [specRegionsEnv]; unfold envNodeCons, envCtxCons, envCtxMap; cbn -[specRegionEnv specRegionsEnv].
+    match goal with |- context [@Build_RecvPath _ lp ?q'] => rewrite (Is_true_pi _ q' q) end.
+    exact Hx.
+  Qed.
+
+  Lemma SpecEnvOK_tail :
+    forall r rs fwcs (env : Env (specMemTree core (r :: rs))) (ms : TS (specMemTree core (r :: rs))),
+      SpecEnvOK (r :: rs) fwcs env -> SpecEnvOK rs (fun i => fwcs (S i)) (subEnv child1Path env ms).
+  Proof.
+    intros r rs fwcs env ms H s lp pf' v Hx.
+    rewrite subEnvS1.
+    apply H; intros pf.
+    cbn [specRegionsEnv]; unfold envNodeCons, envCtxCons, envCtxMap; cbn -[specRegionEnv specRegionsEnv].
+    apply Hx.
+  Qed.
+
+  Lemma ImplEnvOK_head :
+    forall r rs fwcs (env : Env (implRegionsTree core (r :: rs))) (mi : TS (implRegionsTree core (r :: rs))),
+      ImplEnvOK (r :: rs) fwcs env ->
+      forall sub (x : RecvPath (implMemRegionTree core r)) (v : type (getRecvKind x)),
+        subEnv child0Path env mi sub x v -> implRegionEnv core initLine r (fwcs 0%nat) sub x v.
+  Proof.
+    intros r rs fwcs env mi H sub [lp pf] v Hx.
+    rewrite subEnvI0 in Hx.
+    pose proof (H _ _ _ _ Hx) as H'.
+    specialize (H' (embedRecvPath child0Path (@Build_RecvPath _ lp pf)).(recvPathPf)).
+    cbn [implRegionsEnv] in H'; unfold envNodeCons, envCtxCons, envCtxMap in H';
+      cbn -[implRegionEnv implRegionsEnv] in H'.
+    match type of H' with context [@Build_RecvPath _ lp ?q] => rewrite (Is_true_pi _ q pf) in H' end.
+    exact H'.
+  Qed.
+
+  Lemma ImplEnvOK_tail :
+    forall r rs fwcs (env : Env (implRegionsTree core (r :: rs))) (mi : TS (implRegionsTree core (r :: rs))),
+      ImplEnvOK (r :: rs) fwcs env -> ImplEnvOK rs (fun i => fwcs (S i)) (subEnv child1Path env mi).
+  Proof.
+    intros r rs fwcs env mi H s lp pf v Hx pf'.
+    rewrite subEnvI1 in Hx.
+    pose proof (H _ _ _ _ Hx) as H'.
+    specialize (H' (embedRecvPath child1Path (@Build_RecvPath _ lp pf)).(recvPathPf)).
+    cbn [implRegionsEnv] in H'; unfold envNodeCons, envCtxCons, envCtxMap in H';
+      cbn -[implRegionEnv implRegionsEnv] in H'.
+    match type of H' with context [@Build_RecvPath _ lp ?q] => rewrite (Is_true_pi _ q pf') in H' end.
+    exact H'.
+  Qed.
+
+  Lemma ExtRel_envAck :
+    forall r fwc (x : TS (externalMemRegionTree core r)) (y : TS (implExternalMemRegionTree core r)) ack,
+      ExtRel core r x y ->
+      EnvFenceIAckAt fwc (length y.(Fst).(Fst).(Snd).(Snd).(Snd).(Fst)) y.(Fst).(Fst).(Snd).(Snd).(Snd).(Snd).(Fst)
+                     (length (implAccWrites core r y)) ack ->
+      EnvFenceIAckAt fwc (length x.(Fst).(Snd).(Snd).(Snd).(Fst)) x.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst)
+                     (length x.(Snd).(Snd).(Snd).(Fst)) ack.
+  Proof.
+    intros r fwc x y ack [E1 [_ [E3 E4]]]; unfold EnvFenceIAckAt; rewrite E1, E3, E4; exact (fun H => H).
+  Qed.
+
+  Lemma AckEnvAt_of_heads :
+    forall r fwc (eS : Env (memRegionTree core r)) (eI : Env (implMemRegionTree core r)) x y,
+      (forall sub (p : RecvPath (memRegionTree core r)) (v : type (getRecvKind p)),
+         specRegionEnv core initLine r fwc sub p v -> eS sub p v) ->
+      (forall sub (p : RecvPath (implMemRegionTree core r)) (v : type (getRecvKind p)),
+         eI sub p v -> implRegionEnv core initLine r fwc sub p v) ->
+      AckEnvAt core r fwc eS eI x y.
+  Proof.
+    intros r fwc; destruct r as [nm bs sz tg kd im ba sa]; destruct kd; cbn [AckEnvAt regionKind];
+      intros eS eI x y HS HI; [| exact I].
+    intros Hrel ack Hack.
+    unfold subEnv in Hack.
+    apply HI in Hack.
+    pose proof (implExtEnv_ack core initLine _ fwc y ack Hack) as HE.
+    pose proof (ExtRel_envAck _ fwc x y ack Hrel HE) as HE'.
+    split; [| exact HE'].
+    unfold subEnv; apply HS.
+    exact (specExtEnv_ack core initLine _ fwc x ack HE').
+  Qed.
+
+  Lemma EnvAckRel_real :
+    forall l fwcs (envS : Env (specMemTree core l)) (envI : Env (implRegionsTree core l)),
+      SpecEnvOK l fwcs envS -> ImplEnvOK l fwcs envI -> EnvAckRel core fwcs l envS envI.
+  Proof.
+    induction l as [| r rs IH]; intros fwcs envS envI HS HI; cbn [EnvAckRel]; [exact I |].
+    split; intros ms mi.
+    - apply AckEnvAt_of_heads.
+      + exact (SpecEnvOK_head r rs fwcs envS ms HS).
+      + exact (ImplEnvOK_head r rs fwcs envI mi HI).
+    - apply (IH (fun i => fwcs (S i))).
+      + exact (SpecEnvOK_tail r rs fwcs envS ms HS).
+      + exact (ImplEnvOK_tail r rs fwcs envI mi HI).
+  Qed.
+
+  Lemma EnvAckPre_real :
+    forall post revBase
+           (revPfB : Is_true ((0 <=? revBase) && (revBase + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z)
+           (revPfA : Is_true (revBase mod (2 ^ LgLineBytes) =? 0)%Z) l fwcs
+           (envS : Env (specMemTree core (l ++ specRevRegion core revBase revPfB revPfA :: post)))
+           (envI : Env (implRegionsTree core (l ++ implRevRegion core revBase revPfB revPfA :: post))),
+      SpecEnvOK (l ++ specRevRegion core revBase revPfB revPfA :: post) fwcs envS ->
+      ImplEnvOK (l ++ implRevRegion core revBase revPfB revPfA :: post) fwcs envI ->
+      EnvAckPre core post revBase revPfB revPfA fwcs l envS envI.
+  Proof.
+    intros post revBase revPfB revPfA.
+    induction l as [| r rs IH]; intros fwcs envS envI HS HI; cbn [EnvAckPre].
+    - intros ms mi.
+      apply (EnvAckRel_real post (fun i => fwcs (S i))).
+      + exact (SpecEnvOK_tail _ _ fwcs envS ms HS).
+      + exact (ImplEnvOK_tail _ _ fwcs envI mi HI).
+    - split; intros ms mi.
+      + apply AckEnvAt_of_heads.
+        * exact (SpecEnvOK_head r _ fwcs envS ms HS).
+        * exact (ImplEnvOK_head r _ fwcs envI mi HI).
+      + apply (IH (fun i => fwcs (S i))).
+        * exact (SpecEnvOK_tail r _ fwcs envS ms HS).
+        * exact (ImplEnvOK_tail r _ fwcs envI mi HI).
+  Qed.
+End FenceEnvList.
 
 Section Periph.
   Variable core : string.
@@ -1450,7 +1904,7 @@ Section Periph.
                      (x' ,, (regionStateAt (implMemRegionTree core) (clintIdx clint) implRegions (clintRegion clint)
                                (pfClint clint) (IREG s1)).(Snd)))
       by (rewrite E1; reflexivity).
-    pose proof Hg as Hg0; destruct Hg0 as [_ Hm Hl _ _ _ _ _ _ _ _ _].
+    pose proof Hg as Hg0; destruct Hg0 as [_ Hm Hl _ _ _ _ _ _ _ _ _ _].
     exists s2; split; [apply NilAction; reflexivity |].
     exists g.
     eapply RefRelG_regions_frame with (ms' := SMEM s2); [exact E1 | reflexivity | | | | | | | exact Hg].
@@ -1485,7 +1939,7 @@ Section Periph.
     intros s1 s1' s2 Hsem [g Hg].
     unfold implTickTimer in Hsem.
     apply SemAction_implDevStep in Hsem as [envR [x' [Hx' E1]]].
-    pose proof Hg as Hg0; destruct Hg0 as [_ Hm Hl _ _ _ _ _ _ _ _ _].
+    pose proof Hg as Hg0; destruct Hg0 as [_ Hm Hl _ _ _ _ _ _ _ _ _ _].
     unfold MemRelC, MemRel, DevInv in Hm.
     destruct Hm as [[Hpre [Hcl [Hpl Hrv]]] [[Hci Hpi] Hsnap]].
     unfold specClintState, implClintState in Hcl, Hci.
@@ -1561,7 +2015,7 @@ Section Periph.
                      (x' ,, (regionStateAt (implMemRegionTree core) (plicIdx plic) implRegions (plicRegion plic)
                                (pfPlic plic) (IREG s1)).(Snd)))
       by (rewrite E1; reflexivity).
-    pose proof Hg as Hg0; destruct Hg0 as [_ Hm Hl _ _ _ _ _ _ _ _ _].
+    pose proof Hg as Hg0; destruct Hg0 as [_ Hm Hl _ _ _ _ _ _ _ _ _ _].
     exists s2; split; [apply NilAction; reflexivity |].
     exists g.
     eapply RefRelG_regions_frame with (ms' := SMEM s2); [exact E1 | reflexivity | | | | | | | exact Hg].
@@ -1596,7 +2050,7 @@ Section Periph.
     intros s1 s1' s2 Hsem [g Hg].
     unfold implPlicClaimStep in Hsem.
     apply SemAction_implDevStep in Hsem as [envR [x' [Hx' E1]]].
-    pose proof Hg as Hg0; destruct Hg0 as [_ Hm Hl _ _ _ _ _ _ _ _ _].
+    pose proof Hg as Hg0; destruct Hg0 as [_ Hm Hl _ _ _ _ _ _ _ _ _ _].
     unfold MemRelC, MemRel, DevInv in Hm.
     destruct Hm as [[Hpre [Hcl [Hpl Hrv]]] [[Hci Hpi] Hsnap]].
     unfold specPlicState, implPlicState in Hpl, Hpi.
@@ -1733,7 +2187,7 @@ Section Periph.
     { rewrite <- length_irq_eq; apply nth_error_Some; rewrite HgI; discriminate. }
     destruct (nth_error (collectIrqActions core specRegions) k) as [gS |] eqn:HgS;
       [| apply nth_error_None in HgS; lia].
-    pose proof Hg as Hg0; destruct Hg0 as [_ Hm Hl _ _ _ _ _ _ _ _ _].
+    pose proof Hg as Hg0; destruct Hg0 as [_ Hm Hl _ _ _ _ _ _ _ _ _ _].
     unfold MemRelC, MemRel, DevInv in Hm.
     destruct Hm as [[Hpre [Hcl [Hpl Hrv]]] [[Hci Hpi] Hsnap]].
     assert (Hno : forall j r, nth_error specRegions j = Some r -> (0 + j = clintIdx clintS \/ 0 + j = plicIdx plicS)%nat ->
@@ -1795,7 +2249,7 @@ Section Periph.
     intros g s1 s2 mMid vIrq envX Hg Hsem.
     unfold Impl.implPlicUartIrqAction, Impl.implPlicAction in Hsem.
     apply SemAction_implMemDev in Hsem as [envR [x' [Hx' Em]]].
-    pose proof Hg as Hg0; destruct Hg0 as [_ Hm Hl _ _ _ _ _ _ _ _ _].
+    pose proof Hg as Hg0; destruct Hg0 as [_ Hm Hl _ _ _ _ _ _ _ _ _ _].
     unfold MemRelC, MemRel, DevInv in Hm.
     destruct Hm as [[Hpre [Hcl [Hpl Hrv]]] [[Hci Hpi] Hsnap]].
     unfold specPlicState, implPlicState in Hpl, Hpi.
@@ -1862,7 +2316,7 @@ Section Periph.
     intros g s1 s2 m' j pI iI pS iS irq envX Hg HpS HiS HpI HiI Hsem.
     unfold Impl.implPlicAction in Hsem.
     apply SemAction_implMemDev in Hsem as [envR [x' [Hx' Em]]].
-    pose proof Hg as Hg0; destruct Hg0 as [_ Hm Hl _ _ _ _ _ _ _ _ _].
+    pose proof Hg as Hg0; destruct Hg0 as [_ Hm Hl _ _ _ _ _ _ _ _ _ _].
     unfold MemRelC, MemRel, DevInv in Hm.
     destruct Hm as [[Hpre [Hcl [Hpl Hrv]]] [[Hci Hpi] Hsnap]].
     unfold specPlicState, implPlicState in Hpl, Hpi.
@@ -2053,4 +2507,140 @@ Section Periph.
       + exact stepOK_implSampleMtipStep.
   Qed.
 
+  (* --- 9. fence.i Acks --- *)
+
+  Lemma length_fence_eq :
+    length (implCollectFenceIAckActions core implRegions) = length (collectFenceIAckActions core specRegions).
+  Proof. rewrite length_implFenceCollect; apply length_fenceCollect_rev. Qed.
+
+  Lemma In_specFenceIAck :
+    forall a, In a (@specFenceIAckSteps core pcAddrInit specRegions type) -> In a specActs.
+  Proof.
+    intros a Ha; rewrite (map_snd_specMod core pcAddrInit config specRegions clintS revSpec plicS).
+    apply in_or_app; right; apply in_or_app; right; apply in_or_app; right; exact Ha.
+  Qed.
+
+  (* The real envs: the spec memory env is exactly the regions env, and so is the impl's *)
+  Lemma specEnvOK_mem : forall s2 : TS STree, SpecEnvOK core initLine specRegions fwcs (subEnv NPMS envS s2).
+  Proof.
+    intros s2 s lp pf' v Hall.
+    unfold subEnv, cast_recv_inv.
+    match goal with |- context [eq_rect _ _ v _ ?e] => rewrite (Kind_uip_refl _ e) end.
+    cbn [eq_rect].
+    unfold specEnv, envNodeCons, envCtxCons, envCtxMap; cbn -[specRegionsEnv].
+    apply Hall.
+  Qed.
+
+  Lemma implEnvOK_regions :
+    forall (s1 : TS ITree) (m : TS (implMemTree core implRegions)),
+      ImplEnvOK core initLine implRegions fwcs (subEnv child0Path (subEnv NPMI envI s1) m).
+  Proof.
+    intros s1 m s lp pf v H pf'.
+    unfold subEnv, cast_recv_inv in H.
+    match type of H with context [eq_rect _ _ (eq_rect _ _ v _ ?e1) _ ?e2] =>
+      rewrite (Kind_uip_refl _ e1), (Kind_uip_refl _ e2) in H end.
+    cbn [eq_rect] in H.
+    unfold implEnv, implMemEnv, envNodeCons, envCtxCons, envCtxMap in H; cbn -[implRegionsEnv] in H.
+    match type of H with context [@Build_RecvPath _ lp ?q] => rewrite (Is_true_pi _ q pf') in H end.
+    exact H.
+  Qed.
+
+  Lemma envAckPre_real :
+    forall (s1 : TS ITree) (s2 : TS STree),
+      EnvAckPre core post revBase revPfB revPfA fwcs pre
+        (subEnv NPMS envS s2) (subEnv child0Path (subEnv NPMI envI s1) (IMEM s1)).
+  Proof.
+    intros s1 s2; apply (EnvAckPre_real core initLine); [apply specEnvOK_mem | apply implEnvOK_regions].
+  Qed.
+
+  (* The device states sit at CustomMem positions, which an ack step leaves alone *)
+  Lemma specDev_ackFrame :
+    forall ms ms', AckFrameS core specRegions ms ms' ->
+      specClintState core pre post revBase revPfB revPfA clintS ms' =
+        specClintState core pre post revBase revPfB revPfA clintS ms /\
+      specPlicState core pre post revBase revPfB revPfA plicS ms' =
+        specPlicState core pre post revBase revPfB revPfA plicS ms /\
+      specRevState core pre post revBase revPfB revPfA ms' = specRevState core pre post revBase revPfB revPfA ms.
+  Proof.
+    intros ms ms' H; unfold specClintState, specPlicState, specRevState.
+    split; [| split]; (rewrite (regionStateAtS_ackFrame core _ _ _ _ _ _ H); [reflexivity | exact I]).
+  Qed.
+
+  Lemma implDev_ackFrame :
+    forall mi mi', AckFrameI core implRegions mi mi' ->
+      implClintState core pre post revBase revPfB revPfA clint mi' =
+        implClintState core pre post revBase revPfB revPfA clint mi /\
+      implPlicState core pre post revBase revPfB revPfA plic mi' =
+        implPlicState core pre post revBase revPfB revPfA plic mi /\
+      implRevState core pre post revBase revPfB revPfA mi' = implRevState core pre post revBase revPfB revPfA mi.
+  Proof.
+    intros mi mi' H; unfold implClintState, implPlicState, implRevState.
+    split; [| split]; (rewrite (regionStateAtI_ackFrame core _ _ _ _ _ _ H); [reflexivity | exact I]).
+  Qed.
+
+  (* An impl ack step: a stutter if it changed nothing, else the spec takes the same ack step
+   * (some fenceIWait is set, so the wait frame applies) *)
+  Theorem stepOK_fenceIAcks :
+    forall act,
+      In act (@fenceIAcks core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions type) ->
+      StepOK act.
+  Proof.
+    intros act Hin s1 s1' s2 Hsem [g Hg].
+    unfold fenceIAcks, implMemCollectFenceIAckActions in Hin.
+    rewrite map_map in Hin.
+    apply In_nth_error in Hin as [k Hk].
+    rewrite nth_error_map in Hk.
+    apply option_map_Some_inv in Hk as [aI [HkI ->]]; cbv beta in Hsem.
+    assert (Hlt : (k < length (collectFenceIAckActions core specRegions))%nat).
+    { rewrite <- length_fence_eq.
+      match type of HkI with @nth_error ?A ?L k = Some _ =>
+        exact (proj1 (@nth_error_Some A L k) ltac:(rewrite HkI; discriminate)) end. }
+    destruct (nth_error (collectFenceIAckActions core specRegions) k) as [aS |] eqn:HkS;
+      [| apply nth_error_Some in Hlt; contradiction].
+    apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
+    apply SemAction_liftAction_iff in Hm' as [mi' [Hmi' Em]].
+    pose proof Hg as Hg0; destruct Hg0 as [_ Hm Hl _ _ _ _ _ _ _ _ Hw _].
+    unfold MemRelC, MemRel, DevInv in Hm.
+    destruct Hm as [[Hpre [Hcl [Hpl Hrv]]] [[Hci Hpi] Hsnap]].
+    destruct (fencePre_rel core _ _ post revBase revPfB revPfA pre 0%nat fwcs _ _ mi' k aS aI _ _ _
+                HkS HkI Hpre (envAckPre_real s1 s2) Hmi')
+      as [ms' [Hs' [Hpre' [Hd [HfS [HfI [Hsn Hfc]]]]]]].
+    destruct Hd as [[Ems Emi] | Hwait].
+    - exists s2; split; [apply NilAction; reflexivity |].
+      exists g.
+      assert (Es1 : s1' = s1).
+      { rewrite E1, Em, Emi.
+        first [reflexivity
+              | change (IREG s1) with (readSubTreeState child0Path (readSubTreeState NPMI s1));
+                rewrite !writeSubTreeState_readSubTreeState; reflexivity]. }
+      rewrite Es1; exact Hg.
+    - assert (HIn : In (liftAction NPMS (aS type)) specActs).
+      { apply In_specFenceIAck; unfold specFenceIAckSteps; apply in_map_iff.
+        exists aS; split; [reflexivity | eapply nth_error_In; exact HkS]. }
+      exists (writeSubTreeState NPMS s2 ms'); split.
+      + eapply ConsAction; [exact HIn | | apply NilAction; reflexivity].
+        apply SemAction_liftAction_iff; exists ms'; split; [exact Hs' | reflexivity].
+      + exists g.
+        assert (Ei1 : IREG s1' = mi') by (rewrite E1, Em; reflexivity).
+        assert (Es2 : SMEM (writeSubTreeState NPMS s2 ms') = ms') by reflexivity.
+        destruct (specDev_ackFrame _ _ HfS) as [Sc [Sp Sr]].
+        destruct (implDev_ackFrame _ _ HfI) as [Ic [Ip Ir]].
+        eapply RefRelG_wait_frame with (mi' := mi') (ms' := ms').
+        * rewrite E1, Em; reflexivity.
+        * reflexivity.
+        * exact Hwait.
+        * intros P HP; rewrite Ei1; exact (AllPorts_ackFrame core P HP _ _ _ HfI).
+        * unfold iRev; rewrite Ei1; exact Ir.
+        * intros L; rewrite Es2; exact (lineContent_ackFrame core initLine _ _ _ HfS L).
+        * rewrite Ei1; apply Hfc.
+          unfold WfRel in Hw; destruct Hw as [_ [_ [_ [_ W5]]]].
+          revert W5; apply AllPorts_impl; intros r y [_ Hy]; exact Hy.
+        * unfold MemRelC, MemRel, DevInv; rewrite Ei1, Es2.
+          rewrite Sc, Sp, Sr, Ic, Ip, Ir.
+          exact (conj (conj Hpre' (conj Hcl (conj Hpl Hrv))) (conj (conj Hci Hpi) (Hsn Hsnap))).
+        * unfold LatchRel in *; intros e Hin'; destruct (Hl e Hin') as [L1 L2].
+          unfold sClint, sPlic; rewrite Es2, Sc, Sp; exact (conj L1 L2).
+        * exact Hg.
+  Qed.
 End Periph.

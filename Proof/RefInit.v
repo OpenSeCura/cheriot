@@ -603,6 +603,24 @@ Section RefInitMain.
       intros r y Hy; split.
       + exact (InitStateConsistent_ImplExternalRegionHandshakeInv core r y Hy).
       + exact (InitStateConsistent_RegionFenceICountInv core r y.(Fst) (proj1 Hy)).
+    - (* RevokerRel: the revoker starts Idle and no access is in flight *)
+      pose proof (proj1 (InitStateConsistent_regionStateAt (implMemRegionTree core) (length pre) implRegions (implRevRegion core revBase revPfB revPfA) (nth_error_app_cons_len pre (implRevRegion core revBase revPfB revPfA) post) _ init_regions))
+        as Hrev.
+      unfold RevokerRel, RevAccRel; cbn [g_acc ghost0].
+      unfold iRevPhase, iRev, implRevState, iRegions, iMem.
+      set (xi := (regionStateAt (implMemRegionTree core) (length pre) implRegions
+                    (implRevRegion core revBase revPfB revPfA)
+                    (nth_error_app_cons_len pre (implRevRegion core revBase revPfB revPfA) post)
+                    IMEM.(Fst)).(Fst)) in *.
+      clearbody xi.
+      destruct xi as [b [t [c [ep [ist [irq [sc [ph [cap [bs [hit []]]]]]]]]]]].
+      cbn in Hrev.
+      destruct Hrev as [_ [_ [_ [_ [_ [_ [_ [Hph _]]]]]]]].
+      cbn [Fst Snd]; rewrite Hph.
+      split; [intros Hc; discriminate Hc |].
+      split; [intros Hc; discriminate Hc |].
+      split; [intros Hc; discriminate Hc |].
+      split; [intros Hc; discriminate Hc | exact I].
   Qed.
 
 End RefInitMain.
