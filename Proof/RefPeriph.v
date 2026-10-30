@@ -34,13 +34,13 @@ Local Open Scope guru_scope.
  * `StepOK act`: an impl step of `act` from a related state is matched by spec
  * steps (none, for a stutter) ending in a related state. *)
 
-Local Notation TS t := (TreeState DomainElemState t).
+Local Abbreviation TS t := (TreeState DomainElemState t).
 
 (* --- CLINT Steps --- *)
 
 Section ClintFun.
   Variable core : string.
-  Local Notation ClintS := (TS (Node "clint" (clintChildren core))).
+  Local Abbreviation ClintS := (TS (Node "clint" (clintChildren core))).
 
   (* `clintSampleMtip`: sampledMtip |= mtip *)
   Lemma clintSample_eq :
@@ -132,7 +132,7 @@ Qed.
 Section PlicFun.
   Variable core : string.
   Variable n : nat.
-  Local Notation PS := (TS (plicTree core n)).
+  Local Abbreviation PS := (TS (plicTree core n)).
 
   (* `plicSampleMeip`: meip |= (claim != 0) *)
   Lemma plicSample_eq :
@@ -1525,9 +1525,6 @@ Section Periph.
       + intros Hp; apply L2; revert Hp; unfold sPlic, specPlicState; rewrite EsM, EplS; exact (fun H => H).
   Qed.
 
-  (* DISABLED-PENDINGS-BEGIN: drafted but NOT yet compiling; commented out for the handoff.
-     See CHERIOT_REFINEMENT_HANDOFF.md section 11.0.
-
   (* Phase 1, the UART line: both PLICs record the same value *)
   Lemma irqStep_uart :
     forall g s1 s2 mMid vIrq envX,
@@ -1694,16 +1691,17 @@ Section Periph.
   Proof.
     intros act Hin s1 s1' s2 Hsem [g Hg].
     unfold implPlicPendingsSteps in Hin; cbv zeta in Hin.
-    apply in_map_iff in Hin as [memAct [<- HinMem]].
+    apply in_map_iff in Hin as [memAct [<- HinMem]]; cbv beta in Hsem.
     revert HinMem.
     destruct (pendingPathsWithKind core nI) as [| p0I dPI] eqn:EpI; [intros [] |].
     destruct (inServicePathsWithKind core nI) as [| i0I dII] eqn:EiI; [intros [] |].
-    intros HinMem.
+    intros HinMem; cbv beta iota in HinMem.
     apply In_implHelper in HinMem as [k [aI [pI [iI [HaI [HpI [HiI ->]]]]]]].
     apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
     rewrite SemAction_iff_evalActionPropGen in Hm'; cbn [evalActionPropGen] in Hm'.
     destruct (evalActionPropGen_to_SemAction aI _ _ Hm') as [mMid [vIrq [HaSem Hleaf]]].
-    rewrite <- SemAction_iff_evalActionPropGen in Hleaf.
+    cbv beta in Hleaf.
+    first [rewrite <- SemAction_iff_evalActionPropGen in Hleaf | apply SemAction_iff_evalActionPropGen in Hleaf].
     assert (HpI' : nth_error (pendingPathsWithKind core nI) (S k) = Some pI) by (rewrite EpI; exact HpI).
     assert (HiI' : nth_error (inServicePathsWithKind core nI) (S k) = Some iI) by (rewrite EiI; exact HiI).
     destruct (nth_pend_transport core nS nI nS_nI (S k) pI HpI') as [pS HpS].
@@ -1732,9 +1730,10 @@ Section Periph.
     destruct (leafStep g _ _ m' (S k) pI iI pS iS vIrq _ HgMid HpS HiS HpI' HiI' Hleaf) as [ms' [Hs' Hg']].
     assert (HinS : In (liftAction NPMS (LetA irqVal : Bool <- aS ;
                                         plicAction plicS (@updatePendingLeaf core nS type pS iS irqVal))) specActs).
-    { rewrite map_snd_specMod.
+    { first [rewrite map_snd_specMod
+            | refine (eq_ind_r (fun L => In _ L) _ (map_snd_specMod core pcAddrInit config specRegions clintS revSpec plicS))].
       apply in_or_app; right; apply in_or_app; left.
-      unfold specPlicPendingsSteps, plicPendingsSteps.
+      unfold specPlicPendingsSteps, plicPendingsSteps; cbv zeta.
       apply in_map_iff; eexists; split; [reflexivity |].
       revert HpS HiS.
       destruct (pendingPathsWithKind core nS) as [| p0S dPS] eqn:EpS; [intros H; discriminate H |].
@@ -1747,7 +1746,6 @@ Section Periph.
       eapply SemLetAction; [exact HsS | exact (Hs' _)].
     - exists g; rewrite writeNPMI_twice, writeNPMS_twice in Hg'; rewrite E1; exact Hg'.
   Qed.
-  DISABLED-PENDINGS-END *)
 
   (* --- 7. mcycle Tick --- *)
 
@@ -1773,6 +1771,28 @@ Section Periph.
       + eexists; eapply RefRelG_tick_lockstep; [exact E1 | reflexivity | exact Hch | exact Hg].
     - exists s2; split; [apply NilAction; reflexivity |].
       eexists; eapply RefRelG_tick_ghost; [exact E1 | rewrite Hch; discriminate | exact Hg].
+  Qed.
+
+  (* --- 8. All Peripheral Steps --- *)
+
+  Theorem stepOK_implPeripheralSteps :
+    forall act,
+      In act (@implPeripheralSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions clint plic type) ->
+      StepOK act.
+  Proof.
+    intros act Hin.
+    unfold implPeripheralSteps, implPlicSteps, implTimerSteps in Hin.
+    apply in_app_or in Hin as [Hin | Hin].
+    - apply in_app_or in Hin as [Hin | Hin].
+      + exact (stepOK_implPlicPendingsSteps act Hin).
+      + cbn [In] in Hin; destruct Hin as [<- | [<- | []]].
+        * exact stepOK_implPlicClaimStep.
+        * exact stepOK_implPlicSampleMeipStep.
+    - cbn [In] in Hin; destruct Hin as [<- | [<- | [<- | []]]].
+      + exact stepOK_implTickCycle.
+      + exact stepOK_implTickTimer.
+      + exact stepOK_implSampleMtipStep.
   Qed.
 
 End Periph.

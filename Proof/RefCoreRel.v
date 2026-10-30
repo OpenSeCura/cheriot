@@ -38,7 +38,7 @@ Local Open Scope guru_scope.
  * - the memory (RefMemRel.v) and the interrupt latches;
  * - what each pending ghost entry needs to be replayed by the spec. *)
 
-Local Notation TS t := (TreeState DomainElemState t).
+Local Abbreviation TS t := (TreeState DomainElemState t).
 
 (* --- 1. Tagged-Union and Struct Field Helpers --- *)
 

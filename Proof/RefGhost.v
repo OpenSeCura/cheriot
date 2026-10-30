@@ -48,7 +48,7 @@ Section GhostChain.
   Variable core : string.
   Variable pcAddrInit : Z.
 
-  Local Notation RfSt := (RfState core pcAddrInit).
+  Local Abbreviation RfSt := (RfState core pcAddrInit).
 
   (* --- 1. Evaluation Helpers --- *)
 

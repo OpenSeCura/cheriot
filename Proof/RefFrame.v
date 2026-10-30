@@ -37,7 +37,7 @@ Local Open Scope guru_scope.
  *    to the line contents and to the fetch view of the spec memory;
  * 3. the memory relation survives an update at a position where it is trivial. *)
 
-Local Notation TS t := (TreeState DomainElemState t).
+Local Abbreviation TS t := (TreeState DomainElemState t).
 
 (* --- 1. Other Positions --- *)
 

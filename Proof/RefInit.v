@@ -32,7 +32,7 @@ Local Open Scope guru_scope.
  * THE REFINEMENT RELATION HOLDS ON INITIAL STATES
  * =========================================================================== *)
 
-Local Notation TS t := (TreeState DomainElemState t).
+Local Abbreviation TS t := (TreeState DomainElemState t).
 
 (* --- 1. Region Trees --- *)
 

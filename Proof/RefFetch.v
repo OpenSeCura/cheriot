@@ -43,9 +43,9 @@ Section LineAllowed.
   Variable core : string.
   Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
 
-  Local Notation memRegionTree := (memRegionTree core).
-  Local Notation memRegionKindTree := (memRegionKindTree core).
-  Local Notation specMemTree := (specMemTree core).
+  Local Abbreviation memRegionTree := (memRegionTree core).
+  Local Abbreviation memRegionKindTree := (memRegionKindTree core).
+  Local Abbreviation specMemTree := (specMemTree core).
 
   (* --- 1. Per-Region and Whole-Memory Predicates --- *)
 
@@ -204,7 +204,7 @@ Section FetchAllowedInst.
   Variable core : string.
   Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
 
-  Local Notation specMemTree := (specMemTree core).
+  Local Abbreviation specMemTree := (specMemTree core).
 
   Definition instSzLg : type (Bit LgLgNumBytesFullCapSz) := evalExpr ($LgNumBytesInstSz : Expr type (Bit LgLgNumBytesFullCapSz)).
 

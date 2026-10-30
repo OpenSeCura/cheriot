@@ -48,7 +48,7 @@ Local Open Scope guru_scope.
  *      except that the impl's `scanAddr` is one ahead while the revoker's write
  *      waits in the memory. *)
 
-Local Notation TS t := (TreeState DomainElemState t).
+Local Abbreviation TS t := (TreeState DomainElemState t).
 
 (* --- 1. Ordinary Positions --- *)
 
@@ -101,7 +101,7 @@ Section SpecialRegions.
   Variable core : string.
 
   (* CLINT: [ mtime; mtimecmp; mtip; sampledMtip ] *)
-  Local Notation ClintS := (TS (Node "clint" (clintChildren core))).
+  Local Abbreviation ClintS := (TS (Node "clint" (clintChildren core))).
 
   Definition clintSampled (x : ClintS) : bool := x.(Snd).(Snd).(Snd).(Fst).
   Definition clintMtip (x : ClintS) : bool := x.(Snd).(Snd).(Fst).
@@ -118,7 +118,7 @@ Section SpecialRegions.
     clintSampled xi = true -> clintMtip xi = true.
 
   (* PLIC: [ priorities; pending; enables; threshold; claim; meip; in_service; UartIrq ] *)
-  Local Notation PlicS n := (TS (plicTree core n)).
+  Local Abbreviation PlicS n := (TS (plicTree core n)).
 
   Definition plicMeipOf {n} (x : PlicS n) : bool := x.(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).
   Definition plicClaimOf {n} (x : PlicS n) : bits Xlen := x.(Snd).(Snd).(Snd).(Snd).(Fst).
@@ -141,8 +141,8 @@ Section SpecialRegions.
     plicMeipOf xi = true -> plicClaimOf xi <> Zmod.zero.
 
   (* Revoker: 7 architectural registers (spec) vs 7 + 4 (impl) *)
-  Local Notation RevS := (TS (Node "revoker" (revokerChildren core []))).
-  Local Notation RevI := (TS (implRevokerTree core)).
+  Local Abbreviation RevS := (TS (Node "revoker" (revokerChildren core []))).
+  Local Abbreviation RevI := (TS (implRevokerTree core)).
 
   Definition revScanAddr (x : RevS) : bits TagAddrWidth := x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).
 
