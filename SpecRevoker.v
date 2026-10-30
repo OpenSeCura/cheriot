@@ -105,26 +105,23 @@ Section Revoker.
              (ty : Kind -> Type)
              (addr : ty Addr)
              (_ : ty (Array LineBytes Bool))
-             : Action ty tRev LineReadRp :=
+             : Action ty tRev (Array LineBytes (Bit ByteSz)) :=
     Let offset : Bit RevokerOffsetSz <- getMemOffset base RevokerSizeBytes #addr ;
-    readRevokerLine #offset (fun readBytes =>
-      @Return ty tRev LineReadRp (STRUCT {
-        "data" ::= #readBytes ;
-        "tag"  ::= Const ty (Array NumLineTags Bool) (getDefault _)
-      })
-    ).
+    readRevokerLine #offset (fun readBytes => Return #readBytes).
 
   Definition revokerLineWriteAction
              (base : Z)
              (ty : Kind -> Type)
-             (rq : ty LineWriteRq)
+             (addr : ty Addr)
+             (data : ty (Array LineBytes (Bit ByteSz)))
+             (dataMask : ty (Array LineBytes Bool))
              : Action ty tRev (Bit 0) :=
-    Let offset : Bit RevokerOffsetSz <- getMemOffset base RevokerSizeBytes (##rq`"addr") ;
+    Let offset : Bit RevokerOffsetSz <- getMemOffset base RevokerSizeBytes #addr ;
     readRevokerLine #offset (fun oldBytes =>
       Let newBytes : Array LineBytes (Bit ByteSz) <-
         ArrayBuilder (fun i =>
-          ITE (ReadArrayConst (##rq`"dataMask") i)
-              (ReadArrayConst (##rq`"data") i)
+          ITE (ReadArrayConst (#dataMask) i)
+              (ReadArrayConst (#data) i)
               (ReadArrayConst #oldBytes i)) ;
       Let newWords : Array numLineWords (Bit Xlen) <-
         FromBit (Array numLineWords (Bit Xlen)) (ToBit ##newBytes) ;
@@ -143,8 +140,8 @@ Section Revoker.
       ) ;
       If (Eq #offset $(REVOKER_INTERRUPT_LINE_OFFSET)) Then (
         Let clearStatus : Bool <-
-          And [ (##rq`"dataMask") $[0%nat] ;
-                FromBit Bool (TruncLsb (ByteSz - 1) 1 ((##rq`"data") $[0%nat])) ] ;
+          And [ (Var ty (Array LineBytes Bool) dataMask) $[0%nat] ;
+                FromBit Bool (TruncLsb (ByteSz - 1) 1 ((Var ty (Array LineBytes (Bit ByteSz)) data) $[0%nat])) ] ;
         If #clearStatus Then (
           Act (WriteReg revokerInterruptStatusPath (ConstBool false) Retv) ;
           Retv
@@ -171,7 +168,6 @@ Section Revoker.
     regionName        := "revoker" ;
     regionBase        := base ;
     regionSize        := RevokerSizeBytes ;
-    regionHasTags     := false ;
     regionKind        := @CustomMem "revoker" revokerChildren
                                     (@revokerLineReadAction base)
                                     (@revokerLineWriteAction base)

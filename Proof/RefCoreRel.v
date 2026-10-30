@@ -279,8 +279,8 @@ Section CoreRel.
     (* the spec register file without the committed, not written back load *)
     g_rf0    : RfSt ;
     g_cnwb   : option (bits RegIdxSzReal * type FullECapWithTag) ;
-    (* the revoker's write waits in the memory *)
-    g_revAdv : bool ;
+    (* the impl revoker's scanAddr against the spec's (`RevRel`) *)
+    g_revOff : RevOff ;
     (* the fetch outputs of the decode-to-ALU entries (oldest first) *)
     g_d2aFo  : list (type FetchOut) ;
     (* the access in flight in the impl memory *)
@@ -314,7 +314,7 @@ Section CoreRel.
   (* --- 6. Memory and Interrupt Latches --- *)
 
   Definition MemRelC (g : Ghost) (s1 : IState) (s2 : SState) : Prop :=
-    MemRel core pre post revBase revPfB revPfA clintS clint plicS plic (g_revAdv g) (sMem s2) (iRegions s1) /\
+    MemRel core pre post revBase revPfB revPfA clintS clint plicS plic (g_revOff g) (sMem s2) (iRegions s1) /\
     DevInv core pre post revBase revPfB revPfA clint plic (iRegions s1) /\
     SnapshotOK core fwcs specRegions (sMem s2).
 
@@ -375,8 +375,6 @@ Section CoreRel.
     evalExpr (mkSome (UNION (PortRqList, "Read" ::= Var type Addr L))).
   Definition someWrite (w : type LineWriteRq) : type (Option PortRq) :=
     evalExpr (mkSome (UNION (PortRqList, "Write" ::= Var type LineWriteRq w))).
-  Definition maskW (r : MemRegion) (rq : type LineWriteRq) : type LineWriteRq :=
-    evalExpr (maskRegionWriteRq r (Var type LineWriteRq rq)).
 
   (* no staged request and every data read answered *)
   Definition PortsQuiet (s1 : IState) : Prop :=
@@ -392,10 +390,10 @@ Section CoreRel.
                 (if isRegionAddrB r L then extDataOut r y else extDataQuiet r y))
       implRegions (iRegions s1).
 
-  (* the write `rq` of line `L` staged (masked by its region) in that region's portRq *)
+  (* the write `rq` of line `L` staged in that region's portRq *)
   Definition PortsWriteStaged (L : type Addr) (rq : type LineWriteRq) (s1 : IState) : Prop :=
     AllPorts (fun r y => extDataQuiet r y /\
-                (if isRegionAddrB r L then extPortRq r y = someWrite (maskW r rq)
+                (if isRegionAddrB r L then extPortRq r y = someWrite rq
                  else optValid (extPortRq r y) = false))
       implRegions (iRegions s1).
 
@@ -468,7 +466,7 @@ Section CoreRel.
   Definition RegionLineContent (r : MemRegion) : TS (memRegionTree core r) -> type Addr -> type LineReadRp :=
     match r.(regionKind) as k return TS (memRegionKindTree core r k) -> type Addr -> type LineReadRp with
     | ExternalMem => fun x L =>
-        evalExpr (maskRegionReadRp r (Var type LineReadRp (evalLineWriteRqTrace (initLine r) x.(Snd).(Snd).(Snd).(Fst) L)))
+        evalLineWriteRqTrace (initLine r) x.(Snd).(Snd).(Snd).(Fst) L
     | CustomMem _ _ _ _ => fun _ _ => getDefault LineReadRp
     end.
 
@@ -576,9 +574,9 @@ Section CoreRel.
     match g_acc g with
     | AccNone =>
         msIdle (iMemSt s1) = true /\ optValid (iReadRp s1) = false /\ PortsQuiet s1 /\
-        g_revAdv g = false /\ dmNotAccessing s1 /\ revNotReading s1 /\ optValid (sSecond s2) = false
+        g_revOff g = RevEq /\ dmNotAccessing s1 /\ revNotReading s1 /\ optValid (sSecond s2) = false
     | AccStore addr size pkt st =>
-        WrStageRel addr size pkt st s1 /\ dmLoadRq (iDmSt s1) = true /\ revNotReading s1 /\ g_revAdv g = false /\
+        WrStageRel addr size pkt st s1 /\ dmLoadRq (iDmSt s1) = true /\ revNotReading s1 /\ g_revOff g = RevEq /\
         match st with
         | WrPend false | WrStaged false =>
             optValid (sSecond s2) = false /\
@@ -590,7 +588,7 @@ Section CoreRel.
         end
     | AccLoad ld pkt0 st =>
         RdStageRel (ldAddr ld) (plSize (ldPending ld)) pkt0 st s1 /\ isReqDataMem (iRequester s1) = true /\
-        dmLoadRp (iDmSt s1) = true /\ dmLoadRpV (iDmSt s1) = ld /\ revNotReading s1 /\ g_revAdv g = false /\
+        dmLoadRp (iDmSt s1) = true /\ dmLoadRpV (iDmSt s1) = ld /\ revNotReading s1 /\ g_revOff g = RevEq /\
         let crosses := crossesB (ldAddr ld) (plSize (ldPending ld)) in
         match st with
         | RdPend false | RdStaged false | RdOut false =>
@@ -615,20 +613,24 @@ Section CoreRel.
     | AccDmRev rc st =>
         RdStageRel (revByteAddrOf (rcBase rc)) byteSz (getDefault CapPacket) st s1 /\
         isReqDataMem (iRequester s1) = true /\
-        dmRevRp (iDmSt s1) = true /\ dmRevRpV (iDmSt s1) = rc /\ revNotReading s1 /\ g_revAdv g = false /\
+        dmRevRp (iDmSt s1) = true /\ dmRevRpV (iDmSt s1) = rc /\ revNotReading s1 /\ g_revOff g = RevEq /\
         optValid (sSecond s2) = false /\ g_cnwb g = Some (revWb (sMem s2) rc)
     | AccRevCap st =>
         RdStageRel (iScanAddr s1) capSz (getDefault CapPacket) st s1 /\ isReqRevoker (iRequester s1) = true /\
-        rpWaitCapRp (iRevPhase s1) = true /\ dmNotAccessing s1 /\ g_revAdv g = false /\
+        rpWaitCapRp (iRevPhase s1) = true /\ dmNotAccessing s1 /\
+        (match st with
+         | RdArrived _ _ | RdReady _ => g_revOff g <> RevImplAhead
+         | _ => g_revOff g = RevEq
+         end) /\
         optValid (sSecond s2) = false
     | AccRevBit st =>
         RdStageRel (revByteAddrOf (iRevScanBase s1)) byteSz (getDefault CapPacket) st s1 /\
         isReqRevoker (iRequester s1) = true /\
-        rpWaitRevBitRp (iRevPhase s1) = true /\ dmNotAccessing s1 /\ g_revAdv g = false /\
+        rpWaitRevBitRp (iRevPhase s1) = true /\ dmNotAccessing s1 /\ g_revOff g = RevEq /\
         optValid (sSecond s2) = false
     | AccRevWrite addr pkt st =>
         WrStageRel addr capSz pkt st s1 /\ rpIdle (iRevPhase s1) = true /\ dmNotAccessing s1 /\
-        g_revAdv g = true /\ optValid (sSecond s2) = false
+        g_revOff g = RevImplAhead /\ optValid (sSecond s2) = false
     end.
 
   (* The committed load the impl has not written back is dataMem's *)
@@ -679,11 +681,21 @@ Section CoreRel.
       revBitOf (sMem s2) (capBase (memValAt (sMem s2) addr capSz)) = true /\
       pkt = disassembleW addr (untagCap (memValAt (sMem s2) addr capSz)) capSz.
 
-  (* The values of the revoker's reads in flight are the spec memory's *)
+  (* The value of the revoker's cap read. For an ExternalMem line (the spec at the same position)
+   * it is the spec memory's; a line that is not ExternalMem was a device read, where the spec
+   * has already taken the position's step (`RevSpecAhead`): its value needs no check. *)
+  Definition RevCapOK (g : Ghost) (s1 : IState) (s2 : SState) (v : type FullCapWithTag) : Prop :=
+    match g_revOff g with
+    | RevSpecAhead => capNeedsCheck v = false
+    | _ => lineKind implRegions (lineOf false (iScanAddr s1)) = Some true /\
+           v = memValAt (sMem s2) (iScanAddr s1) capSz
+    end.
+
+  (* The values of the revoker's reads in flight *)
   Definition RevAccRel (g : Ghost) (s1 : IState) (s2 : SState) : Prop :=
     match g_acc g with
-    | AccRevCap (RdArrived _ rp) => lineVal (iScanAddr s1) capSz rp = memValAt (sMem s2) (iScanAddr s1) capSz
-    | AccRevCap (RdReady res) => res = memValAt (sMem s2) (iScanAddr s1) capSz
+    | AccRevCap (RdArrived _ rp) => RevCapOK g s1 s2 (lineVal (iScanAddr s1) capSz rp)
+    | AccRevCap (RdReady res) => RevCapOK g s1 s2 res
     | AccRevBit (RdArrived _ rp) =>
         lineVal (revByteAddrOf (iRevScanBase s1)) byteSz rp =
           memValAt (sMem s2) (revByteAddrOf (iRevScanBase s1)) byteSz
@@ -1069,16 +1081,16 @@ Section CoreRel.
   (* The revoker facts read only the revoker state, the access in flight and the line contents *)
   Lemma RevokerRel_frame :
     forall g g' (s1 s1' : IState) (s2 s2' : SState),
-      g_acc g' = g_acc g -> iRev s1' = iRev s1 ->
+      g_acc g' = g_acc g -> g_revOff g' = g_revOff g -> iRev s1' = iRev s1 ->
       (forall L, lineContent specRegions (sMem s2') L = lineContent specRegions (sMem s2) L) ->
       RevokerRel g s1 s2 -> RevokerRel g' s1' s2'.
   Proof.
-    intros g g' s1 s1' s2 s2' Eacc HR Hlc H.
+    intros g g' s1 s1' s2 s2' Eacc Eoff HR Hlc H.
     assert (Hmv : forall a sz, memValAt (sMem s2') a sz = memValAt (sMem s2) a sz)
       by (intros a sz; apply memValAt_ext; exact Hlc).
     assert (Hrb : forall b, revBitOf (sMem s2') b = revBitOf (sMem s2) b)
       by (intros b; apply revBitOf_ext; exact Hlc).
-    unfold RevokerRel, RevAccRel, RevWriteOK in *; rewrite Eacc.
+    unfold RevokerRel, RevAccRel, RevCapOK, RevWriteOK in *; rewrite Eacc, Eoff.
     revert H.
     destruct (g_acc g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
                           | rc [[|]|[|]|[|]|[|] rp|res] | [[|]|[|]|[|]|[|] rp|res]
@@ -1140,7 +1152,7 @@ Section CoreRel.
         intros Hlive; rewrite E1 in Hlive.
         exact (LineAllowed_fetchViewExt core initLine specRegions fwcs _ _ _ _ Hsnap Hext (Hl' Hlive)).
     - unfold WfRel in *; rewrite HP; rewrite E1; exact Hw.
-    - exact (RevokerRel_frame g g s1 s1' s2 s2' eq_refl HR Hlc Hrk).
+    - exact (RevokerRel_frame g g s1 s1' s2 s2' eq_refl eq_refl HR Hlc Hrk).
   Qed.
 
   (* --- 16b. Steps While a fence.i Waits --- *)
@@ -1315,7 +1327,7 @@ Section CoreRel.
       refine (AllPorts_conj (fun r y => ImplExternalRegionHandshakeInv core r y) _ _ _ _ Hfc).
       rewrite HP by (intros r y w a; reflexivity).
       revert W5; apply AllPorts_impl; intros r y [Hy _]; exact Hy.
-    - exact (RevokerRel_frame g g s1 s1' s2 s2' eq_refl HR Hlc Hrk).
+    - exact (RevokerRel_frame g g s1 s1' s2 s2' eq_refl eq_refl HR Hlc Hrk).
   Qed.
 
   (* --- 17. The mcycle Tick --- *)
@@ -1372,7 +1384,7 @@ Section CoreRel.
   (* The access in flight depends on the ghost only through these fields and the head *)
   Lemma AccessRel_ghost :
     forall g g' (s1 : IState) (s2 : SState),
-      g_acc g' = g_acc g -> g_revAdv g' = g_revAdv g -> g_cnwb g' = g_cnwb g ->
+      g_acc g' = g_acc g -> g_revOff g' = g_revOff g -> g_cnwb g' = g_cnwb g ->
       (forall q, HeadReq g q -> HeadReq g' q) ->
       AccessRel g s1 s2 -> AccessRel g' s1 s2.
   Proof.
@@ -1457,7 +1469,7 @@ Section CoreRel.
       s1' = writeSubTreeState NPRF s1 (evalIncrementMcycle core pcAddrInit (iRf s1)) ->
       g_chain g <> [] ->
       RefRelG g s1 s2 ->
-      RefRelG (mkGhost (g_chain g ++ [GTick]) (g_rf0 g) (g_cnwb g) (g_revAdv g) (g_d2aFo g) (g_acc g)) s1' s2.
+      RefRelG (mkGhost (g_chain g ++ [GTick]) (g_rf0 g) (g_cnwb g) (g_revOff g) (g_d2aFo g) (g_acc g)) s1' s2.
   Proof.
     intros g s1 s1' s2 E1 Hne H.
     destruct (tick_impl_facts s1 s1' E1) as [Hflush Hpcc].
@@ -1499,7 +1511,7 @@ Section CoreRel.
     - eapply ScoreRel_tick; [exact E1 | reflexivity | exact Hs].
     - eapply FrontRel_tick; [exact E1 | reflexivity | exact (proj2 (proj2 Hm)) | exact Hfr].
     - rewrite E1; exact Hw.
-    - refine (RevokerRel_frame g _ s1 s1' s2 s2 eq_refl _ (fun L => eq_refl) Hrk); rewrite E1; reflexivity.
+    - refine (RevokerRel_frame g _ s1 s1' s2 s2 eq_refl eq_refl _ (fun L => eq_refl) Hrk); rewrite E1; reflexivity.
   Qed.
 
   Local Abbreviation NPRFS := (Spec.np_rf core pcAddrInit specRegions).
@@ -1511,7 +1523,7 @@ Section CoreRel.
       s2' = writeSubTreeState NPRFS s2 (evalIncrementMcycle core pcAddrInit (sRf s2)) ->
       g_chain g = [] ->
       RefRelG g s1 s2 ->
-      RefRelG (mkGhost [] (evalIncrementMcycle core pcAddrInit (g_rf0 g)) (g_cnwb g) (g_revAdv g) (g_d2aFo g) (g_acc g))
+      RefRelG (mkGhost [] (evalIncrementMcycle core pcAddrInit (g_rf0 g)) (g_cnwb g) (g_revOff g) (g_d2aFo g) (g_acc g))
         s1' s2'.
   Proof.
     intros g s1 s1' s2 s2' E1 E2 Hnil H.
@@ -1543,7 +1555,7 @@ Section CoreRel.
     - eapply ScoreRel_tick; [exact E1 | reflexivity | exact Hs].
     - rewrite E2; eapply FrontRel_tick; [exact E1 | reflexivity | exact (proj2 (proj2 Hm)) | exact Hfr].
     - rewrite E1; exact Hw.
-    - refine (RevokerRel_frame g _ s1 s1' s2 s2' eq_refl _ _ Hrk);
+    - refine (RevokerRel_frame g _ s1 s1' s2 s2' eq_refl eq_refl _ _ Hrk);
         [rewrite E1; reflexivity | intros L; rewrite Hsm; reflexivity].
   Qed.
 

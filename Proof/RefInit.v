@@ -224,7 +224,7 @@ Section RegionInit.
     forall (xs : TS (Node "revoker" (revokerChildren core []))) (xi : TS (implRevokerTree core)),
       InitStateConsistent (Node "revoker" (revokerChildren core [])) xs ->
       InitStateConsistent (implRevokerTree core) xi ->
-      RevRel core false xs xi.
+      RevRel core RevEq xs xi.
   Proof.
     intros [b [t [c [ep [ist [irq [sc []]]]]]]] [b' [t' [c' [ep' [ist' [irq' [sc' [ph [cap [bs [hit []]]]]]]]]]]]
            Hxs Hxi.
@@ -232,7 +232,7 @@ Section RegionInit.
     destruct Hxs as [Hb [Ht [Hc [Hep [Hist [Hirq [Hsc _]]]]]]].
     destruct Hxi as [Hb' [Ht' [Hc' [Hep' [Hist' [Hirq' [Hsc' _]]]]]]].
     subst.
-    unfold RevRel, projImplRevokerArchState, revWithScanAddr, revScanAddr; cbn.
+    unfold RevRel, projImplRevokerArchState, revWithScanAddr, revScanAddr, revOffAddr; cbn.
     reflexivity.
   Qed.
 
@@ -419,7 +419,7 @@ Section RefInitMain.
   Qed.
 
   Definition ghost0 : Ghost core pcAddrInit :=
-    mkGhost core pcAddrInit [] (spec_rf core pcAddrInit specRegions s2) None false [] AccNone.
+    mkGhost core pcAddrInit [] (spec_rf core pcAddrInit specRegions s2) None RevEq [] AccNone.
 
   Theorem RefRel_init :
     RefRel core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -439,7 +439,7 @@ Section RefInitMain.
       split; [intros d v Hc; discriminate Hc |].
       intros G1 e G2 HG; destruct G1; discriminate HG.
     - (* MemRelC *)
-      unfold MemRelC, MemRel; cbn [g_revAdv ghost0].
+      unfold MemRelC, MemRel; cbn [g_revOff ghost0].
       split; [| split].
       + split; [| split; [| split]].
         * exact (MemRelPre_init core _ _ _ _ post pre 0 _ _ HdetPre HdetPost init_smem init_regions).
@@ -467,7 +467,7 @@ Section RefInitMain.
     - (* EagerRel *)
       left; reflexivity.
     - (* AccessRel *)
-      unfold AccessRel; cbn [g_acc ghost0 g_revAdv].
+      unfold AccessRel; cbn [g_acc ghost0 g_revOff].
       pose proof (proj1 (proj2 Hm)) as Hst; pose proof (proj1 (proj2 (proj2 (proj2 Hm)))) as Hrp.
       cbn in Hst, Hrp.
       unfold iMemSt, iReadRp, iMem; rewrite Hst, Hrp.

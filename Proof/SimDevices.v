@@ -2141,7 +2141,7 @@ Section ExternalMemEnvAndHandshake.
   Qed.
 
   (* The data response port receives the response of the outstanding line read, if it has
-   * arrived, and returns it (tag-masked for a region without tags) to the memory. *)
+   * arrived, and returns it to the memory. *)
   Lemma implExternalLineRpPort_preserves_HandshakeInv :
     forall (r : MemRegion) {env : Env (implExternalMemRegionTree dom r)}
            (ir ir' : TreeState DomainElemState (implExternalMemRegionTree dom r))
@@ -2152,7 +2152,7 @@ Section ExternalMemEnvAndHandshake.
       ir'.(Fst).(Fst) = ir.(Fst).(Fst) /\
       ir'.(Fst).(Snd).(Snd).(Snd) = ir.(Fst).(Snd).(Snd).(Snd) /\
       (v.(Snd).(Fst) = true ->
-       v.(Fst) = evalExpr (maskRegionReadRp r (Var type LineReadRp (hd (getDefault _) ir'.(Fst).(Snd).(Snd).(Fst)))) /\
+       v.(Fst) = hd (getDefault _) ir'.(Fst).(Snd).(Snd).(Fst) /\
        ir'.(Fst).(Snd).(Snd).(Fst) <> []).
   Proof.
     intros r env

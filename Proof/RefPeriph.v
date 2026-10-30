@@ -637,7 +637,7 @@ Section IrqFrame.
 
   Lemma irqs_custom : forall r, memRegionIrqActions core r <> [] -> isCustomR r.
   Proof.
-    intros [nm bs sz tg kd im ba sa]; unfold memRegionIrqActions, memRegionIrqAction, isCustomR; cbn [regionKind].
+    intros [nm bs sz kd im ba sa]; unfold memRegionIrqActions, memRegionIrqAction, isCustomR; cbn [regionKind].
     destruct kd as [| ch rd wr [irq |]]; intros H; try exact I; exfalso; apply H; reflexivity.
   Qed.
 
@@ -1324,7 +1324,7 @@ Section FenceList.
     unfold liftToImplRegion in Hy'.
     apply SemAction_liftAction_iff in Hy' as [z' [Hz' ->]].
     revert f Hf Hrel Henv Hz'.
-    destruct r as [nm bs sz tg kd im ba sa]; destruct kd; cbn [memRegionFenceIAckActions regionKind In];
+    destruct r as [nm bs sz kd im ba sa]; destruct kd; cbn [memRegionFenceIAckActions regionKind In];
       intros f Hf; try contradiction.
     destruct Hf as [<- | []]; intros Hrel Henv Hz'.
     unfold RegionRelAt, AckEnvAt in Hrel, Henv; cbn [regionKind] in Hrel, Henv.
@@ -1639,7 +1639,7 @@ Section FenceEnvList.
          eI sub p v -> implRegionEnv core initLine r fwc sub p v) ->
       AckEnvAt core r fwc eS eI x y.
   Proof.
-    intros r fwc; destruct r as [nm bs sz tg kd im ba sa]; destruct kd; cbn [AckEnvAt regionKind];
+    intros r fwc; destruct r as [nm bs sz kd im ba sa]; destruct kd; cbn [AckEnvAt regionKind];
       intros eS eI x y HS HI; [| exact I].
     intros Hrel ack Hack.
     unfold subEnv in Hack.

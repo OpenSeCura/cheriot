@@ -437,29 +437,28 @@ Section Plic.
     Definition plicLineReadAction
                (addr : ty Addr)
                (dataMask : ty (Array LineBytes Bool))
-               : Action ty tPlic LineReadRp :=
+               : Action ty tPlic (Array LineBytes (Bit ByteSz)) :=
       decodePlicLine #addr #dataMask (fun d =>
       readPlicState (fun st =>
         Let readBytes : Array LineBytes (Bit ByteSz) <- readPlicLine st d ;
         If d.(dec_touchesClaim) Then (
           @plicClaim n ty st.(st_claim)
         ) ;
-        @Return ty tPlic LineReadRp (STRUCT {
-          "data" ::= #readBytes ;
-          "tag"  ::= Const ty (Array NumLineTags Bool) (getDefault _)
-        })
+        Return #readBytes
       )).
 
     Definition plicLineWriteAction
-               (rq : ty LineWriteRq)
+               (addr : ty Addr)
+               (data : ty (Array LineBytes (Bit ByteSz)))
+               (dataMask : ty (Array LineBytes Bool))
                : Action ty tPlic (Bit 0) :=
-      decodePlicLine (##rq`"addr") (##rq`"dataMask") (fun d =>
+      decodePlicLine #addr #dataMask (fun d =>
       readPlicState (fun st =>
         Let oldBytes : Array LineBytes (Bit ByteSz) <- readPlicLine st d ;
         Let newBytes : Array LineBytes (Bit ByteSz) <-
           ArrayBuilder (fun i =>
-            ITE (ReadArrayConst (##rq`"dataMask") i)
-                (ReadArrayConst (##rq`"data") i)
+            ITE (ReadArrayConst #dataMask i)
+                (ReadArrayConst #data i)
                 (ReadArrayConst #oldBytes i)) ;
         Let newWords : Array numLineWords (Bit Xlen) <-
           FromBit (Array numLineWords (Bit Xlen)) (ToBit ##newBytes) ;
@@ -508,7 +507,6 @@ Section Plic.
     regionName        := "plic" ;
     regionBase        := base ;
     regionSize        := PlicSizeBytes ;
-    regionHasTags     := false ;
     regionKind        := @CustomMem "plic"
                                     (plicChildren n)
                                     (@plicLineReadAction n base)

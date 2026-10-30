@@ -254,7 +254,7 @@ Section ImplDevice.
                : Action ty tImplExt Bool :=
       ReadReg "portRq" pExtPortRq (fun portRq =>
       If (Not (##portRq`"valid")) Then (
-        WriteReg pExtPortRq (mkSome (UNION (PortRqList, "Write" ::= maskRegionWriteRq r #rq))) Retv
+        WriteReg pExtPortRq (mkSome (UNION (PortRqList, "Write" ::= #rq))) Retv
       ) ;
       Return (Not (##portRq`"valid"))).
 
@@ -267,7 +267,7 @@ Section ImplDevice.
         If #valid Then (
           LetA rp : LineReadRp <- liftAction child0Path (@externalLineReadRp dom r ty) ;
           Act (Send pLineReadRpReady ($0 : Expr ty (Bit 0)) Retv) ;
-          Return (mkSome (maskRegionReadRp r #rp))
+          Return (mkSome #rp)
         ) ;
       Return #rpOpt).
 
@@ -327,8 +327,10 @@ Section ImplDevice.
     Variable children : list (Tree DomainElem).
     Variable readAction : forall ty, ty Addr ->
                           ty (Array LineBytes Bool) ->
-                          Action ty (customMemRegionTree r children) LineReadRp.
-    Variable writeAction : forall ty, ty LineWriteRq ->
+                          Action ty (customMemRegionTree r children) (Array LineBytes (Bit 8)).
+    Variable writeAction : forall ty, ty Addr ->
+                           ty (Array LineBytes (Bit 8)) ->
+                           ty (Array LineBytes Bool) ->
                            Action ty (customMemRegionTree r children) (Bit 0).
     Variable ty : Kind -> Type.
 
@@ -340,8 +342,12 @@ Section ImplDevice.
                (lineAddr : ty Addr)
                (dataMask : ty (Array LineBytes Bool))
                : Action ty tImplCust LineReadRqRes :=
-      LetA rp    : LineReadRp        <- liftAction child0Path (readAction lineAddr dataMask) ;
-      Let  rpOpt : Option LineReadRp <- mkSome (maskRegionReadRp r #rp) ;
+      LetA data  : Array LineBytes (Bit 8) <- liftAction child0Path (readAction lineAddr dataMask) ;
+      Let  rp    : LineReadRp              <- STRUCT {
+        "data" ::= #data ;
+        "tag"  ::= Const ty (Array NumLineTags Bool) (getDefault _)
+      } ;
+      Let  rpOpt : Option LineReadRp       <- mkSome #rp ;
       @Return _ _ LineReadRqRes (STRUCT {
         "rdy" ::= Const ty Bool true ;
         "rp"  ::= #rpOpt
@@ -350,8 +356,10 @@ Section ImplDevice.
     Definition implCustomLineWriteRq
                (rq : ty LineWriteRq)
                : Action ty tImplCust Bool :=
-      Let rqM : LineWriteRq <- maskRegionWriteRq r #rq ;
-      Act (liftAction child0Path (writeAction rqM)) ;
+      Let addr     : Addr                    <- ##rq`"addr" ;
+      Let data     : Array LineBytes (Bit 8) <- ##rq`"data" ;
+      Let dataMask : Array LineBytes Bool    <- ##rq`"dataMask" ;
+      Act (liftAction child0Path (writeAction addr data dataMask)) ;
       Return (ConstBool true).
 
   End ImplCustomMemRegionActions.

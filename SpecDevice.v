@@ -74,11 +74,15 @@ Definition FetchReadRes : Kind :=
 
 Inductive RegionKind (regionName : string) :=
 | ExternalMem
+(* A device has no tags: its read action returns the data bytes of the line, and its write
+ * action gets the address, the data bytes and their byte mask *)
 | CustomMem (children : list (Tree DomainElem))
             (readAction : forall ty, ty Addr ->
                           ty (Array LineBytes Bool) ->
-                          Action ty (Node regionName children) LineReadRp)
-            (writeAction : forall ty, ty LineWriteRq ->
+                          Action ty (Node regionName children) (Array LineBytes (Bit 8)))
+            (writeAction : forall ty, ty Addr ->
+                           ty (Array LineBytes (Bit 8)) ->
+                           ty (Array LineBytes Bool) ->
                            Action ty (Node regionName children) (Bit 0))
             (irqAction : option (forall ty, Action ty (Node regionName children) Bool)).
 
@@ -89,15 +93,11 @@ Record MemRegion := {
   regionName        : string ;
   regionBase        : Z ;
   regionSize        : Z ;
-  regionHasTags     : bool ;
   regionKind        : RegionKind regionName ;
   regionInMemory    : Is_true ((0 <=? regionBase) && (regionBase + regionSize <=? Z.shiftl 1 AddrSz))%Z ;
   regionBaseAligned : Is_true (regionBase mod (2 ^ LgLineBytes) =? 0)%Z ;
   regionSizeAligned : Is_true (regionSize mod (2 ^ LgLineBytes) =? 0)%Z
 }.
-
-  Definition hasTags (r : MemRegion) : bool :=
-    r.(regionHasTags).
 
   Definition disjointBool (r1 r2 : MemRegion) : bool :=
     (r1.(regionBase) + r1.(regionSize) <=? r2.(regionBase))%Z ||
@@ -111,17 +111,6 @@ Record MemRegion := {
 
   Definition isRegionAddr {ty : Kind -> Type} (r : MemRegion) (addr : Expr ty Addr) : Expr ty Bool :=
     And [ Uge addr $(r.(regionBase)) ; Ult addr $(r.(regionBase) + r.(regionSize)) ].
-
-  (* A region without tags reads every tag as false and ignores tag writes *)
-  Definition maskRegionReadRp (r : MemRegion) {ty : Kind -> Type} (rp : Expr ty LineReadRp)
-    : Expr ty LineReadRp :=
-    if hasTags r then rp else rp `{ "tag" <- Const ty (Array NumLineTags Bool) (getDefault _) }.
-
-  Definition maskRegionWriteRq (r : MemRegion) {ty : Kind -> Type} (rq : Expr ty LineWriteRq)
-    : Expr ty LineWriteRq :=
-    if hasTags r then rq
-    else (rq `{ "tag" <- Const ty (Array NumLineTags Bool) (getDefault _) })
-           `{ "tagMask" <- Const ty (Array NumLineTags Bool) (getDefault _) }.
 
   Definition CapPacket : Kind :=
     STRUCT_TYPE {
@@ -576,12 +565,13 @@ Section SpecDevice.
              (dataMask : ty (Array LineBytes Bool))
              : Action ty (memRegionTree r) LineReadRp :=
     match r.(regionKind) as k return Action ty (memRegionKindTree r k) LineReadRp with
-    | ExternalMem =>
-        LetA rp : LineReadRp <- externalLineRead r addr ;
-        Return (maskRegionReadRp r #rp)
+    | ExternalMem => externalLineRead r addr
     | CustomMem _ readAct _ _ =>
-        LetA rp : LineReadRp <- readAct ty addr dataMask ;
-        Return (maskRegionReadRp r #rp)
+        LetA data : Array LineBytes (Bit 8) <- readAct ty addr dataMask ;
+        @Return _ _ LineReadRp (STRUCT {
+          "data" ::= #data ;
+          "tag"  ::= Const ty (Array NumLineTags Bool) (getDefault _)
+        })
     end.
 
   Definition memRegionLineWrite
@@ -590,12 +580,12 @@ Section SpecDevice.
              (rq : ty LineWriteRq)
              : Action ty (memRegionTree r) (Bit 0) :=
     match r.(regionKind) as k return Action ty (memRegionKindTree r k) (Bit 0) with
-    | ExternalMem =>
-        Let rqM : LineWriteRq <- maskRegionWriteRq r #rq ;
-        externalLineWrite r rqM
+    | ExternalMem => externalLineWrite r rq
     | CustomMem _ _ writeAct _ =>
-        Let rqM : LineWriteRq <- maskRegionWriteRq r #rq ;
-        writeAct ty rqM
+        Let addr     : Addr                    <- ##rq`"addr" ;
+        Let data     : Array LineBytes (Bit 8) <- ##rq`"data" ;
+        Let dataMask : Array LineBytes Bool    <- ##rq`"dataMask" ;
+        writeAct ty addr data dataMask
     end.
 
   Arguments memRegionFetchLineRead r [ty] addr.

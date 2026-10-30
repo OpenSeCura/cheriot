@@ -45,8 +45,7 @@ Local Open Scope guru_scope.
  *    - CLINT: equal except `sampledMtip`, where the spec may lag (spec -> impl);
  *    - PLIC: equal except `meip`, where the spec may lag;
  *    - revoker: the spec's 7 registers are the projection of the impl's 11,
- *      except that the impl's `scanAddr` is one ahead while the revoker's write
- *      waits in the memory. *)
+ *      except for `scanAddr` (`RevOff`). *)
 
 Local Abbreviation TS t := (TreeState DomainElemState t).
 
@@ -96,6 +95,18 @@ Section RegionRel.
 End RegionRel.
 
 (* --- 2. Special Regions --- *)
+
+(* The impl revoker's scanAddr against the spec's: equal; one ahead while the revoker's write
+ * waits in the memory; one behind from the device read of a cap (the spec has taken that
+ * position's step) until the impl's WaitCapRp advances *)
+Inductive RevOff := RevEq | RevImplAhead | RevSpecAhead.
+
+Definition revOffAddr (o : RevOff) (sa : bits TagAddrWidth) : bits TagAddrWidth :=
+  match o with
+  | RevEq => sa
+  | RevImplAhead => Zmod.add sa Zmod.one
+  | RevSpecAhead => Zmod.sub sa Zmod.one
+  end.
 
 Section SpecialRegions.
   Variable core : string.
@@ -150,10 +161,8 @@ Section SpecialRegions.
     (x.(Fst) ,, (x.(Snd).(Fst) ,, (x.(Snd).(Snd).(Fst) ,, (x.(Snd).(Snd).(Snd).(Fst) ,,
      (x.(Snd).(Snd).(Snd).(Snd).(Fst) ,, (x.(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,, (a ,, tt))))))).
 
-  (* `adv`: the revoker's write is waiting in the memory (its scanAddr already moved on) *)
-  Definition RevRel (adv : bool) (xs : RevS) (xi : RevI) : Prop :=
-    projImplRevokerArchState core xi =
-      revWithScanAddr (if adv then Zmod.add (revScanAddr xs) Zmod.one else revScanAddr xs) xs.
+  Definition RevRel (o : RevOff) (xs : RevS) (xi : RevI) : Prop :=
+    projImplRevokerArchState core xi = revWithScanAddr (revOffAddr o (revScanAddr xs)) xs.
 
 End SpecialRegions.
 
@@ -198,13 +207,12 @@ Section MemRelLists.
     (regionStateAt (implMemRegionTree core) (length pre) implRegions iRev
        (nth_error_app_cons_len pre iRev post) mi).(Fst).
 
-  (* `revAdv`: the revoker's write is waiting in the memory *)
-  Definition MemRel (revAdv : bool)
+  Definition MemRel (revOff : RevOff)
     (ms : TS (specMemTree core specRegions)) (mi : TS (implRegionsTree core implRegions)) : Prop :=
     MemRelPre core clintS.(clintIdx) plicS.(plicIdx) 0 pre sRev iRev post ms mi /\
     ClintRel core (specClintState ms) (implClintState mi) /\
     PlicRel core _ _ (specPlicState ms) (implPlicState mi) /\
-    RevRel core revAdv (specRevState ms) (implRevState mi).
+    RevRel core revOff (specRevState ms) (implRevState mi).
 
   (* Impl-only facts about the devices *)
   Definition DevInv (mi : TS (implRegionsTree core implRegions)) : Prop :=

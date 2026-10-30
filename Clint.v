@@ -99,7 +99,7 @@ Section Clint.
              (ty : Kind -> Type)
              (addr : ty Addr)
              (_ : ty (Array LineBytes Bool))
-             : Action ty tClint LineReadRp :=
+             : Action ty tClint (Array LineBytes (Bit ByteSz)) :=
     Let offset <- getMemOffset base ClintSizeBytes #addr ;
     ReadReg "mtime" clintMtimePath (fun mtimeVal =>
     ReadReg "mtimecmp" clintMtimecmpPath (fun mtimecmpVal =>
@@ -108,23 +108,22 @@ Section Clint.
            ITE0 (Eq #offset $(CLINT_MTIMECMP_OFFSET)) #mtimecmpVal ] ;
     Let readBytes : Array LineBytes (Bit ByteSz) <-
       FromBit (Array LineBytes (Bit ByteSz)) #rawData ;
-    @Return ty tClint LineReadRp (STRUCT {
-      "data" ::= #readBytes ;
-      "tag"  ::= Const ty (Array NumLineTags Bool) (getDefault _)
-    }))).
+    Return #readBytes)).
 
   Definition clintLineWriteAction
              (base : Z)
              (ty : Kind -> Type)
-             (rq : ty LineWriteRq)
+             (addr : ty Addr)
+             (data : ty (Array LineBytes (Bit ByteSz)))
+             (dataMask : ty (Array LineBytes Bool))
              : Action ty tClint (Bit 0) :=
-    Let offset   <- getMemOffset base ClintSizeBytes (##rq`"addr") ;
-    Let anyWrite : Bool <- isNotZero (ToBit (##rq`"dataMask")) ;
+    Let offset   <- getMemOffset base ClintSizeBytes #addr ;
+    Let anyWrite : Bool <- isNotZero (ToBit #dataMask) ;
     let mergeReg (oldVal : Expr ty (Bit DXlen)) : Expr ty (Bit DXlen) :=
       let oldBytes := FromBit (Array LineBytes (Bit ByteSz)) oldVal in
       ToBit (ArrayBuilder (fun i =>
-        ITE (ReadArrayConst (##rq`"dataMask") i)
-            (ReadArrayConst (##rq`"data") i)
+        ITE (ReadArrayConst #dataMask i)
+            (ReadArrayConst #data i)
             (ReadArrayConst oldBytes i))) in
     If #anyWrite Then (
       Act (If (Eq #offset $(CLINT_MTIME_OFFSET)) Then (
@@ -153,7 +152,6 @@ Section Clint.
     regionName        := "clint" ;
     regionBase        := base ;
     regionSize        := ClintSizeBytes ;
-    regionHasTags     := false ;
     regionKind        := @CustomMem "clint" clintChildren (@clintLineReadAction base) (@clintLineWriteAction base) None ;
     regionInMemory    := pfBound ;
     regionBaseAligned := pfAligned ;
