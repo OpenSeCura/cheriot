@@ -979,6 +979,264 @@ Section IrqRel.
   Qed.
 End IrqRel.
 
+(* --- fence.i Acks of One ExternalMem Region --- *)
+
+Section FenceAckRegion.
+  Variable core : string.
+
+  (* The effect of one ack step on a region's spec part: `None` when `fenceIWait` was clear,
+   * `Some ack` when the ack was received *)
+  Definition AckUpd {r : MemRegion} (o : option bool) (s s' : TS (externalMemRegionTree core r)) : Prop :=
+    match o with
+    | None => s'.(Snd) = s.(Snd) /\ s'.(Fst) = s.(Fst)
+    | Some b =>
+        s'.(Snd) = s.(Snd) /\ s'.(Fst).(Fst) = s.(Fst).(Fst) /\ s'.(Fst).(Snd).(Fst) = s.(Fst).(Snd).(Fst) /\
+        s'.(Fst).(Snd).(Snd).(Fst) = negb b /\
+        s'.(Fst).(Snd).(Snd).(Snd).(Fst) = s.(Fst).(Snd).(Snd).(Snd).(Fst) /\
+        s'.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst) = b :: s.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst)
+    end.
+
+  (* Same fenceIWait and an env that accepts the impl's ack: the spec takes the same step *)
+  Lemma extFenceIAck_sim :
+    forall r (envI envS : Env (externalMemRegionTree core r)) (x z z' : TS (externalMemRegionTree core r)) v,
+      x.(Fst).(Snd).(Snd).(Fst) = z.(Fst).(Snd).(Snd).(Fst) ->
+      (forall ack, subEnv child0Path envI z z.(Fst) (pExtFetchFenceIAck core) ack ->
+                   subEnv child0Path envS x x.(Fst) (pExtFetchFenceIAck core) ack) ->
+      SemAction envI (@externalFenceIAckStep core r type) z z' v ->
+      exists o x', SemAction envS (@externalFenceIAckStep core r type) x x' v /\ AckUpd o z z' /\ AckUpd o x x'.
+  Proof.
+    intros r envI envS x z z' v Hw Henv Hsem.
+    unfold externalFenceIAckStep in Hsem.
+    rewrite SemAction_iff_evalActionPropGen, evalActionPropGen_liftAction in Hsem.
+    cbn in Hsem.
+    destruct (z.(Fst).(Snd).(Snd).(Fst)) eqn:Hwait.
+    - destruct Hsem as [ack [Hack Hrest]].
+      pose proof (Henv ack Hack) as HackS.
+      assert (HS : evalActionPropGen envS (@externalFenceIAckStep core r type) x
+                     (fun x' v' => AckUpd (Some ack) x x' /\ v' = v)).
+      { unfold externalFenceIAckStep; rewrite evalActionPropGen_liftAction; cbn.
+        destruct (x.(Fst).(Snd).(Snd).(Fst)) eqn:HwaitS; [| exfalso; congruence].
+        exists ack; split; [exact HackS |].
+        destruct ack; cbn in Hrest |- *; destruct Hrest as [_ Hv];
+          (split; [repeat split; cbn; first [reflexivity | exact HwaitS] | exact Hv]). }
+      destruct (evalActionPropGen_to_SemAction _ _ _ HS) as [x' [v' [HsemS [Hupd Hv']]]]; subst v'.
+      exists (Some ack), x'; split; [exact HsemS | split; [| exact Hupd]].
+      destruct ack; cbn in Hrest; destruct Hrest as [<- _]; repeat split; cbn; first [reflexivity | exact Hwait].
+    - cbn in Hsem; destruct Hsem as [Hz Hv].
+      assert (HS : evalActionPropGen envS (@externalFenceIAckStep core r type) x
+                     (fun x' v' => AckUpd None x x' /\ v' = v)).
+      { unfold externalFenceIAckStep; rewrite evalActionPropGen_liftAction; cbn.
+        destruct (x.(Fst).(Snd).(Snd).(Fst)) eqn:HwaitS; [exfalso; congruence |].
+        cbn; split; [split; reflexivity | exact Hv]. }
+      destruct (evalActionPropGen_to_SemAction _ _ _ HS) as [x' [v' [HsemS [Hupd Hv']]]]; subst v'.
+      exists None, x'; split; [exact HsemS | split; [| exact Hupd]].
+      subst z'; split; reflexivity.
+  Qed.
+
+  (* The ack step keeps ExtRel *)
+  Lemma ExtRel_ack :
+    forall r o (x x' : TS (externalMemRegionTree core r)) (y : TS (implExternalMemRegionTree core r))
+           (z' : TS (externalMemRegionTree core r)),
+      ExtRel core r x y -> @AckUpd r o y.(Fst) z' -> @AckUpd r o x x' -> ExtRel core r x' (z' ,, y.(Snd)).
+  Proof.
+    intros r o x x' y z' [E1 [E2 [E3 E4]]] Hz Hx.
+    destruct o as [b |]; cbn [AckUpd] in Hz, Hx.
+    - destruct Hz as [Z1 [Z2 [Z3 [Z4 [Z5 Z6]]]]], Hx as [X1 [X2 [X3 [X4 [X5 X6]]]]].
+      unfold ExtRel, implAccWrites in *; cbn [Fst Snd] in *.
+      split; [rewrite X1, Z1; exact E1 |].
+      split; [rewrite X4, Z4; reflexivity |].
+      split; [rewrite X5, Z5; exact E3 |].
+      rewrite X6, Z6; cbn [count_true]; rewrite E4; reflexivity.
+    - destruct Hz as [Z1 Z2], Hx as [X1 X2].
+      unfold ExtRel, implAccWrites in *; cbn [Fst Snd] in *.
+      rewrite X1, Z1, X2, Z2; exact (conj E1 (conj E2 (conj E3 E4))).
+  Qed.
+  (* The env condition at one region: for an ExternalMem region, an ack the impl env accepts is
+   * accepted by the spec env when the region states are related *)
+  Definition AckEnvAt (r : MemRegion) :
+    Env (memRegionTree core r) -> Env (implMemRegionTree core r) ->
+    TS (memRegionTree core r) -> TS (implMemRegionTree core r) -> Prop :=
+    match r.(regionKind) as k
+      return Env (memRegionKindTree core r k) -> Env (implMemRegionKindTree core r k) ->
+             TS (memRegionKindTree core r k) -> TS (implMemRegionKindTree core r k) -> Prop
+    with
+    | ExternalMem => fun eS eI x y =>
+        ExtRel core r x y ->
+        forall ack, subEnv child0Path (subEnv child0Path eI y) y.(Fst) y.(Fst).(Fst) (pExtFetchFenceIAck core) ack ->
+                    subEnv child0Path eS x x.(Fst) (pExtFetchFenceIAck core) ack
+    | CustomMem _ _ _ _ => fun _ _ _ _ => True
+    end.
+
+  Fixpoint EnvAckRel (l : list MemRegion) : Env (specMemTree core l) -> Env (implRegionsTree core l) -> Prop :=
+    match l as l0 return Env (specMemTree core l0) -> Env (implRegionsTree core l0) -> Prop with
+    | [] => fun _ _ => True
+    | r :: rs => fun envS envI =>
+        (forall ms mi, AckEnvAt r (subEnv child0Path envS ms) (subEnv child0Path envI mi) ms.(Fst) mi.(Fst)) /\
+        (forall ms mi, EnvAckRel rs (subEnv child1Path envS ms) (subEnv child1Path envI mi))
+    end.
+End FenceAckRegion.
+
+(* --- fence.i Acks along the Region Lists --- *)
+
+Section FenceList.
+  Variable core : string.
+  Variables cp pp : nat.
+  Variable post : list MemRegion.
+  Variable revBase : Z.
+  Variable revPfB : Is_true ((0 <=? revBase) && (revBase + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z.
+  Variable revPfA : Is_true (revBase mod (2 ^ LgLineBytes) =? 0)%Z.
+  Local Abbreviation sRevR := (specRevRegion core revBase revPfB revPfA).
+  Local Abbreviation iRevR := (implRevRegion core revBase revPfB revPfA).
+
+  Lemma fenceHead_rel :
+    forall i r rsS rsI (ms : TS (specMemTree core (r :: rsS))) (mi mi' : TS (implRegionsTree core (r :: rsI)))
+           (f : forall ty, Action ty (memRegionTree core r) (Bit 0)) envI envS v,
+      In f (memRegionFenceIAckActions core r) ->
+      RegionRelAt core cp pp i r ms.(Fst) mi.(Fst) ->
+      AckEnvAt core r (subEnv child0Path envS ms) (subEnv child0Path envI mi) ms.(Fst) mi.(Fst) ->
+      SemAction envI (liftAction child0Path (liftToImplRegion (f type))) mi mi' v ->
+      exists ms',
+        SemAction envS (liftAction child0Path (f type)) ms ms' v /\
+        RegionRelAt core cp pp i r ms'.(Fst) mi'.(Fst) /\ ms'.(Snd) = ms.(Snd) /\ mi'.(Snd) = mi.(Snd).
+  Proof.
+    intros i r rsS rsI ms mi mi' f envI envS v Hf Hrel Henv Hsem.
+    apply SemAction_liftAction_iff in Hsem as [y' [Hy' ->]].
+    unfold liftToImplRegion in Hy'.
+    apply SemAction_liftAction_iff in Hy' as [z' [Hz' ->]].
+    revert f Hf Hrel Henv Hz'.
+    destruct r as [nm bs sz tg kd im ba sa]; destruct kd; cbn [memRegionFenceIAckActions regionKind In];
+      intros f Hf; try contradiction.
+    destruct Hf as [<- | []]; intros Hrel Henv Hz'.
+    unfold RegionRelAt, AckEnvAt in Hrel, Henv; cbn [regionKind] in Hrel, Henv.
+    pose proof Hrel as [_ [Hw _]].
+    destruct (extFenceIAck_sim core _ (subEnv child0Path (subEnv child0Path envI mi) mi.(Fst)) (subEnv child0Path envS ms)
+                ms.(Fst) mi.(Fst).(Fst) z' v Hw (Henv Hrel) Hz') as [o [x' [HsS [HuZ HuX]]]].
+    exists (x' ,, ms.(Snd)); split; [| split; [| split; reflexivity]].
+    - apply SemAction_liftAction_iff; exists x'; split; [exact HsS | reflexivity].
+    - unfold RegionRelAt; cbn [regionKind].
+      first [exact (ExtRel_ack core _ o _ x' _ z' Hrel HuZ HuX)
+            | eapply ExtRel_ack; [exact Hrel | exact HuZ | exact HuX]].
+  Qed.
+
+  Lemma fencePost_rel :
+    forall l i (ms : TS (specMemTree core l)) (mi mi' : TS (implRegionsTree core l)) k
+           (aS : forall ty, Action ty (specMemTree core l) (Bit 0))
+           (aI : forall ty, Action ty (implRegionsTree core l) (Bit 0)) envI envS v,
+      nth_error (collectFenceIAckActions core l) k = Some aS ->
+      nth_error (implCollectFenceIAckActions core l) k = Some aI ->
+      MemRelPost core cp pp i l ms mi ->
+      EnvAckRel core l envS envI ->
+      SemAction envI (aI type) mi mi' v ->
+      exists ms', SemAction envS (aS type) ms ms' v /\ MemRelPost core cp pp i l ms' mi'.
+  Proof.
+    induction l as [| r rs IH]; intros i ms mi mi' k aS aI envI envS v HkS HkI Hrel Henv Hsem;
+      [unfold collectFenceIAckActions in HkS; destruct k; cbn in HkS; discriminate HkS |].
+    unfold collectFenceIAckActions in HkS; cbn [genCollectRegionActions] in HkS.
+    unfold implCollectFenceIAckActions, implCollectRegionActions in HkI; cbn [genCollectRegionActions] in HkI.
+    unfold implMemRegionFenceIAckActions in HkI.
+    cbn [MemRelPost EnvAckRel] in Hrel, Henv.
+    destruct Hrel as [Hrel0 Hrel1], Henv as [Henv0 Henv1].
+    destruct (Nat.lt_ge_cases k (length (memRegionFenceIAckActions core r))) as [Hlt | Hge].
+    - rewrite nth_error_app1 in HkS by (rewrite length_map; exact Hlt).
+      rewrite nth_error_app1 in HkI by (rewrite !length_map; exact Hlt).
+      rewrite nth_error_map in HkS; rewrite !nth_error_map in HkI.
+      apply option_map_Some_inv in HkS as [f [Hf HkS]]; subst aS.
+      apply option_map_Some_inv in HkI as [y [Hy HkI]]; subst aI.
+      apply option_map_Some_inv in Hy as [f' [Hf' Hy]]; subst y.
+      assert (Ef : f' = f) by (pose proof (eq_trans (eq_sym Hf') Hf) as E; injection E as E; exact E).
+      subst f'; cbv beta in Hsem |- *.
+      assert (HfIn : In f (memRegionFenceIAckActions core r)) by (eapply nth_error_In; exact Hf).
+      destruct (fenceHead_rel i r rs rs ms mi mi' f envI envS v HfIn Hrel0 (Henv0 ms mi) Hsem)
+        as [ms' [Hs' [Hr' [E1 E2]]]].
+      exists ms'; split; [exact Hs' |].
+      cbn [MemRelPost]; split; [exact Hr' |].
+      rewrite E1, E2; exact Hrel1.
+    - rewrite nth_error_app2 in HkS by (rewrite length_map; exact Hge).
+      rewrite nth_error_app2 in HkI by (rewrite !length_map; exact Hge).
+      rewrite length_map, nth_error_map in HkS; rewrite !length_map, nth_error_map in HkI.
+      apply option_map_Some_inv in HkS as [aS' [HaS' HkS]]; subst aS.
+      apply option_map_Some_inv in HkI as [aI' [HaI' HkI]]; subst aI; cbv beta in Hsem |- *.
+      apply SemAction_liftAction_iff in Hsem as [mi'' [Hmi'' ->]].
+      destruct (IH (S i) ms.(Snd).(Fst) mi.(Snd).(Fst) mi'' _ aS' aI' _ _ v HaS' HaI' Hrel1 (Henv1 ms mi) Hmi'')
+        as [ms'' [Hs'' Hr'']].
+      exists (ms.(Fst) ,, (ms'' ,, ms.(Snd).(Snd))); split.
+      + apply SemAction_liftAction_iff; exists ms''; split; [exact Hs'' | reflexivity].
+      + cbn [MemRelPost]; split; [exact Hrel0 | exact Hr''].
+  Qed.
+
+  (* The env condition along `l ++ rev :: post`, skipping the revoker position *)
+  Fixpoint EnvAckPre (l : list MemRegion)
+    : Env (specMemTree core (l ++ sRevR :: post)) -> Env (implRegionsTree core (l ++ iRevR :: post)) -> Prop :=
+    match l as l0
+      return Env (specMemTree core (l0 ++ sRevR :: post)) -> Env (implRegionsTree core (l0 ++ iRevR :: post)) -> Prop
+    with
+    | [] => fun envS envI => forall ms mi, EnvAckRel core post (subEnv child1Path envS ms) (subEnv child1Path envI mi)
+    | r :: rs => fun envS envI =>
+        (forall ms mi, AckEnvAt core r (subEnv child0Path envS ms) (subEnv child0Path envI mi) ms.(Fst) mi.(Fst)) /\
+        (forall ms mi, EnvAckPre rs (subEnv child1Path envS ms) (subEnv child1Path envI mi))
+    end.
+
+  Lemma fencePre_rel :
+    forall l i (ms : TS (specMemTree core (l ++ sRevR :: post)))
+           (mi mi' : TS (implRegionsTree core (l ++ iRevR :: post))) k
+           (aS : forall ty, Action ty (specMemTree core (l ++ sRevR :: post)) (Bit 0))
+           (aI : forall ty, Action ty (implRegionsTree core (l ++ iRevR :: post)) (Bit 0)) envI envS v,
+      nth_error (collectFenceIAckActions core (l ++ sRevR :: post)) k = Some aS ->
+      nth_error (implCollectFenceIAckActions core (l ++ iRevR :: post)) k = Some aI ->
+      MemRelPre core cp pp i l sRevR iRevR post ms mi ->
+      EnvAckPre l envS envI ->
+      SemAction envI (aI type) mi mi' v ->
+      exists ms', SemAction envS (aS type) ms ms' v /\ MemRelPre core cp pp i l sRevR iRevR post ms' mi'.
+  Proof.
+    induction l as [| r rs IH]; intros i ms mi mi' k aS aI envI envS v HkS HkI Hrel Henv Hsem.
+    - unfold collectFenceIAckActions in HkS; cbn [genCollectRegionActions app] in HkS.
+      unfold implCollectFenceIAckActions, implCollectRegionActions in HkI; cbn [genCollectRegionActions app] in HkI.
+      cbn [MemRelPre EnvAckPre] in Hrel, Henv.
+      rewrite nth_error_app2 in HkS by (cbn; lia).
+      rewrite nth_error_app2 in HkI by (cbn; lia).
+      rewrite nth_error_map in HkS, HkI.
+      apply option_map_Some_inv in HkS as [aS' [HaS' HkS]]; subst aS.
+      apply option_map_Some_inv in HkI as [aI' [HaI' HkI]]; subst aI; cbv beta in Hsem |- *.
+      apply SemAction_liftAction_iff in Hsem as [mi'' [Hmi'' ->]].
+      destruct (fencePost_rel post (S i) ms.(Snd).(Fst) mi.(Snd).(Fst) mi'' _ aS' aI' _ _ v HaS' HaI' Hrel
+                  (Henv ms mi) Hmi'') as [ms'' [Hs'' Hr'']].
+      exists (ms.(Fst) ,, (ms'' ,, ms.(Snd).(Snd))); split.
+      + apply SemAction_liftAction_iff; exists ms''; split; [exact Hs'' | reflexivity].
+      + exact Hr''.
+    - unfold collectFenceIAckActions in HkS; cbn [genCollectRegionActions app] in HkS.
+      unfold implCollectFenceIAckActions, implCollectRegionActions in HkI; cbn [genCollectRegionActions app] in HkI.
+      unfold implMemRegionFenceIAckActions in HkI.
+      cbn [MemRelPre EnvAckPre] in Hrel, Henv.
+      destruct Hrel as [Hrel0 Hrel1], Henv as [Henv0 Henv1].
+      destruct (Nat.lt_ge_cases k (length (memRegionFenceIAckActions core r))) as [Hlt | Hge].
+      + rewrite nth_error_app1 in HkS by (rewrite length_map; exact Hlt).
+        rewrite nth_error_app1 in HkI by (rewrite !length_map; exact Hlt).
+        rewrite nth_error_map in HkS; rewrite !nth_error_map in HkI.
+        apply option_map_Some_inv in HkS as [f [Hf HkS]]; subst aS.
+        apply option_map_Some_inv in HkI as [y [Hy HkI]]; subst aI.
+        apply option_map_Some_inv in Hy as [f' [Hf' Hy]]; subst y.
+        assert (Ef : f' = f) by (pose proof (eq_trans (eq_sym Hf') Hf) as E; injection E as E; exact E).
+        subst f'; cbv beta in Hsem |- *.
+        assert (HfIn : In f (memRegionFenceIAckActions core r)) by (eapply nth_error_In; exact Hf).
+        destruct (fenceHead_rel i r _ _ ms mi mi' f envI envS v HfIn Hrel0 (Henv0 ms mi) Hsem)
+          as [ms' [Hs' [Hr' [E1 E2]]]].
+        exists ms'; split; [exact Hs' |].
+        cbn [MemRelPre]; split; [exact Hr' |].
+        rewrite E1, E2; exact Hrel1.
+      + rewrite nth_error_app2 in HkS by (rewrite length_map; exact Hge).
+        rewrite nth_error_app2 in HkI by (rewrite !length_map; exact Hge).
+        rewrite length_map, nth_error_map in HkS; rewrite !length_map, nth_error_map in HkI.
+        apply option_map_Some_inv in HkS as [aS' [HaS' HkS]]; subst aS.
+        apply option_map_Some_inv in HkI as [aI' [HaI' HkI]]; subst aI; cbv beta in Hsem |- *.
+        apply SemAction_liftAction_iff in Hsem as [mi'' [Hmi'' ->]].
+        destruct (IH (S i) ms.(Snd).(Fst) mi.(Snd).(Fst) mi'' _ aS' aI' _ _ v HaS' HaI' Hrel1 (Henv1 ms mi) Hmi'')
+          as [ms'' [Hs'' Hr'']].
+        exists (ms.(Fst) ,, (ms'' ,, ms.(Snd).(Snd))); split.
+        * apply SemAction_liftAction_iff; exists ms''; split; [exact Hs'' | reflexivity].
+        * cbn [MemRelPre]; split; [exact Hrel0 | exact Hr''].
+  Qed.
+End FenceList.
+
 Section Periph.
   Variable core : string.
   Variable pcAddrInit : Z.
