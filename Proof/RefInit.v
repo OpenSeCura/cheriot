@@ -510,7 +510,7 @@ Section RefInitMain.
       split; [intros _; reflexivity |].
       pose proof (proj2 Hdm) as Hdst; cbn in Hdst.
       unfold iDmSt, iDm, dataMem_state; rewrite (proj1 Hdst).
-      intros Hc; discriminate Hc.
+      split; intros Hc; discriminate Hc.
     - (* DmQueueRel *)
       unfold DmQueueRel, iDmBuf, iDm, dataMem_fifo; cbn [g_chain g_acc ghost0].
       rewrite (InitStateConsistent_fifo_to_list core dataMemCapacity MemFenceReq _ (proj1 (proj1 Hdm))).

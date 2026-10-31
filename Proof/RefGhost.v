@@ -133,8 +133,11 @@ Section GhostChain.
   Definition geAluOut (rf0 : RfSt) (e : GEntry) : type AluOutUnion :=
     evalAluOut (readPcc rf0) (geAluIn rf0 e).
 
-  (* One instruction step of the chain, `rf0 -> rf1` *)
+  (* One instruction step of the chain, `rf0 -> rf1`. A chain entry never reads a virtual CSR
+   * (`mip`): the impl executes such a read only when nothing is pending, so the spec replays the
+   * entry with its own interrupt latches. *)
   Definition GInstStep (rf0 rf1 : RfSt) (e : GEntry) : Prop :=
+    isVirtualCsrAluOut (ge_aluOut e) = false /\
     ge_aluOut e = geAluOut rf0 e /\
     evalIsInterruptPending core pcAddrInit (ge_meip e) (ge_mtip e) rf0 = false /\
     exists (execOut : type ExecuteOut) (rfMid : RfSt),
@@ -287,7 +290,8 @@ Section GhostChain.
       GInstStep rf0 rf1 e ->
       GInstStep (writeGprVal core pcAddrInit d v rf0) (writeGprVal core pcAddrInit d v rf1) e.
   Proof.
-    intros rf0 rf1 e d v Hav [Halu [Hint [execOut [rfMid [Hsem [Hdm Hrf1]]]]]].
+    intros rf0 rf1 e d v Hav [Hvc [Halu [Hint [execOut [rfMid [Hsem [Hdm Hrf1]]]]]]].
+    split; [exact Hvc |].
     split; [rewrite (geAluOut_writeGprVal e d v rf0 Hav); exact Halu |].
     split; [rewrite evalIsInterruptPending_writeGprVal; exact Hint |].
     exists execOut, (writeGprVal core pcAddrInit d v rfMid); split; [| split; [exact Hdm |]].

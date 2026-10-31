@@ -71,20 +71,20 @@ Definition LoadOutcomeType := [
 Definition LoadOutcome := TaggedUnion LoadOutcomeType.
 
 (* Second line of a data access that spills into the next line. specExecuteDeferred accesses the
- * first line and leaves the second one here, and specSecondLineStep accesses it later. Only
- * non-capability accesses can spill (capability accesses must be aligned), so no tags are kept:
- * a load keeps the data of its first line, and a store keeps the data and masks of its second line,
- * whose tags it clears. *)
+ * first line and leaves the second one here, and specSecondLineStep accesses it later, as the impl
+ * memory does: a load keeps the capability packet of its first line (the bytes from its address on
+ * and the tag of that slot), and a store keeps the whole write request of its second line. *)
 Definition SecondLineLoad := STRUCT_TYPE {
-  "addr"      :: Addr ;
-  "pending"   :: PendingLoad ;
-  "firstLine" :: Array LineBytes (Bit 8)
+  "addr"    :: Addr ;
+  "pending" :: PendingLoad ;
+  "pkt"     :: CapPacket
 }.
 
 Definition SecondLineStore := STRUCT_TYPE {
   "addr"     :: Addr ;
   "data"     :: Array LineBytes (Bit 8) ;
   "dataMask" :: Array LineBytes Bool ;
+  "tag"      :: Array NumLineTags Bool ;
   "tagMask"  :: Array NumLineTags Bool
 }.
 
@@ -391,6 +391,7 @@ Section SpecCoreTree.
                 "addr"     ::= ##rq1`"addr" ;
                 "data"     ::= ##rq1`"data" ;
                 "dataMask" ::= ##rq1`"dataMask" ;
+                "tag"      ::= ##rq1`"tag" ;
                 "tagMask"  ::= ##rq1`"tagMask"
               } ;
               writeSecondLine (mkSome (UNION (SecondLineType, "Store" ::= #second)))
@@ -403,15 +404,15 @@ Section SpecCoreTree.
             Let memSize   : Bit LgLgNumBytesFullCapSz <- ##pending`"memSize" ;
 
             LetA rp0      : LineReadRp <- liftAction np_mem (specMemReadFirstLine regions ldAddr memSize) ;
+            LetL pkt      : CapPacket  <- memExtractCapPacket #ldAddr #rp0 ;
             If (memCrossesLine #ldAddr #memSize) Then (
               Let second : SecondLineLoad <- STRUCT {
-                "addr"      ::= #ldAddr ;
-                "pending"   ::= #pending ;
-                "firstLine" ::= ##rp0`"data"
+                "addr"    ::= #ldAddr ;
+                "pending" ::= #pending ;
+                "pkt"     ::= #pkt
               } ;
               writeSecondLine (mkSome (UNION (SecondLineType, "Load" ::= #second)))
             ) Else (
-              LetL pkt    : CapPacket      <- memExtractCapPacket #ldAddr #rp0 ;
               LetL memVal : FullCapWithTag <- memAssembleCapRead #ldAddr #memSize #pkt ;
               specCompleteLoad pending memVal
             ) ;
@@ -447,8 +448,8 @@ Section SpecCoreTree.
     (* ===========================================================================
      * specSecondLineStep (Second Line of a Data Access Spilling into the Next Line)
      *
-     * A store writes its recorded second line, clearing that line's tags. A load reads the
-     * second line, merges it with its recorded first line, and writes back the loaded value.
+     * A store writes its recorded second-line request. A load reads the second line, merges it
+     * with the recorded packet of its first line, and writes back the loaded value.
      * =========================================================================== *)
     Definition specSecondLineStep : Action ty coreTree (Bit 0) :=
       LetA secondOpt : Option SecondLine <- readSecondLine ;
@@ -460,7 +461,7 @@ Section SpecCoreTree.
             "addr"     ::= ##st`"addr" ;
             "data"     ::= ##st`"data" ;
             "dataMask" ::= ##st`"dataMask" ;
-            "tag"      ::= Const ty (Array NumLineTags Bool) (getDefault _) ;
+            "tag"      ::= ##st`"tag" ;
             "tagMask"  ::= ##st`"tagMask"
           } ;
           liftAction np_mem (specMemLineWrite regions rq)
@@ -469,12 +470,8 @@ Section SpecCoreTree.
           Let  ldAddr  : Addr                      <- ##ld`"addr" ;
           Let  pending : PendingLoad               <- ##ld`"pending" ;
           Let  memSize : Bit LgLgNumBytesFullCapSz <- ##pending`"memSize" ;
+          Let  pkt0    : CapPacket                 <- ##ld`"pkt" ;
           LetA rp1     : LineReadRp                <- liftAction np_mem (specMemReadSecondLine regions ldAddr memSize) ;
-          Let  rp0     : LineReadRp                <- STRUCT {
-            "data" ::= ##ld`"firstLine" ;
-            "tag"  ::= Const ty (Array NumLineTags Bool) (getDefault _)
-          } ;
-          LetL pkt0    : CapPacket                 <- memExtractCapPacket #ldAddr #rp0 ;
           LetL pkt1    : CapPacket                 <- memExtractCapPacket #ldAddr #rp1 ;
           Let  pkt     : CapPacket                 <- memMergeCapPacket #ldAddr #pkt0 #pkt1 ;
           LetL memVal  : FullCapWithTag            <- memAssembleCapRead #ldAddr #memSize #pkt ;

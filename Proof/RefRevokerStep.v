@@ -559,7 +559,8 @@ Section RevSteps.
         unfold iReadRp in Hrp0; rewrite EM in Hrp0; cbn [Fst Snd] in Hrp0.
         rewrite HP.
         split; [split; [exact Hrq | split; [exact HrqV | split; [exact Hrp0 | exact Hq0]]] |].
-        split; [exact Hreq | split; [exact Hph' | split; [rewrite E1; exact Hdm0 | split; [exact Hoff0 | exact Hsec0]]]].
+        split; [exact Hreq | split; [exact Hph' | split; [rewrite E1; exact Hdm0 |
+          split; [exact Hoff0 | split; [exact Hsec0 | reflexivity]]]]].
       + unfold RevokerRel in Hrk |- *; cbn [g_acc].
         destruct Hrk as [K1 [K2 [K3 [K4 _]]]].
         unfold iRevArch, iRevPhase, iRevScanCap, iRevScanBase, iRevSnoopHit, iScanAddr in K1, K2, K3, K4 |- *.
@@ -596,23 +597,33 @@ Section RevSteps.
 
   (* A core access in flight survives a change of the revoker registers that keeps the revoker
    * from reading *)
+  Local Abbreviation iScanMsbA := (iScanMsb core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
+  Local Abbreviation iRevSnoopHitA := (iRevSnoopHit core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
+
   Lemma AccessRel_coreAcc_revRegs :
     forall g (s1 s1' : IState) (s2 : SState),
       (forall P, AllPorts core P implRegions (iRegionsA s1') = AllPorts core P implRegions (iRegionsA s1)) ->
       iMemStA s1' = iMemStA s1 -> iReadRpA s1' = iReadRpA s1 -> iRequesterA s1' = iRequesterA s1 ->
       iDmStA s1' = iDmStA s1 -> revNotReadingA s1' ->
       match g_acc core pcAddrInit g with AccRevCap _ | AccRevBit _ | AccRevWrite _ _ _ => False | _ => True end ->
+      match g_acc core pcAddrInit g with
+      | AccStore _ _ _ _ => iScanMsbA s1' = iScanMsbA s1 /\ iRevSnoopHitA s1' = iRevSnoopHitA s1
+      | _ => True
+      end ->
       ACC g s1 s2 -> ACC g s1' s2.
   Proof.
-    intros g s1 s1' s2 HP Emst Erp Ereq Edm Hrn Hcore Ha.
+    intros g s1 s1' s2 HP Emst Erp Ereq Edm Hrn Hcore Hsn Ha.
     unfold AccessRel in *.
-    revert Ha.
+    revert Ha Hsn.
     destruct (g_acc core pcAddrInit g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
                           | rc [[|]|[|]|[|]|[|] rp|res] | [[|]|[|]|[|]|[|] rp|res]
                           | [[|]|[|]|[|]|[|] rp|res] | addr pkt [[|]|[|]]];
-      try (exfalso; exact Hcore); intros Ha;
+      try (exfalso; exact Hcore); intros Ha Hsn;
       unfold WrStageRel, RdStageRel, PortsQuiet, PortsReadStaged, PortsReadOut, PortsWriteStaged, dmNotAccessing in *;
       cbv beta iota zeta in *;
+      try (destruct Hsn as [Es Eh]; rewrite ?Es, ?Eh);
       rewrite ?HP, ?Emst, ?Erp, ?Ereq, ?Edm;
       (let rec go H :=
          lazymatch goal with
@@ -689,6 +700,8 @@ Section RevSteps.
         * unfold iRequester; rewrite EM', EM; reflexivity.
         * rewrite E1; reflexivity.
         * unfold revNotReading, iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd]; split; assumption.
+        * destruct (g_acc core pcAddrInit g); try exact I.
+          unfold iScanMsb, iRevSnoopHit; rewrite ER', ER; split; reflexivity.
       + unfold RevokerRel; unfold iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd].
         split; [rewrite Hph'; intros Hc'; discriminate Hc' |].
         unfold rpCheck; rewrite Q3, Q4, (proj1 (proj2 (rpIdle_excl _ Hph'))).
@@ -746,7 +759,7 @@ Section RevSteps.
         unfold iReadRp in Hrp0; rewrite EM in Hrp0; cbn [Fst Snd] in Hrp0.
         rewrite HP.
         split; [split; [exact Hrp0 | split; [exact Hwr | split; [exact HwrV | exact Hq0]]] |].
-        split; [exact Hph' | split; [rewrite E1; exact Hdm0 | split; [reflexivity | exact Hsec0]]].
+        split; [exact Hph' | split; [rewrite E1; exact Hdm0 | split; [reflexivity | split; [exact Hsec0 | reflexivity]]]].
       + unfold RevokerRel; cbn [g_acc].
         unfold iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd].
         split; [rewrite Hph'; intros Hc'; discriminate Hc' |].
@@ -861,12 +874,15 @@ Section RevSteps.
       ACC g s1 s2 -> rpIdle (iRevPhaseA s1) = true -> msWriteRq (iMemStA s1) = false ->
       noPortWriteB core implRegions (iRegionsA s1) = true ->
       g_revOff core pcAddrInit g = RevEq /\
-      match g_acc core pcAddrInit g with AccRevCap _ | AccRevBit _ | AccRevWrite _ _ _ => False | _ => True end.
+      match g_acc core pcAddrInit g with
+      | AccRevCap _ | AccRevBit _ | AccRevWrite _ _ _ | AccStore _ _ _ _ => False
+      | _ => True
+      end.
   Proof.
     intros g s1 s2 Ha Hph Hwr Hnpw.
     destruct (rpIdle_excl _ Hph) as [N1 [N2 [N3 N4]]].
     unfold AccessRel in Ha.
-    destruct (g_acc core pcAddrInit g) as [| addr size pkt st | ld pkt0 st | rc st | st | st | addr pkt [b0|b0]];
+    destruct (g_acc core pcAddrInit g) as [| addr size pkt [b0|b0] | ld pkt0 st | rc st | st | st | addr pkt [b0|b0]];
       unfold WrStageRel in Ha; cbv beta iota zeta in Ha;
       repeat match goal with H : _ /\ _ |- _ => destruct H end;
       first
@@ -910,7 +926,14 @@ Section RevSteps.
     assert (Hph1 : rpIdle (iRevPhaseA s1) = true) by (unfold iRevPhase; rewrite ER; exact Hph).
     assert (Hwr1 : msWriteRq (iMemStA s1) = false) by (unfold iMemSt; rewrite EM; exact Hwr).
     assert (Hnpw1 : noPortWriteB core implRegions (iRegionsA s1) = true) by (rewrite iRegions_eq, EM; exact Hnpw).
-    destruct (AccessRel_idle_core g s1 s2 Ha Hph1 Hwr1 Hnpw1) as [Hoff Hcore].
+    destruct (AccessRel_idle_core g s1 s2 Ha Hph1 Hwr1 Hnpw1) as [Hoff Hcore4].
+    assert (Hcore : match g_acc core pcAddrInit g with AccRevCap _ | AccRevBit _ | AccRevWrite _ _ _ => False | _ => True end)
+      by (destruct (g_acc core pcAddrInit g); first [exact I | contradiction]).
+    assert (Hsn : match g_acc core pcAddrInit g with
+                  | AccStore _ _ _ _ => iScanMsbA s1' = iScanMsbA s1 /\ iRevSnoopHitA s1' = iRevSnoopHitA s1
+                  | _ => True
+                  end)
+      by (destruct (g_acc core pcAddrInit g); first [exact I | contradiction]).
     assert (Hxs : specRevStateA (sMemA s2) = mkRev8 core b t c e ist ir sa st).
     { destruct Hm as [[_ [_ [_ Hrv]]] _].
       change (RevRel core (g_revOff core pcAddrInit g) (specRevStateA (sMemA s2)) (iRevA s1)) in Hrv.
@@ -942,7 +965,7 @@ Section RevSteps.
         * exact Hm.
       + apply LatchRel_setRevS; [apply ReadFrameS_refl | exact Hl].
       + assert (Ha1 : ACC g s1' s2).
-        { apply (AccessRel_coreAcc_revRegs g s1 s1' s2 HP); try exact Hcore; try exact Ha.
+        { apply (AccessRel_coreAcc_revRegs g s1 s1' s2 HP); try exact Hcore; try exact Hsn; try exact Ha.
           - unfold iMemSt; rewrite EM', EM; reflexivity.
           - unfold iReadRp; rewrite EM', EM; reflexivity.
           - unfold iRequester; rewrite EM', EM; reflexivity.
@@ -1023,7 +1046,8 @@ Section RevSteps.
         unfold iReadRp in Hrp0; rewrite EM in Hrp0; cbn [Fst Snd] in Hrp0.
         rewrite HP.
         split; [split; [exact Hrq | split; [exact HrqV | split; [exact Hrp0 | exact Hq0]]] |].
-        split; [exact Hreq | split; [exact Hph' | split; [rewrite E1; exact Hdm0 | split; [exact Hoff0 | exact Hsec0]]]].
+        split; [exact Hreq | split; [exact Hph' | split; [rewrite E1; exact Hdm0 |
+          split; [exact Hoff0 | split; [exact Hsec0 | reflexivity]]]]].
       + unfold RevokerRel; cbn [g_acc].
         unfold iRevArch, iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd].
         destruct (rpWaitCapRp_excl _ Hph') as [Q0 [Q2 [Q3 Q4]]].
@@ -1175,7 +1199,7 @@ Section RevSteps.
       - unfold iMemSt in Ea; rewrite EM in Ea; exact Ea.
       - unfold iRevPhase in Hb; rewrite ER in Hb; cbn [mkRev12 Fst Snd] in Hb; rewrite P3 in Hb; discriminate Hb. }
     pose proof Ha as Ha'; unfold AccessRel, RdStageRel in Ha'; rewrite Hacc in Ha'; cbv beta iota zeta in Ha'.
-    destruct Ha' as [[_ [_ [Hr3 Hr4]]] [_ [_ [Hdm0 [Hoff0 Hsec0]]]]].
+    destruct Ha' as [[_ [_ [Hr3 Hr4]]] [_ [_ [Hdm0 [Hoff0 [Hsec0 _]]]]]].
     unfold RevokerRel in Hrk; destruct Hrk as [K1 [_ [_ [_ K5]]]].
     unfold RevAccRel in K5; rewrite Hacc in K5; unfold RevCapOK in K5.
     unfold iRevArch, iRevPhase, iScanAddr in K1, K5; rewrite ER in K1, K5; cbn [mkRev12 Fst Snd] in K1, K5.
@@ -1354,7 +1378,7 @@ Section RevSteps.
       - unfold iRevPhase in Hb; rewrite ER in Hb; cbn [mkRev12 Fst Snd] in Hb; rewrite P1 in Hb; discriminate Hb.
       - unfold iMemSt in Ea; rewrite EM in Ea; exact Ea. }
     pose proof Ha as Ha'; unfold AccessRel, RdStageRel in Ha'; rewrite Hacc in Ha'; cbv beta iota zeta in Ha'.
-    destruct Ha' as [[_ [_ [Hr3 Hr4]]] [_ [_ [Hdm0 [Hoff0 Hsec0]]]]].
+    destruct Ha' as [[_ [_ [Hr3 Hr4]]] [_ [_ [Hdm0 [Hoff0 [Hsec0 _]]]]]].
     unfold RevokerRel in Hrk; destruct Hrk as [K1 [K2 [K3 [_ K5]]]].
     unfold RevAccRel in K5; rewrite Hacc in K5.
     unfold iRevArch, iRevPhase, iRevScanCap, iRevScanBase, iRevSnoopHit, iScanAddr in K1, K2, K3, K5;

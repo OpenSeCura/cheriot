@@ -385,9 +385,12 @@ Section CoreRel.
                 (if isRegionAddrB r L then extPortRq r y = someRead L else optValid (extPortRq r y) = false))
       implRegions (iRegions s1).
 
+  (* the read of line `L` accepted by its region and not answered yet: the region's newest accepted
+   * read is `L` *)
   Definition PortsReadOut (L : type Addr) (s1 : IState) : Prop :=
     AllPorts (fun r y => optValid (extPortRq r y) = false /\
-                (if isRegionAddrB r L then extDataOut r y else extDataQuiet r y))
+                (if isRegionAddrB r L then extDataOut r y /\ hd Zmod.zero (implDataAccRqs core r y) = L
+                 else extDataQuiet r y))
       implRegions (iRegions s1).
 
   (* the write `rq` of line `L` staged in that region's portRq *)
@@ -401,6 +404,12 @@ Section CoreRel.
     AllPorts (fun r y => y.(Fst).(Fst).(Snd).(Snd).(Fst) = false) implRegions (iRegions s1).
 
   (* --- 9. The Access in Flight --- *)
+
+  (* Whether the stage is that of the second line of an access *)
+  Definition rdSecond (st : RdStage) : bool :=
+    match st with RdPend b | RdStaged b | RdOut b | RdArrived b _ => b | RdReady _ => false end.
+  Definition wrSecond (st : WrStage) : bool :=
+    match st with WrPend b | WrStaged b => b end.
 
   Definition capSz : type (Bit LgLgNumBytesFullCapSz) := evalExpr ($LgNumBytesFullCapSz : Expr type (Bit LgLgNumBytesFullCapSz)).
   Definition byteSz : type (Bit LgLgNumBytesFullCapSz) := Zmod.zero.
@@ -534,14 +543,18 @@ Section CoreRel.
   Definition HeadReq (g : Ghost) (q : type MemFenceReq) : Prop :=
     exists e G', g_chain g = GInst e :: G' /\ entryReq e = Some q.
 
+  (* The spec's record of the second line of a crossing store: its whole write request *)
   Definition secondStoreOf (addr : type Addr) (pkt : type CapPacket) (size : type (Bit LgLgNumBytesFullCapSz))
     : type (Option SecondLine) :=
     let rq1 := buildW true addr pkt size in
-    let sl : type SecondLineStore := (rq1.(Fst) ,, (rq1.(Snd).(Fst) ,, (rq1.(Snd).(Snd).(Fst) ,, (rq1.(Snd).(Snd).(Snd).(Snd).(Fst) ,, tt)))) in
+    let sl : type SecondLineStore :=
+      (rq1.(Fst) ,, (rq1.(Snd).(Fst) ,, (rq1.(Snd).(Snd).(Fst) ,, (rq1.(Snd).(Snd).(Snd).(Fst) ,,
+       (rq1.(Snd).(Snd).(Snd).(Snd).(Fst) ,, tt))))) in
     evalExpr (mkSome (UNION (SecondLineType, "Store" ::= Var type SecondLineStore sl))).
 
-  Definition secondLoadOf (ld : type LoadCmd) (firstLine : type (Array LineBytes (Bit 8))) : type (Option SecondLine) :=
-    let sl : type SecondLineLoad := (ldAddr ld ,, (ldPending ld ,, (firstLine ,, tt))) in
+  (* The spec's record of a crossing load after its first line: the first line's packet *)
+  Definition secondLoadOf (ld : type LoadCmd) (pkt0 : type CapPacket) : type (Option SecondLine) :=
+    let sl : type SecondLineLoad := (ldAddr ld ,, (ldPending ld ,, (pkt0 ,, tt))) in
     evalExpr (mkSome (UNION (SecondLineType, "Load" ::= Var type SecondLineLoad sl))).
 
   Definition revNotReading (s1 : IState) : Prop :=
@@ -550,20 +563,58 @@ Section CoreRel.
   Definition dmNotAccessing (s1 : IState) : Prop :=
     dmLoadRp (iDmSt s1) = false /\ dmRevRp (iDmSt s1) = false.
 
+  (* The scan position of the impl revoker (a capability slot index) *)
+  Definition iScanMsb (s1 : IState) : bits TagAddrWidth :=
+    revScanAddr core (projImplRevokerArchState core (iRev s1)).
+
+  (* The store snoop (`implRevokerSnoopStore`): a store of `2^memSize` bytes at `addr` touches the
+   * capability slot `scanAddrMsb` (its own slot, or the next one when it spills into it) *)
+  Definition snoopHitsB (addr : type Addr) (memSize : type (Bit LgLgNumBytesFullCapSz))
+    (scanAddrMsb : bits TagAddrWidth) : bool :=
+    let stAddrMsb : type (Bit TagAddrWidth) :=
+      evalExpr (TruncMsb TagAddrWidth LgNumBytesFullCapSz (Var type Addr addr)) in
+    let capOffset : type (Bit LgNumBytesFullCapSz) :=
+      evalExpr (TruncLsb TagAddrWidth LgNumBytesFullCapSz (Var type Addr addr)) in
+    let numBytesDXlen : type (Bit (LgNumBytesFullCapSz + 1)) :=
+      evalExpr (Sll ($1 : Expr type (Bit (LgNumBytesFullCapSz + 1)))
+                    (ZeroExtend (LgNumBytesFullCapSz + 1 - LgLgNumBytesFullCapSz)
+                                (Var type (Bit LgLgNumBytesFullCapSz) memSize))) in
+    let endOffsetDXlen : type (Bit (LgNumBytesFullCapSz + 1)) :=
+      evalExpr (Add [ ZeroExtend 1 (Var type (Bit LgNumBytesFullCapSz) capOffset) ;
+                      Var type (Bit (LgNumBytesFullCapSz + 1)) numBytesDXlen ]) in
+    let crossesDXlen : bool :=
+      evalExpr (FromBit Bool (TruncMsb 1 LgNumBytesFullCapSz
+                                (Sub (Var type (Bit (LgNumBytesFullCapSz + 1)) endOffsetDXlen) $1))) in
+    let nextStAddrMsb : type (Bit TagAddrWidth) :=
+      evalExpr (Add [ Var type (Bit TagAddrWidth) stAddrMsb ; $1 ]) in
+    evalExpr (Or [ Eq (Var type (Bit TagAddrWidth) stAddrMsb) (Var type (Bit TagAddrWidth) scanAddrMsb) ;
+                   And [ Var type Bool crossesDXlen ;
+                         Eq (Var type (Bit TagAddrWidth) nextStAddrMsb) (Var type (Bit TagAddrWidth) scanAddrMsb) ] ]).
+
+  (* A capability base the revocation table covers (`isRevokableAddr`) *)
+  Definition baseRevokable (b : type (Bit (AddrSz + 1))) : bool :=
+    evalExpr (isRevokableAddr config (Var type (Bit (AddrSz + 1)) b)).
+
   (* The scan address of the impl revoker as a full address *)
   Definition iScanAddr (s1 : IState) : type Addr :=
     evalExpr ({< Var type (Bit TagAddrWidth) (revScanAddr core (projImplRevokerArchState core (iRev s1))),
                  Const type (Bit LgNumBytesFullCapSz) Zmod.zero >}).
 
-  (* The merged value of a crossing load (first line kept as data only) *)
-  Definition mergedLoadVal (ld : type LoadCmd) (firstLine : type (Array LineBytes (Bit 8)))
-    (rp1 : type LineReadRp) : type FullCapWithTag :=
+  (* The merged value of a crossing load: the first line's packet `pkt0` merged with the second
+   * line's response `rp1` (`implMemReadRpStep`, `specSecondLineStep`) *)
+  Definition mergedLoadVal (ld : type LoadCmd) (pkt0 : type CapPacket) (rp1 : type LineReadRp)
+    : type FullCapWithTag :=
     let a := ldAddr ld in
-    let rp0 : type LineReadRp := (firstLine ,, (getDefault (Array NumLineTags Bool) ,, tt)) in
     let pkt : type CapPacket :=
-      evalExpr (memMergeCapPacket (Var type Addr a) (Var type CapPacket (specPkt a rp0)) (Var type CapPacket (specPkt a rp1))) in
+      evalExpr (memMergeCapPacket (Var type Addr a) (Var type CapPacket pkt0) (Var type CapPacket (specPkt a rp1))) in
     evalLetExpr (memAssembleCapRead (Var type Addr a) (Var type (Bit LgLgNumBytesFullCapSz) (plSize (ldPending ld)))
                    (Var type CapPacket pkt)).
+
+  (* The value a single-line read of `sz` bytes at `a` gets from line response `rp` *)
+  Definition lineVal (a : type Addr) (sz : type (Bit LgLgNumBytesFullCapSz)) (rp : type LineReadRp)
+    : type FullCapWithTag :=
+    evalLetExpr (memAssembleCapRead (Var type Addr a) (Var type (Bit LgLgNumBytesFullCapSz) sz)
+                   (Var type CapPacket (specPkt a rp))).
 
   Definition singleLoadVal (ld : type LoadCmd) (rp0 : type LineReadRp) : type FullCapWithTag :=
     let a := ldAddr ld in
@@ -577,6 +628,7 @@ Section CoreRel.
         g_revOff g = RevEq /\ dmNotAccessing s1 /\ revNotReading s1 /\ optValid (sSecond s2) = false
     | AccStore addr size pkt st =>
         WrStageRel addr size pkt st s1 /\ dmLoadRq (iDmSt s1) = true /\ revNotReading s1 /\ g_revOff g = RevEq /\
+        (snoopHitsB addr size (iScanMsb s1) = true -> iRevSnoopHit s1 = true) /\
         match st with
         | WrPend false | WrStaged false =>
             optValid (sSecond s2) = false /\
@@ -584,7 +636,7 @@ Section CoreRel.
               stAddrOf (storeCmdOf q) = addr /\ stSizeOf (storeCmdOf q) = size /\
               pkt = disassembleW addr (stValOf (storeCmdOf q)) size
         | WrPend true | WrStaged true =>
-            crossesB addr size = true /\ pkt.(Snd).(Fst) = false /\ sSecond s2 = secondStoreOf addr pkt size
+            crossesB addr size = true /\ sSecond s2 = secondStoreOf addr pkt size
         end
     | AccLoad ld pkt0 st =>
         RdStageRel (ldAddr ld) (plSize (ldPending ld)) pkt0 st s1 /\ isReqDataMem (iRequester s1) = true /\
@@ -597,16 +649,14 @@ Section CoreRel.
         | RdArrived false rp =>
             pkt0 = getDefault CapPacket /\
             if crosses
-            then sSecond s2 = secondLoadOf ld rp.(Fst) /\ g_cnwb g = None
+            then sSecond s2 = secondLoadOf ld (specPkt (ldAddr ld) rp) /\ g_cnwb g = None
             else optValid (sSecond s2) = false /\
                  g_cnwb g = Some (specLoadWb (sMem s2) (ldPending ld) (singleLoadVal ld rp))
         | RdPend true | RdStaged true | RdOut true =>
-            crosses = true /\ g_cnwb g = None /\
-            exists rpF, pkt0 = specPkt (ldAddr ld) rpF /\ sSecond s2 = secondLoadOf ld rpF.(Fst)
+            crosses = true /\ g_cnwb g = None /\ sSecond s2 = secondLoadOf ld pkt0
         | RdArrived true rp1 =>
             crosses = true /\ optValid (sSecond s2) = false /\
-            exists rpF, pkt0 = specPkt (ldAddr ld) rpF /\
-              g_cnwb g = Some (specLoadWb (sMem s2) (ldPending ld) (mergedLoadVal ld rpF.(Fst) rp1))
+            g_cnwb g = Some (specLoadWb (sMem s2) (ldPending ld) (mergedLoadVal ld pkt0 rp1))
         | RdReady res =>
             optValid (sSecond s2) = false /\ g_cnwb g = Some (specLoadWb (sMem s2) (ldPending ld) res)
         end
@@ -614,7 +664,15 @@ Section CoreRel.
         RdStageRel (revByteAddrOf (rcBase rc)) byteSz (getDefault CapPacket) st s1 /\
         isReqDataMem (iRequester s1) = true /\
         dmRevRp (iDmSt s1) = true /\ dmRevRpV (iDmSt s1) = rc /\ revNotReading s1 /\ g_revOff g = RevEq /\
-        optValid (sSecond s2) = false /\ g_cnwb g = Some (revWb (sMem s2) rc)
+        optValid (sSecond s2) = false /\ g_cnwb g = Some (revWb (sMem s2) rc) /\
+        rdSecond st = false /\ baseRevokable (rcBase rc) = true /\
+        (* the value of the rev byte once it has been read *)
+        match st with
+        | RdArrived _ rp =>
+            lineVal (revByteAddrOf (rcBase rc)) byteSz rp = memValAt (sMem s2) (revByteAddrOf (rcBase rc)) byteSz
+        | RdReady res => res = memValAt (sMem s2) (revByteAddrOf (rcBase rc)) byteSz
+        | _ => True
+        end
     | AccRevCap st =>
         RdStageRel (iScanAddr s1) capSz (getDefault CapPacket) st s1 /\ isReqRevoker (iRequester s1) = true /\
         rpWaitCapRp (iRevPhase s1) = true /\ dmNotAccessing s1 /\
@@ -622,21 +680,22 @@ Section CoreRel.
          | RdArrived _ _ | RdReady _ => g_revOff g <> RevImplAhead
          | _ => g_revOff g = RevEq
          end) /\
-        optValid (sSecond s2) = false
+        optValid (sSecond s2) = false /\ rdSecond st = false
     | AccRevBit st =>
         RdStageRel (revByteAddrOf (iRevScanBase s1)) byteSz (getDefault CapPacket) st s1 /\
         isReqRevoker (iRequester s1) = true /\
         rpWaitRevBitRp (iRevPhase s1) = true /\ dmNotAccessing s1 /\ g_revOff g = RevEq /\
-        optValid (sSecond s2) = false
+        optValid (sSecond s2) = false /\ rdSecond st = false
     | AccRevWrite addr pkt st =>
         WrStageRel addr capSz pkt st s1 /\ rpIdle (iRevPhase s1) = true /\ dmNotAccessing s1 /\
-        g_revOff g = RevImplAhead /\ optValid (sSecond s2) = false
+        g_revOff g = RevImplAhead /\ optValid (sSecond s2) = false /\ wrSecond st = false
     end.
 
   (* The committed load the impl has not written back is dataMem's *)
   Definition CnwbRel (g : Ghost) (s1 : IState) (s2 : SState) : Prop :=
     (dmLoadRq (iDmSt s1) = true -> g_cnwb g = None) /\
-    (dmRevRq (iDmSt s1) = true -> g_cnwb g = Some (revWb (sMem s2) (dmRevRqV (iDmSt s1)))).
+    (dmRevRq (iDmSt s1) = true -> g_cnwb g = Some (revWb (sMem s2) (dmRevRqV (iDmSt s1)))) /\
+    (dmRevRq (iDmSt s1) = true -> baseRevokable (rcBase (dmRevRqV (iDmSt s1))) = true).
 
   (* --- 9b. The Revoker (C8) --- *)
 
@@ -665,12 +724,6 @@ Section CoreRel.
     evalExpr ((Var type ECap (capECap c))`"base").
   Definition untagCap (c : type FullCapWithTag) : type FullCapWithTag :=
     (false ,, (c.(Snd).(Fst) ,, (c.(Snd).(Snd).(Fst) ,, tt))).
-
-  (* The value a single-line read of `sz` bytes at `a` gets from line response `rp` *)
-  Definition lineVal (a : type Addr) (sz : type (Bit LgLgNumBytesFullCapSz)) (rp : type LineReadRp)
-    : type FullCapWithTag :=
-    evalLetExpr (memAssembleCapRead (Var type Addr a) (Var type (Bit LgLgNumBytesFullCapSz) sz)
-                   (Var type CapPacket (specPkt a rp))).
 
   (* The revoker's write waiting in the memory is the spec revoker step's write at position `sa`
    * (the impl's scanAddr is one ahead) *)
@@ -1061,6 +1114,8 @@ Section CoreRel.
       by (intros pl v; apply specLoadWb_ext; exact Hlc).
     assert (Hrw : forall rc, revWb (sMem s2') rc = revWb (sMem s2) rc)
       by (intros rc; apply revWb_ext; exact Hlc).
+    assert (Hmv : forall a sz, memValAt (sMem s2') a sz = memValAt (sMem s2) a sz)
+      by (intros a sz; apply memValAt_ext; exact Hlc).
     unfold AccessRel in *.
     revert Ha.
     destruct (g_acc g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
@@ -1068,9 +1123,9 @@ Section CoreRel.
                           | [[|]|[|]|[|]|[|] rp|res] | addr pkt [[|]|[|]]];
       intros Ha;
       unfold WrStageRel, RdStageRel, PortsQuiet, PortsReadStaged, PortsReadOut, PortsWriteStaged,
-        revNotReading, dmNotAccessing, iRevPhase, iScanAddr, iRevScanBase in *;
+        revNotReading, dmNotAccessing, iRevPhase, iScanAddr, iRevScanBase, iScanMsb, iRevSnoopHit in *;
       cbv beta iota zeta in *;
-      rewrite ?HP, ?HR, ?Hrw, ?Emst, ?Erp, ?Ereq, ?Edm, ?Esec;
+      rewrite ?HP, ?HR, ?Hrw, ?Hmv, ?Emst, ?Erp, ?Ereq, ?Edm, ?Esec;
       try setoid_rewrite Hslw;
       lazymatch goal with
       | |- context [s1'] => fail 1 "AccessRel_frame: an impl observation is left"
@@ -1235,15 +1290,18 @@ Section CoreRel.
       by (intros pl v; apply specLoadWb_ext; exact Hlc).
     assert (Hrw : forall rc, revWb (sMem s2') rc = revWb (sMem s2) rc)
       by (intros rc; apply revWb_ext; exact Hlc).
+    assert (Hmv : forall a sz, memValAt (sMem s2') a sz = memValAt (sMem s2) a sz)
+      by (intros a sz; apply memValAt_ext; exact Hlc).
     unfold AccessRel in *.
     revert Ha.
     destruct (g_acc g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
                           | rc [[|]|[|]|[|]|[|] rp|res] | [[|]|[|]|[|]|[|] rp|res]
                           | [[|]|[|]|[|]|[|] rp|res] | addr pkt [[|]|[|]]];
       intros Ha;
-      unfold WrStageRel, RdStageRel, revNotReading, dmNotAccessing, iRevPhase, iScanAddr, iRevScanBase in *;
+      unfold WrStageRel, RdStageRel, revNotReading, dmNotAccessing, iRevPhase, iScanAddr, iRevScanBase,
+        iScanMsb, iRevSnoopHit in *;
       cbv beta iota zeta in *;
-      rewrite ?Q1, ?Q2, ?Q3, ?Q4, ?HR, ?Hrw, ?Emst, ?Erp, ?Ereq, ?Edm, ?Esec;
+      rewrite ?Q1, ?Q2, ?Q3, ?Q4, ?HR, ?Hrw, ?Hmv, ?Emst, ?Erp, ?Ereq, ?Edm, ?Esec;
       try setoid_rewrite Hslw;
       lazymatch goal with
       | |- context [s1'] => fail 1 "AccessRel_frame_ports: an impl observation is left"

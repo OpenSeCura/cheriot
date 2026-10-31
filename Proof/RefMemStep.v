@@ -213,7 +213,8 @@ Section RdRqPortRegion.
                (if isRegionAddrB r L then extPortRq core r y = someRead L else optValid (extPortRq core r y) = false).
   Definition outP (L : type Addr) : forall r, ExtI r -> Prop :=
     fun r y => optValid (extPortRq core r y) = false /\
-               (if isRegionAddrB r L then extDataOut core r y else extDataQuiet core r y).
+               (if isRegionAddrB r L then extDataOut core r y /\ hd Zmod.zero (implDataAccRqs core r y) = L
+                else extDataQuiet core r y).
 
   Lemma lineKind_none_unique : forall rs L, lineKind rs L = None -> lineUnique rs L.
   Proof.
@@ -280,7 +281,8 @@ Section RdRqPortRegion.
         rewrite Ha; destruct rdy.
         * right; right; split; [| exact (stagedP_outP_none _ _ _ Hu H1)].
           split; [reflexivity |].
-          unfold extDataOut, extDataQuiet in *; rewrite implDataAccRqs_rdRqSent, rdRqSent_rps; cbn [length]; rewrite Hq; reflexivity.
+          unfold extDataOut, extDataQuiet in *; rewrite implDataAccRqs_rdRqSent, rdRqSent_rps; cbn [length hd].
+          rewrite Hq; split; reflexivity.
         * right; left; split; [| exact H1].
           split; [unfold extDataQuiet in *; rewrite implDataAccRqs_rdRqSent, rdRqSent_rps; exact Hq |].
           rewrite extPortRq_rdRqSent; exact Hp.
