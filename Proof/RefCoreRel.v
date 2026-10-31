@@ -705,12 +705,13 @@ Section CoreRel.
     end.
 
   (* While a position is processed the sweep is on at scanAddr. From the cap read on, the saved
-   * cap needs a check and is the cap at scanAddr unless a store hit it; at WriteCap its rev bit
-   * is set. *)
+   * cap needs a check, scanAddr's line is ExternalMem, and the saved cap is the cap at scanAddr
+   * unless a store hit it; at WriteCap its rev bit is set. *)
   Definition RevokerRel (g : Ghost) (s1 : IState) (s2 : SState) : Prop :=
     (rpIdle (iRevPhase s1) = false -> revSweepingAt (iRevArch s1) (revScanAddr core (iRevArch s1))) /\
     (rpCheck (iRevPhase s1) = true ->
-       capNeedsCheck (iRevScanCap s1) = true /\ iRevScanBase s1 = capBase (iRevScanCap s1)) /\
+       capNeedsCheck (iRevScanCap s1) = true /\ iRevScanBase s1 = capBase (iRevScanCap s1) /\
+       lineKind implRegions (lineOf false (iScanAddr s1)) = Some true) /\
     (rpCheck (iRevPhase s1) = true -> iRevSnoopHit s1 = false ->
        memValAt (sMem s2) (iScanAddr s1) capSz = iRevScanCap s1) /\
     (rpWriteCap (iRevPhase s1) = true -> iRevSnoopHit s1 = false ->
@@ -1328,6 +1329,61 @@ Section CoreRel.
       rewrite HP by (intros r y w a; reflexivity).
       revert W5; apply AllPorts_impl; intros r y [Hy _]; exact Hy.
     - exact (RevokerRel_frame g g s1 s1' s2 s2' eq_refl eq_refl HR Hlc Hrk).
+  Qed.
+
+  (* A step that changes only the impl memory subtree, the spec memory, the access in flight and
+   * the revoker offset, keeping the ports, the line contents and (monotonically) the fetch view.
+   * The caller re-establishes the components that read what changed. *)
+  Lemma RefRelG_mem_frame :
+    forall g g' (s1 s1' : IState) (s2 s2' : SState) mi' ms',
+      s1' = writeSubTreeState (Impl.np_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions) s1 mi' ->
+      s2' = writeSubTreeState (Spec.np_mem core pcAddrInit specRegions) s2 ms' ->
+      g_chain g' = g_chain g -> g_rf0 g' = g_rf0 g -> g_cnwb g' = g_cnwb g -> g_d2aFo g' = g_d2aFo g ->
+      accTakesHead (g_acc g') = accTakesHead (g_acc g) ->
+      (forall P, AllPorts P implRegions (iRegions s1') = AllPorts P implRegions (iRegions s1)) ->
+      (forall L, lineContent specRegions (sMem s2') L = lineContent specRegions (sMem s2) L) ->
+      FetchViewExt core specRegions (sMem s2) (sMem s2') ->
+      MemRelC g' s1' s2' -> LatchRel g' s2' -> AccessRel g' s1' s2' -> RevokerRel g' s1' s2' ->
+      RefRelG g s1 s2 -> RefRelG g' s1' s2'.
+  Proof.
+    intros g g' s1 s1' s2 s2' mi' ms' E1 E2 Ech Erf Ecn Ed2a Eacc HP Hlc Hext Hmem Hlat Hacc Hrev H.
+    destruct H as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
+    pose proof (proj2 (proj2 Hm)) as Hsnap.
+    assert (Hrw : forall rc, revWb (sMem s2') rc = revWb (sMem s2) rc)
+      by (intros rc; apply revWb_ext; exact Hlc).
+    assert (Edm : iDmSt s1' = iDmSt s1) by (rewrite E1; reflexivity).
+    constructor.
+    - unfold RfRel in *; rewrite Ech, Erf, Ecn; rewrite E1, E2; exact Hrf.
+    - exact Hmem.
+    - exact Hlat.
+    - unfold ReplayRel in *; rewrite Ech, Erf; intros G1 e G2 rfe Hg Hch.
+      exact (FetchAllowedInst_fetchViewExt core initLine fwcs specRegions _ _ _ _ Hsnap Hext (Hrp G1 e G2 rfe Hg Hch)).
+    - unfold EagerRel in *; rewrite Ech; rewrite E2; exact He.
+    - exact Hacc.
+    - unfold CnwbRel in *; rewrite Ecn; destruct Hc as [Hc1 Hc2]; rewrite Edm, Hrw; exact (conj Hc1 Hc2).
+    - unfold DmQueueRel in *; rewrite Ech, Eacc; rewrite E1; exact Hd.
+    - unfold FenceRel, NoFenceIWait in *; rewrite Ech, HP; rewrite E1; exact Hf.
+    - unfold ScoreRel in *; rewrite Ed2a; rewrite E1; exact Hs.
+    - unfold FrontRel in *.
+      destruct Hfr as [F1 [F2 [F3 [F4 [F5 [F6 F7]]]]]].
+      split; [rewrite E1; exact F1 |]; split; [rewrite E1; exact F2 |]; split; [rewrite E1; exact F3 |].
+      split; [rewrite E1; exact F4 |]; split; [rewrite E1; exact F5 |].
+      split.
+      + unfold LiveChain, liveInsts in *; rewrite Ed2a.
+        refine (LiveChainG_mono _ _ _ (FrontierRel s1 s2) _ _ _ Hsnap Hext _ _).
+        * intros p Hp; rewrite E1; exact (FrontierRel_mono _ _ _ p Hsnap Hext Hp).
+        * rewrite E1; exact F6.
+      + unfold FetchRespRel in *; rewrite HP.
+        revert F7; apply AllPorts_impl; intros r y HC; cbv zeta in HC |- *.
+        destruct HC as [C [HC1 [HC2 HC3]]].
+        exists C; split; [rewrite E1; exact HC1 | split; [exact HC2 |]].
+        intros Hv; destruct (HC3 Hv) as [f [E' [HE Hl']]].
+        exists f, E'; split; [rewrite E1; exact HE |].
+        intros Hlive; rewrite E1 in Hlive.
+        exact (LineAllowed_fetchViewExt core initLine specRegions fwcs _ _ _ _ Hsnap Hext (Hl' Hlive)).
+    - unfold WfRel in *; rewrite HP; rewrite E1; exact Hw.
+    - exact Hrev.
   Qed.
 
   (* --- 17. The mcycle Tick --- *)

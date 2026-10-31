@@ -94,6 +94,7 @@ Record MemRegion := {
   regionBase        : Z ;
   regionSize        : Z ;
   regionKind        : RegionKind regionName ;
+  regionSizeNonNeg  : Is_true (0 <=? regionSize)%Z ;
   regionInMemory    : Is_true ((0 <=? regionBase) && (regionBase + regionSize <=? Z.shiftl 1 AddrSz))%Z ;
   regionBaseAligned : Is_true (regionBase mod (2 ^ LgLineBytes) =? 0)%Z ;
   regionSizeAligned : Is_true (regionSize mod (2 ^ LgLineBytes) =? 0)%Z

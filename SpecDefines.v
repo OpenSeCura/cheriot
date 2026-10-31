@@ -96,11 +96,22 @@ Definition LgNumBytesInstSz : Z := Eval compute in Z.log2_up (InstSz / 8).
 (* Global memory line geometry: every memory region uses lines of 2^LgLineBytes bytes. A line holds
  * 2^LgNumLineTags capabilities, each with its own tag, so a line must be at least as big as a
  * capability (checked by LgLineBytesGeCap). *)
-Definition LgLineBytes   : Z   := 3.
+Definition LgLineBytes   : Z   := 5.
 Definition LineBytes     : nat := Eval compute in Z.to_nat (2 ^ LgLineBytes).
 Definition LgNumLineTags : Z   := Eval compute in (LgLineBytes - LgNumBytesFullCapSz).
 Definition NumLineTags   : nat := Eval compute in Z.to_nat (2 ^ LgNumLineTags).
 Definition LgLineBytesGeCap : Is_true (LgNumBytesFullCapSz <=? LgLineBytes)%Z := I.
+
+(* Device registers in lines of any size. A line is `LineSz` bits; viewed as words it has
+ * `NumLineWords` words of Xlen bits (`NumLineDWords` of DXlen bits). A register at byte offset
+ * `off` of a device is in the line at offset `lineOffsetOf off`, at byte `byteOf off` of that
+ * line, in slot `slotOf wBytes off` when the line is cut into slots of `wBytes` bytes. *)
+Definition LineSz        : Z   := Eval compute in (Z.of_nat LineBytes * 8)%Z.
+Definition NumLineWords  : nat := Eval compute in Z.to_nat (2 ^ LgLineBytes / NumBytesXlen).
+Definition NumLineDWords : nat := Eval compute in Z.to_nat (2 ^ LgLineBytes / (2 * NumBytesXlen)).
+Definition lineOffsetOf (off : Z) : Z := (off / 2 ^ LgLineBytes * 2 ^ LgLineBytes)%Z.
+Definition byteOf (off : Z) : nat := Z.to_nat (off mod 2 ^ LgLineBytes).
+Definition slotOf (wBytes off : Z) : nat := Z.to_nat ((off mod 2 ^ LgLineBytes) / wBytes).
 
 Definition isCompressed ty (inst: ty Inst) : Expr ty Bool := Not (isAllOnes (TruncLsb (InstSz-2) 2 #inst)).
 Definition getCd ty (inst: ty Inst) : Expr ty (Bit RegIdxSz) := #inst`[11:7].

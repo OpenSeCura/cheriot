@@ -40,12 +40,19 @@ Definition RevokerRegNames : list string :=
   [ "base" ; "top" ; "control" ; "epoch" ; "interruptStatus" ; "interruptRequested" ].
 
 Definition RevokerNumRegs : nat := Eval compute in (length RevokerRegNames).
-Definition RevokerSizeBytes : Z := Eval compute in (Z.of_nat RevokerNumRegs * NumBytesXlen)%Z.
+(* One word per register; the region is a whole number of lines *)
+Definition RevokerRegsBytes : Z := Eval compute in (Z.of_nat RevokerNumRegs * NumBytesXlen)%Z.
+Definition RevokerSizeBytes : Z :=
+  Eval compute in ((RevokerRegsBytes + 2 ^ LgLineBytes - 1) / 2 ^ LgLineBytes * 2 ^ LgLineBytes)%Z.
 Definition RevokerOffsetSz : Z := Eval compute in (Z.log2_up RevokerSizeBytes).
 
-Definition REVOKER_BASE_LINE_OFFSET      : Z := 0x00.
-Definition REVOKER_CONTROL_LINE_OFFSET   : Z := 0x08.
-Definition REVOKER_INTERRUPT_LINE_OFFSET : Z := 0x10.
+(* Byte offsets of the registers *)
+Definition REVOKER_BASE_OFFSET          : Z := 0x00.
+Definition REVOKER_TOP_OFFSET           : Z := 0x04.
+Definition REVOKER_CONTROL_OFFSET       : Z := 0x08.
+Definition REVOKER_EPOCH_OFFSET         : Z := 0x0c.
+Definition REVOKER_INT_STATUS_OFFSET    : Z := 0x10.
+Definition REVOKER_INT_REQUESTED_OFFSET : Z := 0x14.
 
 Section Revoker.
   Variable dom : string.
@@ -74,8 +81,7 @@ Section Revoker.
   Definition revokerScanAddrPath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "scanAddr").
   Definition revokerSweepTopPath : RegPath tRev := Eval cbn in (getChildRegPathTree tRev "sweepTop").
 
-  Local Abbreviation numLineWords := (Z.to_nat (NumBytesFullCapSz / NumBytesXlen)).
-
+  (* The line at `offset`: each register word in its slot of its line *)
   Definition readRevokerLine
              {ty : Kind -> Type} {ans : Kind}
              (offset : Expr ty (Bit RevokerOffsetSz))
@@ -95,12 +101,18 @@ Section Revoker.
       let epochWord   := #epochVal in
       let statusWord  := ZeroExtendTo Xlen (ToBit #statusVal) in
       let reqWord     := ZeroExtendTo Xlen (ToBit #reqVal) in
-      Let readData : Bit FullCapSz <-
-        Or [ ITE0 (Eq offset $(REVOKER_BASE_LINE_OFFSET))      {< topWord, baseWord >} ;
-             ITE0 (Eq offset $(REVOKER_CONTROL_LINE_OFFSET))   {< epochWord, controlWord >} ;
-             ITE0 (Eq offset $(REVOKER_INTERRUPT_LINE_OFFSET)) {< reqWord, statusWord >} ] ;
+      let regWords : list (Z * Expr ty (Bit Xlen)) :=
+        [ (REVOKER_BASE_OFFSET, baseWord) ; (REVOKER_TOP_OFFSET, topWord) ;
+          (REVOKER_CONTROL_OFFSET, controlWord) ; (REVOKER_EPOCH_OFFSET, epochWord) ;
+          (REVOKER_INT_STATUS_OFFSET, statusWord) ; (REVOKER_INT_REQUESTED_OFFSET, reqWord) ] in
+      Let lineWords : Array NumLineWords (Bit Xlen) <-
+        ArrayBuilder (fun j : FinType NumLineWords =>
+          Or (map (fun ow =>
+                     if Nat.eqb (slotOf NumBytesXlen (fst ow)) (finNum j)
+                     then ITE0 (Eq offset $(lineOffsetOf (fst ow))) (snd ow)
+                     else $0) regWords)) ;
       Let lineBytes : Array LineBytes (Bit ByteSz) <-
-        FromBit (Array LineBytes (Bit ByteSz)) #readData ;
+        FromBit (Array LineBytes (Bit ByteSz)) (ToBit ##lineWords) ;
       k lineBytes
     )))))).
 
@@ -113,6 +125,7 @@ Section Revoker.
     Let offset : Bit RevokerOffsetSz <- getMemOffset base RevokerSizeBytes #addr ;
     readRevokerLine #offset (fun readBytes => Return #readBytes).
 
+  (* The registers in the line written take the merged words of their slots *)
   Definition revokerLineWriteAction
              (base : Z)
              (ty : Kind -> Type)
@@ -127,30 +140,42 @@ Section Revoker.
           ITE (ReadArrayConst (#dataMask) i)
               (ReadArrayConst (#data) i)
               (ReadArrayConst #oldBytes i)) ;
-      Let newWords : Array numLineWords (Bit Xlen) <-
-        FromBit (Array numLineWords (Bit Xlen)) (ToBit ##newBytes) ;
-      If (Eq #offset $(REVOKER_BASE_LINE_OFFSET)) Then (
-        Let newBase : Bit TagAddrWidth <- TruncMsb TagAddrWidth LgNumBytesFullCapSz ((##newWords) $[0%nat]) ;
-        Let newTop  : Bit TagAddrWidth <- TruncMsb TagAddrWidth LgNumBytesFullCapSz ((##newWords) $[1%nat]) ;
+      Let newWords : Array NumLineWords (Bit Xlen) <-
+        FromBit (Array NumLineWords (Bit Xlen)) (ToBit ##newBytes) ;
+      If (Eq #offset $(lineOffsetOf REVOKER_BASE_OFFSET)) Then (
+        Let newBase : Bit TagAddrWidth <-
+          TruncMsb TagAddrWidth LgNumBytesFullCapSz ((##newWords) $[slotOf NumBytesXlen REVOKER_BASE_OFFSET]) ;
         Act (WriteReg revokerBasePath #newBase Retv) ;
+        Retv
+      ) ;
+      If (Eq #offset $(lineOffsetOf REVOKER_TOP_OFFSET)) Then (
+        Let newTop : Bit TagAddrWidth <-
+          TruncMsb TagAddrWidth LgNumBytesFullCapSz ((##newWords) $[slotOf NumBytesXlen REVOKER_TOP_OFFSET]) ;
         Act (WriteReg revokerTopPath #newTop Retv) ;
         Retv
       ) ;
-      (* The epoch (word 1 of this line) is read-only: only the revoker changes it *)
-      If (Eq #offset $(REVOKER_CONTROL_LINE_OFFSET)) Then (
-        Let newKick : Bool <- FromBit Bool (TruncLsb (Xlen - 1) 1 ((##newWords) $[0%nat])) ;
+      (* The epoch is read-only: only the revoker changes it *)
+      If (Eq #offset $(lineOffsetOf REVOKER_CONTROL_OFFSET)) Then (
+        Let newKick : Bool <-
+          FromBit Bool (TruncLsb (Xlen - 1) 1 ((##newWords) $[slotOf NumBytesXlen REVOKER_CONTROL_OFFSET])) ;
         Act (WriteReg revokerControlPath #newKick Retv) ;
         Retv
       ) ;
-      If (Eq #offset $(REVOKER_INTERRUPT_LINE_OFFSET)) Then (
+      (* Writing 1 to bit 0 of interruptStatus clears it *)
+      If (Eq #offset $(lineOffsetOf REVOKER_INT_STATUS_OFFSET)) Then (
         Let clearStatus : Bool <-
-          And [ (Var ty (Array LineBytes Bool) dataMask) $[0%nat] ;
-                FromBit Bool (TruncLsb (ByteSz - 1) 1 ((Var ty (Array LineBytes (Bit ByteSz)) data) $[0%nat])) ] ;
+          And [ (Var ty (Array LineBytes Bool) dataMask) $[byteOf REVOKER_INT_STATUS_OFFSET] ;
+                FromBit Bool (TruncLsb (ByteSz - 1) 1
+                  ((Var ty (Array LineBytes (Bit ByteSz)) data) $[byteOf REVOKER_INT_STATUS_OFFSET])) ] ;
         If #clearStatus Then (
           Act (WriteReg revokerInterruptStatusPath (ConstBool false) Retv) ;
           Retv
         ) ;
-        Let newReq : Bool <- FromBit Bool (TruncLsb (Xlen - 1) 1 ((##newWords) $[1%nat])) ;
+        Retv
+      ) ;
+      If (Eq #offset $(lineOffsetOf REVOKER_INT_REQUESTED_OFFSET)) Then (
+        Let newReq : Bool <-
+          FromBit Bool (TruncLsb (Xlen - 1) 1 ((##newWords) $[slotOf NumBytesXlen REVOKER_INT_REQUESTED_OFFSET])) ;
         Act (WriteReg revokerInterruptRequestedPath #newReq Retv) ;
         Retv
       ) ;
@@ -176,6 +201,7 @@ Section Revoker.
                                     (@revokerLineReadAction base)
                                     (@revokerLineWriteAction base)
                                     (Some (fun ty => revokerLocalInterrupt)) ;
+    regionSizeNonNeg  := I ;
     regionInMemory    := pfBound ;
     regionBaseAligned := pfAligned ;
     regionSizeAligned := I

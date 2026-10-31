@@ -94,6 +94,20 @@ Section Clint.
 
   End ClintActions.
 
+  (* The line at `offset`: each 64-bit register in its doubleword slot of its line *)
+  Definition clintLine {ty : Kind -> Type}
+             (offset : Expr ty (Bit (Z.log2_up ClintSizeBytes)))
+             (mtimeVal mtimecmpVal : Expr ty (Bit DXlen))
+             : Expr ty (Array LineBytes (Bit ByteSz)) :=
+    let regs : list (Z * Expr ty (Bit DXlen)) :=
+      [ (CLINT_MTIME_OFFSET, mtimeVal) ; (CLINT_MTIMECMP_OFFSET, mtimecmpVal) ] in
+    FromBit (Array LineBytes (Bit ByteSz))
+      (ToBit (ArrayBuilder (fun j : FinType NumLineDWords =>
+         Or (map (fun ov =>
+                    if Nat.eqb (slotOf (DXlen / ByteSz) (fst ov)) (finNum j)
+                    then ITE0 (Eq offset $(lineOffsetOf (fst ov))) (snd ov)
+                    else $0) regs)))).
+
   Definition clintLineReadAction
              (base : Z)
              (ty : Kind -> Type)
@@ -103,13 +117,10 @@ Section Clint.
     Let offset <- getMemOffset base ClintSizeBytes #addr ;
     ReadReg "mtime" clintMtimePath (fun mtimeVal =>
     ReadReg "mtimecmp" clintMtimecmpPath (fun mtimecmpVal =>
-    Let rawData : Bit DXlen <-
-      Or [ ITE0 (Eq #offset $(CLINT_MTIME_OFFSET))    #mtimeVal ;
-           ITE0 (Eq #offset $(CLINT_MTIMECMP_OFFSET)) #mtimecmpVal ] ;
-    Let readBytes : Array LineBytes (Bit ByteSz) <-
-      FromBit (Array LineBytes (Bit ByteSz)) #rawData ;
+    Let readBytes : Array LineBytes (Bit ByteSz) <- clintLine #offset #mtimeVal #mtimecmpVal ;
     Return #readBytes)).
 
+  (* A register takes the merged doubleword of its slot when the write covers one of its bytes *)
   Definition clintLineWriteAction
              (base : Z)
              (ty : Kind -> Type)
@@ -117,28 +128,30 @@ Section Clint.
              (data : ty (Array LineBytes (Bit ByteSz)))
              (dataMask : ty (Array LineBytes Bool))
              : Action ty tClint (Bit 0) :=
-    Let offset   <- getMemOffset base ClintSizeBytes #addr ;
-    Let anyWrite : Bool <- isNotZero (ToBit #dataMask) ;
-    let mergeReg (oldVal : Expr ty (Bit DXlen)) : Expr ty (Bit DXlen) :=
-      let oldBytes := FromBit (Array LineBytes (Bit ByteSz)) oldVal in
-      ToBit (ArrayBuilder (fun i =>
+    Let offset <- getMemOffset base ClintSizeBytes #addr ;
+    ReadReg "mtime" clintMtimePath (fun mtimeVal =>
+    ReadReg "mtimecmp" clintMtimecmpPath (fun mtimecmpVal =>
+    Let oldBytes : Array LineBytes (Bit ByteSz) <- clintLine #offset #mtimeVal #mtimecmpVal ;
+    Let newBytes : Array LineBytes (Bit ByteSz) <-
+      ArrayBuilder (fun i =>
         ITE (ReadArrayConst #dataMask i)
             (ReadArrayConst #data i)
-            (ReadArrayConst oldBytes i))) in
-    If #anyWrite Then (
-      Act (If (Eq #offset $(CLINT_MTIME_OFFSET)) Then (
-        ReadReg "mtime" clintMtimePath (fun mtimeVal =>
-        WriteReg clintMtimePath (mergeReg #mtimeVal) Retv)
-      ) ; Retv) ;
-      If (Eq #offset $(CLINT_MTIMECMP_OFFSET)) Then (
-        ReadReg "mtimecmp" clintMtimecmpPath (fun mtimecmpVal =>
-        WriteReg clintMtimecmpPath (mergeReg #mtimecmpVal) (
-        WriteReg clintMtipPath (ConstBool false) (
-        WriteReg clintSampledMtipPath (ConstBool false) Retv)))
-      ) ;
-      Retv
+            (ReadArrayConst #oldBytes i)) ;
+    Let newDWords : Array NumLineDWords (Bit DXlen) <-
+      FromBit (Array NumLineDWords (Bit DXlen)) (ToBit ##newBytes) ;
+    Let maskDWords : Array NumLineDWords (Bit (DXlen / ByteSz)) <-
+      FromBit (Array NumLineDWords (Bit (DXlen / ByteSz))) (ToBit ##dataMask) ;
+    If (And [ Eq #offset $(lineOffsetOf CLINT_MTIME_OFFSET) ;
+              isNotZero ((##maskDWords) $[slotOf (DXlen / ByteSz) CLINT_MTIME_OFFSET]) ]) Then (
+      WriteReg clintMtimePath ((##newDWords) $[slotOf (DXlen / ByteSz) CLINT_MTIME_OFFSET]) Retv
     ) ;
-    Retv.
+    If (And [ Eq #offset $(lineOffsetOf CLINT_MTIMECMP_OFFSET) ;
+              isNotZero ((##maskDWords) $[slotOf (DXlen / ByteSz) CLINT_MTIMECMP_OFFSET]) ]) Then (
+      WriteReg clintMtimecmpPath ((##newDWords) $[slotOf (DXlen / ByteSz) CLINT_MTIMECMP_OFFSET]) (
+      WriteReg clintMtipPath (ConstBool false) (
+      WriteReg clintSampledMtipPath (ConstBool false) Retv))
+    ) ;
+    Retv)).
 
   (* ===========================================================================
    * MemRegion Constructor
@@ -153,6 +166,7 @@ Section Clint.
     regionBase        := base ;
     regionSize        := ClintSizeBytes ;
     regionKind        := @CustomMem "clint" clintChildren (@clintLineReadAction base) (@clintLineWriteAction base) None ;
+    regionSizeNonNeg  := I ;
     regionInMemory    := pfBound ;
     regionBaseAligned := pfAligned ;
     regionSizeAligned := I

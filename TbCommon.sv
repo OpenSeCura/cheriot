@@ -19,25 +19,29 @@
   // =========================================================================
   localparam int RamSizeBytes      = 256 * 1024;
   localparam int RevTableSizeBytes = 4 * 1024;
-  localparam int LineBits          = 64;
-  localparam int LineBytes         = LineBits / 8;
-  localparam int NumLines          = (RamSizeBytes * 8) / LineBits;
+  // The line geometry: LgLineBytes must match LgLineBytes in SpecDefines.v
+  localparam int LgLineBytes       = 5;
+  localparam int LineBytes         = 1 << LgLineBytes;
+  localparam int LineBits          = LineBytes * 8;
+  localparam int NumLineTags       = LineBytes / 8;  // one tag per 8-byte capability
+  localparam int NumLines          = RamSizeBytes / LineBytes;
   localparam int LineIdxBits       = $clog2(NumLines);
-  localparam int RevTableNumLines    = (RevTableSizeBytes * 8) / LineBits;
+  localparam int RevTableNumLines    = RevTableSizeBytes / LineBytes;
   localparam int RevTableLineIdxBits = $clog2(RevTableNumLines);
+  localparam int NumRamWords       = RamSizeBytes / 8;  // the 64-bit words of the +bin hex file
 
-  // Every region uses the global line layout: 8 data bytes and one tag per line
+  // Every region uses the global line layout: LineBytes data bytes and one tag per capability
   typedef struct packed {
-    logic [7 : 0][7 : 0] data;
-    logic [0 : 0]        tag;
+    logic [LineBytes - 1 : 0][7 : 0] data;
+    logic [NumLineTags - 1 : 0]      tag;
   } lineReadRp_t;
 
   typedef struct packed {
-    logic [31 : 0]       addr;
-    logic [7 : 0][7 : 0] data;
-    logic [7 : 0]        dataMask;
-    logic [0 : 0]        tag;
-    logic [0 : 0]        tagMask;
+    logic [31 : 0]                   addr;
+    logic [LineBytes - 1 : 0][7 : 0] data;
+    logic [LineBytes - 1 : 0]        dataMask;
+    logic [NumLineTags - 1 : 0]      tag;
+    logic [NumLineTags - 1 : 0]      tagMask;
   } lineWriteRq_t;
 
   typedef lineReadRp_t  ramReadRp_t;
@@ -50,9 +54,26 @@
   localparam int TbIoWidth = $bits(uartWriteRq_t);
   typedef logic [TbIoWidth - 1 : 0] tb_io_val_t;
 
-  logic [LineBits - 1 : 0] ramData      [0 : NumLines - 1];
-  logic                    ramTag       [0 : NumLines - 1];
-  logic [LineBits - 1 : 0] revTableData [0 : RevTableNumLines - 1];
+  logic [LineBits - 1 : 0]    ramData      [0 : NumLines - 1];
+  logic [NumLineTags - 1 : 0] ramTag       [0 : NumLines - 1];
+  logic [LineBits - 1 : 0]    revTableData [0 : RevTableNumLines - 1];
+  logic [63 : 0]              ramWords     [0 : NumRamWords - 1];
+
+  // The UART registers, at byte offsets from the UART base; the one at offset `off` is byte
+  // `uart_byte(off)` of the line at `uart_line(off)`
+  localparam logic [31 : 0] UartBase      = 32'h1000_0000;
+  localparam int            UartThrOffset = 'h0;   // THR (write), RBR (read)
+  localparam int            UartIerOffset = 'h4;
+  localparam int            UartLcrOffset = 'hc;   // DLAB is bit 7
+  localparam int            UartLsrOffset = 'h14;
+
+  function automatic logic [31 : 0] uart_line(int off);
+    return UartBase + 32'(off & ~(LineBytes - 1));
+  endfunction
+
+  function automatic int uart_byte(int off);
+    return off & (LineBytes - 1);
+  endfunction
 
   // =========================================================================
   // External RAM, RevTable & UART Emulation State
@@ -129,24 +150,26 @@
         logic [31 : 0]              wrAddr;
         logic [LineIdxBits - 1 : 0] wrIdx;
         logic [31 : 0]              tohostLineAddr;
-        logic [2 : 0]               tohostByteOff;
+        logic [LgLineBytes - 1 : 0] tohostByteOff;
         logic [31 : 0]              tohostVal;
 
         wr     = val[$bits(ramWriteRq_t) - 1 : 0];
         wrAddr = wr.addr;
-        wrIdx  = wrAddr[LineIdxBits + 2 : 3];
+        wrIdx  = wrAddr[LineIdxBits + LgLineBytes - 1 : LgLineBytes];
 
         for (int b = 0; b < LineBytes; b++) begin
           if (wr.dataMask[b]) begin
             ramData[wrIdx][b*8 +: 8] = wr.data[b];
           end
         end
-        if (wr.tagMask[0]) begin
-          ramTag[wrIdx] = wr.tag[0];
+        for (int t = 0; t < NumLineTags; t++) begin
+          if (wr.tagMask[t]) begin
+            ramTag[wrIdx][t] = wr.tag[t];
+          end
         end
 
-        tohostLineAddr = {tohostAddr[31 : 3], 3'b000};
-        tohostByteOff  = tohostAddr[2 : 0];
+        tohostLineAddr = tohostAddr & ~32'(LineBytes - 1);
+        tohostByteOff  = tohostAddr[LgLineBytes - 1 : 0];
         if ((tohostAddr != 32'h0) &&
             (wrAddr == tohostLineAddr) &&
             wr.dataMask[tohostByteOff]) begin
@@ -169,7 +192,7 @@
 
         wr     = val[$bits(revTableWriteRq_t) - 1 : 0];
         wrAddr = wr.addr;
-        wrIdx  = wrAddr[RevTableLineIdxBits + 2 : 3];
+        wrIdx  = wrAddr[RevTableLineIdxBits + LgLineBytes - 1 : LgLineBytes];
 
         for (int b = 0; b < LineBytes; b++) begin
           if (wr.dataMask[b]) begin
@@ -177,22 +200,18 @@
           end
         end
       end else if (has_substr(name, "_uart_")) begin
-        // UART registers are 4 bytes apart: THR (0x0) and IER (0x4) are in the line at 0x0,
-        // LCR (0xC, holding DLAB) is byte 4 of the line at 0x8
+        // THR and IER see DLAB before this write's LCR update
         uartWriteRq_t wr;
         wr = val[$bits(uartWriteRq_t) - 1 : 0];
-        if (wr.addr == 32'h1000_0000) begin
-          if (wr.dataMask[0] && !dlab) begin
-            $write("%c", wr.data[0]);
-            $fflush(32'h8000_0001);
-          end
-          if (wr.dataMask[4] && !dlab) begin
-            ie = wr.data[4];
-          end
-        end else if (wr.addr == 32'h1000_0008) begin
-          if (wr.dataMask[4]) begin
-            dlab = wr.data[4][7];
-          end
+        if (wr.addr == uart_line(UartThrOffset) && wr.dataMask[uart_byte(UartThrOffset)] && !dlab) begin
+          $write("%c", wr.data[uart_byte(UartThrOffset)]);
+          $fflush(32'h8000_0001);
+        end
+        if (wr.addr == uart_line(UartIerOffset) && wr.dataMask[uart_byte(UartIerOffset)] && !dlab) begin
+          ie = wr.data[uart_byte(UartIerOffset)];
+        end
+        if (wr.addr == uart_line(UartLcrOffset) && wr.dataMask[uart_byte(UartLcrOffset)]) begin
+          dlab = wr.data[uart_byte(UartLcrOffset)][7];
         end
       end
     end else if (has_suffix(name, "_lineReadRpReady")) begin
@@ -254,9 +273,9 @@
         end else begin
           addr = ramDataReadAddr;
         end
-        idx       = addr[LineIdxBits + 2 : 3];
-        rp.data   = ramData[idx];
-        rp.tag[0] = ramTag[idx];
+        idx     = addr[LineIdxBits + LgLineBytes - 1 : LgLineBytes];
+        rp.data = ramData[idx];
+        rp.tag  = ramTag[idx];
         return tb_io_val_t'(rp);
       end else if (has_substr(name, "_revTable_")) begin
         revTableReadRp_t                    rp;
@@ -267,21 +286,24 @@
         end else begin
           addr = revTableDataReadAddr;
         end
-        idx     = addr[RevTableLineIdxBits + 2 : 3];
+        idx     = addr[RevTableLineIdxBits + LgLineBytes - 1 : LgLineBytes];
         rp      = '0;
         rp.data = revTableData[idx];
         return tb_io_val_t'(rp);
       end else begin
         uartReadRp_t rp;
         rp = '0;
+        // A line read has no byte mask: reading RBR's line pops the RX buffer, after LSR (which
+        // may share the line) has sampled it
         if (!has_substr(name, "_fetch_")) begin
-          if (uartReadAddr == 32'h1000_0000) begin
-            rp.data[0] = rxBufValid ? rxBuf : 8'h00;
+          if (uartReadAddr == uart_line(UartLsrOffset)) begin
+            rp.data[uart_byte(UartLsrOffset)] = rxBufValid ? 8'h21 : 8'h20;
+          end
+          if (uartReadAddr == uart_line(UartThrOffset)) begin
+            rp.data[uart_byte(UartThrOffset)] = rxBufValid ? rxBuf : 8'h00;
             if (rxBufValid) begin
               rxBufValid = 1'b0;
             end
-          end else if (uartReadAddr == 32'h1000_0010) begin
-            rp.data[4] = rxBufValid ? 8'h21 : 8'h20;
           end
         end
         return tb_io_val_t'(rp);
@@ -298,7 +320,7 @@
 
     for (int i = 0; i < NumLines; i++) begin
       ramData[i] = '0;
-      ramTag[i]  = 1'b0;
+      ramTag[i]  = '0;
     end
     for (int i = 0; i < RevTableNumLines; i++) begin
       revTableData[i] = '0;
@@ -321,8 +343,15 @@
     rxBufValid               = 1'b0;
     rxBuf                    = 8'h0;
 
+    // The +bin hex file has one little-endian 64-bit word per text line; pack the words into lines
     if ($value$plusargs("bin=%s", binFile)) begin
-      $readmemh(binFile, ramData);
+      for (int i = 0; i < NumRamWords; i++) begin
+        ramWords[i] = '0;
+      end
+      $readmemh(binFile, ramWords);
+      for (int i = 0; i < NumRamWords; i++) begin
+        ramData[i / (LineBytes / 8)][(i % (LineBytes / 8)) * 64 +: 64] = ramWords[i];
+      end
     end
 
     if (!$value$plusargs("tohost=%h", tohostAddr)) begin

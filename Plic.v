@@ -344,7 +344,6 @@ Section Plic.
     Variable base : Z.
     Variable ty : Kind -> Type.
     Local Abbreviation tPlic := (plicTree n).
-    Local Abbreviation numLineWords := (Z.to_nat (NumBytesFullCapSz / NumBytesXlen)).
 
     Definition boolArrayToWordArray
                (arr : Expr ty (Array n Bool))
@@ -377,18 +376,23 @@ Section Plic.
                (k : PlicLineDecode -> Action ty tPlic ans)
                : Action ty tPlic ans :=
       Let offset        <- getMemOffset base PlicSizeBytes addr ;
-      Let isThreshClaim : Bool <- Eq  #offset $(PLIC_THRESHOLD_OFFSET) ;
+      Let isThreshClaim : Bool <- Eq  #offset $(lineOffsetOf PLIC_THRESHOLD_OFFSET) ;
       Let isEnable      : Bool <- Uge #offset $(PLIC_ENABLE_OFFSET) ;
       Let isPending     : Bool <- Uge #offset $(PLIC_PENDING_OFFSET) ;
       Let isPrio        : Bool <- ConstBool true ;
       Let prioWordIdx   <- getWordIdx offset PLIC_PRIORITY_BASE ;
       Let pendWordIdx   <- getWordIdx offset PLIC_PENDING_OFFSET ;
       Let enWordIdx     <- getWordIdx offset PLIC_ENABLE_OFFSET ;
-      Let maskBits      <- ToBit dataMask ;
-      Let hasLo         : Bool <- isNotZero (TruncLsb NumBytesXlen NumBytesXlen #maskBits) ;
-      Let hasHi         : Bool <- isNotZero (TruncMsb NumBytesXlen NumBytesXlen #maskBits) ;
-      Let touchesClaim  : Bool <- And [ #isThreshClaim ; #hasHi ] ;
-      Let touchesConfig : Bool <- Or [ #hasLo ; And [ #hasHi ; Not #isThreshClaim ] ] ;
+      (* The mask of each word of the line *)
+      Let maskWords     : Array NumLineWords (Bit NumBytesXlen) <-
+        FromBit (Array NumLineWords (Bit NumBytesXlen)) (ToBit dataMask) ;
+      (* The access covers a byte of the claim register... *)
+      Let touchesClaim  : Bool <-
+        And [ #isThreshClaim ; isNotZero ((##maskWords) $[slotOf NumBytesXlen PLIC_CLAIM_OFFSET]) ] ;
+      (* ...or a byte other than the claim register *)
+      Let otherMask     : Array NumLineWords (Bit NumBytesXlen) <-
+        ITE #isThreshClaim ((##maskWords) $[slotOf NumBytesXlen PLIC_CLAIM_OFFSET <- $0]) #maskWords ;
+      Let touchesConfig : Bool <- isNotZero (ToBit ##otherMask) ;
       k {| dec_isThreshClaim := #isThreshClaim ;
            dec_isEnable      := #isEnable ;
            dec_isPending     := #isPending ;
@@ -402,18 +406,18 @@ Section Plic.
     Definition sliceLineWords {m : nat} {sz : Z}
                (arr : Expr ty (Array m (Bit Xlen)))
                (wordIdx : Expr ty (Bit sz))
-               : Expr ty (Bit FullCapSz) :=
-      ToBit (Combinators.slice arr wordIdx numLineWords).
+               : Expr ty (Bit LineSz) :=
+      ToBit (Combinators.slice arr wordIdx NumLineWords).
 
     Definition writeLineWords {sz : Z}
                (paths : list (RegOfKind (t:=tPlic) (Bit Xlen)))
                (wordIdx : Expr ty (Bit sz))
-               (words : Expr ty (Array numLineWords (Bit Xlen)))
+               (words : Expr ty (Array NumLineWords (Bit Xlen)))
                : Action ty tPlic (Bit 0) :=
-      fold_right (fun (i : FinType numLineWords) acc =>
+      fold_right (fun (i : FinType NumLineWords) acc =>
         Act (writeRegsList paths (Add [ wordIdx ; $(Z.of_nat (finNum i)) ]) (ReadArrayConst words i)) ;
         acc
-      ) Retv (genFinType numLineWords).
+      ) Retv (genFinType NumLineWords).
 
     Definition readPlicLine
                (st : PlicState ty n)
@@ -427,7 +431,13 @@ Section Plic.
       let prioVal        := sliceLineWords #prios d.(dec_prioWordIdx) in
       let pendVal        := sliceLineWords (boolArrayToWordArray #pends) d.(dec_pendWordIdx) in
       let enVal          := sliceLineWords #enWords d.(dec_enWordIdx) in
-      let threshClaimVal := {< #claim, #thresh >} in
+      (* The threshold and claim registers, each in its word of their line *)
+      let threshClaimRegs : list (Z * Expr ty (Bit Xlen)) :=
+        [ (PLIC_THRESHOLD_OFFSET, #thresh) ; (PLIC_CLAIM_OFFSET, #claim) ] in
+      let threshClaimVal : Expr ty (Bit LineSz) :=
+        ToBit (ArrayBuilder (fun j : FinType NumLineWords =>
+          Or (map (fun ow => if Nat.eqb (slotOf NumBytesXlen (fst ow)) (finNum j) then snd ow else $0)
+                  threshClaimRegs))) in
       FromBit (Array LineBytes (Bit ByteSz))
               (Or [ ITE0 d.(dec_isPrio)        prioVal ;
                     ITE0 d.(dec_isPending)     pendVal ;
@@ -460,20 +470,20 @@ Section Plic.
             ITE (ReadArrayConst #dataMask i)
                 (ReadArrayConst #data i)
                 (ReadArrayConst #oldBytes i)) ;
-        Let newWords : Array numLineWords (Bit Xlen) <-
-          FromBit (Array numLineWords (Bit Xlen)) (ToBit ##newBytes) ;
-        Let cleanEnWords : Array numLineWords (Bit Xlen) <-
+        Let newWords : Array NumLineWords (Bit Xlen) <-
+          FromBit (Array NumLineWords (Bit Xlen)) (ToBit ##newBytes) ;
+        Let cleanEnWords : Array NumLineWords (Bit Xlen) <-
           ITE (isZero d.(dec_enWordIdx))
               ((##newWords) $[ 0%nat <- {< TruncMsb (Xlen - 1) 1 ((##newWords) $[0%nat]), Const ty (Bit 1) Zmod.zero >} ])
               #newWords ;
-        Let cleanPrioWords : Array numLineWords (Bit Xlen) <-
+        Let cleanPrioWords : Array NumLineWords (Bit Xlen) <-
           ITE (isZero d.(dec_prioWordIdx))
               ((##newWords) $[ 0%nat <- $0 ])
               #newWords ;
         If d.(dec_isThreshClaim) Then (
-          Act (WriteReg (plicThresholdPath n) ((##newWords) $[0%nat]) Retv) ;
+          Act (WriteReg (plicThresholdPath n) ((##newWords) $[slotOf NumBytesXlen PLIC_THRESHOLD_OFFSET]) Retv) ;
           If d.(dec_touchesClaim) Then (
-            Let completedId : Bit Xlen <- (##newWords) $[1%nat] ;
+            Let completedId : Bit Xlen <- (##newWords) $[slotOf NumBytesXlen PLIC_CLAIM_OFFSET] ;
             @plicComplete n ty completedId
           ) ;
           Retv
@@ -512,6 +522,7 @@ Section Plic.
                                     (@plicLineReadAction n base)
                                     (@plicLineWriteAction n base)
                                     None ;
+    regionSizeNonNeg  := I ;
     regionInMemory    := pfBound ;
     regionBaseAligned := pfAligned ;
     regionSizeAligned := I
