@@ -55,20 +55,19 @@ Definition REVOKER_INT_STATUS_OFFSET    : Z := 0x10.
 Definition REVOKER_INT_REQUESTED_OFFSET : Z := 0x14.
 
 Section Revoker.
-  Variable dom : string.
-  Variable extraChildren : list (Tree DomainElem).
+  Variable extraChildren : list (Tree Elem).
 
-  Definition revokerChildren : list (Tree DomainElem) :=
-    ([ Leaf "base" (dom, EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero) false)) ;
-       Leaf "top" (dom, EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero) false)) ;
-       Leaf "control" (dom, EReg (Build_Reg Bool (Some false) false)) ;
-       Leaf "epoch" (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false)) ;
-       Leaf "interruptStatus" (dom, EReg (Build_Reg Bool (Some false) false)) ;
-       Leaf "interruptRequested" (dom, EReg (Build_Reg Bool (Some false) false)) ;
-       Leaf "scanAddr" (dom, EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero) false)) ;
+  Definition revokerChildren : list (Tree Elem) :=
+    ([ Leaf "base" (EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero))) ;
+       Leaf "top" (EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero))) ;
+       Leaf "control" (EReg (Build_Reg Bool (Some false))) ;
+       Leaf "epoch" (EReg (Build_Reg (Bit Xlen) (Some Zmod.zero))) ;
+       Leaf "interruptStatus" (EReg (Build_Reg Bool (Some false))) ;
+       Leaf "interruptRequested" (EReg (Build_Reg Bool (Some false))) ;
+       Leaf "scanAddr" (EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero))) ;
        (* The sweep's copy of top, taken at the kick: software may write top during a sweep,
         * the sweep in progress ends at the top it started with *)
-       Leaf "sweepTop" (dom, EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero) false)) ] ++ extraChildren)%list.
+       Leaf "sweepTop" (EReg (Build_Reg (Bit TagAddrWidth) (Some Zmod.zero))) ] ++ extraChildren)%list.
 
   Local Abbreviation tRev := (Node "revoker" revokerChildren).
 
@@ -228,7 +227,7 @@ Section Revoker.
     Variable config : RevConfig.
     Variable ty : Kind -> Type.
 
-    Local Abbreviation memTree := (specMemTree dom regions).
+    Local Abbreviation memTree := (specMemTree regions).
 
     Local Definition revokerAction {k : Kind} (act : Action ty tRev k) : Action ty memTree k :=
       nthRegionAction rev.(revokerIdx) regions (revokerRegion rev) rev.(pfRevoker) act.

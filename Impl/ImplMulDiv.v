@@ -581,7 +581,6 @@ End StageIndependentCombinational.
 Definition MulDivFifoCapacity : nat := 1%nat.
 
 Section ConcreteMulDivEngines.
-  Variable dom : string.
   Variable input_width mul_stages div_stages : nat.
 
   Local Abbreviation d := (dataLen input_width).
@@ -590,82 +589,82 @@ Section ConcreteMulDivEngines.
 
   (* --- 4A. Pipelined Multiplier Instance (`stagedPipeTree`) --- *)
 
-  Definition mulPipeTree : Tree DomainElem :=
-    stagedPipeTree dom (MulStageState d) mul_stages.
+  Definition mulPipeTree : Tree Elem :=
+    stagedPipeTree (MulStageState d) mul_stages.
 
   Definition mulPipeCanEnq (ty : Kind -> Type) :=
-    stagedPipeCanEnq dom (MulStageState d) mul_stages ty.
+    stagedPipeCanEnq (MulStageState d) mul_stages ty.
 
   Definition mulPipeEnq (ty : Kind -> Type) (inp : ty (MulInput d)) :=
-    @stagedPipeEnq dom (MulInput d) (MulStageState d) mul_stages (@mulInitStage input_width) ty inp.
+    @stagedPipeEnq (MulInput d) (MulStageState d) mul_stages (@mulInitStage input_width) ty inp.
 
   Definition mulPipeRules (ty : Kind -> Type) :=
-    stagedPipeAllStageRules dom (MulStageState d) mul_stages
+    stagedPipeAllStageRules (MulStageState d) mul_stages
       (fun ty' st => @mulStageStep input_width ty' mul_bps st) ty.
 
   Definition mulPipeFirst (ty : Kind -> Type) :=
-    stagedPipeFirst dom (MulStageState d) (MulOutput d) mul_stages
+    stagedPipeFirst (MulStageState d) (MulOutput d) mul_stages
       (@mulFinishStage input_width) ty.
 
   Definition mulPipeDeq (ty : Kind -> Type) :=
-    stagedPipeDeq dom (MulStageState d) mul_stages ty.
+    stagedPipeDeq (MulStageState d) mul_stages ty.
 
   (* --- 4B. Iterative Multiplier Instance (`stagedIterTree`) --- *)
 
-  Definition mulIterTree : Tree DomainElem :=
-    stagedIterTree dom (MulStageState d) mul_stages.
+  Definition mulIterTree : Tree Elem :=
+    stagedIterTree (MulStageState d) mul_stages.
 
   Definition mulStepsConst (ty : Kind -> Type) (_ : ty (MulInput d)) : LetExpr ty (Bit (iterStepsSz mul_stages)) :=
     RetE (Const ty (Bit (iterStepsSz mul_stages)) (bits.of_Z (iterStepsSz mul_stages) (Z.of_nat mul_stages))).
 
   Definition mulIterCanEnq (ty : Kind -> Type) :=
-    stagedIterCanEnq dom (MulStageState d) mul_stages ty.
+    stagedIterCanEnq (MulStageState d) mul_stages ty.
 
   Definition mulIterEnq (ty : Kind -> Type) (inp : ty (MulInput d)) :=
-    @stagedIterEnq dom (MulInput d) (MulStageState d) mul_stages mulStepsConst (@mulInitStage input_width) ty inp.
+    @stagedIterEnq (MulInput d) (MulStageState d) mul_stages mulStepsConst (@mulInitStage input_width) ty inp.
 
   Definition mulIterStepRule (ty : Kind -> Type) :=
-    stagedIterStep dom (MulStageState d) mul_stages
+    stagedIterStep (MulStageState d) mul_stages
       (fun ty' st => @mulStageStep input_width ty' mul_bps st) ty.
 
   Definition mulIterFirst (ty : Kind -> Type) :=
-    stagedIterFirst dom (MulStageState d) (MulOutput d) mul_stages
+    stagedIterFirst (MulStageState d) (MulOutput d) mul_stages
       (@mulFinishStage input_width) ty.
 
   Definition mulIterDeq (ty : Kind -> Type) :=
-    stagedIterDeq dom (MulStageState d) mul_stages ty.
+    stagedIterDeq (MulStageState d) mul_stages ty.
 
   (* --- 4C. Iterative Divider Instance (`stagedIterTree`) --- *)
 
-  Definition divIterTree : Tree DomainElem :=
-    stagedIterTree dom (DivStageState d) div_stages.
+  Definition divIterTree : Tree Elem :=
+    stagedIterTree (DivStageState d) div_stages.
 
   Definition divStepsConst (ty : Kind -> Type) (_ : ty (DivInput d)) : LetExpr ty (Bit (iterStepsSz div_stages)) :=
     RetE (Const ty (Bit (iterStepsSz div_stages)) (bits.of_Z (iterStepsSz div_stages) (Z.of_nat div_stages))).
 
   Definition divIterCanEnq (ty : Kind -> Type) :=
-    stagedIterCanEnq dom (DivStageState d) div_stages ty.
+    stagedIterCanEnq (DivStageState d) div_stages ty.
 
   Definition divIterEnq (ty : Kind -> Type) (inp : ty (DivInput d)) :=
-    @stagedIterEnq dom (DivInput d) (DivStageState d) div_stages divStepsConst (@divInitStage input_width) ty inp.
+    @stagedIterEnq (DivInput d) (DivStageState d) div_stages divStepsConst (@divInitStage input_width) ty inp.
 
   Definition divIterStepRule (ty : Kind -> Type) :=
-    stagedIterStep dom (DivStageState d) div_stages
+    stagedIterStep (DivStageState d) div_stages
       (fun ty' st => @divStageStep input_width ty' div_bps st) ty.
 
   Definition divIterFirst (ty : Kind -> Type) :=
-    stagedIterFirst dom (DivStageState d) (DivOutput d) div_stages
+    stagedIterFirst (DivStageState d) (DivOutput d) div_stages
       (@divFinishStage input_width) ty.
 
   Definition divIterDeq (ty : Kind -> Type) :=
-    stagedIterDeq dom (DivStageState d) div_stages ty.
+    stagedIterDeq (DivStageState d) div_stages ty.
 
   (* --- 4D. Shared-Accumulator Iterative Mul/Div Instance (`stagedIterTree`) --- *)
 
   Local Abbreviation shared_max_stages := (Nat.max mul_stages div_stages).
 
-  Definition sharedIterTree : Tree DomainElem :=
-    stagedIterTree dom (SharedStageState d) shared_max_stages.
+  Definition sharedIterTree : Tree Elem :=
+    stagedIterTree (SharedStageState d) shared_max_stages.
 
   Definition sharedStepsFn (ty : Kind -> Type) (inp : ty (SharedInput d)) : LetExpr ty (Bit (iterStepsSz shared_max_stages)) :=
     let sz := iterStepsSz shared_max_stages in
@@ -674,22 +673,22 @@ Section ConcreteMulDivEngines.
     RetE (ITE (##inp`"isMul") #mSteps #dSteps).
 
   Definition sharedIterCanEnq (ty : Kind -> Type) :=
-    stagedIterCanEnq dom (SharedStageState d) shared_max_stages ty.
+    stagedIterCanEnq (SharedStageState d) shared_max_stages ty.
 
   Definition sharedIterEnq (ty : Kind -> Type) (inp : ty (SharedInput d)) :=
-    @stagedIterEnq dom (SharedInput d) (SharedStageState d) shared_max_stages
+    @stagedIterEnq (SharedInput d) (SharedStageState d) shared_max_stages
       sharedStepsFn (@sharedInitStage input_width) ty inp.
 
   Definition sharedIterStepRule (ty : Kind -> Type) :=
-    stagedIterStep dom (SharedStageState d) shared_max_stages
+    stagedIterStep (SharedStageState d) shared_max_stages
       (fun ty' st => @sharedStageStep input_width ty' mul_bps div_bps st) ty.
 
   Definition sharedIterFirst (ty : Kind -> Type) :=
-    stagedIterFirst dom (SharedStageState d) (SharedOutput d) shared_max_stages
+    stagedIterFirst (SharedStageState d) (SharedOutput d) shared_max_stages
       (@sharedFinishStage input_width) ty.
 
   Definition sharedIterDeq (ty : Kind -> Type) :=
-    stagedIterDeq dom (SharedStageState d) shared_max_stages ty.
+    stagedIterDeq (SharedStageState d) shared_max_stages ty.
 
 End ConcreteMulDivEngines.
 
@@ -718,7 +717,6 @@ Definition MulDivReq : Kind := STRUCT_TYPE {
 }.
 
 Section ModeParameterizedSubsystem.
-  Variable dom : string.
   Variable mulCapacity divCapacity : nat.
   Variable input_width mul_stages div_stages : nat.
 
@@ -781,49 +779,49 @@ Section ModeParameterizedSubsystem.
       "op2"        ::= #op2
     }).
 
-  Definition implMulDivTree (mode : MulDivMode) : Tree DomainElem :=
+  Definition implMulDivTree (mode : MulDivMode) : Tree Elem :=
     Node "" (
       match mode with
       | PipelinedMul_IterDiv =>
           [
             Node "mul" [
-              fifoTree dom mulCapacity MulReq ;
+              fifoTree mulCapacity MulReq ;
               Node "engine" [
-                mulPipeTree dom input_width mul_stages ;
-                fifoTree dom MulDivFifoCapacity RegIdx
+                mulPipeTree input_width mul_stages ;
+                fifoTree MulDivFifoCapacity RegIdx
               ]
             ] ;
             Node "div" [
-              fifoTree dom divCapacity DivReq ;
+              fifoTree divCapacity DivReq ;
               Node "engine" [
-                divIterTree dom input_width div_stages ;
-                fifoTree dom MulDivFifoCapacity RegIdx
+                divIterTree input_width div_stages ;
+                fifoTree MulDivFifoCapacity RegIdx
               ]
             ]
           ]
       | IterMul_SeparateIterDiv =>
           [
             Node "mul" [
-              fifoTree dom mulCapacity MulReq ;
+              fifoTree mulCapacity MulReq ;
               Node "engine" [
-                mulIterTree dom input_width mul_stages ;
-                fifoTree dom MulDivFifoCapacity RegIdx
+                mulIterTree input_width mul_stages ;
+                fifoTree MulDivFifoCapacity RegIdx
               ]
             ] ;
             Node "div" [
-              fifoTree dom divCapacity DivReq ;
+              fifoTree divCapacity DivReq ;
               Node "engine" [
-                divIterTree dom input_width div_stages ;
-                fifoTree dom MulDivFifoCapacity RegIdx
+                divIterTree input_width div_stages ;
+                fifoTree MulDivFifoCapacity RegIdx
               ]
             ]
           ]
       | IterMul_SharedIterDiv =>
           [
-            fifoTree dom mulCapacity MulDivReq ;
+            fifoTree mulCapacity MulDivReq ;
             Node "engine" [
-              sharedIterTree dom input_width mul_stages div_stages ;
-              fifoTree dom MulDivFifoCapacity RegIdx
+              sharedIterTree input_width mul_stages div_stages ;
+              fifoTree MulDivFifoCapacity RegIdx
             ]
           ]
       end).
@@ -832,22 +830,22 @@ Section ModeParameterizedSubsystem.
     Action ty (implMulDivTree mode) Bool :=
     match mode as m return Action ty (implMulDivTree m) Bool with
     | PipelinedMul_IterDiv =>
-        liftAction child0Path (liftAction child0Path (@isFull dom mulCapacity MulReq ty))
+        liftAction child0Path (liftAction child0Path (@isFull mulCapacity MulReq ty))
     | IterMul_SeparateIterDiv =>
-        liftAction child0Path (liftAction child0Path (@isFull dom mulCapacity MulReq ty))
+        liftAction child0Path (liftAction child0Path (@isFull mulCapacity MulReq ty))
     | IterMul_SharedIterDiv =>
-        liftAction child0Path (@isFull dom mulCapacity MulDivReq ty)
+        liftAction child0Path (@isFull mulCapacity MulDivReq ty)
     end.
 
   Definition mulDivIsFullDiv (mode : MulDivMode) (ty : Kind -> Type) :
     Action ty (implMulDivTree mode) Bool :=
     match mode as m return Action ty (implMulDivTree m) Bool with
     | PipelinedMul_IterDiv =>
-        liftAction child1Path (liftAction child0Path (@isFull dom divCapacity DivReq ty))
+        liftAction child1Path (liftAction child0Path (@isFull divCapacity DivReq ty))
     | IterMul_SeparateIterDiv =>
-        liftAction child1Path (liftAction child0Path (@isFull dom divCapacity DivReq ty))
+        liftAction child1Path (liftAction child0Path (@isFull divCapacity DivReq ty))
     | IterMul_SharedIterDiv =>
-        liftAction child0Path (@isFull dom mulCapacity MulDivReq ty)
+        liftAction child0Path (@isFull mulCapacity MulDivReq ty)
     end.
 
   Definition mulDivEnqMul (mode : MulDivMode) (ty : Kind -> Type)
@@ -860,14 +858,14 @@ Section ModeParameterizedSubsystem.
           "op1"    ::= #op1 ;
           "mulOp"  ::= #mulOp
         } ;
-        liftAction child0Path (liftAction child0Path (@enq dom mulCapacity MulReq ty req))
+        liftAction child0Path (liftAction child0Path (@enq mulCapacity MulReq ty req))
     | IterMul_SeparateIterDiv =>
         Let req : MulReq <- STRUCT {
           "dstIdx" ::= #dstIdx ;
           "op1"    ::= #op1 ;
           "mulOp"  ::= #mulOp
         } ;
-        liftAction child0Path (liftAction child0Path (@enq dom mulCapacity MulReq ty req))
+        liftAction child0Path (liftAction child0Path (@enq mulCapacity MulReq ty req))
     | IterMul_SharedIterDiv =>
         Let mulDivOp : MulDivUnion <- UNION (MulDivType, "Mul" ::= #mulOp) ;
         Let req : MulDivReq <- STRUCT {
@@ -875,7 +873,7 @@ Section ModeParameterizedSubsystem.
           "op1"      ::= #op1 ;
           "mulDivOp" ::= #mulDivOp
         } ;
-        liftAction child0Path (@enq dom mulCapacity MulDivReq ty req)
+        liftAction child0Path (@enq mulCapacity MulDivReq ty req)
     end.
 
   Definition mulDivEnqDiv (mode : MulDivMode) (ty : Kind -> Type)
@@ -888,14 +886,14 @@ Section ModeParameterizedSubsystem.
           "op1"    ::= #op1 ;
           "divOp"  ::= #divOp
         } ;
-        liftAction child1Path (liftAction child0Path (@enq dom divCapacity DivReq ty req))
+        liftAction child1Path (liftAction child0Path (@enq divCapacity DivReq ty req))
     | IterMul_SeparateIterDiv =>
         Let req : DivReq <- STRUCT {
           "dstIdx" ::= #dstIdx ;
           "op1"    ::= #op1 ;
           "divOp"  ::= #divOp
         } ;
-        liftAction child1Path (liftAction child0Path (@enq dom divCapacity DivReq ty req))
+        liftAction child1Path (liftAction child0Path (@enq divCapacity DivReq ty req))
     | IterMul_SharedIterDiv =>
         Let mulDivOp : MulDivUnion <- UNION (MulDivType, "Div" ::= #divOp) ;
         Let req : MulDivReq <- STRUCT {
@@ -903,7 +901,7 @@ Section ModeParameterizedSubsystem.
           "op1"      ::= #op1 ;
           "mulDivOp" ::= #mulDivOp
         } ;
-        liftAction child0Path (@enq dom mulCapacity MulDivReq ty req)
+        liftAction child0Path (@enq mulCapacity MulDivReq ty req)
     end.
 
   Definition implMulDivIfc (mode : MulDivMode) (ty : Kind -> Type) : @MulDivIfc ty := {|
@@ -919,9 +917,9 @@ Section ModeParameterizedSubsystem.
     match mode as m return list (Action ty (implMulDivTree m) (Bit 0)) with
     | PipelinedMul_IterDiv =>
         [
-          (LetA optReq : Option MulReq <- liftAction child0Path (liftAction child0Path (@first dom mulCapacity MulReq ty)) ;
-           LetA c1     : Bool          <- liftAction child0Path (liftAction child1Path (liftAction child0Path (mulPipeCanEnq dom input_width mul_stages ty))) ;
-           LetA f2     : Bool          <- liftAction child0Path (liftAction child1Path (liftAction child1Path (isFull dom MulDivFifoCapacity RegIdx ty))) ;
+          (LetA optReq : Option MulReq <- liftAction child0Path (liftAction child0Path (@first mulCapacity MulReq ty)) ;
+           LetA c1     : Bool          <- liftAction child0Path (liftAction child1Path (liftAction child0Path (mulPipeCanEnq input_width mul_stages ty))) ;
+           LetA f2     : Bool          <- liftAction child0Path (liftAction child1Path (liftAction child1Path (isFull MulDivFifoCapacity RegIdx ty))) ;
            If (And [ #optReq`"valid" ; #c1 ; Not #f2 ]) Then (
              Let  req    : MulReq      <- #optReq`"data" ;
              Let  dst    : RegIdx      <- ##req`"dstIdx" ;
@@ -929,14 +927,14 @@ Section ModeParameterizedSubsystem.
              Let  op1    : Bit d       <- addrToBitD rawOp1 ;
              Let  mulOp  : MulOp       <- ##req`"mulOp" ;
              LetL mInp   : MulInput d  <- decodeMulInput op1 mulOp ;
-             LetA _      : Bit 0       <- liftAction child0Path (liftAction child1Path (liftAction child0Path (mulPipeEnq dom mul_stages mInp))) ;
-             LetA _      : Bit 0       <- liftAction child0Path (liftAction child1Path (liftAction child1Path (enq dom MulDivFifoCapacity dst))) ;
-             liftAction child0Path (liftAction child0Path (@deq dom mulCapacity MulReq ty))
+             LetA _      : Bit 0       <- liftAction child0Path (liftAction child1Path (liftAction child0Path (mulPipeEnq mul_stages mInp))) ;
+             LetA _      : Bit 0       <- liftAction child0Path (liftAction child1Path (liftAction child1Path (enq MulDivFifoCapacity dst))) ;
+             liftAction child0Path (liftAction child0Path (@deq mulCapacity MulReq ty))
            ) ;
            Retv) ;
-          (LetA optReq : Option DivReq <- liftAction child1Path (liftAction child0Path (@first dom divCapacity DivReq ty)) ;
-           LetA c1     : Bool          <- liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterCanEnq dom input_width div_stages ty))) ;
-           LetA f2     : Bool          <- liftAction child1Path (liftAction child1Path (liftAction child1Path (isFull dom MulDivFifoCapacity RegIdx ty))) ;
+          (LetA optReq : Option DivReq <- liftAction child1Path (liftAction child0Path (@first divCapacity DivReq ty)) ;
+           LetA c1     : Bool          <- liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterCanEnq input_width div_stages ty))) ;
+           LetA f2     : Bool          <- liftAction child1Path (liftAction child1Path (liftAction child1Path (isFull MulDivFifoCapacity RegIdx ty))) ;
            If (And [ #optReq`"valid" ; #c1 ; Not #f2 ]) Then (
              Let  req    : DivReq      <- #optReq`"data" ;
              Let  dst    : RegIdx      <- ##req`"dstIdx" ;
@@ -944,17 +942,17 @@ Section ModeParameterizedSubsystem.
              Let  op1    : Bit d       <- addrToBitD rawOp1 ;
              Let  divOp  : DivOp       <- ##req`"divOp" ;
              LetL dInp   : DivInput d  <- decodeDivInput op1 divOp ;
-             LetA _      : Bit 0       <- liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterEnq dom div_stages dInp))) ;
-             LetA _      : Bit 0       <- liftAction child1Path (liftAction child1Path (liftAction child1Path (enq dom MulDivFifoCapacity dst))) ;
-             liftAction child1Path (liftAction child0Path (@deq dom divCapacity DivReq ty))
+             LetA _      : Bit 0       <- liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterEnq div_stages dInp))) ;
+             LetA _      : Bit 0       <- liftAction child1Path (liftAction child1Path (liftAction child1Path (enq MulDivFifoCapacity dst))) ;
+             liftAction child1Path (liftAction child0Path (@deq divCapacity DivReq ty))
            ) ;
            Retv)
         ]
     | IterMul_SeparateIterDiv =>
         [
-          (LetA optReq : Option MulReq <- liftAction child0Path (liftAction child0Path (@first dom mulCapacity MulReq ty)) ;
-           LetA c1     : Bool          <- liftAction child0Path (liftAction child1Path (liftAction child0Path (mulIterCanEnq dom input_width mul_stages ty))) ;
-           LetA f2     : Bool          <- liftAction child0Path (liftAction child1Path (liftAction child1Path (isFull dom MulDivFifoCapacity RegIdx ty))) ;
+          (LetA optReq : Option MulReq <- liftAction child0Path (liftAction child0Path (@first mulCapacity MulReq ty)) ;
+           LetA c1     : Bool          <- liftAction child0Path (liftAction child1Path (liftAction child0Path (mulIterCanEnq input_width mul_stages ty))) ;
+           LetA f2     : Bool          <- liftAction child0Path (liftAction child1Path (liftAction child1Path (isFull MulDivFifoCapacity RegIdx ty))) ;
            If (And [ #optReq`"valid" ; #c1 ; Not #f2 ]) Then (
              Let  req    : MulReq      <- #optReq`"data" ;
              Let  dst    : RegIdx      <- ##req`"dstIdx" ;
@@ -962,14 +960,14 @@ Section ModeParameterizedSubsystem.
              Let  op1    : Bit d       <- addrToBitD rawOp1 ;
              Let  mulOp  : MulOp       <- ##req`"mulOp" ;
              LetL mInp   : MulInput d  <- decodeMulInput op1 mulOp ;
-             LetA _      : Bit 0       <- liftAction child0Path (liftAction child1Path (liftAction child0Path (mulIterEnq dom mul_stages mInp))) ;
-             LetA _      : Bit 0       <- liftAction child0Path (liftAction child1Path (liftAction child1Path (enq dom MulDivFifoCapacity dst))) ;
-             liftAction child0Path (liftAction child0Path (@deq dom mulCapacity MulReq ty))
+             LetA _      : Bit 0       <- liftAction child0Path (liftAction child1Path (liftAction child0Path (mulIterEnq mul_stages mInp))) ;
+             LetA _      : Bit 0       <- liftAction child0Path (liftAction child1Path (liftAction child1Path (enq MulDivFifoCapacity dst))) ;
+             liftAction child0Path (liftAction child0Path (@deq mulCapacity MulReq ty))
            ) ;
            Retv) ;
-          (LetA optReq : Option DivReq <- liftAction child1Path (liftAction child0Path (@first dom divCapacity DivReq ty)) ;
-           LetA c1     : Bool          <- liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterCanEnq dom input_width div_stages ty))) ;
-           LetA f2     : Bool          <- liftAction child1Path (liftAction child1Path (liftAction child1Path (isFull dom MulDivFifoCapacity RegIdx ty))) ;
+          (LetA optReq : Option DivReq <- liftAction child1Path (liftAction child0Path (@first divCapacity DivReq ty)) ;
+           LetA c1     : Bool          <- liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterCanEnq input_width div_stages ty))) ;
+           LetA f2     : Bool          <- liftAction child1Path (liftAction child1Path (liftAction child1Path (isFull MulDivFifoCapacity RegIdx ty))) ;
            If (And [ #optReq`"valid" ; #c1 ; Not #f2 ]) Then (
              Let  req    : DivReq      <- #optReq`"data" ;
              Let  dst    : RegIdx      <- ##req`"dstIdx" ;
@@ -977,17 +975,17 @@ Section ModeParameterizedSubsystem.
              Let  op1    : Bit d       <- addrToBitD rawOp1 ;
              Let  divOp  : DivOp       <- ##req`"divOp" ;
              LetL dInp   : DivInput d  <- decodeDivInput op1 divOp ;
-             LetA _      : Bit 0       <- liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterEnq dom div_stages dInp))) ;
-             LetA _      : Bit 0       <- liftAction child1Path (liftAction child1Path (liftAction child1Path (enq dom MulDivFifoCapacity dst))) ;
-             liftAction child1Path (liftAction child0Path (@deq dom divCapacity DivReq ty))
+             LetA _      : Bit 0       <- liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterEnq div_stages dInp))) ;
+             LetA _      : Bit 0       <- liftAction child1Path (liftAction child1Path (liftAction child1Path (enq MulDivFifoCapacity dst))) ;
+             liftAction child1Path (liftAction child0Path (@deq divCapacity DivReq ty))
            ) ;
            Retv)
         ]
     | IterMul_SharedIterDiv =>
         [
-          (LetA optReq : Option MulDivReq <- liftAction child0Path (@first dom mulCapacity MulDivReq ty) ;
-           LetA c1     : Bool             <- liftAction child1Path (liftAction child0Path (sharedIterCanEnq dom input_width mul_stages div_stages ty)) ;
-           LetA f2     : Bool             <- liftAction child1Path (liftAction child1Path (isFull dom MulDivFifoCapacity RegIdx ty)) ;
+          (LetA optReq : Option MulDivReq <- liftAction child0Path (@first mulCapacity MulDivReq ty) ;
+           LetA c1     : Bool             <- liftAction child1Path (liftAction child0Path (sharedIterCanEnq input_width mul_stages div_stages ty)) ;
+           LetA f2     : Bool             <- liftAction child1Path (liftAction child1Path (isFull MulDivFifoCapacity RegIdx ty)) ;
            If (And [ #optReq`"valid" ; #c1 ; Not #f2 ]) Then (
              Let  req      : MulDivReq     <- #optReq`"data" ;
              Let  dst      : RegIdx        <- ##req`"dstIdx" ;
@@ -995,9 +993,9 @@ Section ModeParameterizedSubsystem.
              Let  op1      : Bit d         <- addrToBitD rawOp1 ;
              Let  mulDivOp : MulDivUnion   <- ##req`"mulDivOp" ;
              LetL sInp     : SharedInput d <- decodeSharedInput op1 mulDivOp ;
-             LetA _        : Bit 0         <- liftAction child1Path (liftAction child0Path (sharedIterEnq dom mul_stages div_stages sInp)) ;
-             LetA _        : Bit 0         <- liftAction child1Path (liftAction child1Path (enq dom MulDivFifoCapacity dst)) ;
-             liftAction child0Path (@deq dom mulCapacity MulDivReq ty)
+             LetA _        : Bit 0         <- liftAction child1Path (liftAction child0Path (sharedIterEnq mul_stages div_stages sInp)) ;
+             LetA _        : Bit 0         <- liftAction child1Path (liftAction child1Path (enq MulDivFifoCapacity dst)) ;
+             liftAction child0Path (@deq mulCapacity MulDivReq ty)
            ) ;
            Retv)
         ]
@@ -1007,13 +1005,13 @@ Section ModeParameterizedSubsystem.
     list (Action ty (implMulDivTree mode) (Bit 0)) :=
     match mode as m return list (Action ty (implMulDivTree m) (Bit 0)) with
     | PipelinedMul_IterDiv =>
-        map (fun r => liftAction child0Path (liftAction child1Path (liftAction child0Path r))) (mulPipeRules dom input_width mul_stages ty) ++
-        [ liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterStepRule dom input_width div_stages ty))) ]
+        map (fun r => liftAction child0Path (liftAction child1Path (liftAction child0Path r))) (mulPipeRules input_width mul_stages ty) ++
+        [ liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterStepRule input_width div_stages ty))) ]
     | IterMul_SeparateIterDiv =>
-        [ liftAction child0Path (liftAction child1Path (liftAction child0Path (mulIterStepRule dom input_width mul_stages ty))) ;
-          liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterStepRule dom input_width div_stages ty))) ]
+        [ liftAction child0Path (liftAction child1Path (liftAction child0Path (mulIterStepRule input_width mul_stages ty))) ;
+          liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterStepRule input_width div_stages ty))) ]
     | IterMul_SharedIterDiv =>
-        [ liftAction child1Path (liftAction child0Path (sharedIterStepRule dom input_width mul_stages div_stages ty)) ]
+        [ liftAction child1Path (liftAction child0Path (sharedIterStepRule input_width mul_stages div_stages ty)) ]
     end.
 
   Definition MulDivWbResp : Kind :=
@@ -1026,14 +1024,14 @@ Section ModeParameterizedSubsystem.
     Action ty (implMulDivTree mode) (Option MulDivWbResp) :=
     match mode as m return Action ty (implMulDivTree m) (Option MulDivWbResp) with
     | PipelinedMul_IterDiv =>
-        LetA optOut : Option (MulOutput d) <- liftAction child0Path (liftAction child1Path (liftAction child0Path (mulPipeFirst dom input_width mul_stages ty))) ;
-        LetA optDst : Option RegIdx         <- liftAction child0Path (liftAction child1Path (liftAction child1Path (first dom MulDivFifoCapacity RegIdx ty))) ;
+        LetA optOut : Option (MulOutput d) <- liftAction child0Path (liftAction child1Path (liftAction child0Path (mulPipeFirst input_width mul_stages ty))) ;
+        LetA optDst : Option RegIdx         <- liftAction child0Path (liftAction child1Path (liftAction child1Path (first MulDivFifoCapacity RegIdx ty))) ;
         LetIf resOpt : Option MulDivWbResp <-
           If (And [ #optOut`"valid" ; #optDst`"valid" ]) Then (
             Let out : MulOutput d <- #optOut`"data" ;
             Let dst : RegIdx       <- #optDst`"data" ;
-            LetA _ : Bit 0 <- liftAction child0Path (liftAction child1Path (liftAction child0Path (mulPipeDeq dom input_width mul_stages ty))) ;
-            LetA _ : Bit 0 <- liftAction child0Path (liftAction child1Path (liftAction child1Path (deq dom MulDivFifoCapacity RegIdx ty))) ;
+            LetA _ : Bit 0 <- liftAction child0Path (liftAction child1Path (liftAction child0Path (mulPipeDeq input_width mul_stages ty))) ;
+            LetA _ : Bit 0 <- liftAction child0Path (liftAction child1Path (liftAction child1Path (deq MulDivFifoCapacity RegIdx ty))) ;
             Let wb : MulDivWbResp <- STRUCT {
               "dst" ::= #dst ;
               "res" ::= ##out`"res"
@@ -1044,14 +1042,14 @@ Section ModeParameterizedSubsystem.
           ) ;
         Return #resOpt
     | IterMul_SeparateIterDiv =>
-        LetA optOut : Option (MulOutput d) <- liftAction child0Path (liftAction child1Path (liftAction child0Path (mulIterFirst dom input_width mul_stages ty))) ;
-        LetA optDst : Option RegIdx         <- liftAction child0Path (liftAction child1Path (liftAction child1Path (first dom MulDivFifoCapacity RegIdx ty))) ;
+        LetA optOut : Option (MulOutput d) <- liftAction child0Path (liftAction child1Path (liftAction child0Path (mulIterFirst input_width mul_stages ty))) ;
+        LetA optDst : Option RegIdx         <- liftAction child0Path (liftAction child1Path (liftAction child1Path (first MulDivFifoCapacity RegIdx ty))) ;
         LetIf resOpt : Option MulDivWbResp <-
           If (And [ #optOut`"valid" ; #optDst`"valid" ]) Then (
             Let out : MulOutput d <- #optOut`"data" ;
             Let dst : RegIdx       <- #optDst`"data" ;
-            LetA _ : Bit 0 <- liftAction child0Path (liftAction child1Path (liftAction child0Path (mulIterDeq dom input_width mul_stages ty))) ;
-            LetA _ : Bit 0 <- liftAction child0Path (liftAction child1Path (liftAction child1Path (deq dom MulDivFifoCapacity RegIdx ty))) ;
+            LetA _ : Bit 0 <- liftAction child0Path (liftAction child1Path (liftAction child0Path (mulIterDeq input_width mul_stages ty))) ;
+            LetA _ : Bit 0 <- liftAction child0Path (liftAction child1Path (liftAction child1Path (deq MulDivFifoCapacity RegIdx ty))) ;
             Let wb : MulDivWbResp <- STRUCT {
               "dst" ::= #dst ;
               "res" ::= ##out`"res"
@@ -1062,14 +1060,14 @@ Section ModeParameterizedSubsystem.
           ) ;
         Return #resOpt
     | IterMul_SharedIterDiv =>
-        LetA optOut : Option (SharedOutput d) <- liftAction child1Path (liftAction child0Path (sharedIterFirst dom input_width mul_stages div_stages ty)) ;
-        LetA optDst : Option RegIdx            <- liftAction child1Path (liftAction child1Path (first dom MulDivFifoCapacity RegIdx ty)) ;
+        LetA optOut : Option (SharedOutput d) <- liftAction child1Path (liftAction child0Path (sharedIterFirst input_width mul_stages div_stages ty)) ;
+        LetA optDst : Option RegIdx            <- liftAction child1Path (liftAction child1Path (first MulDivFifoCapacity RegIdx ty)) ;
         LetIf resOpt : Option MulDivWbResp <-
           If (And [ #optOut`"valid" ; #optDst`"valid" ]) Then (
             Let out : SharedOutput d <- #optOut`"data" ;
             Let dst : RegIdx          <- #optDst`"data" ;
-            LetA _ : Bit 0 <- liftAction child1Path (liftAction child0Path (sharedIterDeq dom input_width mul_stages div_stages ty)) ;
-            LetA _ : Bit 0 <- liftAction child1Path (liftAction child1Path (deq dom MulDivFifoCapacity RegIdx ty)) ;
+            LetA _ : Bit 0 <- liftAction child1Path (liftAction child0Path (sharedIterDeq input_width mul_stages div_stages ty)) ;
+            LetA _ : Bit 0 <- liftAction child1Path (liftAction child1Path (deq MulDivFifoCapacity RegIdx ty)) ;
             Let wb : MulDivWbResp <- STRUCT {
               "dst" ::= #dst ;
               "res" ::= ##out`"res"
@@ -1083,14 +1081,14 @@ Section ModeParameterizedSubsystem.
     Action ty (implMulDivTree mode) (Option MulDivWbResp) :=
     match mode as m return Action ty (implMulDivTree m) (Option MulDivWbResp) with
     | PipelinedMul_IterDiv =>
-        LetA optOut : Option (DivOutput d) <- liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterFirst dom input_width div_stages ty))) ;
-        LetA optDst : Option RegIdx         <- liftAction child1Path (liftAction child1Path (liftAction child1Path (first dom MulDivFifoCapacity RegIdx ty))) ;
+        LetA optOut : Option (DivOutput d) <- liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterFirst input_width div_stages ty))) ;
+        LetA optDst : Option RegIdx         <- liftAction child1Path (liftAction child1Path (liftAction child1Path (first MulDivFifoCapacity RegIdx ty))) ;
         LetIf resOpt : Option MulDivWbResp <-
           If (And [ #optOut`"valid" ; #optDst`"valid" ]) Then (
             Let out : DivOutput d <- #optOut`"data" ;
             Let dst : RegIdx       <- #optDst`"data" ;
-            LetA _ : Bit 0 <- liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterDeq dom input_width div_stages ty))) ;
-            LetA _ : Bit 0 <- liftAction child1Path (liftAction child1Path (liftAction child1Path (deq dom MulDivFifoCapacity RegIdx ty))) ;
+            LetA _ : Bit 0 <- liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterDeq input_width div_stages ty))) ;
+            LetA _ : Bit 0 <- liftAction child1Path (liftAction child1Path (liftAction child1Path (deq MulDivFifoCapacity RegIdx ty))) ;
             Let wb : MulDivWbResp <- STRUCT {
               "dst" ::= #dst ;
               "res" ::= ##out`"res"
@@ -1101,14 +1099,14 @@ Section ModeParameterizedSubsystem.
           ) ;
         Return #resOpt
     | IterMul_SeparateIterDiv =>
-        LetA optOut : Option (DivOutput d) <- liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterFirst dom input_width div_stages ty))) ;
-        LetA optDst : Option RegIdx         <- liftAction child1Path (liftAction child1Path (liftAction child1Path (first dom MulDivFifoCapacity RegIdx ty))) ;
+        LetA optOut : Option (DivOutput d) <- liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterFirst input_width div_stages ty))) ;
+        LetA optDst : Option RegIdx         <- liftAction child1Path (liftAction child1Path (liftAction child1Path (first MulDivFifoCapacity RegIdx ty))) ;
         LetIf resOpt : Option MulDivWbResp <-
           If (And [ #optOut`"valid" ; #optDst`"valid" ]) Then (
             Let out : DivOutput d <- #optOut`"data" ;
             Let dst : RegIdx       <- #optDst`"data" ;
-            LetA _ : Bit 0 <- liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterDeq dom input_width div_stages ty))) ;
-            LetA _ : Bit 0 <- liftAction child1Path (liftAction child1Path (liftAction child1Path (deq dom MulDivFifoCapacity RegIdx ty))) ;
+            LetA _ : Bit 0 <- liftAction child1Path (liftAction child1Path (liftAction child0Path (divIterDeq input_width div_stages ty))) ;
+            LetA _ : Bit 0 <- liftAction child1Path (liftAction child1Path (liftAction child1Path (deq MulDivFifoCapacity RegIdx ty))) ;
             Let wb : MulDivWbResp <- STRUCT {
               "dst" ::= #dst ;
               "res" ::= ##out`"res"
@@ -1125,18 +1123,17 @@ Section ModeParameterizedSubsystem.
 End ModeParameterizedSubsystem.
 
 Section MulDivCoreRules.
-  Variable dom : string.
   Variable mulCapacity divCapacity : nat.
   Variable mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
   Variable pcAddrInit : Z.
-  Variable bpTree memTree fetchTree decodeTree executeTree dataMemTree : Tree DomainElem.
+  Variable bpTree memTree fetchTree decodeTree executeTree dataMemTree : Tree Elem.
   Variable ty : Kind -> Type.
 
-  Local Abbreviation rfTree := (rfTree dom pcAddrInit).
-  Local Abbreviation mdTree := (implMulDivTree dom mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode).
-  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree decodeTree executeTree dataMemTree mdTree).
-  Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
+  Local Abbreviation rfTree := (rfTree pcAddrInit).
+  Local Abbreviation mdTree := (implMulDivTree mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode).
+  Local Abbreviation coreTree := (coreTree rfTree bpTree memTree fetchTree decodeTree executeTree dataMemTree mdTree).
+  Local Abbreviation gprPathsWithKind := (gprPathsWithKind pcAddrInit).
 
   Definition np_mulDiv_rf : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.rf.").
@@ -1151,17 +1148,17 @@ Section MulDivCoreRules.
     If (isNotZero #dstIdx) Then (
       Let waitFalse : Bool <- ConstBool false ;
       Act (liftAction np_mulDiv_rf (writeRegsList gprPathsWithKind #dstIdx #dstVal)) ;
-      liftAction np_mulDiv_waitBits (@writeGprWaitBit dom ty dstIdx waitFalse)
+      liftAction np_mulDiv_waitBits (@writeGprWaitBit ty dstIdx waitFalse)
     ) ;
     Retv.
 
   Definition mulDivIssueCoreRules : list (Action ty coreTree (Bit 0)) :=
     map (fun a => liftAction np_mulDiv a)
-        (@mulDivIssueRules dom mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode ty).
+        (@mulDivIssueRules mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode ty).
 
   Definition mulDivStageRules : list (Action ty coreTree (Bit 0)) :=
     map (fun a => liftAction np_mulDiv a)
-        (@mulDivAllStageRules dom mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode ty).
+        (@mulDivAllStageRules mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode ty).
 
   Local Definition mulDivWriteBack
     (popResp : Action ty mdTree (Option (MulDivWbResp (Z.to_nat Xlen))))
@@ -1181,10 +1178,10 @@ Section MulDivCoreRules.
     Retv.
 
   Definition mulWriteBack : Action ty coreTree (Bit 0) :=
-    mulDivWriteBack (@mulDivPopMulResp dom mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode ty).
+    mulDivWriteBack (@mulDivPopMulResp mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode ty).
 
   Definition divWriteBack : Action ty coreTree (Bit 0) :=
-    mulDivWriteBack (@mulDivPopDivResp dom mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode ty).
+    mulDivWriteBack (@mulDivPopDivResp mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode ty).
 
   Definition mulDivWriteBackRules : list (Action ty coreTree (Bit 0)) :=
     mulWriteBack ::

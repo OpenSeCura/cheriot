@@ -395,16 +395,15 @@ Section Alu.
 End Alu.
 
 Section AluRF.
-  Variable dom : string.
   Variable pcAddrInit : Z.
   Variable ty : Kind -> Type.
-  Local Abbreviation rfTree := (rfTree dom pcAddrInit).
-  Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
-  Local Abbreviation scrPathsWithKind := (scrPathsWithKind dom pcAddrInit).
-  Local Abbreviation csrPathsWithKind := (csrPathsWithKind dom pcAddrInit).
-  Local Abbreviation incrementMinstret := (incrementMinstret dom pcAddrInit).
-  Local Abbreviation incrementMcycle := (incrementMcycle dom pcAddrInit).
-  Local Abbreviation updateMshwmOnStore := (updateMshwmOnStore dom pcAddrInit).
+  Local Abbreviation rfTree := (rfTree pcAddrInit).
+  Local Abbreviation gprPathsWithKind := (gprPathsWithKind pcAddrInit).
+  Local Abbreviation scrPathsWithKind := (scrPathsWithKind pcAddrInit).
+  Local Abbreviation csrPathsWithKind := (csrPathsWithKind pcAddrInit).
+  Local Abbreviation incrementMinstret := (incrementMinstret pcAddrInit).
+  Local Abbreviation incrementMcycle := (incrementMcycle pcAddrInit).
+  Local Abbreviation updateMshwmOnStore := (updateMshwmOnStore pcAddrInit).
 
   Definition isInterruptPending (meip mtip : ty Bool) : Action ty rfTree Bool :=
     LetA mstatus     : Bit Xlen <- readRegsList csrPathsWithKind

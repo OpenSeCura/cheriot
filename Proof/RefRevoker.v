@@ -37,28 +37,27 @@ Local Open Scope guru_scope.
  * 3. the impl revoker inside the impl memory (`revOfR`, `setRevR`) and a characterization
  *    of each rule (`*_char`): either nothing changes, or the listed registers change. *)
 
-Local Abbreviation TS t := (TreeState DomainElemState t).
+Local Abbreviation TS t := (TreeState ElemState t).
 
 (* --- 1. No Write Waiting in a Region's portRq --- *)
 
 Section NoPortWrite.
-  Variable core : string.
 
-  Definition regionNoPortWriteB (r : MemRegion) : TS (implMemRegionTree core r) -> bool :=
-    match r.(regionKind) as k return TS (implMemRegionKindTree core r k) -> bool with
-    | ExternalMem => fun y => negb (andb (optValid (extPortRq core r y)) (prIsWrite (optData (extPortRq core r y))))
+  Definition regionNoPortWriteB (r : MemRegion) : TS (implMemRegionTree r) -> bool :=
+    match r.(regionKind) as k return TS (implMemRegionKindTree r k) -> bool with
+    | ExternalMem => fun y => negb (andb (optValid (extPortRq r y)) (prIsWrite (optData (extPortRq r y))))
     | CustomMem _ _ _ _ => fun _ => true
     end.
 
-  Fixpoint noPortWriteB (l : list MemRegion) : TS (implRegionsTree core l) -> bool :=
-    match l as l0 return TS (implRegionsTree core l0) -> bool with
+  Fixpoint noPortWriteB (l : list MemRegion) : TS (implRegionsTree l) -> bool :=
+    match l as l0 return TS (implRegionsTree l0) -> bool with
     | [] => fun _ => true
     | r :: l' => fun mi => andb (regionNoPortWriteB r mi.(Fst)) (noPortWriteB l' mi.(Snd).(Fst))
     end.
 
   Lemma regionNoPortWrite_wp :
-    forall r env (y : TS (implMemRegionTree core r)) P,
-      evalActionPropGen env (@implMemRegionNoPortWriteRq core r type) y P <-> P y (regionNoPortWriteB r y).
+    forall r env (y : TS (implMemRegionTree r)) P,
+      evalActionPropGen env (@implMemRegionNoPortWriteRq r type) y P <-> P y (regionNoPortWriteB r y).
   Proof.
     intros r; destruct r as [nm bs sz kd im ba sa]; destruct kd; intros env y P.
     - unfold implMemRegionNoPortWriteRq, regionNoPortWriteB, implExternalNoPortWriteRq; cbn.
@@ -67,9 +66,9 @@ Section NoPortWrite.
   Qed.
 
   Lemma noPortWrite_fold :
-    forall l acc (mi : TS (implRegionsTree core l)) env P,
+    forall l acc (mi : TS (implRegionsTree l)) env P,
       evalActionPropGen env
-        (genFoldRegionActionsAux (implMemRegionTree core) (fun r => @implMemRegionNoPortWriteRq core r type)
+        (genFoldRegionActionsAux implMemRegionTree (fun r => @implMemRegionNoPortWriteRq r type)
            (@And _ _) acc l) mi P <->
       P mi (andb (fold_left andb (map (@evalExpr Bool) (rev acc)) true) (noPortWriteB l mi)).
   Proof.
@@ -90,8 +89,8 @@ Section NoPortWrite.
   Qed.
 
   Lemma noPortWrite_wp :
-    forall l env (m : TS (implMemTree core l)) P,
-      evalActionPropGen env (liftAction child0Path (@implRegionsNoPortWriteRq core type l)) m P <->
+    forall l env (m : TS (implMemTree l)) P,
+      evalActionPropGen env (liftAction child0Path (@implRegionsNoPortWriteRq type l)) m P <->
       P m (noPortWriteB l m.(Fst)).
   Proof.
     intros l env m P.
@@ -105,8 +104,8 @@ Section NoPortWrite.
 
   (* No staged request at all: no staged write *)
   Lemma noPortWriteB_true :
-    forall l (mi : TS (implRegionsTree core l)),
-      AllPorts core (fun r y => optValid (extPortRq core r y) = false) l mi -> noPortWriteB l mi = true.
+    forall l (mi : TS (implRegionsTree l)),
+      AllPorts (fun r y => optValid (extPortRq r y) = false) l mi -> noPortWriteB l mi = true.
   Proof.
     intros l; induction l as [| r l IH]; intros mi H; cbn [AllPorts noPortWriteB] in *; [reflexivity |].
     destruct H as [H0 H1]; rewrite (IH _ H1), andb_true_r.
@@ -117,9 +116,9 @@ Section NoPortWrite.
 
   (* A write staged in the ExternalMem region of line `L` *)
   Lemma noPortWriteB_false :
-    forall L w l (mi : TS (implRegionsTree core l)),
+    forall L w l (mi : TS (implRegionsTree l)),
       lineKind l L = Some true ->
-      AllPorts core (fun r y => isRegionAddrB r L = true -> extPortRq core r y = someWrite w) l mi ->
+      AllPorts (fun r y => isRegionAddrB r L = true -> extPortRq r y = someWrite w) l mi ->
       noPortWriteB l mi = false.
   Proof.
     intros L w l; induction l as [| r l IH]; intros mi Hk H; cbn [AllPorts noPortWriteB lineKind] in *;
@@ -213,41 +212,40 @@ Definition scanNext (sa : bits TagAddrWidth) : bits TagAddrWidth := evalExpr (Ad
 (* --- 3. The Impl Revoker Inside the Impl Memory --- *)
 
 Section RevLens.
-  Variable core : string.
   Variable config : RevConfig.
   Variables pre post : list MemRegion.
   Variable revBase : Z.
   Variable revPfB : Is_true ((0 <=? revBase) && (revBase + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z.
   Variable revPfA : Is_true (revBase mod (2 ^ LgLineBytes) =? 0)%Z.
 
-  Local Abbreviation implRegions := (implRegionsOf core pre post revBase revPfB revPfA).
-  Local Abbreviation iRevR := (implRevRegion core revBase revPfB revPfA).
+  Local Abbreviation implRegions := (implRegionsOf pre post revBase revPfB revPfA).
+  Local Abbreviation iRevR := (implRevRegion revBase revPfB revPfA).
   Local Abbreviation pfI := (nth_error_app_cons_len pre iRevR post).
-  Local Abbreviation revI := (revImplOf core pre post revBase revPfB revPfA).
-  Local Abbreviation MT := (implMemTree core implRegions).
-  Local Abbreviation RT := (implRegionsTree core implRegions).
+  Local Abbreviation revI := (revImplOf pre post revBase revPfB revPfA).
+  Local Abbreviation MT := (implMemTree implRegions).
+  Local Abbreviation RT := (implRegionsTree implRegions).
 
-  Definition revOfR (mr : TS RT) : TS (implRevokerTree core) :=
-    (regionStateAt (implMemRegionTree core) (length pre) implRegions iRevR pfI mr).(Fst).
+  Definition revOfR (mr : TS RT) : TS implRevokerTree :=
+    (regionStateAt implMemRegionTree (length pre) implRegions iRevR pfI mr).(Fst).
 
-  Definition setRevR (mr : TS RT) (x : TS (implRevokerTree core)) : TS RT :=
-    updRegionStateAt (implMemRegionTree core) (length pre) implRegions iRevR pfI mr
-      (x ,, (regionStateAt (implMemRegionTree core) (length pre) implRegions iRevR pfI mr).(Snd)).
+  Definition setRevR (mr : TS RT) (x : TS implRevokerTree) : TS RT :=
+    updRegionStateAt implMemRegionTree (length pre) implRegions iRevR pfI mr
+      (x ,, (regionStateAt implMemRegionTree (length pre) implRegions iRevR pfI mr).(Snd)).
 
-  Definition envRevOf (env : Env MT) (m : TS MT) : Env (implRevokerTree core) :=
+  Definition envRevOf (env : Env MT) (m : TS MT) : Env implRevokerTree :=
     subEnv child0Path
-      (envRegionAt (implMemRegionTree core) (length pre) implRegions iRevR pfI (subEnv child0Path env m) m.(Fst))
-      (regionStateAt (implMemRegionTree core) (length pre) implRegions iRevR pfI m.(Fst)).
+      (envRegionAt implMemRegionTree (length pre) implRegions iRevR pfI (subEnv child0Path env m) m.(Fst))
+      (regionStateAt implMemRegionTree (length pre) implRegions iRevR pfI m.(Fst)).
 
   Lemma evalActionPropGen_liftRev :
-    forall env k (a : Action type (implRevokerTree core) k) (m : TS MT) P,
-      evalActionPropGen env (@implNthRegionAction core type (length pre) implRegions iRevR pfI k a) m P <->
+    forall env k (a : Action type implRevokerTree k) (m : TS MT) P,
+      evalActionPropGen env (@implNthRegionAction type (length pre) implRegions iRevR pfI k a) m P <->
       evalActionPropGen (envRevOf env m) a (revOfR m.(Fst)) (fun x v => P (setRevR m.(Fst) x ,, m.(Snd)) v).
   Proof.
     intros env k a m P.
     unfold implNthRegionAction, implRegionsNthRegionAction, liftToImplRegion.
     refine (iff_trans (evalActionPropGen_liftAction child0Path _ m P) _).
-    refine (iff_trans (evalActionPropGen_genNthRegionAction (implMemRegionTree core) (length pre) implRegions iRevR pfI _ _ _ _) _).
+    refine (iff_trans (evalActionPropGen_genNthRegionAction implMemRegionTree (length pre) implRegions iRevR pfI _ _ _ _) _).
     refine (iff_trans (evalActionPropGen_liftAction child0Path _ _ _) _).
     destruct m as [mr mrest].
     cbn [child0Path readSubTreeState readSubTreeState_child writeSubTreeState writeSubTreeState_child Fst Snd].
@@ -298,10 +296,10 @@ Section RevLens.
   Lemma waitRevBitRq_char :
     forall env mr mst mrq mrp m' v b t c e ist ir sa st ph sc sb sh,
       revOfR mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ->
-      SemAction env (@implRevokerWaitRevBitRqStep core config implRegions type revI)
+      SemAction env (@implRevokerWaitRevBitRqStep config implRegions type revI)
         (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) m' v ->
       m' = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) \/
-      (rpWaitRevBitRq ph = true /\ msIdle mst = true /\ noPortWriteB core implRegions mr = true /\
+      (rpWaitRevBitRq ph = true /\ msIdle mst = true /\ noPortWriteB implRegions mr = true /\
        exists st' rq' ph',
          m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,,
                (st' ,, (rq' ,, (mrp ,, tt)))) /\
@@ -325,7 +323,7 @@ Section RevLens.
     2: { left; destruct H as [H _]; symmetry; exact H. }
     rev_lens H Ex.
     destruct H as [H _]; subst m'.
-    assert (Hr : andb (msIdle mst) (noPortWriteB core implRegions mr) = true) by exact Erdy.
+    assert (Hr : andb (msIdle mst) (noPortWriteB implRegions mr) = true) by exact Erdy.
     apply andb_prop in Hr as [Hi Hn].
     right; split; [exact Eph | split; [exact Hi | split; [exact Hn |]]].
     do 3 eexists; split; [reflexivity |].
@@ -336,24 +334,24 @@ Section RevLens.
   Lemma idle_char :
     forall env mr mst mrq mrp m' v b t c e ist ir sa st ph sc sb sh,
       revOfR mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ->
-      SemAction env (@implRevokerIdleStep core implRegions type revI) (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) m' v ->
+      SemAction env (@implRevokerIdleStep implRegions type revI) (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) m' v ->
       m' = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) \/
-      (andb (negb (msWriteRq mst)) (noPortWriteB core implRegions mr) = true /\ rpIdle ph = true /\
+      (andb (negb (msWriteRq mst)) (noPortWriteB implRegions mr) = true /\ rpIdle ph = true /\
        epochOdd e = true /\ scanDone sa st = false /\ msIdle mst = true /\
        exists st' rq' ph',
          m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (false ,, tt)))))))))))) ,,
                (st' ,, (rq' ,, (mrp ,, tt)))) /\
          msReadRq st' = true /\ msReadRqV st' = stepOf false (scanFull sa) capSz (getDefault CapPacket) /\
          isReqRevoker rq' = true /\ rpWaitCapRp ph' = true) \/
-      (andb (negb (msWriteRq mst)) (noPortWriteB core implRegions mr) = true /\ rpIdle ph = true /\
+      (andb (negb (msWriteRq mst)) (noPortWriteB implRegions mr) = true /\ rpIdle ph = true /\
        epochOdd e = true /\ scanDone sa st = true /\
        m' = (setRevR mr (b ,, (t ,, (c ,, (epochInc e ,, ((if ir then true else ist) ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,,
              (mst ,, (mrq ,, (mrp ,, tt))))) \/
-      (andb (negb (msWriteRq mst)) (noPortWriteB core implRegions mr) = true /\ rpIdle ph = true /\
+      (andb (negb (msWriteRq mst)) (noPortWriteB implRegions mr) = true /\ rpIdle ph = true /\
        epochOdd e = false /\ c = true /\
        m' = (setRevR mr (b ,, (t ,, (false ,, (epochMkOdd e ,, (false ,, (ir ,, (b ,, (t ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,,
              (mst ,, (mrq ,, (mrp ,, tt))))) \/
-      (andb (negb (msWriteRq mst)) (noPortWriteB core implRegions mr) = true /\ rpIdle ph = true /\
+      (andb (negb (msWriteRq mst)) (noPortWriteB implRegions mr) = true /\ rpIdle ph = true /\
        epochOdd e = false /\ c = false /\
        m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (false ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,,
              (mst ,, (mrq ,, (mrp ,, tt))))).
@@ -366,7 +364,7 @@ Section RevLens.
     apply noPortWrite_wp in H; rev_cbn H; rewrite ?evalExpr_Var in H.
     match type of H with context [if ?c then _ else _] => destruct c eqn:Enpw end.
     2: { left; destruct H as [H _]; symmetry; exact H. }
-    assert (Hnp : andb (negb (msWriteRq mst)) (noPortWriteB core implRegions mr) = true) by exact Enpw.
+    assert (Hnp : andb (negb (msWriteRq mst)) (noPortWriteB implRegions mr) = true) by exact Enpw.
     clear Enpw.
     unfold implRevokerIdle, ImplDevice.liftRevoker in H; cbn [evalActionPropGen] in H.
     rev_lens H Ex; rewrite ?evalExpr_Var in H.
@@ -381,7 +379,7 @@ Section RevLens.
         apply noPortWrite_wp in H; rev_cbn H; rewrite ?evalExpr_Var in H.
         match type of H with context [if ?c then _ else _] => destruct c eqn:Erdy end.
         2: { left; destruct H as [H _]; symmetry; exact H. }
-        assert (Hr : andb (msIdle mst) (noPortWriteB core implRegions mr) = true) by exact Erdy.
+        assert (Hr : andb (msIdle mst) (noPortWriteB implRegions mr) = true) by exact Erdy.
         apply andb_prop in Hr as [Hi _].
         rev_lens H Ex; rev_lens H Ex.
         destruct H as [H _]; subst m'.
@@ -424,7 +422,7 @@ Section RevLens.
   Lemma waitCapRp_char :
     forall env mr mst mrq mrp m' v b t c e ist ir sa st ph sc sb sh,
       revOfR mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ->
-      SemAction env (@implRevokerWaitCapRpStep core config implRegions type revI)
+      SemAction env (@implRevokerWaitCapRpStep config implRegions type revI)
         (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) m' v ->
       m' = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) \/
       (rpWaitCapRp ph = true /\ msReadRpReady mst = true /\ isReqRevoker mrq = true /\
@@ -474,7 +472,7 @@ Section RevLens.
   Lemma waitRevBitRp_char :
     forall env mr mst mrq mrp m' v b t c e ist ir sa st ph sc sb sh,
       revOfR mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ->
-      SemAction env (@implRevokerWaitRevBitRpStep core config implRegions type revI)
+      SemAction env (@implRevokerWaitRevBitRpStep config implRegions type revI)
         (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) m' v ->
       m' = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) \/
       (rpWaitRevBitRp ph = true /\ msReadRpReady mst = true /\ isReqRevoker mrq = true /\
@@ -533,13 +531,13 @@ Section RevLens.
   Lemma writeCap_char :
     forall env mr mst mrq mrp m' v b t c e ist ir sa st ph sc sb sh,
       revOfR mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ->
-      SemAction env (@implRevokerWriteCapStep core implRegions type revI)
+      SemAction env (@implRevokerWriteCapStep implRegions type revI)
         (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) m' v ->
       m' = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) \/
       (rpWriteCap ph = true /\ sh = true /\
        exists ph', rpIdle ph' = true /\
          m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,, (mst ,, (mrq ,, (mrp ,, tt))))) \/
-      (rpWriteCap ph = true /\ sh = false /\ msIdle mst = true /\ noPortWriteB core implRegions mr = true /\
+      (rpWriteCap ph = true /\ sh = false /\ msIdle mst = true /\ noPortWriteB implRegions mr = true /\
        exists st' ph',
          m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (scanNext sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,, (st' ,, (mrq ,, (mrp ,, tt)))) /\
          msWriteRq st' = true /\
@@ -565,7 +563,7 @@ Section RevLens.
       apply noPortWrite_wp in H; rev_cbn H; rewrite ?evalExpr_Var in H.
       match type of H with context [if ?c then _ else _] => destruct c eqn:Erdy end.
       2: { left; destruct H as [H _]; symmetry; exact H. }
-      assert (Hr : andb (msIdle mst) (noPortWriteB core implRegions mr) = true) by exact Erdy.
+      assert (Hr : andb (msIdle mst) (noPortWriteB implRegions mr) = true) by exact Erdy.
       apply andb_prop in Hr as [Hi Hn].
       apply evalActionPropGen_toAction in H; rev_cbn H; rewrite ?evalExpr_Var in H.
       rev_lens H Ex; rev_lens H Ex.

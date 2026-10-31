@@ -24,7 +24,6 @@ Set Asymmetric Patterns.
 Import ListNotations.
 
 Section ShiftFifo.
-  Variable dom: string.
   Variable capacity: nat.
   Variable k: Kind.
 
@@ -34,16 +33,16 @@ Section ShiftFifo.
  * Shifting FIFO State Tree Definition
  * =========================================================================== *)
 
-  Definition elemLeaves : list (Tree DomainElem) :=
+  Definition elemLeaves : list (Tree Elem) :=
     map (fun idx =>
       Leaf ("elem_" ++ hex_string_of_Z (Z.of_nat idx))%string
-           (dom, EReg (Build_Reg k None false))
+           (EReg (Build_Reg k None))
     ) (seq 0 capacity).
 
-  Definition fifoTree : Tree DomainElem :=
+  Definition fifoTree : Tree Elem :=
     Node "fifo"
       [ Node "elems" elemLeaves;
-        Leaf "size" (dom, EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat (capacity + 1)))) (Some (getDefault _)) false)) ].
+        Leaf "size" (EReg (Build_Reg (Bit (Z.log2_up (Z.of_nat (capacity + 1)))) (Some (getDefault _)))) ].
 
   Definition np_elems : NodePath fifoTree :=
     Eval cbn in (getNodePath fifoTree "fifo.elems").

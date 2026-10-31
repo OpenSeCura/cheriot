@@ -21,7 +21,7 @@ From Cheriot.Proof Require Import TreeLemmas StateRel SimDevices RefRel RefRegio
 From Cheriot.Proof Require Import RefRevoker ImplSpec RefFetch.
 
 Import ListNotations.
-Local Abbreviation TS t := (TreeState DomainElemState t).
+Local Abbreviation TS t := (TreeState ElemState t).
 
 (* Milestone 4: the memory `state` machine and the region ports refine the spec.
  *
@@ -31,9 +31,8 @@ Local Abbreviation TS t := (TreeState DomainElemState t).
  *    one ExternalMem position steps and the others are unchanged (`rdRqPorts_step`). *)
 
 Section RdRqPortRegion.
-  Variable core : string.
 
-  Local Abbreviation ExtI r := (TS (implExternalMemRegionTree core r)).
+  Local Abbreviation ExtI r := (TS (implExternalMemRegionTree r)).
 
   (* The staged request of the region's data port: valid, a Read, and its address *)
   Definition portRqIsRead r (y : ExtI r) : bool :=
@@ -53,8 +52,8 @@ Section RdRqPortRegion.
         else y.(Snd).(Snd).(Snd))))).
 
   Lemma rdRqPort_cases :
-    forall r (env : Env (implExternalMemRegionTree core r)) (y y' : ExtI r) v,
-      SemAction env (@implExternalLineReadRqPort core r type) y y' v ->
+    forall r (env : Env (implExternalMemRegionTree r)) (y y' : ExtI r) v,
+      SemAction env (@implExternalLineReadRqPort r type) y y' v ->
       (portRqIsRead r y = false /\ y' = y) \/
       (portRqIsRead r y = true /\ exists rdy, y' = rdRqSent r y (portRqAddr r y) rdy).
   Proof.
@@ -72,7 +71,7 @@ Section RdRqPortRegion.
   Qed.
 
   Lemma extPortRq_someRead :
-    forall r (y : ExtI r) L, extPortRq core r y = someRead L -> portRqIsRead r y = true /\ portRqAddr r y = L.
+    forall r (y : ExtI r) L, extPortRq r y = someRead L -> portRqIsRead r y = true /\ portRqAddr r y = L.
   Proof.
     intros r y L H; unfold portRqIsRead, portRqAddr; unfold extPortRq in H; rewrite H.
     cbn; split; [reflexivity |].
@@ -88,11 +87,11 @@ Section RdRqPortRegion.
   Qed.
   (* What the relation reads from a region after its port sent a read *)
   Lemma implDataAccRqs_rdRqSent : forall r (y : ExtI r) L rdy,
-    implDataAccRqs core r (rdRqSent r y L rdy) = if rdy then L :: implDataAccRqs core r y else implDataAccRqs core r y.
+    implDataAccRqs r (rdRqSent r y L rdy) = if rdy then L :: implDataAccRqs r y else implDataAccRqs r y.
   Proof. intros r y L [|]; reflexivity. Qed.
 
   Lemma extPortRq_rdRqSent : forall r (y : ExtI r) L rdy,
-    extPortRq core r (rdRqSent r y L rdy) = if rdy then getDefault (Option PortRq) else extPortRq core r y.
+    extPortRq r (rdRqSent r y L rdy) = if rdy then getDefault (Option PortRq) else extPortRq r y.
   Proof. intros r y L [|]; reflexivity. Qed.
 
   Lemma rdRqSent_rps : forall r (y : ExtI r) L rdy,
@@ -104,23 +103,23 @@ Section RdRqPortRegion.
   Proof. split; reflexivity. Qed.
 
   Lemma implAccWrites_rdRqSent : forall r (y : ExtI r) L rdy,
-    implAccWrites core r (rdRqSent r y L rdy) = implAccWrites core r y.
+    implAccWrites r (rdRqSent r y L rdy) = implAccWrites r y.
   Proof. intros r y L [|]; reflexivity. Qed.
 
   Lemma ExtRel_rdRqSent : forall r x (y : ExtI r) L rdy,
-    ExtRel core r x y -> ExtRel core r x (rdRqSent r y L rdy).
+    ExtRel r x y -> ExtRel r x (rdRqSent r y L rdy).
   Proof. intros r x y L [|] H; exact H. Qed.
   (* One region's read-request port step *)
-  Definition RegionRdRqStep (r : MemRegion) : TS (implMemRegionTree core r) -> TS (implMemRegionTree core r) -> Prop :=
-    match r.(regionKind) as k return TS (implMemRegionKindTree core r k) -> TS (implMemRegionKindTree core r k) -> Prop with
+  Definition RegionRdRqStep (r : MemRegion) : TS (implMemRegionTree r) -> TS (implMemRegionTree r) -> Prop :=
+    match r.(regionKind) as k return TS (implMemRegionKindTree r k) -> TS (implMemRegionKindTree r k) -> Prop with
     | ExternalMem => fun y y' => (portRqIsRead r y = false /\ y' = y) \/
                                  (portRqIsRead r y = true /\ exists rdy, y' = rdRqSent r y (portRqAddr r y) rdy)
     | CustomMem _ _ _ _ => fun _ _ => False
     end.
 
   (* One position of the list takes a read-request port step, the others are unchanged *)
-  Fixpoint RdRqPortStepL (l : list MemRegion) : TS (implRegionsTree core l) -> TS (implRegionsTree core l) -> Prop :=
-    match l as l0 return TS (implRegionsTree core l0) -> TS (implRegionsTree core l0) -> Prop with
+  Fixpoint RdRqPortStepL (l : list MemRegion) : TS (implRegionsTree l) -> TS (implRegionsTree l) -> Prop :=
+    match l as l0 return TS (implRegionsTree l0) -> TS (implRegionsTree l0) -> Prop with
     | [] => fun _ _ => False
     | r :: rs => fun mi mi' =>
         (RegionRdRqStep r mi.(Fst) mi'.(Fst) /\ mi'.(Snd) = mi.(Snd)) \/
@@ -128,8 +127,8 @@ Section RdRqPortRegion.
     end.
 
   Lemma rdRqPorts_step :
-    forall l (aI : forall ty, Action ty (implRegionsTree core l) (Bit 0)) env mi mi' v,
-      In aI (implCollectLineReadRqPorts core l) ->
+    forall l (aI : forall ty, Action ty (implRegionsTree l) (Bit 0)) env mi mi' v,
+      In aI (implCollectLineReadRqPorts l) ->
       SemAction env (aI type) mi mi' v -> RdRqPortStepL l mi mi'.
   Proof.
     induction l as [| r rs IH]; intros aI env mi mi' v Hin Hsem; [destruct Hin |].
@@ -146,12 +145,12 @@ Section RdRqPortRegion.
   Qed.
   (* A request-port step leaves the port predicates that ignore the data requests and `portRq` *)
   Lemma RqInsensitive_rdRqSent :
-    forall P, RqInsensitive core P -> forall r (y : ExtI r) L rdy, P r (rdRqSent r y L rdy) = P r y.
+    forall P, RqInsensitive P -> forall r (y : ExtI r) L rdy, P r (rdRqSent r y L rdy) = P r y.
   Proof. intros P HP r y L rdy; apply HP; destruct rdy; reflexivity. Qed.
 
   Lemma AllPorts_rdRqStep :
-    forall P, RqInsensitive core P ->
-      forall l mi mi', RdRqPortStepL l mi mi' -> AllPorts core P l mi' = AllPorts core P l mi.
+    forall P, RqInsensitive P ->
+      forall l mi mi', RdRqPortStepL l mi mi' -> AllPorts P l mi' = AllPorts P l mi.
   Proof.
     intros P HP; induction l as [| r rs IH]; intros mi mi' Hst; [destruct Hst |].
     cbn [RdRqPortStepL] in Hst; cbn [AllPorts].
@@ -165,9 +164,9 @@ Section RdRqPortRegion.
   Qed.
   (* Device (CustomMem) positions are untouched by a request-port step *)
   Lemma regionStateAt_rdRqStep :
-    forall l j r0 (pf : nth_error l j = Some r0) (mi mi' : TS (implRegionsTree core l)),
+    forall l j r0 (pf : nth_error l j = Some r0) (mi mi' : TS (implRegionsTree l)),
       RdRqPortStepL l mi mi' -> isCustomR r0 ->
-      regionStateAt (implMemRegionTree core) j l r0 pf mi' = regionStateAt (implMemRegionTree core) j l r0 pf mi.
+      regionStateAt implMemRegionTree j l r0 pf mi' = regionStateAt implMemRegionTree j l r0 pf mi.
   Proof.
     induction l as [| r rs IH]; intros [| j'] r0 pf mi mi' H Hc; try discriminate pf;
       cbn [RdRqPortStepL] in H.
@@ -187,15 +186,15 @@ Section RdRqPortRegion.
 
   (* No port holds a Read: nothing changes *)
   Lemma portRqIsRead_invalid :
-    forall r (y : ExtI r), optValid (extPortRq core r y) = false -> portRqIsRead r y = false.
+    forall r (y : ExtI r), optValid (extPortRq r y) = false -> portRqIsRead r y = false.
   Proof. intros r y H; unfold portRqIsRead; unfold extPortRq, optValid in H; rewrite H; reflexivity. Qed.
 
   Lemma portRqIsRead_write :
-    forall r (y : ExtI r) w, extPortRq core r y = someWrite w -> portRqIsRead r y = false.
+    forall r (y : ExtI r) w, extPortRq r y = someWrite w -> portRqIsRead r y = false.
   Proof. intros r y w H; unfold portRqIsRead; unfold extPortRq in H; rewrite H; reflexivity. Qed.
 
   Lemma rdRqStep_noRead :
-    forall l mi mi', AllPorts core (fun r y => portRqIsRead r y = false) l mi -> RdRqPortStepL l mi mi' -> mi' = mi.
+    forall l mi mi', AllPorts (fun r y => portRqIsRead r y = false) l mi -> RdRqPortStepL l mi mi' -> mi' = mi.
   Proof.
     induction l as [| r rs IH]; intros mi mi' Hn Hst; [destruct Hst |].
     cbn [AllPorts] in Hn; destruct Hn as [Hn0 Hn1]; cbn [RdRqPortStepL] in Hst.
@@ -209,12 +208,12 @@ Section RdRqPortRegion.
 
   (* The port predicates of a read of line `L` staged (`PortsReadStaged`) or accepted (`PortsReadOut`) *)
   Definition stagedP (L : type Addr) : forall r, ExtI r -> Prop :=
-    fun r y => extDataQuiet core r y /\
-               (if isRegionAddrB r L then extPortRq core r y = someRead L else optValid (extPortRq core r y) = false).
+    fun r y => extDataQuiet r y /\
+               (if isRegionAddrB r L then extPortRq r y = someRead L else optValid (extPortRq r y) = false).
   Definition outP (L : type Addr) : forall r, ExtI r -> Prop :=
-    fun r y => optValid (extPortRq core r y) = false /\
-               (if isRegionAddrB r L then extDataOut core r y /\ hd Zmod.zero (implDataAccRqs core r y) = L
-                else extDataQuiet core r y).
+    fun r y => optValid (extPortRq r y) = false /\
+               (if isRegionAddrB r L then extDataOut r y /\ hd Zmod.zero (implDataAccRqs r y) = L
+                else extDataQuiet r y).
 
   Lemma lineKind_none_unique : forall rs L, lineKind rs L = None -> lineUnique rs L.
   Proof.
@@ -223,7 +222,7 @@ Section RdRqPortRegion.
   Qed.
 
   Lemma stagedP_outP_none :
-    forall rs L z, lineKind rs L = None -> AllPorts core (stagedP L) rs z -> AllPorts core (outP L) rs z.
+    forall rs L z, lineKind rs L = None -> AllPorts (stagedP L) rs z -> AllPorts (outP L) rs z.
   Proof.
     induction rs as [| r rs IH]; intros L z Hk H; [exact I |].
     cbn [lineKind] in Hk; destruct (isRegionAddrB r L) eqn:Hm; [discriminate |].
@@ -235,8 +234,8 @@ Section RdRqPortRegion.
 
   (* A step with no read staged in the stepping region changes nothing there *)
   Lemma regionRdRqStep_noRead :
-    forall r (y y' : TS (implMemRegionTree core r)),
-      RegionPort core (fun r y => portRqIsRead r y = false) r y -> RegionRdRqStep r y y' -> y' = y.
+    forall r (y y' : TS (implMemRegionTree r)),
+      RegionPort (fun r y => portRqIsRead r y = false) r y -> RegionRdRqStep r y y' -> y' = y.
   Proof.
     intros r y y'; unfold RegionPort, RegionRdRqStep, implMemRegionTree.
     revert y y'; destruct r as [nm bs sz kd sn im ba sa]; destruct kd; cbn [regionKind]; intros y y' Hn Hs;
@@ -245,8 +244,8 @@ Section RdRqPortRegion.
   Qed.
 
   Lemma regionStaged_out_other :
-    forall r L (y : TS (implMemRegionTree core r)), isRegionAddrB r L = false ->
-      RegionPort core (stagedP L) r y -> RegionPort core (outP L) r y /\ RegionPort core (fun r y => portRqIsRead r y = false) r y.
+    forall r L (y : TS (implMemRegionTree r)), isRegionAddrB r L = false ->
+      RegionPort (stagedP L) r y -> RegionPort (outP L) r y /\ RegionPort (fun r y => portRqIsRead r y = false) r y.
   Proof.
     intros r L y Hm; revert y Hm; unfold RegionPort, stagedP, outP, implMemRegionTree.
     destruct r as [nm bs sz kd sn im ba sa]; destruct kd; cbn [regionKind]; [| intros; exact (conj I I)].
@@ -254,7 +253,7 @@ Section RdRqPortRegion.
   Qed.
 
   Lemma stagedP_noRead_none :
-    forall rs L z, lineKind rs L = None -> AllPorts core (stagedP L) rs z -> AllPorts core (fun r y => portRqIsRead r y = false) rs z.
+    forall rs L z, lineKind rs L = None -> AllPorts (stagedP L) rs z -> AllPorts (fun r y => portRqIsRead r y = false) rs z.
   Proof.
     induction rs as [| r rs IH]; intros L z Hk H; [exact I |].
     cbn [lineKind] in Hk; destruct (isRegionAddrB r L) eqn:Hm; [discriminate |].
@@ -265,8 +264,8 @@ Section RdRqPortRegion.
   (* A read of line `L` staged in the one region containing `L`: the step changes nothing, keeps
    * it staged (not accepted), or moves it out (accepted) *)
   Lemma rdRqStep_staged :
-    forall l L mi mi', lineUnique l L -> AllPorts core (stagedP L) l mi -> RdRqPortStepL l mi mi' ->
-      mi' = mi \/ AllPorts core (stagedP L) l mi' \/ AllPorts core (outP L) l mi'.
+    forall l L mi mi', lineUnique l L -> AllPorts (stagedP L) l mi -> RdRqPortStepL l mi mi' ->
+      mi' = mi \/ AllPorts (stagedP L) l mi' \/ AllPorts (outP L) l mi'.
   Proof.
     induction l as [| r rs IH]; intros L mi mi' Hu H Hst; [destruct Hst |].
     cbn [lineUnique] in Hu; cbn [AllPorts] in H |- *; destruct H as [H0 H1]; cbn [RdRqPortStepL] in Hst.
@@ -300,8 +299,8 @@ Section RdRqPortRegion.
   Variables cp pp : nat.
 
   Lemma RegionRelAt_rdRqStep :
-    forall i r x (y y' : TS (implMemRegionTree core r)),
-      RegionRdRqStep r y y' -> RegionRelAt core cp pp i r x y -> RegionRelAt core cp pp i r x y'.
+    forall i r x (y y' : TS (implMemRegionTree r)),
+      RegionRdRqStep r y y' -> RegionRelAt cp pp i r x y -> RegionRelAt cp pp i r x y'.
   Proof.
     intros i r x y y'; unfold RegionRelAt, RegionRdRqStep, implMemRegionTree, memRegionTree in *.
     revert x y y'; destruct r as [nm bs sz kd sn im ba sa]; destruct kd; cbn [regionKind];
@@ -310,7 +309,7 @@ Section RdRqPortRegion.
   Qed.
 
   Lemma MemRelPost_rdRqStep :
-    forall l i ms mi mi', RdRqPortStepL l mi mi' -> MemRelPost core cp pp i l ms mi -> MemRelPost core cp pp i l ms mi'.
+    forall l i ms mi mi', RdRqPortStepL l mi mi' -> MemRelPost cp pp i l ms mi -> MemRelPost cp pp i l ms mi'.
   Proof.
     induction l as [| r rs IH]; intros i ms mi mi' Hst H; [destruct Hst |].
     cbn [RdRqPortStepL] in Hst; cbn [MemRelPost] in H |- *; destruct H as [Hr Hl].
@@ -322,7 +321,7 @@ Section RdRqPortRegion.
   Lemma MemRelPre_rdRqStep :
     forall sRev iRev post l i ms mi mi', isCustomR iRev ->
       RdRqPortStepL (l ++ iRev :: post) mi mi' ->
-      MemRelPre core cp pp i l sRev iRev post ms mi -> MemRelPre core cp pp i l sRev iRev post ms mi'.
+      MemRelPre cp pp i l sRev iRev post ms mi -> MemRelPre cp pp i l sRev iRev post ms mi'.
   Proof.
     intros sRev iRev post; induction l as [| r rs IH]; intros i ms mi mi' Hc Hst H.
     - cbn [app RdRqPortStepL] in Hst; cbn [MemRelPre] in H |- *.
@@ -356,21 +355,20 @@ Proof. intros [| | ld pkt0 [[|]|[|]|[|]|[|] rp|res] | | | |]; reflexivity. Qed.
 
 (* Disjoint spec regions make each line unique in the impl regions (same addresses) *)
 Lemma lineUnique_implRegions :
-  forall core pre post revBase revPfB revPfA L,
-    pairwiseDisjoint (specRegionsOf core pre post revBase revPfB revPfA) = true ->
-    lineUnique (implRegionsOf core pre post revBase revPfB revPfA) L.
+  forall pre post revBase revPfB revPfA L,
+    pairwiseDisjoint (specRegionsOf pre post revBase revPfB revPfA) = true ->
+    lineUnique (implRegionsOf pre post revBase revPfB revPfA) L.
 Proof.
-  intros core pre post revBase revPfB revPfA L Hd.
+  intros pre post revBase revPfB revPfA L Hd.
   pose proof (lineUnique_disjoint _ L Hd) as H; clear Hd; revert H; unfold specRegionsOf, implRegionsOf.
   induction pre as [| r rs IH]; cbn [app lineUnique]; [exact (fun H => H) |].
-  assert (E : lineKind (rs ++ specRevRegion core revBase revPfB revPfA :: post) L =
-              lineKind (rs ++ implRevRegion core revBase revPfB revPfA :: post) L).
+  assert (E : lineKind (rs ++ specRevRegion revBase revPfB revPfA :: post) L =
+              lineKind (rs ++ implRevRegion revBase revPfB revPfA :: post) L).
   { clear IH; induction rs as [| r' rs' IH']; cbn [app lineKind]; [reflexivity | rewrite IH'; reflexivity]. }
   rewrite E; destruct (isRegionAddrB r L); [exact (fun H => H) | exact IH].
 Qed.
 
 Section ReadRqPorts.
-  Variable core : string.
   Variable pcAddrInit : Z.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
   Variable mulCapacity divCapacity mulStages divStages : nat.
@@ -381,54 +379,54 @@ Section ReadRqPorts.
   Variable revPfB : Is_true ((0 <=? revBase) && (revBase + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z.
   Variable revPfA : Is_true (revBase mod (2 ^ LgLineBytes) =? 0)%Z.
 
-  Local Abbreviation specRegions := (specRegionsOf core pre post revBase revPfB revPfA).
-  Local Abbreviation implRegions := (implRegionsOf core pre post revBase revPfB revPfA).
+  Local Abbreviation specRegions := (specRegionsOf pre post revBase revPfB revPfA).
+  Local Abbreviation implRegions := (implRegionsOf pre post revBase revPfB revPfA).
 
-  Variable clintS : @ClintInstance core specRegions.
-  Variable clint : @ClintInstance core implRegions.
-  Variable plicS : @PlicInstance core (S (S (length (collectIrqActions core specRegions)))) specRegions.
-  Variable plic : @PlicInstance core (S (S (length (collectIrqActions core implRegions)))) implRegions.
+  Variable clintS : @ClintInstance specRegions.
+  Variable clint : @ClintInstance implRegions.
+  Variable plicS : @PlicInstance (S (S (length (collectIrqActions specRegions)))) specRegions.
+  Variable plic : @PlicInstance (S (S (length (collectIrqActions implRegions)))) implRegions.
   Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
   Variable fwcs : nat -> nat -> nat.
 
   Local Abbreviation IState :=
-    (ImplState core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    (ImplState pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions).
-  Local Abbreviation SState := (SpecState core pcAddrInit specRegions).
-  Local Abbreviation NPMI := (Impl.np_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation SState := (SpecState pcAddrInit specRegions).
+  Local Abbreviation NPMI := (Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions).
-  Local Abbreviation NPMS := (Spec.np_mem core pcAddrInit specRegions).
-  Local Abbreviation revI := (revImplOf core pre post revBase revPfB revPfA).
+  Local Abbreviation NPMS := (Spec.np_mem pcAddrInit specRegions).
+  Local Abbreviation revI := (revImplOf pre post revBase revPfB revPfA).
 
-  Local Abbreviation iMemA := (iMem core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iMemA := (iMem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation iRegionsA := (iRegions core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iRegionsA := (iRegions pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation iMemStA := (iMemSt core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iMemStA := (iMemSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation iRequesterA := (iRequester core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iRequesterA := (iRequester pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation iRevA := (iRev core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iRevA := (iRev pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation iRevPhaseA := (iRevPhase core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iRevPhaseA := (iRevPhase pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation sMemA := (sMem core pcAddrInit pre post revBase revPfB revPfA).
-  Local Abbreviation revOfRA := (revOfR core pre post revBase revPfB revPfA).
-  Local Abbreviation setRevRA := (setRevR core pre post revBase revPfB revPfA).
+  Local Abbreviation sMemA := (sMem pcAddrInit pre post revBase revPfB revPfA).
+  Local Abbreviation revOfRA := (revOfR pre post revBase revPfB revPfA).
+  Local Abbreviation setRevRA := (setRevR pre post revBase revPfB revPfA).
 
-  Local Abbreviation ACC := (AccessRel core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation ACC := (AccessRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                                initLine).
-  Local Abbreviation MEMC := (MemRelC core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation MEMC := (MemRelC pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                                 clintS clint plicS plic fwcs).
-  Local Abbreviation PWS := (PortsWriteStaged core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation PWS := (PortsWriteStaged pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation STEPOK := (StepOK core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation STEPOK := (StepOK pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                   mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                                   clintS clint plicS plic initLine fwcs).
 
-  Local Abbreviation RELG := (RefRelG core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation RELG := (RefRelG pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                                 clintS clint plicS plic initLine fwcs).
 
@@ -438,39 +436,39 @@ Section ReadRqPorts.
   (* The memory relation only sees ExternalMem regions through ExtRel and the devices directly *)
   Lemma MemRelC_rdRqStep :
     forall g (s1 : IState) (s2 : SState) mi',
-      RdRqPortStepL core implRegions (iRegionsA s1) mi' ->
+      RdRqPortStepL implRegions (iRegionsA s1) mi' ->
       MEMC g s1 s2 -> MEMC g (writeSubTreeState NPMI s1 (mi' ,, (iMemA s1).(Snd))) s2.
   Proof.
     intros g s1 s2 mi' Hst Hm.
     unfold MemRelC, MemRel, DevInv in *; rewrite iRegions_write.
     destruct Hm as [[Hpre [Hcl [Hpl Hrv]]] [[Hci Hpi] Hsnap]].
-    assert (Ec : implClintState core pre post revBase revPfB revPfA clint mi' =
-                 implClintState core pre post revBase revPfB revPfA clint (iRegionsA s1)).
-    { unfold implClintState; rewrite (regionStateAt_rdRqStep core _ _ _ _ _ _ Hst); [reflexivity | exact I]. }
-    assert (Ep : implPlicState core pre post revBase revPfB revPfA plic mi' =
-                 implPlicState core pre post revBase revPfB revPfA plic (iRegionsA s1)).
-    { unfold implPlicState; rewrite (regionStateAt_rdRqStep core _ _ _ _ _ _ Hst); [reflexivity | exact I]. }
-    assert (Er : implRevState core pre post revBase revPfB revPfA mi' =
-                 implRevState core pre post revBase revPfB revPfA (iRegionsA s1)).
-    { unfold implRevState; rewrite (regionStateAt_rdRqStep core _ _ _ _ _ _ Hst); [reflexivity | exact I]. }
+    assert (Ec : implClintState pre post revBase revPfB revPfA clint mi' =
+                 implClintState pre post revBase revPfB revPfA clint (iRegionsA s1)).
+    { unfold implClintState; rewrite (regionStateAt_rdRqStep _ _ _ _ _ _ Hst); [reflexivity | exact I]. }
+    assert (Ep : implPlicState pre post revBase revPfB revPfA plic mi' =
+                 implPlicState pre post revBase revPfB revPfA plic (iRegionsA s1)).
+    { unfold implPlicState; rewrite (regionStateAt_rdRqStep _ _ _ _ _ _ Hst); [reflexivity | exact I]. }
+    assert (Er : implRevState pre post revBase revPfB revPfA mi' =
+                 implRevState pre post revBase revPfB revPfA (iRegionsA s1)).
+    { unfold implRevState; rewrite (regionStateAt_rdRqStep _ _ _ _ _ _ Hst); [reflexivity | exact I]. }
     rewrite Ec, Ep, Er.
     refine (conj (conj _ (conj Hcl (conj Hpl Hrv))) (conj (conj Hci Hpi) Hsnap)).
     eapply MemRelPre_rdRqStep; [exact I | exact Hst | exact Hpre].
   Qed.
 
-  Local Abbreviation REVK := (RevokerRel core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation REVK := (RevokerRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                                 initLine).
-  Local Abbreviation RDS := (RdStageRel core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation RDS := (RdStageRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation PQ := (PortsQuiet core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation PQ := (PortsQuiet pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                               mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation PRO := (PortsReadOut core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation PRO := (PortsReadOut pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation iScanAddrA := (iScanAddr core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iScanAddrA := (iScanAddr pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                       mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB
                                       revPfA).
-  Local Abbreviation iRevScanBaseA := (iRevScanBase core pcAddrInit fetchCapacity instCapacity decodeCapacity
+  Local Abbreviation iRevScanBaseA := (iRevScanBase pcAddrInit fetchCapacity instCapacity decodeCapacity
                                          dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config pre
                                          post revBase revPfB revPfA).
 
@@ -478,9 +476,9 @@ Section ReadRqPorts.
   Local Abbreviation UPD s1 mi' := (writeSubTreeState NPMI s1 (mi' ,, (iMemA s1).(Snd))).
 
   (* The ghost after the region accepted the staged read *)
-  Definition gRdOut (g : Ghost core pcAddrInit) : Ghost core pcAddrInit :=
-    mkGhost core pcAddrInit (g_chain core pcAddrInit g) (g_rf0 core pcAddrInit g) (g_cnwb core pcAddrInit g)
-            (g_revOff core pcAddrInit g) (g_d2aFo core pcAddrInit g) (rdOutAcc (g_acc core pcAddrInit g)).
+  Definition gRdOut (g : Ghost pcAddrInit) : Ghost pcAddrInit :=
+    mkGhost pcAddrInit (g_chain pcAddrInit g) (g_rf0 pcAddrInit g) (g_cnwb pcAddrInit g)
+            (g_revOff pcAddrInit g) (g_d2aFo pcAddrInit g) (rdOutAcc (g_acc pcAddrInit g)).
 
   (* The regions are pairwise disjoint, so each line is in at most one region *)
   Hypothesis Hdisj : Is_true (pairwiseDisjoint specRegions).
@@ -490,26 +488,26 @@ Section ReadRqPorts.
 
   (* No port holds a Read while the ports are quiet, a read is out or a write is staged *)
   Lemma rdRq_quietNoRead : forall (s1 : IState), PQ s1 ->
-    AllPorts core (fun r y => portRqIsRead core r y = false) implRegions (iRegionsA s1).
+    AllPorts (fun r y => portRqIsRead r y = false) implRegions (iRegionsA s1).
   Proof.
     intros s1 H; unfold PortsQuiet in H; revert H; apply AllPorts_impl.
-    intros r y [Hv _]; exact (portRqIsRead_invalid core r y Hv).
+    intros r y [Hv _]; exact (portRqIsRead_invalid r y Hv).
   Qed.
 
   Lemma rdRq_outNoRead : forall L (s1 : IState), PRO L s1 ->
-    AllPorts core (fun r y => portRqIsRead core r y = false) implRegions (iRegionsA s1).
+    AllPorts (fun r y => portRqIsRead r y = false) implRegions (iRegionsA s1).
   Proof.
     intros L s1 H; unfold PortsReadOut in H; revert H; apply AllPorts_impl.
-    intros r y [Hv _]; exact (portRqIsRead_invalid core r y Hv).
+    intros r y [Hv _]; exact (portRqIsRead_invalid r y Hv).
   Qed.
 
   Lemma rdRq_wstagedNoRead : forall L rq (s1 : IState), PWS L rq s1 ->
-    AllPorts core (fun r y => portRqIsRead core r y = false) implRegions (iRegionsA s1).
+    AllPorts (fun r y => portRqIsRead r y = false) implRegions (iRegionsA s1).
   Proof.
     intros L rq s1 H; unfold PortsWriteStaged in H; revert H; apply AllPorts_impl.
     intros r y [_ Hp]; destruct (isRegionAddrB r L).
-    - exact (portRqIsRead_write core r y rq Hp).
-    - exact (portRqIsRead_invalid core r y Hp).
+    - exact (portRqIsRead_write r y rq Hp).
+    - exact (portRqIsRead_invalid r y Hp).
   Qed.
 
   Lemma rdRq_updSame : forall (s1 : IState), UPD s1 (iRegionsA s1) = s1.
@@ -520,40 +518,40 @@ Section ReadRqPorts.
   Qed.
 
   (* The revoker is a device: the port step leaves it *)
-  Lemma rdRq_iRevUpd : forall (s1 : IState) mi', RdRqPortStepL core implRegions (iRegionsA s1) mi' ->
+  Lemma rdRq_iRevUpd : forall (s1 : IState) mi', RdRqPortStepL implRegions (iRegionsA s1) mi' ->
     iRevA (UPD s1 mi') = iRevA s1.
   Proof.
     intros s1 mi' Hst.
-    change (implRevState core pre post revBase revPfB revPfA mi' =
-            implRevState core pre post revBase revPfB revPfA (iRegionsA s1)).
-    unfold implRevState; rewrite (regionStateAt_rdRqStep core _ _ _ _ _ _ Hst); [reflexivity | exact I].
+    change (implRevState pre post revBase revPfB revPfA mi' =
+            implRevState pre post revBase revPfB revPfA (iRegionsA s1)).
+    unfold implRevState; rewrite (regionStateAt_rdRqStep _ _ _ _ _ _ Hst); [reflexivity | exact I].
   Qed.
 
   (* A line read in progress: nothing changes, it stays staged, or the region accepts it *)
   Lemma RdStageRel_rdRq :
     forall addr size pkt0 st (s1 : IState) mi',
-      RdRqPortStepL core implRegions (iRegionsA s1) mi' -> RDS addr size pkt0 st s1 ->
+      RdRqPortStepL implRegions (iRegionsA s1) mi' -> RDS addr size pkt0 st s1 ->
       mi' = iRegionsA s1 \/ RDS addr size pkt0 st (UPD s1 mi') \/
       (exists b, st = RdStaged b /\ RDS addr size pkt0 (RdOut b) (UPD s1 mi')).
   Proof.
     intros addr size pkt0 st s1 mi' Hst H.
     destruct st as [b | b | b | b rp | res].
-    - left; destruct H as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead core _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
+    - left; destruct H as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
     - destruct H as [Hs [Hr [Hk Hp]]].
-      destruct (rdRqStep_staged core implRegions (lineOf b addr) (iRegionsA s1) mi' (rdRq_lineUnique _) Hp Hst)
+      destruct (rdRqStep_staged implRegions (lineOf b addr) (iRegionsA s1) mi' (rdRq_lineUnique _) Hp Hst)
         as [E | [Hp' | Hp']].
       + left; exact E.
       + right; left; exact (conj Hs (conj Hr (conj Hk Hp'))).
       + right; right; exists b; split; [reflexivity | exact (conj Hs (conj Hr (conj Hk Hp')))].
-    - left; destruct H as [_ [_ [_ Hp]]]; exact (rdRqStep_noRead core _ _ _ (rdRq_outNoRead _ s1 Hp) Hst).
-    - left; destruct H as [_ [_ Hq]]; exact (rdRqStep_noRead core _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
-    - left; destruct H as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead core _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
+    - left; destruct H as [_ [_ [_ Hp]]]; exact (rdRqStep_noRead _ _ _ (rdRq_outNoRead _ s1 Hp) Hst).
+    - left; destruct H as [_ [_ Hq]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
+    - left; destruct H as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
   Qed.
 
   (* The access in flight after the port step: only a staged read can move (to RdOut) *)
   Lemma AccessRel_rdRq :
     forall g (s1 : IState) (s2 : SState) mi',
-      RdRqPortStepL core implRegions (iRegionsA s1) mi' -> ACC g s1 s2 ->
+      RdRqPortStepL implRegions (iRegionsA s1) mi' -> ACC g s1 s2 ->
       mi' = iRegionsA s1 \/ ACC g (UPD s1 mi') s2 \/ ACC (gRdOut g) (UPD s1 mi') s2.
   Proof.
     intros g s1 s2 mi' Hst Ha.
@@ -563,12 +561,12 @@ Section ReadRqPorts.
     assert (EB : iRevScanBaseA (UPD s1 mi') = iRevScanBaseA s1) by (unfold iRevScanBase; rewrite HR; reflexivity).
     unfold AccessRel, HeadReq, gRdOut in *; cbn [g_acc g_revOff g_cnwb g_chain].
     unfold revNotReading, dmNotAccessing in *.
-    destruct (g_acc core pcAddrInit g) as [| addr size pkt st | ld pkt0 st | rc st | st | st | addr pkt st];
+    destruct (g_acc pcAddrInit g) as [| addr size pkt st | ld pkt0 st | rc st | st | st | addr pkt st];
       cbn [rdOutAcc]; rewrite ?EP, ?ES, ?EB.
-    - left; destruct Ha as [_ [_ [Hq _]]]; exact (rdRqStep_noRead core _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
+    - left; destruct Ha as [_ [_ [Hq _]]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
     - left; destruct Ha as [Hw _]; unfold WrStageRel in Hw; destruct st as [b | b].
-      + destruct Hw as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead core _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
-      + destruct Hw as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead core _ _ _ (rdRq_wstagedNoRead _ _ s1 Hq) Hst).
+      + destruct Hw as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
+      + destruct Hw as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead _ _ _ (rdRq_wstagedNoRead _ _ s1 Hq) Hst).
     - destruct Ha as [Hrd Hrest].
       destruct (RdStageRel_rdRq _ _ _ _ s1 mi' Hst Hrd) as [E | [Hrd' | [b [-> Hrd']]]].
       + left; exact E.
@@ -590,8 +588,8 @@ Section ReadRqPorts.
       + right; left; exact (conj Hrd' Hrest).
       + right; right; cbn [rdOutStage]; exact (conj Hrd' Hrest).
     - left; destruct Ha as [Hw _]; unfold WrStageRel in Hw; destruct st as [b | b].
-      + destruct Hw as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead core _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
-      + destruct Hw as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead core _ _ _ (rdRq_wstagedNoRead _ _ s1 Hq) Hst).
+      + destruct Hw as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
+      + destruct Hw as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead _ _ _ (rdRq_wstagedNoRead _ _ s1 Hq) Hst).
   Qed.
 
   (* The revoker facts hold for the moved access: its read values are not yet known *)
@@ -603,7 +601,7 @@ Section ReadRqPorts.
     unfold RevokerRel, RevAccRel, RevCapOK, RevWriteOK, gRdOut in *; cbn [g_acc g_revOff].
     unfold iRevArch, iRevPhase, iRevScanCap, iRevScanBase, iRevSnoopHit, iScanAddr in *.
     rewrite HR; revert H.
-    destruct (g_acc core pcAddrInit g) as [| addr size pkt st | ld pkt0 st | rc st | [b|b|b|b rp|res]
+    destruct (g_acc pcAddrInit g) as [| addr size pkt st | ld pkt0 st | rc st | [b|b|b|b rp|res]
                                           | [b|b|b|b rp|res] | addr pkt st];
       cbn [rdOutAcc rdOutStage]; intros H; exact H.
   Qed.
@@ -611,7 +609,7 @@ Section ReadRqPorts.
   (* The data read-request ports: the spec stutters; a staged read the region accepts is out *)
   Theorem stepOK_readRqPorts :
     forall act,
-      In act (@readRqPorts core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+      In act (@readRqPorts pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions type) ->
       STEPOK act.
   Proof.
@@ -620,21 +618,21 @@ Section ReadRqPorts.
     rewrite map_map in Hin; apply in_map_iff in Hin as [f [<- Hf]]; cbv beta in Hsem.
     apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
     apply SemAction_liftAction_iff in Hm' as [mi' [Hmi' Em]].
-    pose proof (rdRqPorts_step core implRegions f _ _ _ _ Hf Hmi') as Hst.
-    change (RdRqPortStepL core implRegions (iRegionsA s1) mi') in Hst.
+    pose proof (rdRqPorts_step implRegions f _ _ _ _ Hf Hmi') as Hst.
+    change (RdRqPortStepL implRegions (iRegionsA s1) mi') in Hst.
     assert (Es1 : s1' = UPD s1 mi') by (rewrite E1, Em; reflexivity).
     exists s2; split; [apply NilAction; reflexivity |].
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hfe Hs Hfr Hw Hrk].
     pose proof (rdRq_iRevUpd s1 mi' Hst) as HR.
-    assert (HP : forall P, RqInsensitive core P ->
-                   AllPorts core P implRegions (iRegionsA s1') = AllPorts core P implRegions (iRegionsA s1)).
-    { intros P HPi; rewrite Es1, iRegions_write; exact (AllPorts_rdRqStep core P HPi _ _ _ Hst). }
-    assert (Hmem : forall g', g_revOff core pcAddrInit g' = g_revOff core pcAddrInit g -> MEMC g' s1' s2).
+    assert (HP : forall P, RqInsensitive P ->
+                   AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
+    { intros P HPi; rewrite Es1, iRegions_write; exact (AllPorts_rdRqStep P HPi _ _ _ Hst). }
+    assert (Hmem : forall g', g_revOff pcAddrInit g' = g_revOff pcAddrInit g -> MEMC g' s1' s2).
     { intros g' Eo; rewrite Es1; unfold MemRelC; rewrite Eo; exact (MemRelC_rdRqStep g s1 s2 mi' Hst Hm). }
     destruct (AccessRel_rdRq g s1 s2 mi' Hst Ha) as [E | [Ha' | Ha']].
     - exists g; rewrite Es1, E, rdRq_updSame; exact Hg.
     - exists g.
-      eapply (RefRelG_rq_frame core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+      eapply (RefRelG_rq_frame pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                 clintS clint plicS plic initLine fwcs) with (g := g) (s1 := s1) (s2 := s2) (ms' := sMemA s2);
         [exact Es1 | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity | exact HP
@@ -644,7 +642,7 @@ Section ReadRqPorts.
       eapply RevokerRel_frame with (g := g) (s1 := s1) (s2 := s2);
         [reflexivity | reflexivity | exact HR | intros L; reflexivity | exact Hrk].
     - exists (gRdOut g).
-      eapply (RefRelG_rq_frame core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+      eapply (RefRelG_rq_frame pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                 clintS clint plicS plic initLine fwcs) with (g := g) (s1 := s1) (s2 := s2) (ms' := sMemA s2);
         [exact Es1 | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity

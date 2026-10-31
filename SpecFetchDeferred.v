@@ -248,14 +248,13 @@ End CombinationalDeferred.
  * =========================================================================== *)
 
 Section SpecCoreTree.
-  Variable dom : string.
   Variable pcAddrInit : Z.
 
-  Definition specCoreTree (regions : list MemRegion) : Tree DomainElem :=
+  Definition specCoreTree (regions : list MemRegion) : Tree Elem :=
     Node "core" [
-      Node "rf"  [ rfTree dom pcAddrInit ] ;
-      Node "mem" [ specMemTree dom regions ] ;
-      Leaf "secondLine" (dom, EReg (Build_Reg (Option SecondLine) (Some (getDefault _)) false))
+      Node "rf"  [ rfTree pcAddrInit ] ;
+      Node "mem" [ specMemTree regions ] ;
+      Leaf "secondLine" (EReg (Build_Reg (Option SecondLine) (Some (getDefault _))))
     ].
 
   Section SpecFetchDeferred.
@@ -263,7 +262,7 @@ Section SpecCoreTree.
     Variable regions : list MemRegion.
     Variable ty : Kind -> Type.
 
-    Local Abbreviation memTree := (specMemTree dom regions).
+    Local Abbreviation memTree := (specMemTree regions).
     Local Abbreviation coreTree := (specCoreTree regions).
 
     Definition np_rf : NodePath coreTree :=
@@ -287,7 +286,7 @@ Section SpecCoreTree.
      * specFetch (Atomic Combinational Fetch)
      * =========================================================================== *)
     Definition specFetch : Action ty coreTree FetchOut :=
-      LetA pcc         : FullECapWithTag           <- liftAction np_rf (readRegsList (gprPathsWithKind dom pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal))) ;
+      LetA pcc         : FullECapWithTag           <- liftAction np_rf (readRegsList (gprPathsWithKind pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal))) ;
       Let  pccAddr     : Addr                      <- ##pcc`"addr" ;
       Let  pccECap     : ECap                      <- ##pcc`"ecap" ;
       Let  tagExc      : Bool                      <- Not ##pcc`"tag" ;
@@ -347,13 +346,13 @@ Section SpecCoreTree.
         LetA revBit  : Bool             <- liftAction np_mem (readRevBit revBase) ;
         LetL wbInfo  : WbCmd            <- dispatchRevResponse pr revBit ;
         If (isNotZero (##wbInfo`"dstIdx")) Then (
-          liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
+          liftAction np_rf (writeRegsList (gprPathsWithKind pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
         ) ;
         Retv
       ) Else (
         Let wbInfo : WbCmd <- #outcome `! "Writeback" ;
         If (isNotZero (##wbInfo`"dstIdx")) Then (
-          liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
+          liftAction np_rf (writeRegsList (gprPathsWithKind pcAddrInit) (##wbInfo`"dstIdx") (##wbInfo`"dstVal"))
         ) ;
         Retv
       ) ;
@@ -437,7 +436,7 @@ Section SpecCoreTree.
             "addr" ::= #resAddr
           } ;
           If (isNotZero #dstIdx) Then (
-            liftAction np_rf (writeRegsList (gprPathsWithKind dom pcAddrInit) #dstIdx #wbVal)
+            liftAction np_rf (writeRegsList (gprPathsWithKind pcAddrInit) #dstIdx #wbVal)
           ) ;
           Retv
         ) ;

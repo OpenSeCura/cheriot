@@ -39,13 +39,12 @@ Definition CLINT_MTIMECMP_OFFSET : Z := 0x4000.
 Definition CLINT_MTIME_OFFSET    : Z := 0xbff8.
 
 Section Clint.
-  Variable dom : string.
 
-  Definition clintChildren : list (Tree DomainElem) :=
-    [ Leaf "mtime"       (dom, EReg (Build_Reg (Bit DXlen) (Some Zmod.zero) false)) ;
-      Leaf "mtimecmp"    (dom, EReg (Build_Reg (Bit DXlen) (Some (Zmod.of_Z _ (2^DXlen - 1))) false)) ;
-      Leaf "mtip"        (dom, EReg (Build_Reg Bool        (Some false)     false)) ;
-      Leaf "sampledMtip" (dom, EReg (Build_Reg Bool        (Some false)     false)) ].
+  Definition clintChildren : list (Tree Elem) :=
+    [ Leaf "mtime"       (EReg (Build_Reg (Bit DXlen) (Some Zmod.zero))) ;
+      Leaf "mtimecmp"    (EReg (Build_Reg (Bit DXlen) (Some (Zmod.of_Z _ (2^DXlen - 1))))) ;
+      Leaf "mtip"        (EReg (Build_Reg Bool        (Some false))) ;
+      Leaf "sampledMtip" (EReg (Build_Reg Bool        (Some false))) ].
 
   Local Abbreviation tClint := (Node "clint" clintChildren).
 
@@ -192,7 +191,7 @@ Section Clint.
     Variable clint : ClintInstance regions.
     Variable ty : Kind -> Type.
 
-    Local Abbreviation memTree := (specMemTree dom regions).
+    Local Abbreviation memTree := (specMemTree regions).
 
     Definition clintAction {k : Kind} (act : Action ty tClint k) : Action ty memTree k :=
       nthRegionAction clint.(clintIdx) regions (clintRegion clint) clint.(pfClint) act.

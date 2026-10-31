@@ -46,27 +46,26 @@ Fixpoint nth_error_app_cons_len {A : Type} (l : list A) (x : A) (r : list A)
   end.
 
 Section RegionLists.
-  Variable core : string.
   Variables pre post : list MemRegion.
   Variable revBase : Z.
   Variable revPfB : Is_true ((0 <=? revBase) && (revBase + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z.
   Variable revPfA : Is_true (revBase mod (2 ^ LgLineBytes) =? 0)%Z.
 
   Definition specRevRegion : MemRegion :=
-    @revokerMemRegion core [] revBase revPfB revPfA.
+    @revokerMemRegion [] revBase revPfB revPfA.
 
   Definition implRevRegion : MemRegion :=
-    @revokerMemRegion core (implRevokerExtraChildren core) revBase revPfB revPfA.
+    @revokerMemRegion implRevokerExtraChildren revBase revPfB revPfA.
 
   Definition specRegionsOf : list MemRegion := pre ++ specRevRegion :: post.
   Definition implRegionsOf : list MemRegion := pre ++ implRevRegion :: post.
 
-  Definition revSpecOf : @RevokerInstance core [] specRegionsOf :=
-    @Build_RevokerInstance core [] specRegionsOf (length pre) revBase revPfB revPfA
+  Definition revSpecOf : @RevokerInstance [] specRegionsOf :=
+    @Build_RevokerInstance [] specRegionsOf (length pre) revBase revPfB revPfA
       (nth_error_app_cons_len pre specRevRegion post).
 
-  Definition revImplOf : @RevokerInstance core (implRevokerExtraChildren core) implRegionsOf :=
-    @Build_RevokerInstance core (implRevokerExtraChildren core) implRegionsOf (length pre)
+  Definition revImplOf : @RevokerInstance implRevokerExtraChildren implRegionsOf :=
+    @Build_RevokerInstance implRevokerExtraChildren implRegionsOf (length pre)
       revBase revPfB revPfA (nth_error_app_cons_len pre implRevRegion post).
 
   (* --- 2. Spec View of the Impl Memory --- *)
@@ -74,42 +73,42 @@ Section RegionLists.
   (* Spec memory over the impl list -> spec memory over the spec list: identity on
    * every region but the revoker, which keeps its 7 architectural registers. *)
   Fixpoint archProjRegions (l : list MemRegion)
-    : TreeState DomainElemState (specMemTree core (l ++ implRevRegion :: post)) ->
-      TreeState DomainElemState (specMemTree core (l ++ specRevRegion :: post)) :=
+    : TreeState ElemState (specMemTree (l ++ implRevRegion :: post)) ->
+      TreeState ElemState (specMemTree (l ++ specRevRegion :: post)) :=
     match l as l0 return
-      TreeState DomainElemState (specMemTree core (l0 ++ implRevRegion :: post)) ->
-      TreeState DomainElemState (specMemTree core (l0 ++ specRevRegion :: post))
+      TreeState ElemState (specMemTree (l0 ++ implRevRegion :: post)) ->
+      TreeState ElemState (specMemTree (l0 ++ specRevRegion :: post))
     with
     | [] => fun s =>
-        (StateRel.projImplRevokerArchState core (Fst s) ,, (Fst (Snd s) ,, tt))
+        (StateRel.projImplRevokerArchState (Fst s) ,, (Fst (Snd s) ,, tt))
     | _ :: l' => fun s =>
         (Fst s ,, (archProjRegions l' (Fst (Snd s)) ,, tt))
     end.
 
   (* The spec view of an impl memory: impl-only leaves dropped, revoker projected. *)
   Definition specViewOfImplMem
-    (m : TreeState DomainElemState (implMemTree core implRegionsOf))
-    : TreeState DomainElemState (specMemTree core specRegionsOf) :=
-    archProjRegions pre (SimDevices.projImplMemSpecState core implRegionsOf m).
+    (m : TreeState ElemState (implMemTree implRegionsOf))
+    : TreeState ElemState (specMemTree specRegionsOf) :=
+    archProjRegions pre (SimDevices.projImplMemSpecState implRegionsOf m).
 
   (* The revoker state seen through the spec view is the architectural projection. *)
   Fixpoint nthSpecRegionStatePre (l : list MemRegion)
-    : TreeState DomainElemState (specMemTree core (l ++ specRevRegion :: post)) ->
-      TreeState DomainElemState (memRegionTree core specRevRegion) :=
+    : TreeState ElemState (specMemTree (l ++ specRevRegion :: post)) ->
+      TreeState ElemState (memRegionTree specRevRegion) :=
     match l as l0 return
-      TreeState DomainElemState (specMemTree core (l0 ++ specRevRegion :: post)) ->
-      TreeState DomainElemState (memRegionTree core specRevRegion)
+      TreeState ElemState (specMemTree (l0 ++ specRevRegion :: post)) ->
+      TreeState ElemState (memRegionTree specRevRegion)
     with
     | [] => fun s => Fst s
     | _ :: l' => fun s => nthSpecRegionStatePre l' (Fst (Snd s))
     end.
 
   Fixpoint nthImplRegionStatePre (l : list MemRegion)
-    : TreeState DomainElemState (specMemTree core (l ++ implRevRegion :: post)) ->
-      TreeState DomainElemState (memRegionTree core implRevRegion) :=
+    : TreeState ElemState (specMemTree (l ++ implRevRegion :: post)) ->
+      TreeState ElemState (memRegionTree implRevRegion) :=
     match l as l0 return
-      TreeState DomainElemState (specMemTree core (l0 ++ implRevRegion :: post)) ->
-      TreeState DomainElemState (memRegionTree core implRevRegion)
+      TreeState ElemState (specMemTree (l0 ++ implRevRegion :: post)) ->
+      TreeState ElemState (memRegionTree implRevRegion)
     with
     | [] => fun s => Fst s
     | _ :: l' => fun s => nthImplRegionStatePre l' (Fst (Snd s))
@@ -117,9 +116,9 @@ Section RegionLists.
 
   Lemma nthSpecRegionStatePre_archProj :
     forall (l : list MemRegion)
-           (s : TreeState DomainElemState (specMemTree core (l ++ implRevRegion :: post))),
+           (s : TreeState ElemState (specMemTree (l ++ implRevRegion :: post))),
       nthSpecRegionStatePre l (archProjRegions l s) =
-      StateRel.projImplRevokerArchState core (nthImplRegionStatePre l s).
+      StateRel.projImplRevokerArchState (nthImplRegionStatePre l s).
   Proof.
     induction l as [| r l IH]; intros s; cbn [archProjRegions nthSpecRegionStatePre nthImplRegionStatePre Fst Snd].
     - reflexivity.

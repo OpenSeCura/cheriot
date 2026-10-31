@@ -1646,7 +1646,6 @@ Qed.
  * =========================================================================== *)
 
 Section ConcreteMulDivInvariants.
-  Variable dom : string.
   Variable input_width mul_stages div_stages : nat.
 
   Local Abbreviation d := (dataLen input_width).
@@ -1658,22 +1657,22 @@ Section ConcreteMulDivInvariants.
 
   Definition PipelinedMul_StageAtStep
     (inp : type (MulInput d)) (k : nat)
-    (f : TreeState DomainElemState (fifoTree dom 1 (MulStageState d))) : Prop :=
-    PipeStageAtStep dom (MulInput d) (MulStageState d)
+    (f : TreeState ElemState (fifoTree 1 (MulStageState d))) : Prop :=
+    PipeStageAtStep (MulInput d) (MulStageState d)
       (@mulInitStage input_width)
       (fun ty st => @mulStageStep input_width ty mul_bps st)
       inp k f.
 
   Theorem PipelinedMul_Enq_Stage0 :
-    forall {env : Env (mulPipeTree dom input_width mul_stages)}
+    forall {env : Env (mulPipeTree input_width mul_stages)}
            (inp : type (MulInput d))
-           (s s' : TreeState DomainElemState (mulPipeTree dom input_width mul_stages)) ret,
+           (s s' : TreeState ElemState (mulPipeTree input_width mul_stages)) ret,
       fifo1_size (s.(Fst)) = Zmod.of_Z 2 0 ->
-      SemAction env (@mulPipeEnq dom input_width mul_stages type inp) s s' ret ->
+      SemAction env (@mulPipeEnq input_width mul_stages type inp) s s' ret ->
       PipelinedMul_StageAtStep inp 0%nat (s'.(Fst)).
   Proof.
     intros env inp s s' ret Hemp Hsem.
-    exact (Pipe_Enq_Stage0 dom (MulInput d) (MulStageState d) mul_stages
+    exact (Pipe_Enq_Stage0 (MulInput d) (MulStageState d) mul_stages
              (@mulInitStage input_width)
              (fun ty st => @mulStageStep input_width ty mul_bps st)
              inp s s' ret Hemp Hsem).
@@ -1681,35 +1680,35 @@ Section ConcreteMulDivInvariants.
 
   Theorem PipelinedMul_Step_Adjacent_Inductive :
     forall (inp : type (MulInput d)) (k m : nat)
-           {env : Env (stagedStagesTree dom (MulStageState d) (S m))}
-           (st st' : TreeState DomainElemState (stagedStagesTree dom (MulStageState d) (S m))) ret,
+           {env : Env (stagedStagesTree (MulStageState d) (S m))}
+           (st st' : TreeState ElemState (stagedStagesTree (MulStageState d) (S m))) ret,
       PipelinedMul_StageAtStep inp k (st.(Fst)) ->
       fifo1_size (st.(Snd).(Fst).(Fst)) = Zmod.of_Z 2 0 ->
-      SemAction env (stagedPipeStepAdjacent dom (MulStageState d)
+      SemAction env (stagedPipeStepAdjacent (MulStageState d)
                        (fun ty s => @mulStageStep input_width ty mul_bps s) type m) st st' ret ->
       fifo1_size (st'.(Fst)) = Zmod.of_Z 2 0 /\
       PipelinedMul_StageAtStep inp (S k) (st'.(Snd).(Fst).(Fst)).
   Proof.
     intros inp k m env st st' ret Hcur Hnext Hsem.
-    exact (Pipe_Step_Adjacent_Inductive dom (MulInput d) (MulStageState d)
+    exact (Pipe_Step_Adjacent_Inductive (MulInput d) (MulStageState d)
              (@mulInitStage input_width)
              (fun ty s => @mulStageStep input_width ty mul_bps s)
              inp k m st st' ret Hcur Hnext Hsem).
   Qed.
 
   Theorem PipelinedMul_First_PureMulOut :
-    forall {env : Env (mulPipeTree dom input_width mul_stages)}
+    forall {env : Env (mulPipeTree input_width mul_stages)}
            (inp : type (MulInput d))
-           (s s' : TreeState DomainElemState (mulPipeTree dom input_width mul_stages)) optOut,
+           (s s' : TreeState ElemState (mulPipeTree input_width mul_stages)) optOut,
       (0 < input_width)%nat ->
       (mul_stages * mul_bps = input_width)%nat ->
-      PipelinedMul_StageAtStep inp mul_stages (stagedLastFifo dom (MulStageState d) mul_stages s) ->
-      SemAction env (@mulPipeFirst dom input_width mul_stages type) s s' optOut ->
+      PipelinedMul_StageAtStep inp mul_stages (stagedLastFifo (MulStageState d) mul_stages s) ->
+      SemAction env (@mulPipeFirst input_width mul_stages type) s s' optOut ->
       s' = s /\
       optOut = evalExpr (mkSome (Const type (MulOutput d) (evalLetExpr (@PureMulOut d type inp)))).
   Proof.
     intros env inp s s' optOut Hw Hmul_w Hstage Hsem.
-    exact (Pipe_First_Spec dom (MulInput d) (MulStageState d) (MulOutput d) mul_stages
+    exact (Pipe_First_Spec (MulInput d) (MulStageState d) (MulOutput d) mul_stages
              (@mulInitStage input_width)
              (fun ty st => @mulStageStep input_width ty mul_bps st)
              (@mulFinishStage input_width)
@@ -1720,37 +1719,37 @@ Section ConcreteMulDivInvariants.
   Qed.
 
   Theorem PipelinedMul_Deq_LastStage :
-    forall {env : Env (mulPipeTree dom input_width mul_stages)}
-           (s s' : TreeState DomainElemState (mulPipeTree dom input_width mul_stages)) ret,
-      fifo1_size (stagedLastFifo dom (MulStageState d) mul_stages s) = Zmod.of_Z 2 1 ->
-      SemAction env (@mulPipeDeq dom input_width mul_stages type) s s' ret ->
-      fifo1_size (stagedLastFifo dom (MulStageState d) mul_stages s') = Zmod.of_Z 2 0.
+    forall {env : Env (mulPipeTree input_width mul_stages)}
+           (s s' : TreeState ElemState (mulPipeTree input_width mul_stages)) ret,
+      fifo1_size (stagedLastFifo (MulStageState d) mul_stages s) = Zmod.of_Z 2 1 ->
+      SemAction env (@mulPipeDeq input_width mul_stages type) s s' ret ->
+      fifo1_size (stagedLastFifo (MulStageState d) mul_stages s') = Zmod.of_Z 2 0.
   Proof.
     intros env s s' ret Hfull Hsem.
-    exact (Pipe_Deq_LastStage dom (MulStageState d) mul_stages s s' ret Hfull Hsem).
+    exact (Pipe_Deq_LastStage (MulStageState d) mul_stages s s' ret Hfull Hsem).
   Qed.
 
   (* --- 3B. `IterMul` State Invariant (`IterMul_StateAtStep`) --- *)
 
   Definition IterMul_StateAtStep
     (inp : type (MulInput d)) (m : nat)
-    (s : TreeState DomainElemState (mulIterTree dom input_width mul_stages)) : Prop :=
-    IterStateAtStep dom (MulInput d) (MulStageState d) mul_stages
+    (s : TreeState ElemState (mulIterTree input_width mul_stages)) : Prop :=
+    IterStateAtStep (MulInput d) (MulStageState d) mul_stages
       (@mulStepsConst input_width mul_stages)
       (@mulInitStage input_width)
       (fun ty st => @mulStageStep input_width ty mul_bps st)
       inp m s.
 
   Theorem IterMul_Enq_Step0 :
-    forall {env : Env (mulIterTree dom input_width mul_stages)}
+    forall {env : Env (mulIterTree input_width mul_stages)}
            (inp : type (MulInput d))
-           (s s' : TreeState DomainElemState (mulIterTree dom input_width mul_stages)) ret,
+           (s s' : TreeState ElemState (mulIterTree input_width mul_stages)) ret,
       s @% "busy" = false ->
-      SemAction env (@mulIterEnq dom input_width mul_stages type inp) s s' ret ->
+      SemAction env (@mulIterEnq input_width mul_stages type inp) s s' ret ->
       IterMul_StateAtStep inp 0%nat s'.
   Proof.
     intros env inp s s' ret Hidle Hsem.
-    exact (Iter_Enq_Step0 dom (MulInput d) (MulStageState d) mul_stages
+    exact (Iter_Enq_Step0 (MulInput d) (MulStageState d) mul_stages
              (@mulStepsConst input_width mul_stages)
              (@mulInitStage input_width)
              (fun ty st => @mulStageStep input_width ty mul_bps st)
@@ -1758,16 +1757,16 @@ Section ConcreteMulDivInvariants.
   Qed.
 
   Theorem IterMul_Step_Inductive :
-    forall {env : Env (mulIterTree dom input_width mul_stages)}
+    forall {env : Env (mulIterTree input_width mul_stages)}
            (inp : type (MulInput d)) (m : nat)
-           (s s' : TreeState DomainElemState (mulIterTree dom input_width mul_stages)) ret,
+           (s s' : TreeState ElemState (mulIterTree input_width mul_stages)) ret,
       IterMul_StateAtStep inp m s ->
       (m < mul_stages)%nat ->
-      SemAction env (@mulIterStepRule dom input_width mul_stages type) s s' ret ->
+      SemAction env (@mulIterStepRule input_width mul_stages type) s s' ret ->
       IterMul_StateAtStep inp (S m) s'.
   Proof.
     intros env inp m s s' ret Hst Hlt Hsem.
-    eapply (Iter_Step_Inductive dom (MulInput d) (MulStageState d) mul_stages
+    eapply (Iter_Step_Inductive (MulInput d) (MulStageState d) mul_stages
               (@mulStepsConst input_width mul_stages)
               (@mulInitStage input_width)
               (fun ty st => @mulStageStep input_width ty mul_bps st)
@@ -1776,18 +1775,18 @@ Section ConcreteMulDivInvariants.
   Qed.
 
   Theorem IterMul_First_PureMulOut :
-    forall {env : Env (mulIterTree dom input_width mul_stages)}
+    forall {env : Env (mulIterTree input_width mul_stages)}
            (inp : type (MulInput d))
-           (s s' : TreeState DomainElemState (mulIterTree dom input_width mul_stages)) optOut,
+           (s s' : TreeState ElemState (mulIterTree input_width mul_stages)) optOut,
       (0 < input_width)%nat ->
       (mul_stages * mul_bps = input_width)%nat ->
       IterMul_StateAtStep inp mul_stages s ->
-      SemAction env (@mulIterFirst dom input_width mul_stages type) s s' optOut ->
+      SemAction env (@mulIterFirst input_width mul_stages type) s s' optOut ->
       s' = s /\
       optOut = evalExpr (mkSome (Const type (MulOutput d) (evalLetExpr (@PureMulOut d type inp)))).
   Proof.
     intros env inp s s' optOut Hw Hmul_w Hst Hsem.
-    eapply (Iter_First_Spec dom (MulInput d) (MulStageState d) (MulOutput d) mul_stages
+    eapply (Iter_First_Spec (MulInput d) (MulStageState d) (MulOutput d) mul_stages
               (@mulStepsConst input_width mul_stages)
               (@mulInitStage input_width)
               (fun ty st => @mulStageStep input_width ty mul_bps st)
@@ -1800,15 +1799,15 @@ Section ConcreteMulDivInvariants.
   Qed.
 
   Theorem IterMul_Deq_Idle :
-    forall {env : Env (mulIterTree dom input_width mul_stages)}
+    forall {env : Env (mulIterTree input_width mul_stages)}
            (inp : type (MulInput d))
-           (s s' : TreeState DomainElemState (mulIterTree dom input_width mul_stages)) ret,
+           (s s' : TreeState ElemState (mulIterTree input_width mul_stages)) ret,
       IterMul_StateAtStep inp mul_stages s ->
-      SemAction env (@mulIterDeq dom input_width mul_stages type) s s' ret ->
+      SemAction env (@mulIterDeq input_width mul_stages type) s s' ret ->
       s' @% "busy" = false.
   Proof.
     intros env inp s s' ret Hst Hsem.
-    eapply (Iter_Deq_Idle dom (MulInput d) (MulStageState d) mul_stages
+    eapply (Iter_Deq_Idle (MulInput d) (MulStageState d) mul_stages
               (@mulStepsConst input_width mul_stages)
               (@mulInitStage input_width)
               (fun ty st => @mulStageStep input_width ty mul_bps st)
@@ -1821,23 +1820,23 @@ Section ConcreteMulDivInvariants.
 
   Definition IterDiv_StateAtStep
     (inp : type (DivInput d)) (m : nat)
-    (s : TreeState DomainElemState (divIterTree dom input_width div_stages)) : Prop :=
-    IterStateAtStep dom (DivInput d) (DivStageState d) div_stages
+    (s : TreeState ElemState (divIterTree input_width div_stages)) : Prop :=
+    IterStateAtStep (DivInput d) (DivStageState d) div_stages
       (@divStepsConst input_width div_stages)
       (@divInitStage input_width)
       (fun ty st => @divStageStep input_width ty div_bps st)
       inp m s.
 
   Theorem IterDiv_Enq_Step0 :
-    forall {env : Env (divIterTree dom input_width div_stages)}
+    forall {env : Env (divIterTree input_width div_stages)}
            (inp : type (DivInput d))
-           (s s' : TreeState DomainElemState (divIterTree dom input_width div_stages)) ret,
+           (s s' : TreeState ElemState (divIterTree input_width div_stages)) ret,
       s @% "busy" = false ->
-      SemAction env (@divIterEnq dom input_width div_stages type inp) s s' ret ->
+      SemAction env (@divIterEnq input_width div_stages type inp) s s' ret ->
       IterDiv_StateAtStep inp 0%nat s'.
   Proof.
     intros env inp s s' ret Hidle Hsem.
-    exact (Iter_Enq_Step0 dom (DivInput d) (DivStageState d) div_stages
+    exact (Iter_Enq_Step0 (DivInput d) (DivStageState d) div_stages
              (@divStepsConst input_width div_stages)
              (@divInitStage input_width)
              (fun ty st => @divStageStep input_width ty div_bps st)
@@ -1845,16 +1844,16 @@ Section ConcreteMulDivInvariants.
   Qed.
 
   Theorem IterDiv_Step_Inductive :
-    forall {env : Env (divIterTree dom input_width div_stages)}
+    forall {env : Env (divIterTree input_width div_stages)}
            (inp : type (DivInput d)) (m : nat)
-           (s s' : TreeState DomainElemState (divIterTree dom input_width div_stages)) ret,
+           (s s' : TreeState ElemState (divIterTree input_width div_stages)) ret,
       IterDiv_StateAtStep inp m s ->
       (m < div_stages)%nat ->
-      SemAction env (@divIterStepRule dom input_width div_stages type) s s' ret ->
+      SemAction env (@divIterStepRule input_width div_stages type) s s' ret ->
       IterDiv_StateAtStep inp (S m) s'.
   Proof.
     intros env inp m s s' ret Hst Hlt Hsem.
-    eapply (Iter_Step_Inductive dom (DivInput d) (DivStageState d) div_stages
+    eapply (Iter_Step_Inductive (DivInput d) (DivStageState d) div_stages
               (@divStepsConst input_width div_stages)
               (@divInitStage input_width)
               (fun ty st => @divStageStep input_width ty div_bps st)
@@ -1863,18 +1862,18 @@ Section ConcreteMulDivInvariants.
   Qed.
 
   Theorem IterDiv_First_PureDivOut :
-    forall {env : Env (divIterTree dom input_width div_stages)}
+    forall {env : Env (divIterTree input_width div_stages)}
            (inp : type (DivInput d))
-           (s s' : TreeState DomainElemState (divIterTree dom input_width div_stages)) optOut,
+           (s s' : TreeState ElemState (divIterTree input_width div_stages)) optOut,
       (0 < input_width)%nat ->
       (div_stages * div_bps = input_width)%nat ->
       IterDiv_StateAtStep inp div_stages s ->
-      SemAction env (@divIterFirst dom input_width div_stages type) s s' optOut ->
+      SemAction env (@divIterFirst input_width div_stages type) s s' optOut ->
       s' = s /\
       optOut = evalExpr (mkSome (Const type (DivOutput d) (evalLetExpr (@PureDivOut d type inp)))).
   Proof.
     intros env inp s s' optOut Hw Hdiv_w Hst Hsem.
-    eapply (Iter_First_Spec dom (DivInput d) (DivStageState d) (DivOutput d) div_stages
+    eapply (Iter_First_Spec (DivInput d) (DivStageState d) (DivOutput d) div_stages
               (@divStepsConst input_width div_stages)
               (@divInitStage input_width)
               (fun ty st => @divStageStep input_width ty div_bps st)
@@ -1887,15 +1886,15 @@ Section ConcreteMulDivInvariants.
   Qed.
 
   Theorem IterDiv_Deq_Idle :
-    forall {env : Env (divIterTree dom input_width div_stages)}
+    forall {env : Env (divIterTree input_width div_stages)}
            (inp : type (DivInput d))
-           (s s' : TreeState DomainElemState (divIterTree dom input_width div_stages)) ret,
+           (s s' : TreeState ElemState (divIterTree input_width div_stages)) ret,
       IterDiv_StateAtStep inp div_stages s ->
-      SemAction env (@divIterDeq dom input_width div_stages type) s s' ret ->
+      SemAction env (@divIterDeq input_width div_stages type) s s' ret ->
       s' @% "busy" = false.
   Proof.
     intros env inp s s' ret Hst Hsem.
-    eapply (Iter_Deq_Idle dom (DivInput d) (DivStageState d) div_stages
+    eapply (Iter_Deq_Idle (DivInput d) (DivStageState d) div_stages
               (@divStepsConst input_width div_stages)
               (@divInitStage input_width)
               (fun ty st => @divStageStep input_width ty div_bps st)
@@ -1908,23 +1907,23 @@ Section ConcreteMulDivInvariants.
 
   Definition SharedIterMulDiv_StateAtStep
     (inp : type (SharedInput d)) (m : nat)
-    (s : TreeState DomainElemState (sharedIterTree dom input_width mul_stages div_stages)) : Prop :=
-    IterStateAtStep dom (SharedInput d) (SharedStageState d) max_stages
+    (s : TreeState ElemState (sharedIterTree input_width mul_stages div_stages)) : Prop :=
+    IterStateAtStep (SharedInput d) (SharedStageState d) max_stages
       (@sharedStepsFn input_width mul_stages div_stages)
       (@sharedInitStage input_width)
       (fun ty st => @sharedStageStep input_width ty mul_bps div_bps st)
       inp m s.
 
   Theorem SharedIterMulDiv_Enq_Step0 :
-    forall {env : Env (sharedIterTree dom input_width mul_stages div_stages)}
+    forall {env : Env (sharedIterTree input_width mul_stages div_stages)}
            (inp : type (SharedInput d))
-           (s s' : TreeState DomainElemState (sharedIterTree dom input_width mul_stages div_stages)) ret,
+           (s s' : TreeState ElemState (sharedIterTree input_width mul_stages div_stages)) ret,
       s @% "busy" = false ->
-      SemAction env (@sharedIterEnq dom input_width mul_stages div_stages type inp) s s' ret ->
+      SemAction env (@sharedIterEnq input_width mul_stages div_stages type inp) s s' ret ->
       SharedIterMulDiv_StateAtStep inp 0%nat s'.
   Proof.
     intros env inp s s' ret Hidle Hsem.
-    exact (Iter_Enq_Step0 dom (SharedInput d) (SharedStageState d) max_stages
+    exact (Iter_Enq_Step0 (SharedInput d) (SharedStageState d) max_stages
              (@sharedStepsFn input_width mul_stages div_stages)
              (@sharedInitStage input_width)
              (fun ty st => @sharedStageStep input_width ty mul_bps div_bps st)
@@ -1932,16 +1931,16 @@ Section ConcreteMulDivInvariants.
   Qed.
 
   Theorem SharedIterMulDiv_Step_Inductive :
-    forall {env : Env (sharedIterTree dom input_width mul_stages div_stages)}
+    forall {env : Env (sharedIterTree input_width mul_stages div_stages)}
            (inp : type (SharedInput d)) (m : nat)
-           (s s' : TreeState DomainElemState (sharedIterTree dom input_width mul_stages div_stages)) ret,
+           (s s' : TreeState ElemState (sharedIterTree input_width mul_stages div_stages)) ret,
       SharedIterMulDiv_StateAtStep inp m s ->
       (m < if inp @% "isMul" then mul_stages else div_stages)%nat ->
-      SemAction env (@sharedIterStepRule dom input_width mul_stages div_stages type) s s' ret ->
+      SemAction env (@sharedIterStepRule input_width mul_stages div_stages type) s s' ret ->
       SharedIterMulDiv_StateAtStep inp (S m) s'.
   Proof.
     intros env inp m s s' ret Hst Hlt Hsem.
-    eapply (Iter_Step_Inductive dom (SharedInput d) (SharedStageState d) max_stages
+    eapply (Iter_Step_Inductive (SharedInput d) (SharedStageState d) max_stages
               (@sharedStepsFn input_width mul_stages div_stages)
               (@sharedInitStage input_width)
               (fun ty st => @sharedStageStep input_width ty mul_bps div_bps st)
@@ -1950,19 +1949,19 @@ Section ConcreteMulDivInvariants.
   Qed.
 
   Theorem SharedIterMulDiv_First_PureSharedOut :
-    forall {env : Env (sharedIterTree dom input_width mul_stages div_stages)}
+    forall {env : Env (sharedIterTree input_width mul_stages div_stages)}
            (inp : type (SharedInput d))
-           (s s' : TreeState DomainElemState (sharedIterTree dom input_width mul_stages div_stages)) optOut,
+           (s s' : TreeState ElemState (sharedIterTree input_width mul_stages div_stages)) optOut,
       (0 < input_width)%nat ->
       (mul_stages * mul_bps = input_width)%nat ->
       (div_stages * div_bps = input_width)%nat ->
       SharedIterMulDiv_StateAtStep inp (if inp @% "isMul" then mul_stages else div_stages) s ->
-      SemAction env (@sharedIterFirst dom input_width mul_stages div_stages type) s s' optOut ->
+      SemAction env (@sharedIterFirst input_width mul_stages div_stages type) s s' optOut ->
       s' = s /\
       optOut = evalExpr (mkSome (Const type (SharedOutput d) (evalLetExpr (@PureSharedOut d type inp)))).
   Proof.
     intros env inp s s' optOut Hw Hmul_w Hdiv_w Hst Hsem.
-    eapply (Iter_First_Spec dom (SharedInput d) (SharedStageState d) (SharedOutput d) max_stages
+    eapply (Iter_First_Spec (SharedInput d) (SharedStageState d) (SharedOutput d) max_stages
               (@sharedStepsFn input_width mul_stages div_stages)
               (@sharedInitStage input_width)
               (fun ty st => @sharedStageStep input_width ty mul_bps div_bps st)
@@ -1975,15 +1974,15 @@ Section ConcreteMulDivInvariants.
   Qed.
 
   Theorem SharedIterMulDiv_Deq_Idle :
-    forall {env : Env (sharedIterTree dom input_width mul_stages div_stages)}
+    forall {env : Env (sharedIterTree input_width mul_stages div_stages)}
            (inp : type (SharedInput d))
-           (s s' : TreeState DomainElemState (sharedIterTree dom input_width mul_stages div_stages)) ret,
+           (s s' : TreeState ElemState (sharedIterTree input_width mul_stages div_stages)) ret,
       SharedIterMulDiv_StateAtStep inp (if inp @% "isMul" then mul_stages else div_stages) s ->
-      SemAction env (@sharedIterDeq dom input_width mul_stages div_stages type) s s' ret ->
+      SemAction env (@sharedIterDeq input_width mul_stages div_stages type) s s' ret ->
       s' @% "busy" = false.
   Proof.
     intros env inp s s' ret Hst Hsem.
-    eapply (Iter_Deq_Idle dom (SharedInput d) (SharedStageState d) max_stages
+    eapply (Iter_Deq_Idle (SharedInput d) (SharedStageState d) max_stages
               (@sharedStepsFn input_width mul_stages div_stages)
               (@sharedInitStage input_width)
               (fun ty st => @sharedStageStep input_width ty mul_bps div_bps st)

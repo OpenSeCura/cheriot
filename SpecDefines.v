@@ -1201,28 +1201,27 @@ Definition AluOutUnion := STRUCT_TYPE {
 }.
 
 Section RfTree.
-  Variable dom : string.
   Variable pcAddrInit : Z.
 
   (* gpr0 is PCC: it resets to the executable root at the entry point. *)
-  Definition gprLeaves : list (Tree DomainElem) :=
+  Definition gprLeaves : list (Tree Elem) :=
     map (fun '(_, idx) =>
       Leaf ("gpr_" ++ hex_string_of_Z idx)%string
-           (dom, EReg (Build_Reg FullECapWithTag
-                         (Some (if Z.eqb idx 0 then ExecRoot pcAddrInit else getDefault _)) false))
+           (EReg (Build_Reg FullECapWithTag
+                         (Some (if Z.eqb idx 0 then ExecRoot pcAddrInit else getDefault _))))
     ) (enumerate (repeat tt (Z.to_nat NumRegs))).
 
-  Definition scrLeaves : list (Tree DomainElem) :=
+  Definition scrLeaves : list (Tree Elem) :=
     map (fun e =>
-      Leaf e.(scrName) (dom, EReg (Build_Reg FullECapWithTag (Some e.(scrInit)) false))
+      Leaf e.(scrName) (EReg (Build_Reg FullECapWithTag (Some e.(scrInit))))
     ) (ScrTable pcAddrInit).
 
-  Definition csrLeaves : list (Tree DomainElem) :=
+  Definition csrLeaves : list (Tree Elem) :=
     map (fun e =>
-      Leaf e.(csrName) (dom, EReg (Build_Reg (Bit Xlen) (Some (Zmod.of_Z _ e.(csrInit))) false))
+      Leaf e.(csrName) (EReg (Build_Reg (Bit Xlen) (Some (Zmod.of_Z _ e.(csrInit)))))
     ) PhysicalCsrTable.
 
-  Definition rfTree : Tree DomainElem :=
+  Definition rfTree : Tree Elem :=
     Node "" [
       Node "gprs" gprLeaves ;
       Node "scrs" scrLeaves ;
@@ -1280,9 +1279,9 @@ Section RfTree.
 
 End RfTree.
 
-Arguments incrementMinstret dom pcAddrInit {ty}.
-Arguments incrementMcycle dom pcAddrInit {ty}.
-Arguments updateMshwmOnStore dom pcAddrInit {ty} stAddr.
+Arguments incrementMinstret pcAddrInit {ty}.
+Arguments incrementMcycle pcAddrInit {ty}.
+Arguments updateMshwmOnStore pcAddrInit {ty} stAddr.
 
 Definition ExecuteOut := STRUCT_TYPE {
   "mulDiv"     :: Option MulDivUnion ;

@@ -39,24 +39,23 @@ Local Open Scope guru_scope.
  * 3. a line is in at most one region when the regions are pairwise disjoint
  *    (`lineUnique_disjoint`). *)
 
-Local Abbreviation TS t := (TreeState DomainElemState t).
+Local Abbreviation TS t := (TreeState ElemState t).
 
 (* --- 1. Data Reads Change Only the Data-Read Traces --- *)
 
 Section ReadFrame.
-  Variable core : string.
   Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
 
   (* An ExternalMem region keeps its fetch part and its write trace; a CustomMem region is
    * unchanged *)
-  Definition RegionReadFrame (r : MemRegion) : TS (memRegionTree core r) -> TS (memRegionTree core r) -> Prop :=
-    match r.(regionKind) as k return TS (memRegionKindTree core r k) -> TS (memRegionKindTree core r k) -> Prop with
+  Definition RegionReadFrame (r : MemRegion) : TS (memRegionTree r) -> TS (memRegionTree r) -> Prop :=
+    match r.(regionKind) as k return TS (memRegionKindTree r k) -> TS (memRegionKindTree r k) -> Prop with
     | ExternalMem => fun x x' => x'.(Fst) = x.(Fst) /\ x'.(Snd).(Snd).(Snd) = x.(Snd).(Snd).(Snd)
     | CustomMem _ _ _ _ => fun x x' => x' = x
     end.
 
-  Fixpoint ReadFrameS (l : list MemRegion) : TS (specMemTree core l) -> TS (specMemTree core l) -> Prop :=
-    match l as l0 return TS (specMemTree core l0) -> TS (specMemTree core l0) -> Prop with
+  Fixpoint ReadFrameS (l : list MemRegion) : TS (specMemTree l) -> TS (specMemTree l) -> Prop :=
+    match l as l0 return TS (specMemTree l0) -> TS (specMemTree l0) -> Prop with
     | [] => fun _ _ => True
     | r :: rs => fun ms ms' => RegionReadFrame r ms.(Fst) ms'.(Fst) /\ ReadFrameS rs ms.(Snd).(Fst) ms'.(Snd).(Fst)
     end.
@@ -91,7 +90,7 @@ Section ReadFrame.
   Qed.
 
   Lemma RegionLineContent_readFrame :
-    forall r x x' L, RegionReadFrame r x x' -> RegionLineContent core initLine r x' L = RegionLineContent core initLine r x L.
+    forall r x x' L, RegionReadFrame r x x' -> RegionLineContent initLine r x' L = RegionLineContent initLine r x L.
   Proof.
     intros r; unfold RegionReadFrame, RegionLineContent, memRegionTree; destruct (regionKind r); intros x x' L H.
     - destruct H as [_ H]; rewrite H; reflexivity.
@@ -99,14 +98,14 @@ Section ReadFrame.
   Qed.
 
   Lemma lineContent_readFrame :
-    forall l ms ms', ReadFrameS l ms ms' -> forall L, lineContent core initLine l ms' L = lineContent core initLine l ms L.
+    forall l ms ms', ReadFrameS l ms ms' -> forall L, lineContent initLine l ms' L = lineContent initLine l ms L.
   Proof.
     induction l as [| r rs IH]; intros ms ms' H L; cbn [ReadFrameS lineContent] in *; [reflexivity |].
     destruct H as [H0 H1].
     rewrite (RegionLineContent_readFrame r _ _ L H0), (IH _ _ H1); reflexivity.
   Qed.
 
-  Lemma RegionFetchViewExt_readFrame : forall r x x', RegionReadFrame r x x' -> RegionFetchViewExt core r x x'.
+  Lemma RegionFetchViewExt_readFrame : forall r x x', RegionReadFrame r x x' -> RegionFetchViewExt r x x'.
   Proof.
     intros r; unfold RegionReadFrame, RegionFetchViewExt, memRegionTree; destruct (regionKind r); intros x x' H.
     - destruct H as [H0 H1]; rewrite H0; split; [reflexivity |].
@@ -114,14 +113,14 @@ Section ReadFrame.
     - exact I.
   Qed.
 
-  Lemma FetchViewExt_readFrame : forall l ms ms', ReadFrameS l ms ms' -> FetchViewExt core l ms ms'.
+  Lemma FetchViewExt_readFrame : forall l ms ms', ReadFrameS l ms ms' -> FetchViewExt l ms ms'.
   Proof.
     induction l as [| r rs IH]; intros ms ms' H; cbn [ReadFrameS FetchViewExt] in *; [exact I |].
     destruct H as [H0 H1]; split; [exact (RegionFetchViewExt_readFrame r _ _ H0) | exact (IH _ _ H1)].
   Qed.
 
   Lemma RegionSnapshotOK_readFrame :
-    forall r fwc x x', RegionReadFrame r x x' -> RegionSnapshotOK core r fwc x -> RegionSnapshotOK core r fwc x'.
+    forall r fwc x x', RegionReadFrame r x x' -> RegionSnapshotOK r fwc x -> RegionSnapshotOK r fwc x'.
   Proof.
     intros r fwc; unfold RegionReadFrame, RegionSnapshotOK, memRegionTree; destruct (regionKind r); intros x x' H Hs.
     - destruct H as [H0 H1]; rewrite H0, H1; exact Hs.
@@ -129,7 +128,7 @@ Section ReadFrame.
   Qed.
 
   Lemma SnapshotOK_readFrame :
-    forall l fwcs ms ms', ReadFrameS l ms ms' -> SnapshotOK core fwcs l ms -> SnapshotOK core fwcs l ms'.
+    forall l fwcs ms ms', ReadFrameS l ms ms' -> SnapshotOK fwcs l ms -> SnapshotOK fwcs l ms'.
   Proof.
     induction l as [| r rs IH]; intros fwcs ms ms' H Hs; cbn [ReadFrameS SnapshotOK] in *; [exact I |].
     destruct H as [H0 H1], Hs as [Hs0 Hs1].
@@ -137,7 +136,7 @@ Section ReadFrame.
   Qed.
 
   Lemma RegionRelAt_readFrame :
-    forall cp pp i r x x' y, RegionReadFrame r x x' -> RegionRelAt core cp pp i r x y -> RegionRelAt core cp pp i r x' y.
+    forall cp pp i r x x' y, RegionReadFrame r x x' -> RegionRelAt cp pp i r x y -> RegionRelAt cp pp i r x' y.
   Proof.
     intros cp pp i r; unfold RegionReadFrame, RegionRelAt, memRegionTree, implMemRegionTree.
     destruct (regionKind r); intros x x' y H Hr.
@@ -146,7 +145,7 @@ Section ReadFrame.
   Qed.
 
   Lemma MemRelPost_readFrame :
-    forall cp pp l i ms ms' mi, ReadFrameS l ms ms' -> MemRelPost core cp pp i l ms mi -> MemRelPost core cp pp i l ms' mi.
+    forall cp pp l i ms ms' mi, ReadFrameS l ms ms' -> MemRelPost cp pp i l ms mi -> MemRelPost cp pp i l ms' mi.
   Proof.
     intros cp pp; induction l as [| r rs IH]; intros i ms ms' mi H Hm; cbn [ReadFrameS MemRelPost] in *; [exact I |].
     destruct H as [H0 H1], Hm as [Hm0 Hm1].
@@ -156,7 +155,7 @@ Section ReadFrame.
   Lemma MemRelPre_readFrame :
     forall cp pp sRev iRev post l i ms ms' mi,
       ReadFrameS (l ++ sRev :: post) ms ms' ->
-      MemRelPre core cp pp i l sRev iRev post ms mi -> MemRelPre core cp pp i l sRev iRev post ms' mi.
+      MemRelPre cp pp i l sRev iRev post ms mi -> MemRelPre cp pp i l sRev iRev post ms' mi.
   Proof.
     intros cp pp sRev iRev post; induction l as [| r l IH]; intros i ms ms' mi H Hm;
       cbn [ReadFrameS MemRelPre app] in *.
@@ -169,7 +168,7 @@ Section ReadFrame.
   Lemma regionStateAt_readFrame :
     forall l idx r0 (pf : nth_error l idx = Some r0) ms ms',
       ReadFrameS l ms ms' -> isCustomR r0 ->
-      regionStateAt (memRegionTree core) idx l r0 pf ms' = regionStateAt (memRegionTree core) idx l r0 pf ms.
+      regionStateAt memRegionTree idx l r0 pf ms' = regionStateAt memRegionTree idx l r0 pf ms.
   Proof.
     induction l as [| r rs IH]; intros [| i'] r0 pf ms ms' H Hc; try discriminate pf;
       cbn [ReadFrameS] in H; destruct H as [H0 H1].
@@ -186,16 +185,15 @@ End ReadFrame.
 (* --- 2. A Data Read of One Region --- *)
 
 Section RegionRead.
-  Variable core : string.
   Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
 
   Lemma region_line_read_wp :
-    forall r fwc (env : Env (memRegionTree core r)) (x : TS (memRegionTree core r)) (L : type Addr)
+    forall r fwc (env : Env (memRegionTree r)) (x : TS (memRegionTree r)) (L : type Addr)
            (mask : type (Array LineBytes Bool)) P,
-      (forall sub (y : RecvPath (memRegionTree core r)) v, specRegionEnv core initLine r fwc sub y v -> env sub y v) ->
+      (forall sub (y : RecvPath (memRegionTree r)) v, specRegionEnv initLine r fwc sub y v -> env sub y v) ->
       match r.(regionKind) with ExternalMem => true | CustomMem _ _ _ _ => false end = true ->
-      (forall x', RegionReadFrame core r x x' -> P x' (RegionLineContent core initLine r x L)) ->
-      evalActionPropGen env (@memRegionLineRead core r type L mask) x P.
+      (forall x', RegionReadFrame r x x' -> P x' (RegionLineContent initLine r x L)) ->
+      evalActionPropGen env (@memRegionLineRead r type L mask) x P.
   Proof.
     intros r fwc; unfold RegionReadFrame, RegionLineContent, specRegionEnv, memRegionLineRead, memRegionTree.
     destruct (regionKind r) as [| ch rd wr irq]; intros env x L mask P Henv Hk HP; [| discriminate Hk].
@@ -212,7 +210,6 @@ End RegionRead.
 (* --- 3. A Data Read through the Router --- *)
 
 Section RouteRead.
-  Variable core : string.
   Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
 
   (* No region after the first one holding line `L` holds it *)
@@ -243,11 +240,11 @@ Section RouteRead.
   Qed.
 
   Lemma route_none_wp :
-    forall (getAction : forall r, Action type (memRegionTree core r) LineReadRp) L l acc
-           (env : Env (specMemTree core l)) ms P,
+    forall (getAction : forall r, Action type (memRegionTree r) LineReadRp) L l acc
+           (env : Env (specMemTree l)) ms P,
       lineKind l L = None ->
       P ms (orAll (map (@evalExpr _) (rev acc))) ->
-      evalActionPropGen env (genRouteRegionActionAux (memRegionTree core) getAction (@Or type LineReadRp) L acc l) ms P.
+      evalActionPropGen env (genRouteRegionActionAux memRegionTree getAction (@Or type LineReadRp) L acc l) ms P.
   Proof.
     intros getAction L l; induction l as [| r rs IH]; intros acc env ms P Hk HP.
     - cbn [genRouteRegionActionAux evalActionPropGen].
@@ -267,13 +264,13 @@ Section RouteRead.
   Qed.
 
   Lemma route_match_wp :
-    forall (L : type Addr) (mask : type (Array LineBytes Bool)) l fwcs acc (env : Env (specMemTree core l)) ms P,
-      SpecEnvOK core initLine l fwcs env ->
+    forall (L : type Addr) (mask : type (Array LineBytes Bool)) l fwcs acc (env : Env (specMemTree l)) ms P,
+      SpecEnvOK initLine l fwcs env ->
       lineKind l L = Some true -> lineUnique l L ->
       Forall (fun e => evalExpr e = getDefault LineReadRp) acc ->
-      (forall ms', ReadFrameS core l ms ms' -> P ms' (lineContent core initLine l ms L)) ->
+      (forall ms', ReadFrameS l ms ms' -> P ms' (lineContent initLine l ms L)) ->
       evalActionPropGen env
-        (genRouteRegionActionAux (memRegionTree core) (fun r => @memRegionLineRead core r type L mask)
+        (genRouteRegionActionAux memRegionTree (fun r => @memRegionLineRead r type L mask)
            (@Or type LineReadRp) L acc l) ms P.
   Proof.
     intros L mask l; induction l as [| r rs IH]; intros fwcs acc env ms P Henv Hk Hu Hacc HP;
@@ -285,8 +282,8 @@ Section RouteRead.
     revert Hk Hu HP; destruct (isRegionAddrB r L) eqn:Em; intros Hk Hu HP; rewrite evalActionPropGen_liftAction.
     - (* r holds L: its read, then no other region answers *)
       cbn [child0Path readSubTreeState readSubTreeState_child Fst Snd].
-      apply (region_line_read_wp core initLine r (fwcs 0%nat)).
-      + intros sub y v Hy; exact (SpecEnvOK_head core initLine r rs fwcs env _ Henv sub y v Hy).
+      apply (region_line_read_wp initLine r (fwcs 0%nat)).
+      + intros sub y v Hy; exact (SpecEnvOK_head initLine r rs fwcs env _ Henv sub y v Hy).
       + injection Hk as Hk; exact Hk.
       + intros x' Hx'.
         cbn [writeSubTreeState writeSubTreeState_child child0Path Fst Snd].
@@ -295,14 +292,14 @@ Section RouteRead.
         apply route_none_wp; [exact Hu |].
         cbn [writeSubTreeState writeSubTreeState_child child1Path Fst Snd].
         cbn [rev map]; rewrite map_app; cbn [map].
-        change (evalExpr (Var type LineReadRp (RegionLineContent core initLine r m0 L)))
-          with (RegionLineContent core initLine r m0 L).
+        change (evalExpr (Var type LineReadRp (RegionLineContent initLine r m0 L)))
+          with (RegionLineContent initLine r m0 L).
         rewrite orAll_defaults_snoc by (apply Forall_map; apply Forall_rev; exact Hacc).
         apply HP; cbn [ReadFrameS Fst Snd]; split; [exact Hx' | apply ReadFrameS_refl].
     - (* r does not hold L *)
       cbn [child1Path readSubTreeState readSubTreeState_child Fst Snd].
       apply (IH (fun i => fwcs (S i))).
-      + exact (SpecEnvOK_tail core initLine r rs fwcs env _ Henv).
+      + exact (SpecEnvOK_tail initLine r rs fwcs env _ Henv).
       + exact Hk.
       + exact Hu.
       + constructor; [reflexivity | exact Hacc].
@@ -312,11 +309,11 @@ Section RouteRead.
   Qed.
 
   Lemma specMemLineRead_wp :
-    forall (L : type Addr) (mask : type (Array LineBytes Bool)) l fwcs (env : Env (specMemTree core l)) ms P,
-      SpecEnvOK core initLine l fwcs env ->
+    forall (L : type Addr) (mask : type (Array LineBytes Bool)) l fwcs (env : Env (specMemTree l)) ms P,
+      SpecEnvOK initLine l fwcs env ->
       lineKind l L = Some true -> lineUnique l L ->
-      (forall ms', ReadFrameS core l ms ms' -> P ms' (lineContent core initLine l ms L)) ->
-      evalActionPropGen env (@specMemLineRead core type l L mask) ms P.
+      (forall ms', ReadFrameS l ms ms' -> P ms' (lineContent initLine l ms L)) ->
+      evalActionPropGen env (@specMemLineRead type l L mask) ms P.
   Proof.
     intros L mask l fwcs env ms P Henv Hk Hu HP.
     unfold specMemLineRead, genRouteRegionAction.
@@ -325,13 +322,13 @@ Section RouteRead.
 
   (* A single-line data read returns the line content's value *)
   Lemma specMemRead_wp :
-    forall (addr : type Addr) (sz : type (Bit LgLgNumBytesFullCapSz)) l fwcs (env : Env (specMemTree core l)) ms P,
-      SpecEnvOK core initLine l fwcs env ->
+    forall (addr : type Addr) (sz : type (Bit LgLgNumBytesFullCapSz)) l fwcs (env : Env (specMemTree l)) ms P,
+      SpecEnvOK initLine l fwcs env ->
       lineKind l (lineOf false addr) = Some true -> lineUnique l (lineOf false addr) ->
-      (forall ms', ReadFrameS core l ms ms' ->
+      (forall ms', ReadFrameS l ms ms' ->
          P ms' (evalLetExpr (memAssembleCapRead (Var type Addr addr) (Var type (Bit LgLgNumBytesFullCapSz) sz)
-                  (Var type CapPacket (specPkt addr (lineContent core initLine l ms (lineOf false addr))))))) ->
-      evalActionPropGen env (@specMemRead core type l addr sz) ms P.
+                  (Var type CapPacket (specPkt addr (lineContent initLine l ms (lineOf false addr))))))) ->
+      evalActionPropGen env (@specMemRead type l addr sz) ms P.
   Proof.
     intros addr sz l fwcs env ms P Henv Hk Hu HP.
     unfold specMemRead, specMemReadFirstLine; cbn [evalActionPropGen].

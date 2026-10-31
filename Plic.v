@@ -45,46 +45,45 @@ Definition PlicOffsetSz          : Z := Eval compute in Z.log2_up PlicSizeBytes.
  * =========================================================================== *)
 
 Section Plic.
-  Variable dom : string.
 
-  Definition priorityLeaves (n : nat) : list (Tree DomainElem) :=
+  Definition priorityLeaves (n : nat) : list (Tree Elem) :=
     map (fun idx =>
       Leaf ("prio_" ++ hex_string_of_Z (Z.of_nat idx))%string
-           (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false))
+           (EReg (Build_Reg (Bit Xlen) (Some Zmod.zero)))
     ) (seq 0 n).
 
-  Definition pendingLeaves (n : nat) : list (Tree DomainElem) :=
+  Definition pendingLeaves (n : nat) : list (Tree Elem) :=
     map (fun idx =>
       Leaf ("pend_" ++ hex_string_of_Z (Z.of_nat idx))%string
-           (dom, EReg (Build_Reg Bool (Some false) false))
+           (EReg (Build_Reg Bool (Some false)))
     ) (seq 0 n).
 
   Definition plicNumEnableWords (n : nat) : nat :=
     Nat.div (n + Z.to_nat (Xlen - 1)) (Z.to_nat Xlen).
 
-  Definition enableLeaves (n : nat) : list (Tree DomainElem) :=
+  Definition enableLeaves (n : nat) : list (Tree Elem) :=
     map (fun idx =>
       Leaf ("en_" ++ hex_string_of_Z (Z.of_nat idx))%string
-           (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false))
+           (EReg (Build_Reg (Bit Xlen) (Some Zmod.zero)))
     ) (seq 0 (plicNumEnableWords n)).
 
-  Definition inServiceLeaves (n : nat) : list (Tree DomainElem) :=
+  Definition inServiceLeaves (n : nat) : list (Tree Elem) :=
     map (fun idx =>
       Leaf ("insv_" ++ hex_string_of_Z (Z.of_nat idx))%string
-           (dom, EReg (Build_Reg Bool (Some false) false))
+           (EReg (Build_Reg Bool (Some false)))
     ) (seq 0 n).
 
-  Definition plicChildren (n : nat) : list (Tree DomainElem) :=
+  Definition plicChildren (n : nat) : list (Tree Elem) :=
     [ Node "priorities" (priorityLeaves n) ;
       Node "pending"    (pendingLeaves n) ;
       Node "enables"    (enableLeaves n) ;
-      Leaf "threshold"  (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false)) ;
-      Leaf "claim"      (dom, EReg (Build_Reg (Bit Xlen) (Some Zmod.zero) false)) ;
-      Leaf "meip"       (dom, EReg (Build_Reg Bool       (Some false)     false)) ;
+      Leaf "threshold"  (EReg (Build_Reg (Bit Xlen) (Some Zmod.zero))) ;
+      Leaf "claim"      (EReg (Build_Reg (Bit Xlen) (Some Zmod.zero))) ;
+      Leaf "meip"       (EReg (Build_Reg Bool       (Some false))) ;
       Node "in_service" (inServiceLeaves n) ;
-      Leaf "UartIrq"    (dom, ERecv Bool) ].
+      Leaf "UartIrq"    (ERecv Bool) ].
 
-  Definition plicTree (n : nat) : Tree DomainElem :=
+  Definition plicTree (n : nat) : Tree Elem :=
     Node "plic" (plicChildren n).
 
   Section PlicPaths.
@@ -550,7 +549,7 @@ Section Plic.
     Variable plic : PlicInstance n regions.
     Variable ty : Kind -> Type.
 
-    Local Abbreviation memTree := (specMemTree dom regions).
+    Local Abbreviation memTree := (specMemTree regions).
 
     Definition plicAction {k : Kind} (act : Action ty (plicTree n) k) : Action ty memTree k :=
       nthRegionAction plic.(plicIdx) regions (plicRegion plic) plic.(pfPlic) act.
@@ -575,12 +574,12 @@ Section Plic.
       end.
 
     Definition plicPendingsSteps
-               (pfCount : S (S (length (collectIrqActions dom regions))) = n)
+               (pfCount : S (S (length (collectIrqActions regions))) = n)
                : list (Action ty memTree (Bit 0)) :=
       match pendingPathsWithKind n, inServicePathsWithKind n with
       | _ :: devPends, _ :: devInsvs =>
           plicPendingStepsHelper
-            (map (fun f => f ty) (collectIrqActions dom regions) ++ [plicUartIrqAction])
+            (map (fun f => f ty) (collectIrqActions regions) ++ [plicUartIrqAction])
             devPends
             devInsvs
       | _, _ => []

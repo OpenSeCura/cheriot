@@ -76,7 +76,7 @@ Inductive RegionKind (regionName : string) :=
 | ExternalMem
 (* A device has no tags: its read action returns the data bytes of the line, and its write
  * action gets the address, the data bytes and their byte mask *)
-| CustomMem (children : list (Tree DomainElem))
+| CustomMem (children : list (Tree Elem))
             (readAction : forall ty, ty Addr ->
                           ty (Array LineBytes Bool) ->
                           Action ty (Node regionName children) (Array LineBytes (Bit 8)))
@@ -305,15 +305,15 @@ Record MemRegion := {
    * =========================================================================== *)
 
   Section GenRegionTree.
-    Variable regionTree : MemRegion -> Tree DomainElem.
+    Variable regionTree : MemRegion -> Tree Elem.
 
-    Fixpoint regionsTreeChildren (regions : list MemRegion) : list (Tree DomainElem) :=
+    Fixpoint regionsTreeChildren (regions : list MemRegion) : list (Tree Elem) :=
       match regions with
       | [] => []
       | r :: rs => [ regionTree r ; Node "" (regionsTreeChildren rs) ]
       end.
 
-    Definition regionsTree (regions : list MemRegion) : Tree DomainElem :=
+    Definition regionsTree (regions : list MemRegion) : Tree Elem :=
       Node "" (regionsTreeChildren regions).
 
     Fixpoint genNthRegionAction
@@ -442,27 +442,26 @@ Record MemRegion := {
    * =========================================================================== *)
 
 Section SpecDevice.
-  Variable dom : string.
 
-  Definition externalMemFetchTree : Tree DomainElem :=
+  Definition externalMemFetchTree : Tree Elem :=
     Node "fetch"
-      [ Leaf "lineReadRq" (dom, ESend Addr) ;
-        Leaf "lineReadRp" (dom, ERecv LineReadRp) ;
-        Leaf "fenceIWait" (dom, EReg (Build_Reg Bool (Some false) false)) ;
-        Leaf "fenceIRq"   (dom, ESend (Bit 0)) ;
-        Leaf "fenceIAck"  (dom, ERecv Bool) ].
+      [ Leaf "lineReadRq" (ESend Addr) ;
+        Leaf "lineReadRp" (ERecv LineReadRp) ;
+        Leaf "fenceIWait" (EReg (Build_Reg Bool (Some false))) ;
+        Leaf "fenceIRq"   (ESend (Bit 0)) ;
+        Leaf "fenceIAck"  (ERecv Bool) ].
 
-  Definition externalMemRegionTree (r : MemRegion) : Tree DomainElem :=
+  Definition externalMemRegionTree (r : MemRegion) : Tree Elem :=
     Node r.(regionName)
       [ externalMemFetchTree ;
-        Leaf "lineReadRq"  (dom, ESend Addr) ;
-        Leaf "lineReadRp"  (dom, ERecv LineReadRp) ;
-        Leaf "lineWriteRq" (dom, ESend LineWriteRq) ].
+        Leaf "lineReadRq"  (ESend Addr) ;
+        Leaf "lineReadRp"  (ERecv LineReadRp) ;
+        Leaf "lineWriteRq" (ESend LineWriteRq) ].
 
-  Definition customMemRegionTree (r : MemRegion) (children : list (Tree DomainElem)) : Tree DomainElem :=
+  Definition customMemRegionTree (r : MemRegion) (children : list (Tree Elem)) : Tree Elem :=
     Node r.(regionName) children.
 
-  Definition memRegionKindTree (r : MemRegion) (k : RegionKind r.(regionName)) : Tree DomainElem :=
+  Definition memRegionKindTree (r : MemRegion) (k : RegionKind r.(regionName)) : Tree Elem :=
     match k with
     | ExternalMem => externalMemRegionTree r
     | CustomMem children _ _ _ => customMemRegionTree r children
@@ -470,7 +469,7 @@ Section SpecDevice.
 
   Arguments memRegionKindTree r k : clear implicits.
 
-  Definition memRegionTree (r : MemRegion) : Tree DomainElem :=
+  Definition memRegionTree (r : MemRegion) : Tree Elem :=
     memRegionKindTree r r.(regionKind).
 
   (* ===========================================================================
@@ -815,43 +814,42 @@ Section SpecDevice.
 
 End SpecDevice.
 
-Arguments externalMemFetchTree dom : clear implicits.
-Arguments externalMemRegionTree dom r : clear implicits.
-Arguments memRegionKindTree dom r k : clear implicits.
-Arguments memRegionTree dom r : clear implicits.
-Arguments specMemChildren dom regions : clear implicits.
-Arguments specMemTree dom regions : clear implicits.
+Arguments externalMemRegionTree r : clear implicits.
+Arguments memRegionKindTree r k : clear implicits.
+Arguments memRegionTree r : clear implicits.
+Arguments specMemChildren regions : clear implicits.
+Arguments specMemTree regions : clear implicits.
 
-Arguments externalFetchLineReadRq {dom} r [ty] addr.
-Arguments externalFetchLineReadRp {dom} r {ty}.
-Arguments externalFetchLineRead {dom} r [ty] addr.
-Arguments externalLineReadRq {dom} r [ty] addr.
-Arguments externalLineReadRp {dom} r {ty}.
-Arguments externalLineRead {dom} r [ty] addr.
-Arguments externalLineWrite {dom} r [ty] rq.
-Arguments externalReadFenceIWait {dom} r {ty}.
-Arguments externalSendFenceIRq {dom} r {ty}.
-Arguments externalFenceIAckStep {dom} r {ty}.
+Arguments externalFetchLineReadRq r [ty] addr.
+Arguments externalFetchLineReadRp r {ty}.
+Arguments externalFetchLineRead r [ty] addr.
+Arguments externalLineReadRq r [ty] addr.
+Arguments externalLineReadRp r {ty}.
+Arguments externalLineRead r [ty] addr.
+Arguments externalLineWrite r [ty] rq.
+Arguments externalReadFenceIWait r {ty}.
+Arguments externalSendFenceIRq r {ty}.
+Arguments externalFenceIAckStep r {ty}.
 
-Arguments memRegionFetchLineRead {dom} r [ty] addr.
-Arguments memRegionLineRead {dom} r [ty] addr dataMask.
-Arguments memRegionLineWrite {dom} r [ty] rq.
-Arguments memRegionReadFenceIWait {dom} r {ty}.
-Arguments memRegionSendFenceIRq {dom} r {ty}.
+Arguments memRegionFetchLineRead r [ty] addr.
+Arguments memRegionLineRead r [ty] addr dataMask.
+Arguments memRegionLineWrite r [ty] rq.
+Arguments memRegionReadFenceIWait r {ty}.
+Arguments memRegionSendFenceIRq r {ty}.
 
-Arguments nthRegionAction {dom ty} idx regions r0 pf {k} act.
-Arguments specMemFetchLineRead {dom} [ty] regions lineAddr.
-Arguments specMemLineRead {dom} [ty] regions lineAddr dataMask.
-Arguments specMemLineWrite {dom} [ty] regions rq.
-Arguments specMemFetchRead {dom} [ty] regions addr top.
-Arguments specMemReadFirstLine {dom} [ty] regions addr memSize.
-Arguments specMemReadSecondLine {dom} [ty] regions addr memSize.
-Arguments specMemRead {dom} [ty] regions addr memSize.
-Arguments specMemWrite {dom} [ty] regions addr stVal memSize.
-Arguments specMemReadFenceIWait {dom ty} regions.
-Arguments specMemSendFenceIRq {dom ty} regions.
-Arguments readRevBit {dom} [ty] config regions base.
+Arguments nthRegionAction {ty} idx regions r0 pf {k} act.
+Arguments specMemFetchLineRead [ty] regions lineAddr.
+Arguments specMemLineRead [ty] regions lineAddr dataMask.
+Arguments specMemLineWrite [ty] regions rq.
+Arguments specMemFetchRead [ty] regions addr top.
+Arguments specMemReadFirstLine [ty] regions addr memSize.
+Arguments specMemReadSecondLine [ty] regions addr memSize.
+Arguments specMemRead [ty] regions addr memSize.
+Arguments specMemWrite [ty] regions addr stVal memSize.
+Arguments specMemReadFenceIWait {ty} regions.
+Arguments specMemSendFenceIRq {ty} regions.
+Arguments readRevBit [ty] config regions base.
 
-Arguments collectIrqActions dom regions : clear implicits.
-Arguments collectFenceIAckActions dom regions : clear implicits.
+Arguments collectIrqActions regions : clear implicits.
+Arguments collectFenceIAckActions regions : clear implicits.
 

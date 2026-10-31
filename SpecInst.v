@@ -98,9 +98,9 @@ Definition uartRegion : MemRegion := {|
 Definition concreteRegions : list MemRegion := [
   ramRegion ;
   revTableRegion ;
-  @clintMemRegion "core" ClintBaseAddr I I ;
-  @revokerMemRegion "core" [] RevokerBaseAddr I I ;
-  @plicMemRegion "core" 3 PlicBaseAddr I I ;
+  @clintMemRegion ClintBaseAddr I I ;
+  @revokerMemRegion [] RevokerBaseAddr I I ;
+  @plicMemRegion 3 PlicBaseAddr I I ;
   uartRegion
 ].
 
@@ -108,24 +108,24 @@ Definition concreteRegionsDisjoint : Is_true (pairwiseDisjoint concreteRegions) 
 
 Definition concreteRevTableInExternalMem : Is_true (revTableInExternalMem concreteRevConfig concreteRegions) := I.
 
-Definition concreteClint : @ClintInstance "core" concreteRegions :=
-  @Build_ClintInstance "core" concreteRegions 2%nat ClintBaseAddr I I eq_refl.
+Definition concreteClint : @ClintInstance concreteRegions :=
+  @Build_ClintInstance concreteRegions 2%nat ClintBaseAddr I I eq_refl.
 
-Definition concreteRevoker : @RevokerInstance "core" [] concreteRegions :=
-  @Build_RevokerInstance "core" [] concreteRegions 3%nat RevokerBaseAddr I I eq_refl.
+Definition concreteRevoker : @RevokerInstance [] concreteRegions :=
+  @Build_RevokerInstance [] concreteRegions 3%nat RevokerBaseAddr I I eq_refl.
 
-Definition concretePlic : @PlicInstance "core" 3%nat concreteRegions :=
-  @Build_PlicInstance "core" 3%nat concreteRegions 4%nat PlicBaseAddr I I I eq_refl.
+Definition concretePlic : @PlicInstance 3%nat concreteRegions :=
+  @Build_PlicInstance 3%nat concreteRegions 4%nat PlicBaseAddr I I I eq_refl.
 
 (* ===========================================================================
  * Fully Instantiated System Tree and Specification Mod
  * =========================================================================== *)
 
-Definition specSysTreeInst : Tree DomainElem :=
-  specSysTree "core" PcAddrInit concreteRegions.
+Definition specSysTreeInst : Tree Elem :=
+  specSysTree PcAddrInit concreteRegions.
 
 Definition specModInst : Mod specSysTreeInst :=
-  @spec "core"
+  @spec
         PcAddrInit
         concreteRevConfig
         concreteRegions

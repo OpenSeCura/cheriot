@@ -27,29 +27,29 @@ Local Open Scope Z_scope.
 Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
-Definition fifo1_elem {dom : string} {elemK : Kind}
-  (f : TreeState DomainElemState (fifoTree dom 1 elemK)) : type elemK :=
+Definition fifo1_elem {elemK : Kind}
+  (f : TreeState ElemState (fifoTree 1 elemK)) : type elemK :=
   f.(Fst).(Fst).
 
-Definition fifo1_size {dom : string} {elemK : Kind}
-  (f : TreeState DomainElemState (fifoTree dom 1 elemK)) : bits 1 :=
+Definition fifo1_size {elemK : Kind}
+  (f : TreeState ElemState (fifoTree 1 elemK)) : bits 1 :=
   f.(Snd).(Fst).
 
-Definition mkFifo1 {dom : string} {elemK : Kind}
+Definition mkFifo1 {elemK : Kind}
   (e : type elemK) (sz : bits 1) :
-  TreeState DomainElemState (fifoTree dom 1 elemK) :=
+  TreeState ElemState (fifoTree 1 elemK) :=
   ((e ,, tt) ,, (sz ,, tt)).
 
-Definition fifo1_empty_first {dom : string} {elemK : Kind}
-  (f : TreeState DomainElemState (fifoTree dom 1 elemK)) : type (Option elemK) :=
+Definition fifo1_empty_first {elemK : Kind}
+  (f : TreeState ElemState (fifoTree 1 elemK)) : type (Option elemK) :=
   (fifo1_elem f ,, (false ,, tt)).
 
-Lemma elemPathsWithKind_1 : forall dom (elemK : Kind),
-  exists (rk : RegOfKind (t := fifoTree dom 1 elemK) elemK),
-    elemPathsWithKind dom 1 elemK = [rk] /\
+Lemma elemPathsWithKind_1 : forall (elemK : Kind),
+  exists (rk : RegOfKind (t := fifoTree 1 elemK) elemK),
+    elemPathsWithKind 1 elemK = [rk] /\
     rk.(rk_path).(regPath) = inl (inl tt).
 Proof.
-  intros dom elemK.
+  intros elemK.
   unfold elemPathsWithKind, getTreeRegsOfKind.
   cbn -[Kind_eqb].
   pose (target_prop := Is_true (Kind_eqb elemK elemK)).
@@ -63,9 +63,9 @@ Proof.
   eexists. split; reflexivity.
 Qed.
 
-Lemma evalActionPropGen_fifo_isFull : forall {dom elemK} {env : Env (fifoTree dom 1 elemK)}
-  (f : TreeState DomainElemState (fifoTree dom 1 elemK)) P,
-  evalActionPropGen env (@isFull dom 1 elemK type) f P <->
+Lemma evalActionPropGen_fifo_isFull : forall {elemK} {env : Env (fifoTree 1 elemK)}
+  (f : TreeState ElemState (fifoTree 1 elemK)) P,
+  evalActionPropGen env (@isFull 1 elemK type) f P <->
   P f (Zmod.eqb (fifo1_size f) (Zmod.of_Z 2 1)).
 Proof. reflexivity. Qed.
 
@@ -98,31 +98,31 @@ Proof.
   change (Zmod.to_Z (Zmod.of_Z 2 0)) with 0; lia.
 Qed.
 
-Lemma evalActionPropGen_fifo_deq : forall {dom elemK} {env : Env (fifoTree dom 1 elemK)}
-  (f : TreeState DomainElemState (fifoTree dom 1 elemK)) P,
-  evalActionPropGen env (@deq dom 1 elemK type) f P <->
+Lemma evalActionPropGen_fifo_deq : forall {elemK} {env : Env (fifoTree 1 elemK)}
+  (f : TreeState ElemState (fifoTree 1 elemK)) P,
+  evalActionPropGen env (@deq 1 elemK type) f P <->
   P (if negb (Zmod.eqb (fifo1_size f) (Zmod.of_Z 2 0))
      then mkFifo1 (fifo1_elem f) (evalExpr (Sub (Const type (Bit 1) (fifo1_size f)) $1))
      else f) Zmod.zero.
 Proof.
-  intros dom elemK env [[e []] [sz []]] P.
+  intros elemK env [[e []] [sz []]] P.
   unfold deq, fifo1_elem, fifo1_size, mkFifo1.
-  destruct (elemPathsWithKind_1 dom elemK) as [rk [Hpaths _]].
+  destruct (elemPathsWithKind_1 elemK) as [rk [Hpaths _]].
   rewrite Hpaths; simpl.
   destruct_ifs; reflexivity.
 Qed.
 
-Lemma evalActionPropGen_fifo_enq : forall {dom elemK} {env : Env (fifoTree dom 1 elemK)} (val : type elemK)
-  (f : TreeState DomainElemState (fifoTree dom 1 elemK)) P,
-  evalActionPropGen env (@enq dom 1 elemK type val) f P <->
+Lemma evalActionPropGen_fifo_enq : forall {elemK} {env : Env (fifoTree 1 elemK)} (val : type elemK)
+  (f : TreeState ElemState (fifoTree 1 elemK)) P,
+  evalActionPropGen env (@enq 1 elemK type val) f P <->
   P (if negb (Zmod.eqb (fifo1_size f) (Zmod.of_Z 2 1))
      then mkFifo1 val (evalExpr (Add [Const type (Bit 1) (fifo1_size f); $1]))
      else f) Zmod.zero.
 Proof.
-  intros dom elemK env val [[e []] [sz []]] P.
+  intros elemK env val [[e []] [sz []]] P.
   cbn in sz.
   unfold enq, isFull, writeRegsList, fifo1_elem, fifo1_size, mkFifo1.
-  destruct (elemPathsWithKind_1 dom elemK) as [[rk_p rk_pf] [Hpaths Hreg]].
+  destruct (elemPathsWithKind_1 elemK) as [[rk_p rk_pf] [Hpaths Hreg]].
   rewrite Hpaths.
   cbn -[writeTreeState castStateRegInv].
   destruct (Zmod.eqb sz (Zmod.of_Z 2 1)) eqn:Hsz1; cbn [negb].
@@ -134,16 +134,16 @@ Proof.
     rewrite eq_rect_Kind_refl; reflexivity.
 Qed.
 
-Lemma evalActionPropGen_fifo_first : forall {dom elemK} {env : Env (fifoTree dom 1 elemK)}
-  (f : TreeState DomainElemState (fifoTree dom 1 elemK)) P,
-  evalActionPropGen env (@first dom 1 elemK type) f P <->
+Lemma evalActionPropGen_fifo_first : forall {elemK} {env : Env (fifoTree 1 elemK)}
+  (f : TreeState ElemState (fifoTree 1 elemK)) P,
+  evalActionPropGen env (@first 1 elemK type) f P <->
   P f (if Zmod.eqb (fifo1_size f) (Zmod.of_Z 2 0)
        then fifo1_empty_first f
        else evalExpr (mkSome (Const type elemK (fifo1_elem f)))).
 Proof.
-  intros dom elemK env [[e []] [sz []]] P.
+  intros elemK env [[e []] [sz []]] P.
   unfold first, readElemReg, fifo1_elem, fifo1_size, fifo1_empty_first.
-  destruct (elemPathsWithKind_1 dom elemK) as [[rk_p rk_pf] [Hpaths Hreg]].
+  destruct (elemPathsWithKind_1 elemK) as [[rk_p rk_pf] [Hpaths Hreg]].
   rewrite Hpaths.
   destruct rk_p as [rp rp_pf]; simpl in Hreg; subst rp.
   cbn.

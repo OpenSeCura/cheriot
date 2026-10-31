@@ -44,7 +44,7 @@ Local Open Scope guru_scope.
  * The steps assume that the regions are pairwise disjoint (`Hdisj`) and that the whole
  * revocation table is ExternalMem (`HrevTab`). *)
 
-Local Abbreviation TS t := (TreeState DomainElemState t).
+Local Abbreviation TS t := (TreeState ElemState t).
 
 (* --- 1. More Tags --- *)
 
@@ -68,16 +68,15 @@ Proof. intros p H; unfold rpCheck; rewrite H, !orb_true_r; reflexivity. Qed.
 (* --- 2. The Memory Relation When the Impl Revoker Changes --- *)
 
 Section MemRelPreRev.
-  Variable core : string.
   Variables cp pp : nat.
 
   (* The position `length l` (the revoker) is not read by `MemRelPre` *)
   Lemma MemRelPre_upd_rev_impl :
-    forall sRev iRev post l i (ms : TS (specMemTree core (l ++ sRev :: post)))
-           (mi : TS (implRegionsTree core (l ++ iRev :: post))) w,
-      MemRelPre core cp pp i l sRev iRev post ms mi ->
-      MemRelPre core cp pp i l sRev iRev post ms
-        (updRegionStateAt (implMemRegionTree core) (length l) (l ++ iRev :: post) iRev
+    forall sRev iRev post l i (ms : TS (specMemTree (l ++ sRev :: post)))
+           (mi : TS (implRegionsTree (l ++ iRev :: post))) w,
+      MemRelPre cp pp i l sRev iRev post ms mi ->
+      MemRelPre cp pp i l sRev iRev post ms
+        (updRegionStateAt implMemRegionTree (length l) (l ++ iRev :: post) iRev
            (nth_error_app_cons_len l iRev post) mi w).
   Proof.
     intros sRev iRev post l; induction l as [| r l IH]; intros i ms mi w H.
@@ -87,11 +86,11 @@ Section MemRelPreRev.
   Qed.
   (* ... and neither is the spec one *)
   Lemma MemRelPre_upd_rev_spec :
-    forall sRev iRev post l i (ms : TS (specMemTree core (l ++ sRev :: post)))
-           (mi : TS (implRegionsTree core (l ++ iRev :: post))) w,
-      MemRelPre core cp pp i l sRev iRev post ms mi ->
-      MemRelPre core cp pp i l sRev iRev post
-        (updRegionStateAt (memRegionTree core) (length l) (l ++ sRev :: post) sRev
+    forall sRev iRev post l i (ms : TS (specMemTree (l ++ sRev :: post)))
+           (mi : TS (implRegionsTree (l ++ iRev :: post))) w,
+      MemRelPre cp pp i l sRev iRev post ms mi ->
+      MemRelPre cp pp i l sRev iRev post
+        (updRegionStateAt memRegionTree (length l) (l ++ sRev :: post) sRev
            (nth_error_app_cons_len l sRev post) ms w) mi.
   Proof.
     intros sRev iRev post l; induction l as [| r l IH]; intros i ms mi w H.
@@ -107,46 +106,45 @@ Lemma scanNext_eq : forall sa, scanNext sa = Zmod.add sa Zmod.one.
 Proof. intros sa; unfold scanNext; cbn; rewrite Zmod.add_0_l; reflexivity. Qed.
 
 Section RevRelFacts.
-  Variable core : string.
 
   Definition mkRev12 (b t : bits TagAddrWidth) (c : bool) (e : bits Xlen) (ist ir : bool) (sa st : bits TagAddrWidth)
     (ph : type RevPhase) (sc : type FullCapWithTag) (sb : type (Bit (AddrSz + 1))) (sh : bool)
-    : TS (implRevokerTree core) :=
+    : TS implRevokerTree :=
     (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))).
 
   Lemma RevRel_scan :
     forall o xs b t c e ist ir sa st ph sc sb sh,
-      RevRel core o xs (mkRev12 b t c e ist ir sa st ph sc sb sh) -> sa = revOffAddr o (revScanAddr core xs).
-  Proof. intros o xs b t c e ist ir sa st ph sc sb sh HR; exact (f_equal (revScanAddr core) HR). Qed.
+      RevRel o xs (mkRev12 b t c e ist ir sa st ph sc sb sh) -> sa = revOffAddr o (revScanAddr xs).
+  Proof. intros o xs b t c e ist ir sa st ph sc sb sh HR; exact (f_equal revScanAddr HR). Qed.
 
   (* The impl-only registers do not matter *)
   Lemma RevRel_implRegs :
     forall o xs b t c e ist ir sa st ph sc sb sh ph2 sc2 sb2 sh2,
-      RevRel core o xs (mkRev12 b t c e ist ir sa st ph sc sb sh) ->
-      RevRel core o xs (mkRev12 b t c e ist ir sa st ph2 sc2 sb2 sh2).
+      RevRel o xs (mkRev12 b t c e ist ir sa st ph sc sb sh) ->
+      RevRel o xs (mkRev12 b t c e ist ir sa st ph2 sc2 sb2 sh2).
   Proof. intros; assumption. Qed.
 
   (* The impl advances its scan address *)
   Lemma RevRel_advance :
     forall o o' xs b t c e ist ir sa st ph sc sb sh ph2 sc2 sb2 sh2,
-      RevRel core o xs (mkRev12 b t c e ist ir sa st ph sc sb sh) ->
-      scanNext sa = revOffAddr o' (revScanAddr core xs) ->
-      RevRel core o' xs (mkRev12 b t c e ist ir (scanNext sa) st ph2 sc2 sb2 sh2).
+      RevRel o xs (mkRev12 b t c e ist ir sa st ph sc sb sh) ->
+      scanNext sa = revOffAddr o' (revScanAddr xs) ->
+      RevRel o' xs (mkRev12 b t c e ist ir (scanNext sa) st ph2 sc2 sb2 sh2).
   Proof.
     intros o o' xs b t c e ist ir sa st ph sc sb sh ph2 sc2 sb2 sh2 HR Hn.
     unfold RevRel in *; rewrite <- Hn.
-    transitivity (revWithScanAddr core (scanNext sa)
-                    (projImplRevokerArchState core (mkRev12 b t c e ist ir sa st ph sc sb sh))); [reflexivity |].
+    transitivity (revWithScanAddr (scanNext sa)
+                    (projImplRevokerArchState (mkRev12 b t c e ist ir sa st ph sc sb sh))); [reflexivity |].
     rewrite HR; reflexivity.
   Qed.
   Definition mkRev8 (b t : bits TagAddrWidth) (c : bool) (e : bits Xlen) (ist ir : bool) (sa st : bits TagAddrWidth)
-    : TS (Node "revoker" (revokerChildren core [])) :=
+    : TS (Node "revoker" (revokerChildren [])) :=
     (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, tt)))))))).
 
   (* With no offset the spec revoker is the impl's architectural part *)
   Lemma RevRel_eq :
     forall xs b t c e ist ir sa st ph sc sb sh,
-      RevRel core RevEq xs (mkRev12 b t c e ist ir sa st ph sc sb sh) -> xs = mkRev8 b t c e ist ir sa st.
+      RevRel RevEq xs (mkRev12 b t c e ist ir sa st ph sc sb sh) -> xs = mkRev8 b t c e ist ir sa st.
   Proof.
     intros xs b t c e ist ir sa st ph sc sb sh HR.
     destruct xs as [b0 [t0 [c0 [e0 [ist0 [ir0 [sa0 [st0 []]]]]]]]].
@@ -157,39 +155,38 @@ End RevRelFacts.
 (* --- 2c. The Spec Revoker Inside the Spec Memory --- *)
 
 Section SpecRevLens.
-  Variable core : string.
   Variable config : RevConfig.
   Variables pre post : list MemRegion.
   Variable revBase : Z.
   Variable revPfB : Is_true ((0 <=? revBase) && (revBase + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z.
   Variable revPfA : Is_true (revBase mod (2 ^ LgLineBytes) =? 0)%Z.
 
-  Local Abbreviation specRegions := (specRegionsOf core pre post revBase revPfB revPfA).
-  Local Abbreviation sRevR := (specRevRegion core revBase revPfB revPfA).
+  Local Abbreviation specRegions := (specRegionsOf pre post revBase revPfB revPfA).
+  Local Abbreviation sRevR := (specRevRegion revBase revPfB revPfA).
   Local Abbreviation pfS := (nth_error_app_cons_len pre sRevR post).
-  Local Abbreviation revS := (revSpecOf core pre post revBase revPfB revPfA).
-  Local Abbreviation MS := (specMemTree core specRegions).
-  Local Abbreviation RS := (Node "revoker" (revokerChildren core [])).
-  Local Abbreviation specRevStateA := (specRevState core pre post revBase revPfB revPfA).
+  Local Abbreviation revS := (revSpecOf pre post revBase revPfB revPfA).
+  Local Abbreviation MS := (specMemTree specRegions).
+  Local Abbreviation RS := (Node "revoker" (revokerChildren [])).
+  Local Abbreviation specRevStateA := (specRevState pre post revBase revPfB revPfA).
 
   Definition setRevS (ms : TS MS) (x : TS RS) : TS MS :=
-    updRegionStateAt (memRegionTree core) (length pre) specRegions sRevR pfS ms x.
+    updRegionStateAt memRegionTree (length pre) specRegions sRevR pfS ms x.
 
   Lemma evalActionPropGen_liftRevS :
     forall env k (a : Action type RS k) (ms : TS MS) P,
-      evalActionPropGen env (@nthRegionAction core type (length pre) specRegions sRevR pfS k a) ms P <->
-      evalActionPropGen (envRegionAt (memRegionTree core) (length pre) specRegions sRevR pfS env ms) a
+      evalActionPropGen env (@nthRegionAction type (length pre) specRegions sRevR pfS k a) ms P <->
+      evalActionPropGen (envRegionAt memRegionTree (length pre) specRegions sRevR pfS env ms) a
         (specRevStateA ms) (fun x v => P (setRevS ms x) v).
   Proof. intros env k a ms P; unfold nthRegionAction; apply evalActionPropGen_genNthRegionAction. Qed.
 
   Lemma specRevState_setRevS : forall ms x, specRevStateA (setRevS ms x) = x.
-  Proof. intros ms x; exact (regionStateAt_updRegionStateAt (memRegionTree core) (length pre) specRegions sRevR pfS ms x). Qed.
+  Proof. intros ms x; exact (regionStateAt_updRegionStateAt memRegionTree (length pre) specRegions sRevR pfS ms x). Qed.
 
   Lemma setRevS_setRevS : forall ms x y, setRevS (setRevS ms x) y = setRevS ms y.
-  Proof. intros ms x y; exact (updRegionStateAt_updRegionStateAt (memRegionTree core) (length pre) specRegions sRevR pfS ms x y). Qed.
+  Proof. intros ms x y; exact (updRegionStateAt_updRegionStateAt memRegionTree (length pre) specRegions sRevR pfS ms x y). Qed.
 
   Lemma setRevS_same : forall ms x, specRevStateA ms = x -> setRevS ms x = ms.
-  Proof. intros ms x <-; exact (updRegionStateAt_regionStateAt (memRegionTree core) (length pre) specRegions sRevR pfS ms). Qed.
+  Proof. intros ms x <-; exact (updRegionStateAt_regionStateAt memRegionTree (length pre) specRegions sRevR pfS ms). Qed.
 
   Ltac srev_cbn :=
     cbn -[evalExpr evalLetExpr toAction specRevState setRevS envRegionAt nthRegionAction specMemRead specMemWrite
@@ -209,7 +206,7 @@ Section SpecRevLens.
     forall env (ms : TS MS) b t c e ist ir sa st,
       specRevStateA ms = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, tt)))))))) ->
       epochOdd e = false ->
-      SemAction env (@SpecRevoker.specRevokerStep core [] specRegions revS config type) ms
+      SemAction env (@SpecRevoker.specRevokerStep [] specRegions revS config type) ms
         (setRevS ms (if c then (b ,, (t ,, (false ,, (epochMkOdd e ,, (false ,, (ir ,, (b ,, (t ,, tt))))))))
                      else (b ,, (t ,, (c ,, (e ,, (false ,, (ir ,, (sa ,, (st ,, tt)))))))))) Zmod.zero.
   Proof.
@@ -234,7 +231,7 @@ Section SpecRevLens.
     forall env (ms : TS MS) b t c e ist ir sa st,
       specRevStateA ms = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, tt)))))))) ->
       epochOdd e = true -> scanDone sa st = true ->
-      SemAction env (@SpecRevoker.specRevokerStep core [] specRegions revS config type) ms
+      SemAction env (@SpecRevoker.specRevokerStep [] specRegions revS config type) ms
         (setRevS ms (b ,, (t ,, (c ,, (epochInc e ,, ((if ir then true else ist) ,, (ir ,, (sa ,, (st ,, tt))))))))) Zmod.zero.
   Proof.
     intros env ms b t c e ist ir sa st Ex Hodd Hdone.
@@ -259,26 +256,26 @@ Section SpecRevLens.
    * reads the cap (and its rev bit when it needs a check) and moves on *)
   Lemma specRevStep_scan :
     forall initLine fwcs env (ms : TS MS) b t c e ist ir sa st,
-      SpecEnvOK core initLine specRegions fwcs env ->
-      specRevStateA ms = mkRev8 core b t c e ist ir sa st ->
+      SpecEnvOK initLine specRegions fwcs env ->
+      specRevStateA ms = mkRev8 b t c e ist ir sa st ->
       epochOdd e = true -> scanDone sa st = false ->
       lineKind specRegions (lineOf false (scanFull sa)) = Some true ->
       lineUnique specRegions (lineOf false (scanFull sa)) ->
-      (capNeedsCheck config (memValAt core pre post revBase revPfB revPfA initLine ms (scanFull sa) capSz) = true ->
+      (capNeedsCheck config (memValAt pre post revBase revPfB revPfA initLine ms (scanFull sa) capSz) = true ->
        lineKind specRegions
-         (lineOf false (revByteAddrOf config (capBase (memValAt core pre post revBase revPfB revPfA initLine ms (scanFull sa) capSz)))) = Some true /\
+         (lineOf false (revByteAddrOf config (capBase (memValAt pre post revBase revPfB revPfA initLine ms (scanFull sa) capSz)))) = Some true /\
        lineUnique specRegions
-         (lineOf false (revByteAddrOf config (capBase (memValAt core pre post revBase revPfB revPfA initLine ms (scanFull sa) capSz)))) /\
-       revBitOf core config pre post revBase revPfB revPfA initLine ms
-         (capBase (memValAt core pre post revBase revPfB revPfA initLine ms (scanFull sa) capSz)) = false) ->
-      exists ms1, ReadFrameS core specRegions ms ms1 /\
-        SemAction env (@SpecRevoker.specRevokerStep core [] specRegions revS config type) ms
-          (setRevS ms1 (mkRev8 core b t c e ist ir (scanNext sa) st)) Zmod.zero.
+         (lineOf false (revByteAddrOf config (capBase (memValAt pre post revBase revPfB revPfA initLine ms (scanFull sa) capSz)))) /\
+       revBitOf config pre post revBase revPfB revPfA initLine ms
+         (capBase (memValAt pre post revBase revPfB revPfA initLine ms (scanFull sa) capSz)) = false) ->
+      exists ms1, ReadFrameS specRegions ms ms1 /\
+        SemAction env (@SpecRevoker.specRevokerStep [] specRegions revS config type) ms
+          (setRevS ms1 (mkRev8 b t c e ist ir (scanNext sa) st)) Zmod.zero.
   Proof.
     intros initLine fwcs env ms b t c e ist ir sa st Henv Ex Hodd Hnd Hk Hu Hck.
-    assert (HP : evalActionPropGen env (@SpecRevoker.specRevokerStep core [] specRegions revS config type) ms
-                   (fun ms' v => (exists ms1, ReadFrameS core specRegions ms ms1 /\
-                                    ms' = setRevS ms1 (mkRev8 core b t c e ist ir (scanNext sa) st)) /\ v = Zmod.zero)).
+    assert (HP : evalActionPropGen env (@SpecRevoker.specRevokerStep [] specRegions revS config type) ms
+                   (fun ms' v => (exists ms1, ReadFrameS specRegions ms ms1 /\
+                                    ms' = setRevS ms1 (mkRev8 b t c e ist ir (scanNext sa) st)) /\ v = Zmod.zero)).
     { unfold SpecRevoker.specRevokerStep; cbn [evalActionPropGen].
       srev_lens Ex; rewrite ?evalExpr_Var.
       match goal with |- context [if ?cd then _ else _] =>
@@ -288,36 +285,36 @@ Section SpecRevLens.
       match goal with |- context [if ?cd then _ else _] =>
         replace cd with true by (change (true = negb (scanDone sa st)); rewrite Hnd; reflexivity) end.
       srev_cbn.
-      apply (specMemRead_wp core initLine _ _ specRegions fwcs env ms); [exact Henv | exact Hk | exact Hu |].
+      apply (specMemRead_wp initLine _ _ specRegions fwcs env ms); [exact Henv | exact Hk | exact Hu |].
       intros ms1 Hfr1; cbv beta.
-      assert (Ex1 : specRevStateA ms1 = mkRev8 core b t c e ist ir sa st).
-      { rewrite <- Ex; exact (regionStateAt_readFrame core specRegions (length pre) sRevR pfS ms ms1 Hfr1 I). }
+      assert (Ex1 : specRevStateA ms1 = mkRev8 b t c e ist ir sa st).
+      { rewrite <- Ex; exact (regionStateAt_readFrame specRegions (length pre) sRevR pfS ms ms1 Hfr1 I). }
       apply evalActionPropGen_toAction; cbv beta.
       srev_cbn.
       match goal with |- context [if ?cd then _ else _] =>
-        replace cd with (capNeedsCheck config (memValAt core pre post revBase revPfB revPfA initLine ms (scanFull sa) capSz))
+        replace cd with (capNeedsCheck config (memValAt pre post revBase revPfB revPfA initLine ms (scanFull sa) capSz))
           by reflexivity end.
-      destruct (capNeedsCheck config (memValAt core pre post revBase revPfB revPfA initLine ms (scanFull sa) capSz)) eqn:Ech.
+      destruct (capNeedsCheck config (memValAt pre post revBase revPfB revPfA initLine ms (scanFull sa) capSz)) eqn:Ech.
       - (* a check: the rev bit is read; it is 0 *)
         destruct (Hck eq_refl) as [Hk2 [Hu2 Hrb]].
         srev_cbn.
         unfold readRevBit; cbn [evalActionPropGen].
         apply evalActionPropGen_toAction; cbv beta.
         srev_cbn.
-        apply (specMemRead_wp core initLine _ _ specRegions fwcs env ms1); [exact Henv | exact Hk2 | exact Hu2 |].
+        apply (specMemRead_wp initLine _ _ specRegions fwcs env ms1); [exact Henv | exact Hk2 | exact Hu2 |].
         intros ms2 Hfr2; cbv beta.
-        assert (Ex2 : specRevStateA ms2 = mkRev8 core b t c e ist ir sa st).
-        { rewrite <- Ex1; exact (regionStateAt_readFrame core specRegions (length pre) sRevR pfS ms1 ms2 Hfr2 I). }
+        assert (Ex2 : specRevStateA ms2 = mkRev8 b t c e ist ir sa st).
+        { rewrite <- Ex1; exact (regionStateAt_readFrame specRegions (length pre) sRevR pfS ms1 ms2 Hfr2 I). }
         srev_cbn.
         match goal with |- context [if ?cd then _ else _] =>
-          replace cd with (revBitOf core config pre post revBase revPfB revPfA initLine ms1
-                             (capBase (memValAt core pre post revBase revPfB revPfA initLine ms (scanFull sa) capSz)))
+          replace cd with (revBitOf config pre post revBase revPfB revPfA initLine ms1
+                             (capBase (memValAt pre post revBase revPfB revPfA initLine ms (scanFull sa) capSz)))
             by reflexivity end.
-        rewrite (revBitOf_ext core config pre post revBase revPfB revPfA initLine ms ms1 _
-                   (lineContent_readFrame core initLine specRegions ms ms1 Hfr1)), Hrb.
+        rewrite (revBitOf_ext config pre post revBase revPfB revPfA initLine ms ms1 _
+                   (lineContent_readFrame initLine specRegions ms ms1 Hfr1)), Hrb.
         srev_cbn.
         srev_lens Ex2.
-        split; [exists ms2; split; [exact (ReadFrameS_trans core specRegions _ _ _ Hfr1 Hfr2) | reflexivity] | reflexivity].
+        split; [exists ms2; split; [exact (ReadFrameS_trans specRegions _ _ _ Hfr1 Hfr2) | reflexivity] | reflexivity].
       - (* no check *)
         srev_cbn.
         srev_lens Ex1.
@@ -339,18 +336,17 @@ End ZmodRing.
 
 (* The spec and impl revoker regions sit at the same addresses, both CustomMem *)
 Lemma lineKind_revSwap :
-  forall core pre post revBase revPfB revPfA L,
-    lineKind (specRegionsOf core pre post revBase revPfB revPfA) L =
-    lineKind (implRegionsOf core pre post revBase revPfB revPfA) L.
+  forall pre post revBase revPfB revPfA L,
+    lineKind (specRegionsOf pre post revBase revPfB revPfA) L =
+    lineKind (implRegionsOf pre post revBase revPfB revPfA) L.
 Proof.
-  intros core pre post revBase revPfB revPfA L; unfold specRegionsOf, implRegionsOf.
+  intros pre post revBase revPfB revPfA L; unfold specRegionsOf, implRegionsOf.
   induction pre as [| r rs IH]; cbn [app lineKind]; [reflexivity | rewrite IH; reflexivity].
 Qed.
 
 (* --- 3. The Revoker Steps against the Relation --- *)
 
 Section RevSteps.
-  Variable core : string.
   Variable pcAddrInit : Z.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
   Variable mulCapacity divCapacity mulStages divStages : nat.
@@ -361,50 +357,50 @@ Section RevSteps.
   Variable revPfB : Is_true ((0 <=? revBase) && (revBase + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z.
   Variable revPfA : Is_true (revBase mod (2 ^ LgLineBytes) =? 0)%Z.
 
-  Local Abbreviation specRegions := (specRegionsOf core pre post revBase revPfB revPfA).
-  Local Abbreviation implRegions := (implRegionsOf core pre post revBase revPfB revPfA).
+  Local Abbreviation specRegions := (specRegionsOf pre post revBase revPfB revPfA).
+  Local Abbreviation implRegions := (implRegionsOf pre post revBase revPfB revPfA).
 
-  Variable clintS : @ClintInstance core specRegions.
-  Variable clint : @ClintInstance core implRegions.
-  Variable plicS : @PlicInstance core (S (S (length (collectIrqActions core specRegions)))) specRegions.
-  Variable plic : @PlicInstance core (S (S (length (collectIrqActions core implRegions)))) implRegions.
+  Variable clintS : @ClintInstance specRegions.
+  Variable clint : @ClintInstance implRegions.
+  Variable plicS : @PlicInstance (S (S (length (collectIrqActions specRegions)))) specRegions.
+  Variable plic : @PlicInstance (S (S (length (collectIrqActions implRegions)))) implRegions.
   Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
   Variable fwcs : nat -> nat -> nat.
 
   Local Abbreviation IState :=
-    (ImplState core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    (ImplState pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions).
-  Local Abbreviation SState := (SpecState core pcAddrInit specRegions).
-  Local Abbreviation NPMI := (Impl.np_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation SState := (SpecState pcAddrInit specRegions).
+  Local Abbreviation NPMI := (Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions).
-  Local Abbreviation NPMS := (Spec.np_mem core pcAddrInit specRegions).
-  Local Abbreviation revI := (revImplOf core pre post revBase revPfB revPfA).
+  Local Abbreviation NPMS := (Spec.np_mem pcAddrInit specRegions).
+  Local Abbreviation revI := (revImplOf pre post revBase revPfB revPfA).
 
-  Local Abbreviation iMemA := (iMem core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iMemA := (iMem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation iRegionsA := (iRegions core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iRegionsA := (iRegions pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation iMemStA := (iMemSt core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iMemStA := (iMemSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation iRequesterA := (iRequester core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iRequesterA := (iRequester pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation iRevA := (iRev core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iRevA := (iRev pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation iRevPhaseA := (iRevPhase core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iRevPhaseA := (iRevPhase pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation sMemA := (sMem core pcAddrInit pre post revBase revPfB revPfA).
-  Local Abbreviation revOfRA := (revOfR core pre post revBase revPfB revPfA).
-  Local Abbreviation setRevRA := (setRevR core pre post revBase revPfB revPfA).
+  Local Abbreviation sMemA := (sMem pcAddrInit pre post revBase revPfB revPfA).
+  Local Abbreviation revOfRA := (revOfR pre post revBase revPfB revPfA).
+  Local Abbreviation setRevRA := (setRevR pre post revBase revPfB revPfA).
 
-  Local Abbreviation ACC := (AccessRel core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation ACC := (AccessRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                                initLine).
-  Local Abbreviation MEMC := (MemRelC core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation MEMC := (MemRelC pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                                 clintS clint plicS plic fwcs).
-  Local Abbreviation PWS := (PortsWriteStaged core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation PWS := (PortsWriteStaged pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation STEPOK := (StepOK core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation STEPOK := (StepOK pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                   mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                                   clintS clint plicS plic initLine fwcs).
 
@@ -418,10 +414,10 @@ Section RevSteps.
 
   Lemma PortsWriteStaged_npw :
     forall (s1 : IState) L rq,
-      lineKind implRegions L = Some true -> PWS L rq s1 -> noPortWriteB core implRegions (iRegionsA s1) = false.
+      lineKind implRegions L = Some true -> PWS L rq s1 -> noPortWriteB implRegions (iRegionsA s1) = false.
   Proof.
     intros s1 L rq Hk Hw.
-    apply (noPortWriteB_false core L rq implRegions _ Hk).
+    apply (noPortWriteB_false L rq implRegions _ Hk).
     unfold PortsWriteStaged in Hw; revert Hw; apply AllPorts_impl.
     intros r y [_ Hy] Hr; rewrite Hr in Hy; exact Hy.
   Qed.
@@ -429,13 +425,13 @@ Section RevSteps.
   (* `state` idle and no write staged: nothing is in flight *)
   Lemma AccessRel_rdy_none :
     forall g (s1 : IState) (s2 : SState),
-      ACC g s1 s2 -> msIdle (iMemStA s1) = true -> noPortWriteB core implRegions (iRegionsA s1) = true ->
-      g_acc core pcAddrInit g = AccNone.
+      ACC g s1 s2 -> msIdle (iMemStA s1) = true -> noPortWriteB implRegions (iRegionsA s1) = true ->
+      g_acc pcAddrInit g = AccNone.
   Proof.
     intros g s1 s2 Ha Hidle Hnpw.
     destruct (msIdle_excl _ Hidle) as [N1 [N2 [N3 N4]]].
     unfold AccessRel in Ha.
-    destruct (g_acc core pcAddrInit g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
+    destruct (g_acc pcAddrInit g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
                           | rc [[|]|[|]|[|]|[|] rp|res] | [[|]|[|]|[|]|[|] rp|res]
                           | [[|]|[|]|[|]|[|] rp|res] | addr pkt [[|]|[|]]];
       [reflexivity | ..]; exfalso;
@@ -444,7 +440,7 @@ Section RevSteps.
       first
         [ match goal with H : ?f ?x = true, N : ?f ?x = false |- _ => rewrite N in H; discriminate H end
         | match goal with
-          | Hk : lineKind _ _ = Some true, Hw : PortsWriteStaged _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ |- _ =>
+          | Hk : lineKind _ _ = Some true, Hw : PortsWriteStaged _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ |- _ =>
               rewrite (PortsWriteStaged_npw _ _ _ Hk Hw) in Hnpw; discriminate Hnpw
           end ].
   Qed.
@@ -453,14 +449,14 @@ Section RevSteps.
   Lemma AccessRel_rpReady_rev :
     forall g (s1 : IState) (s2 : SState),
       ACC g s1 s2 -> msReadRpReady (iMemStA s1) = true -> isReqRevoker (iRequesterA s1) = true ->
-      (g_acc core pcAddrInit g = AccRevCap (RdReady (msReadRpReadyV (iMemStA s1))) /\ rpWaitCapRp (iRevPhaseA s1) = true) \/
-      (g_acc core pcAddrInit g = AccRevBit (RdReady (msReadRpReadyV (iMemStA s1))) /\ rpWaitRevBitRp (iRevPhaseA s1) = true).
+      (g_acc pcAddrInit g = AccRevCap (RdReady (msReadRpReadyV (iMemStA s1))) /\ rpWaitCapRp (iRevPhaseA s1) = true) \/
+      (g_acc pcAddrInit g = AccRevBit (RdReady (msReadRpReadyV (iMemStA s1))) /\ rpWaitRevBitRp (iRevPhaseA s1) = true).
   Proof.
     intros g s1 s2 Ha Hr Hq.
     destruct (msReadRpReady_excl _ Hr) as [N1 [N2 [N3 N4]]].
     pose proof (isReqRevoker_excl _ Hq) as Nq.
     unfold AccessRel in Ha.
-    destruct (g_acc core pcAddrInit g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
+    destruct (g_acc pcAddrInit g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
                           | rc [[|]|[|]|[|]|[|] rp|res] | [[|]|[|]|[|]|[|] rp|res]
                           | [[|]|[|]|[|]|[|] rp|res] | addr pkt [[|]|[|]]];
       unfold WrStageRel, RdStageRel in Ha; cbv beta iota zeta in Ha;
@@ -478,7 +474,7 @@ Section RevSteps.
     forall g g' (s1 s1' : IState) (s2 : SState) mr x',
       iRegionsA s1 = mr ->
       iRegionsA s1' = setRevRA mr x' ->
-      RevRel core (g_revOff core pcAddrInit g') (specRevState core pre post revBase revPfB revPfA (sMemA s2)) x' ->
+      RevRel (g_revOff pcAddrInit g') (specRevState pre post revBase revPfB revPfA (sMemA s2)) x' ->
       MEMC g s1 s2 -> MEMC g' s1' s2.
   Proof.
     intros g g' s1 s1' s2 mr x' E0 E1 HR Hm.
@@ -486,15 +482,15 @@ Section RevSteps.
     destruct Hm as [[Hpre [Hcl [Hpl Hrv]]] [[Hci Hpi] Hsnap]].
     rewrite E1; rewrite E0 in Hpre, Hcl, Hpl, Hci, Hpi.
     unfold setRevR, implClintState, implPlicState, implRevState in *.
-    rewrite !(regionStateAt_upd_other (implMemRegionTree core) (length pre))
-      by (intros E; first [ exact (clint_ne_rev core pre post revBase revPfB revPfA clint (eq_sym E))
-                          | exact (plic_ne_rev core pre post revBase revPfB revPfA plic (eq_sym E)) ]).
+    rewrite !(regionStateAt_upd_other implMemRegionTree (length pre))
+      by (intros E; first [ exact (clint_ne_rev pre post revBase revPfB revPfA clint (eq_sym E))
+                          | exact (plic_ne_rev pre post revBase revPfB revPfA plic (eq_sym E)) ]).
     rewrite regionStateAt_updRegionStateAt; cbn [Fst].
     refine (conj (conj _ (conj Hcl (conj Hpl HR))) (conj (conj Hci Hpi) Hsnap)).
     apply MemRelPre_upd_rev_impl; exact Hpre.
   Qed.
 
-  Local Abbreviation iRevScanBaseA := (iRevScanBase core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iRevScanBaseA := (iRevScanBase pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
 
   Lemma iRev_eq : forall (s1 : IState), iRevA s1 = revOfRA (iRegionsA s1).
@@ -506,7 +502,7 @@ Section RevSteps.
   (* --- 3c. WaitRevBitRq: the rev-bit read is issued; the spec stutters --- *)
 
   Lemma stepOK_waitRevBitRq :
-    STEPOK (@implRevokerWaitRevBitRqStepSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
+    STEPOK (@implRevokerWaitRevBitRqStepSys pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config implRegions revI type).
   Proof.
     intros s1 s1' s2 Hsem [g Hg].
@@ -517,7 +513,7 @@ Section RevSteps.
     destruct m as [mr [mst [mrq [mrp []]]]].
     remember (revOfRA mr) as x eqn:Ex; symmetry in Ex.
     destruct x as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh []]]]]]]]]]]]].
-    destruct (waitRevBitRq_char core config pre post revBase revPfB revPfA _ mr mst mrq mrp m' _
+    destruct (waitRevBitRq_char config pre post revBase revPfB revPfA _ mr mst mrq mrp m' _
                 b t c e ist ir sa st ph sc sb sh Ex Hm')
       as [-> | [Hph [Hidle [Hnpw [st' [rq' [ph' [-> [Hrq [HrqV [Hreq Hph']]]]]]]]]]].
     - exists s2; split; [apply NilAction; reflexivity |].
@@ -530,17 +526,17 @@ Section RevSteps.
                                  (st' ,, (rq' ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
       assert (ER' : iRevA s1' = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt))))))))))))).
       { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
-      assert (HP : forall P, AllPorts core P implRegions (iRegionsA s1') = AllPorts core P implRegions (iRegionsA s1)).
+      assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
       { intros P; rewrite !iRegions_eq, EM', EM; cbn [Fst]; unfold setRevR; apply AllPorts_upd; exact I. }
-      assert (Hacc0 : g_acc core pcAddrInit g = AccNone).
+      assert (Hacc0 : g_acc pcAddrInit g = AccNone).
       { apply (AccessRel_rdy_none g s1 s2 Ha).
         - unfold iMemSt; rewrite EM; exact Hidle.
         - rewrite iRegions_eq, EM; exact Hnpw. }
       unfold AccessRel in Ha; rewrite Hacc0 in Ha.
       destruct Ha as [Hi0 [Hrp0 [Hq0 [Hoff0 [Hdm0 [Hrn0 Hsec0]]]]]].
       exists s2; split; [apply NilAction; reflexivity |].
-      exists (mkGhost core pcAddrInit (g_chain core pcAddrInit g) (g_rf0 core pcAddrInit g) (g_cnwb core pcAddrInit g) (g_revOff core pcAddrInit g) (g_d2aFo core pcAddrInit g) (AccRevBit (RdPend false))).
-      eapply (RefRelG_mem_frame core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+      exists (mkGhost pcAddrInit (g_chain pcAddrInit g) (g_rf0 pcAddrInit g) (g_cnwb pcAddrInit g) (g_revOff pcAddrInit g) (g_d2aFo pcAddrInit g) (AccRevBit (RdPend false))).
+      eapply (RefRelG_mem_frame pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                 clintS clint plicS plic initLine fwcs) with (g := g) (s1 := s1) (s2 := s2) (ms' := sMemA s2);
         [exact E1 | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity | | exact HP
@@ -549,7 +545,7 @@ Section RevSteps.
       + eapply (MemRelC_revImpl g _ s1 s1' s2 mr); [rewrite iRegions_eq, EM; reflexivity
                                                      | rewrite iRegions_eq, EM'; reflexivity | |].
         * destruct Hm as [[_ [_ [_ Hrv]]] _].
-          change (RevRel core (g_revOff core pcAddrInit g) (specRevState core pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
+          change (RevRel (g_revOff pcAddrInit g) (specRevState pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
           rewrite ER in Hrv; exact Hrv.
         * exact Hm.
       + unfold AccessRel; cbn [g_acc g_revOff].
@@ -573,18 +569,18 @@ Section RevSteps.
         split; [intros Hwc; rewrite Q4 in Hwc; discriminate Hwc | exact I].
   Qed.
 
-  Local Abbreviation iReadRpA := (iReadRp core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iReadRpA := (iReadRp pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation iDmStA := (iDmSt core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iDmStA := (iDmSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation revNotReadingA := (revNotReading core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation revNotReadingA := (revNotReading pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
 
   (* The revoker's accesses in flight go with its phase *)
   Lemma AccessRel_revPhase :
     forall g (s1 : IState) (s2 : SState),
       ACC g s1 s2 ->
-      match g_acc core pcAddrInit g with
+      match g_acc pcAddrInit g with
       | AccRevCap _ => rpWaitCapRp (iRevPhaseA s1) = true
       | AccRevBit _ => rpWaitRevBitRp (iRevPhaseA s1) = true
       | AccRevWrite _ _ _ => rpIdle (iRevPhaseA s1) = true
@@ -592,23 +588,23 @@ Section RevSteps.
       end.
   Proof.
     intros g s1 s2 Ha; unfold AccessRel in Ha.
-    destruct (g_acc core pcAddrInit g); try exact I; tauto.
+    destruct (g_acc pcAddrInit g); try exact I; tauto.
   Qed.
 
   (* A core access in flight survives a change of the revoker registers that keeps the revoker
    * from reading *)
-  Local Abbreviation iScanMsbA := (iScanMsb core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iScanMsbA := (iScanMsb pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation iRevSnoopHitA := (iRevSnoopHit core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation iRevSnoopHitA := (iRevSnoopHit pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
 
   Lemma AccessRel_coreAcc_revRegs :
     forall g (s1 s1' : IState) (s2 : SState),
-      (forall P, AllPorts core P implRegions (iRegionsA s1') = AllPorts core P implRegions (iRegionsA s1)) ->
+      (forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)) ->
       iMemStA s1' = iMemStA s1 -> iReadRpA s1' = iReadRpA s1 -> iRequesterA s1' = iRequesterA s1 ->
       iDmStA s1' = iDmStA s1 -> revNotReadingA s1' ->
-      match g_acc core pcAddrInit g with AccRevCap _ | AccRevBit _ | AccRevWrite _ _ _ => False | _ => True end ->
-      match g_acc core pcAddrInit g with
+      match g_acc pcAddrInit g with AccRevCap _ | AccRevBit _ | AccRevWrite _ _ _ => False | _ => True end ->
+      match g_acc pcAddrInit g with
       | AccStore _ _ _ _ => iScanMsbA s1' = iScanMsbA s1 /\ iRevSnoopHitA s1' = iRevSnoopHitA s1
       | _ => True
       end ->
@@ -617,7 +613,7 @@ Section RevSteps.
     intros g s1 s1' s2 HP Emst Erp Ereq Edm Hrn Hcore Hsn Ha.
     unfold AccessRel in *.
     revert Ha Hsn.
-    destruct (g_acc core pcAddrInit g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
+    destruct (g_acc pcAddrInit g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
                           | rc [[|]|[|]|[|]|[|] rp|res] | [[|]|[|]|[|]|[|] rp|res]
                           | [[|]|[|]|[|]|[|] rp|res] | addr pkt [[|]|[|]]];
       try (exfalso; exact Hcore); intros Ha Hsn;
@@ -638,18 +634,18 @@ Section RevSteps.
 
   Lemma RevAccRel_coreAcc :
     forall g (s1 : IState) (s2 : SState),
-      match g_acc core pcAddrInit g with AccRevCap _ | AccRevBit _ | AccRevWrite _ _ _ => False | _ => True end ->
-      RevAccRel core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity
+      match g_acc pcAddrInit g with AccRevCap _ | AccRevBit _ | AccRevWrite _ _ _ => False | _ => True end ->
+      RevAccRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity
         mulStages divStages mulDivMode config pre post revBase revPfB revPfA initLine g s1 s2.
   Proof.
     intros g s1 s2 Hcore; unfold RevAccRel.
-    destruct (g_acc core pcAddrInit g) as [| | | | [] | [] |]; try (exfalso; exact Hcore); exact I.
+    destruct (g_acc pcAddrInit g) as [| | | | [] | [] |]; try (exfalso; exact Hcore); exact I.
   Qed.
 
   (* --- 3d. WriteCap: the untagged cap is handed to the memory, or the position is retried --- *)
 
   Lemma stepOK_writeCap :
-    STEPOK (@implRevokerWriteCapStepSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
+    STEPOK (@implRevokerWriteCapStepSys pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config implRegions revI type).
   Proof.
     intros s1 s1' s2 Hsem [g Hg].
@@ -661,29 +657,29 @@ Section RevSteps.
     remember (revOfRA mr) as x eqn:Ex; symmetry in Ex.
     destruct x as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh []]]]]]]]]]]]].
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
-    assert (ER : iRevA s1 = mkRev12 core b t c e ist ir sa st ph sc sb sh) by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
-    destruct (writeCap_char core pre post revBase revPfB revPfA _ mr mst mrq mrp m' _
+    assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh) by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
+    destruct (writeCap_char pre post revBase revPfB revPfA _ mr mst mrq mrp m' _
                 b t c e ist ir sa st ph sc sb sh Ex Hm')
       as [-> | [[Hph [Hsh [ph' [Hph' ->]]]] | [Hph [Hsh [Hidle [Hnpw [st' [ph' [-> [Hwr [HwrV Hph']]]]]]]]]]].
     - exists s2; split; [apply NilAction; reflexivity |].
       exists g; replace s1' with s1; [exact Hg |].
       rewrite E1; transitivity (writeSubTreeState NPMI s1 (iMemA s1)); [reflexivity | f_equal; exact EM].
     - (* a store hit the position: retry it (the spec stutters, the ghost is kept) *)
-      assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 core b t c e ist ir sa st ph' sc sb sh) ,, (mst ,, (mrq ,, (mrp ,, tt)))))
+      assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir sa st ph' sc sb sh) ,, (mst ,, (mrq ,, (mrp ,, tt)))))
         by (rewrite E1; apply iMem_write).
-      assert (ER' : iRevA s1' = mkRev12 core b t c e ist ir sa st ph' sc sb sh).
+      assert (ER' : iRevA s1' = mkRev12 b t c e ist ir sa st ph' sc sb sh).
       { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
-      assert (HP : forall P, AllPorts core P implRegions (iRegionsA s1') = AllPorts core P implRegions (iRegionsA s1)).
+      assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
       { intros P; rewrite !iRegions_eq, EM', EM; cbn [Fst]; unfold setRevR; apply AllPorts_upd; exact I. }
       destruct (rpWriteCap_excl _ Hph) as [P1 [P2 [P3 P4]]].
       destruct (rpIdle_excl _ Hph') as [Q1 [_ [Q3 Q4]]].
-      assert (Hcore : match g_acc core pcAddrInit g with AccRevCap _ | AccRevBit _ | AccRevWrite _ _ _ => False | _ => True end).
+      assert (Hcore : match g_acc pcAddrInit g with AccRevCap _ | AccRevBit _ | AccRevWrite _ _ _ => False | _ => True end).
       { pose proof (AccessRel_revPhase g s1 s2 Ha) as Hp.
         unfold iRevPhase in Hp; rewrite ER in Hp; cbn [mkRev12 Fst Snd] in Hp.
-        destruct (g_acc core pcAddrInit g); cbv beta iota in Hp |- *; try exact I; congruence. }
+        destruct (g_acc pcAddrInit g); cbv beta iota in Hp |- *; try exact I; congruence. }
       exists s2; split; [apply NilAction; reflexivity |].
       exists g.
-      eapply (RefRelG_mem_frame core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+      eapply (RefRelG_mem_frame pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                 clintS clint plicS plic initLine fwcs) with (g := g) (s1 := s1) (s2 := s2) (ms' := sMemA s2);
         [exact E1 | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity | exact HP
@@ -691,8 +687,8 @@ Section RevSteps.
       + eapply (MemRelC_revImpl g g s1 s1' s2 mr); [rewrite iRegions_eq, EM; reflexivity
                                                    | rewrite iRegions_eq, EM'; reflexivity | |].
         * destruct Hm as [[_ [_ [_ Hrv]]] _].
-          change (RevRel core (g_revOff core pcAddrInit g) (specRevState core pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
-          rewrite ER in Hrv; exact (RevRel_implRegs core _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hrv).
+          change (RevRel (g_revOff pcAddrInit g) (specRevState pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
+          rewrite ER in Hrv; exact (RevRel_implRegs _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hrv).
         * exact Hm.
       + apply (AccessRel_coreAcc_revRegs g s1 s1' s2 HP); try exact Hcore; try exact Ha.
         * unfold iMemSt; rewrite EM', EM; reflexivity.
@@ -700,7 +696,7 @@ Section RevSteps.
         * unfold iRequester; rewrite EM', EM; reflexivity.
         * rewrite E1; reflexivity.
         * unfold revNotReading, iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd]; split; assumption.
-        * destruct (g_acc core pcAddrInit g); try exact I.
+        * destruct (g_acc pcAddrInit g); try exact I.
           unfold iScanMsb, iRevSnoopHit; rewrite ER', ER; split; reflexivity.
       + unfold RevokerRel; unfold iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd].
         split; [rewrite Hph'; intros Hc'; discriminate Hc' |].
@@ -709,13 +705,13 @@ Section RevSteps.
         split; [intros Hc'; discriminate Hc' |].
         exact (RevAccRel_coreAcc g s1' s2 Hcore).
     - (* the write is handed to the memory: the impl moves one position ahead *)
-      assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 core b t c e ist ir (scanNext sa) st ph' sc sb sh) ,,
+      assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh) ,,
                                  (st' ,, (mrq ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
-      assert (ER' : iRevA s1' = mkRev12 core b t c e ist ir (scanNext sa) st ph' sc sb sh).
+      assert (ER' : iRevA s1' = mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh).
       { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
-      assert (HP : forall P, AllPorts core P implRegions (iRegionsA s1') = AllPorts core P implRegions (iRegionsA s1)).
+      assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
       { intros P; rewrite !iRegions_eq, EM', EM; cbn [Fst]; unfold setRevR; apply AllPorts_upd; exact I. }
-      assert (Hacc0 : g_acc core pcAddrInit g = AccNone).
+      assert (Hacc0 : g_acc pcAddrInit g = AccNone).
       { apply (AccessRel_rdy_none g s1 s2 Ha).
         - unfold iMemSt; rewrite EM; exact Hidle.
         - rewrite iRegions_eq, EM; exact Hnpw. }
@@ -729,18 +725,18 @@ Section RevSteps.
       specialize (K1 P1).
       destruct (K2 (rpCheck_writeCap _ Hph)) as [Hnc [Hsb _]].
       specialize (K3 (rpCheck_writeCap _ Hph) Hsh).
-      change (memValAt core pre post revBase revPfB revPfA initLine (sMemA s2) (scanFull sa) capSz = sc) in K3.
+      change (memValAt pre post revBase revPfB revPfA initLine (sMemA s2) (scanFull sa) capSz = sc) in K3.
       specialize (K4 Hph Hsh).
       pose proof Hm as Hm0.
       destruct Hm as [[Hpre [Hcl [Hpl Hrv]]] Hdi].
-      change (RevRel core (g_revOff core pcAddrInit g) (specRevState core pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
+      change (RevRel (g_revOff pcAddrInit g) (specRevState pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
       rewrite ER, Hoff0 in Hrv.
-      pose proof (RevRel_scan core _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hrv) as Esa; cbn [revOffAddr] in Esa.
+      pose proof (RevRel_scan _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hrv) as Esa; cbn [revOffAddr] in Esa.
       exists s2; split; [apply NilAction; reflexivity |].
-      exists (mkGhost core pcAddrInit (g_chain core pcAddrInit g) (g_rf0 core pcAddrInit g) (g_cnwb core pcAddrInit g)
-                RevImplAhead (g_d2aFo core pcAddrInit g)
+      exists (mkGhost pcAddrInit (g_chain pcAddrInit g) (g_rf0 pcAddrInit g) (g_cnwb pcAddrInit g)
+                RevImplAhead (g_d2aFo pcAddrInit g)
                 (AccRevWrite (scanFull sa) (disassembleW (scanFull sa) (untagCap sc) capSz) (WrPend false))).
-      eapply (RefRelG_mem_frame core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+      eapply (RefRelG_mem_frame pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                 clintS clint plicS plic initLine fwcs) with (g := g) (s1 := s1) (s2 := s2) (ms' := sMemA s2);
         [exact E1 | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity | | exact HP
@@ -749,7 +745,7 @@ Section RevSteps.
       + eapply (MemRelC_revImpl g _ s1 s1' s2 mr); [rewrite iRegions_eq, EM; reflexivity
                                                    | rewrite iRegions_eq, EM'; reflexivity | |].
         * cbn [g_revOff].
-          apply (RevRel_advance core RevEq RevImplAhead _ b t c e ist ir sa st ph sc sb sh ph' sc sb sh Hrv).
+          apply (RevRel_advance RevEq RevImplAhead _ b t c e ist ir sa st ph sc sb sh ph' sc sb sh Hrv).
           cbn [revOffAddr]; rewrite <- Esa; apply scanNext_eq.
         * exact Hm0.
       + unfold AccessRel; cbn [g_acc g_revOff].
@@ -779,59 +775,59 @@ Section RevSteps.
 
   (* --- 3e. Idle: the cap read is issued, or the impl and the spec step together --- *)
 
-  Local Abbreviation revS := (revSpecOf core pre post revBase revPfB revPfA).
-  Local Abbreviation setRevSA := (setRevS core pre post revBase revPfB revPfA).
-  Local Abbreviation specRevStateA := (specRevState core pre post revBase revPfB revPfA).
-  Local Abbreviation envS := (specEnv core pcAddrInit specRegions initLine fwcs).
-  Local Abbreviation specActs := (map snd (@spec core pcAddrInit config specRegions clintS revS plicS type)).
-  Local Abbreviation RELG := (RefRelG core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation revS := (revSpecOf pre post revBase revPfB revPfA).
+  Local Abbreviation setRevSA := (setRevS pre post revBase revPfB revPfA).
+  Local Abbreviation specRevStateA := (specRevState pre post revBase revPfB revPfA).
+  Local Abbreviation envS := (specEnv pcAddrInit specRegions initLine fwcs).
+  Local Abbreviation specActs := (@spec pcAddrInit config specRegions clintS revS plicS type).
+  Local Abbreviation RELG := (RefRelG pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                                 clintS clint plicS plic initLine fwcs).
-  Local Abbreviation sRevR := (specRevRegion core revBase revPfB revPfA).
+  Local Abbreviation sRevR := (specRevRegion revBase revPfB revPfA).
   Local Abbreviation pfS := (nth_error_app_cons_len pre sRevR post).
 
-  Lemma In_specRevokerStep : In (@Spec.specRevokerStep core pcAddrInit config specRegions revS type) specActs.
+  Lemma In_specRevokerStep : In (@Spec.specRevokerStep pcAddrInit config specRegions revS type) specActs.
   Proof.
-    rewrite (map_snd_specMod core pcAddrInit config specRegions clintS revS plicS).
+    rewrite (map_snd_specMod pcAddrInit config specRegions clintS revS plicS).
     apply in_or_app; left; cbn [In]; right; left; reflexivity.
   Qed.
 
   Lemma specClintState_setRevS :
-    forall ms x, specClintState core pre post revBase revPfB revPfA clintS (setRevSA ms x) =
-                 specClintState core pre post revBase revPfB revPfA clintS ms.
+    forall ms x, specClintState pre post revBase revPfB revPfA clintS (setRevSA ms x) =
+                 specClintState pre post revBase revPfB revPfA clintS ms.
   Proof.
     intros ms x; unfold specClintState, setRevS.
     rewrite regionStateAt_upd_other; [reflexivity |].
-    intros E; exact (clintS_ne_rev core pre post revBase revPfB revPfA clintS (eq_sym E)).
+    intros E; exact (clintS_ne_rev pre post revBase revPfB revPfA clintS (eq_sym E)).
   Qed.
 
   Lemma specPlicState_setRevS :
-    forall ms x, specPlicState core pre post revBase revPfB revPfA plicS (setRevSA ms x) =
-                 specPlicState core pre post revBase revPfB revPfA plicS ms.
+    forall ms x, specPlicState pre post revBase revPfB revPfA plicS (setRevSA ms x) =
+                 specPlicState pre post revBase revPfB revPfA plicS ms.
   Proof.
     intros ms x; unfold specPlicState, setRevS.
     rewrite regionStateAt_upd_other; [reflexivity |].
-    intros E; exact (plicS_ne_rev core pre post revBase revPfB revPfA plicS (eq_sym E)).
+    intros E; exact (plicS_ne_rev pre post revBase revPfB revPfA plicS (eq_sym E)).
   Qed.
 
   Lemma specClintState_readFrame :
-    forall ms ms1, ReadFrameS core specRegions ms ms1 ->
-      specClintState core pre post revBase revPfB revPfA clintS ms1 = specClintState core pre post revBase revPfB revPfA clintS ms.
-  Proof. intros ms ms1 H; exact (regionStateAt_readFrame core specRegions (clintIdx clintS) (clintRegion clintS) (pfClint clintS) _ _ H I). Qed.
+    forall ms ms1, ReadFrameS specRegions ms ms1 ->
+      specClintState pre post revBase revPfB revPfA clintS ms1 = specClintState pre post revBase revPfB revPfA clintS ms.
+  Proof. intros ms ms1 H; exact (regionStateAt_readFrame specRegions (clintIdx clintS) (clintRegion clintS) (pfClint clintS) _ _ H I). Qed.
 
   Lemma specPlicState_readFrame :
-    forall ms ms1, ReadFrameS core specRegions ms ms1 ->
-      specPlicState core pre post revBase revPfB revPfA plicS ms1 = specPlicState core pre post revBase revPfB revPfA plicS ms.
-  Proof. intros ms ms1 H; exact (regionStateAt_readFrame core specRegions (plicIdx plicS) (plicRegion plicS) (pfPlic plicS) _ _ H I). Qed.
+    forall ms ms1, ReadFrameS specRegions ms ms1 ->
+      specPlicState pre post revBase revPfB revPfA plicS ms1 = specPlicState pre post revBase revPfB revPfA plicS ms.
+  Proof. intros ms ms1 H; exact (regionStateAt_readFrame specRegions (plicIdx plicS) (plicRegion plicS) (pfPlic plicS) _ _ H I). Qed.
 
   (* The impl revoker and the spec revoker change together, after spec data reads *)
   Lemma MemRelC_revLock :
     forall g g' (s1 s1' : IState) (s2 s2' : SState) mr x' ms1 xs',
       iRegionsA s1 = mr ->
       iRegionsA s1' = setRevRA mr x' ->
-      ReadFrameS core specRegions (sMemA s2) ms1 ->
+      ReadFrameS specRegions (sMemA s2) ms1 ->
       sMemA s2' = setRevSA ms1 xs' ->
-      RevRel core (g_revOff core pcAddrInit g') xs' x' ->
+      RevRel (g_revOff pcAddrInit g') xs' x' ->
       MEMC g s1 s2 -> MEMC g' s1' s2'.
   Proof.
     intros g g' s1 s1' s2 s2' mr x' ms1 xs' E0 E1 Hfr E2 HR Hm.
@@ -841,22 +837,22 @@ Section RevSteps.
     rewrite specClintState_setRevS, specPlicState_setRevS, specRevState_setRevS.
     rewrite (specClintState_readFrame _ _ Hfr), (specPlicState_readFrame _ _ Hfr).
     unfold setRevR, implClintState, implPlicState, implRevState in *.
-    rewrite !(regionStateAt_upd_other (implMemRegionTree core) (length pre))
-      by (intros E; first [ exact (clint_ne_rev core pre post revBase revPfB revPfA clint (eq_sym E))
-                          | exact (plic_ne_rev core pre post revBase revPfB revPfA plic (eq_sym E)) ]).
+    rewrite !(regionStateAt_upd_other implMemRegionTree (length pre))
+      by (intros E; first [ exact (clint_ne_rev pre post revBase revPfB revPfA clint (eq_sym E))
+                          | exact (plic_ne_rev pre post revBase revPfB revPfA plic (eq_sym E)) ]).
     rewrite regionStateAt_updRegionStateAt; cbn [Fst].
     refine (conj (conj _ (conj Hcl (conj Hpl HR))) (conj (conj Hci Hpi) _)).
     - unfold setRevS; apply MemRelPre_upd_rev_spec; apply MemRelPre_upd_rev_impl.
-      exact (MemRelPre_readFrame core _ _ _ _ _ _ _ _ _ _ Hfr Hpre).
-    - exact (SnapshotOK_upd core specRegions fwcs (length pre) sRevR pfS ms1 xs' I
-               (SnapshotOK_readFrame core specRegions fwcs _ _ Hfr Hsnap)).
+      exact (MemRelPre_readFrame _ _ _ _ _ _ _ _ _ _ Hfr Hpre).
+    - exact (SnapshotOK_upd specRegions fwcs (length pre) sRevR pfS ms1 xs' I
+               (SnapshotOK_readFrame specRegions fwcs _ _ Hfr Hsnap)).
   Qed.
 
   Lemma LatchRel_setRevS :
     forall g (s2 : SState) ms1 x,
-      ReadFrameS core specRegions (sMemA s2) ms1 ->
-      LatchRel core pcAddrInit pre post revBase revPfB revPfA clintS plicS g s2 ->
-      LatchRel core pcAddrInit pre post revBase revPfB revPfA clintS plicS g (writeSubTreeState NPMS s2 (setRevSA ms1 x)).
+      ReadFrameS specRegions (sMemA s2) ms1 ->
+      LatchRel pcAddrInit pre post revBase revPfB revPfA clintS plicS g s2 ->
+      LatchRel pcAddrInit pre post revBase revPfB revPfA clintS plicS g (writeSubTreeState NPMS s2 (setRevSA ms1 x)).
   Proof.
     intros g s2 ms1 x Hfr Hl; unfold LatchRel, sClint, sPlic in *.
     intros e0 Hin; destruct (Hl e0 Hin) as [L1 L2]; split.
@@ -872,9 +868,9 @@ Section RevSteps.
   Lemma AccessRel_idle_core :
     forall g (s1 : IState) (s2 : SState),
       ACC g s1 s2 -> rpIdle (iRevPhaseA s1) = true -> msWriteRq (iMemStA s1) = false ->
-      noPortWriteB core implRegions (iRegionsA s1) = true ->
-      g_revOff core pcAddrInit g = RevEq /\
-      match g_acc core pcAddrInit g with
+      noPortWriteB implRegions (iRegionsA s1) = true ->
+      g_revOff pcAddrInit g = RevEq /\
+      match g_acc pcAddrInit g with
       | AccRevCap _ | AccRevBit _ | AccRevWrite _ _ _ | AccStore _ _ _ _ => False
       | _ => True
       end.
@@ -882,7 +878,7 @@ Section RevSteps.
     intros g s1 s2 Ha Hph Hwr Hnpw.
     destruct (rpIdle_excl _ Hph) as [N1 [N2 [N3 N4]]].
     unfold AccessRel in Ha.
-    destruct (g_acc core pcAddrInit g) as [| addr size pkt [b0|b0] | ld pkt0 st | rc st | st | st | addr pkt [b0|b0]];
+    destruct (g_acc pcAddrInit g) as [| addr size pkt [b0|b0] | ld pkt0 st | rc st | st | st | addr pkt [b0|b0]];
       unfold WrStageRel in Ha; cbv beta iota zeta in Ha;
       repeat match goal with H : _ /\ _ |- _ => destruct H end;
       first
@@ -891,7 +887,7 @@ Section RevSteps.
           first
             [ match goal with H : ?f ?x = true, N : ?f ?x = false |- _ => rewrite N in H; discriminate H end
             | match goal with
-              | Hk : lineKind _ _ = Some true, Hw : PortsWriteStaged _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ |- _ =>
+              | Hk : lineKind _ _ = Some true, Hw : PortsWriteStaged _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ |- _ =>
                   rewrite (PortsWriteStaged_npw _ _ _ Hk Hw) in Hnpw; discriminate Hnpw
               end ] ].
   Qed.
@@ -902,61 +898,61 @@ Section RevSteps.
            b' t' c' e' ist' ir' sa' st',
       RELG g s1 s2 ->
       iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-      revOfRA mr = mkRev12 core b t c e ist ir sa st ph sc sb sh ->
-      rpIdle ph = true -> msWriteRq mst = false -> noPortWriteB core implRegions mr = true ->
+      revOfRA mr = mkRev12 b t c e ist ir sa st ph sc sb sh ->
+      rpIdle ph = true -> msWriteRq mst = false -> noPortWriteB implRegions mr = true ->
       s1' = writeSubTreeState NPMI s1
-              (setRevRA mr (mkRev12 core b' t' c' e' ist' ir' sa' st' ph sc sb sh) ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-      (specRevStateA (sMemA s2) = mkRev8 core b t c e ist ir sa st ->
-       forall env, SemAction env (@SpecRevoker.specRevokerStep core [] specRegions revS config type) (sMemA s2)
-                     (setRevSA (sMemA s2) (mkRev8 core b' t' c' e' ist' ir' sa' st')) Zmod.zero) ->
+              (setRevRA mr (mkRev12 b' t' c' e' ist' ir' sa' st' ph sc sb sh) ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
+      (specRevStateA (sMemA s2) = mkRev8 b t c e ist ir sa st ->
+       forall env, SemAction env (@SpecRevoker.specRevokerStep [] specRegions revS config type) (sMemA s2)
+                     (setRevSA (sMemA s2) (mkRev8 b' t' c' e' ist' ir' sa' st')) Zmod.zero) ->
       exists s2', SemActions envS specActs s2 s2' /\ exists g', RELG g' s1' s2'.
   Proof.
     intros g s1 s1' s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh b' t' c' e' ist' ir' sa' st'
            Hg EM Ex Hph Hwr Hnpw E1 Hspec.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     destruct (rpIdle_excl _ Hph) as [Q1 [Q2 [Q3 Q4]]].
-    assert (ER : iRevA s1 = mkRev12 core b t c e ist ir sa st ph sc sb sh)
+    assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh)
       by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
-    assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 core b' t' c' e' ist' ir' sa' st' ph sc sb sh) ,,
+    assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b' t' c' e' ist' ir' sa' st' ph sc sb sh) ,,
                                (mst ,, (mrq ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
-    assert (ER' : iRevA s1' = mkRev12 core b' t' c' e' ist' ir' sa' st' ph sc sb sh).
+    assert (ER' : iRevA s1' = mkRev12 b' t' c' e' ist' ir' sa' st' ph sc sb sh).
     { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
-    assert (HP : forall P, AllPorts core P implRegions (iRegionsA s1') = AllPorts core P implRegions (iRegionsA s1)).
+    assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
     { intros P; rewrite !iRegions_eq, EM', EM; cbn [Fst]; unfold setRevR; apply AllPorts_upd; exact I. }
     assert (Hph1 : rpIdle (iRevPhaseA s1) = true) by (unfold iRevPhase; rewrite ER; exact Hph).
     assert (Hwr1 : msWriteRq (iMemStA s1) = false) by (unfold iMemSt; rewrite EM; exact Hwr).
-    assert (Hnpw1 : noPortWriteB core implRegions (iRegionsA s1) = true) by (rewrite iRegions_eq, EM; exact Hnpw).
+    assert (Hnpw1 : noPortWriteB implRegions (iRegionsA s1) = true) by (rewrite iRegions_eq, EM; exact Hnpw).
     destruct (AccessRel_idle_core g s1 s2 Ha Hph1 Hwr1 Hnpw1) as [Hoff Hcore4].
-    assert (Hcore : match g_acc core pcAddrInit g with AccRevCap _ | AccRevBit _ | AccRevWrite _ _ _ => False | _ => True end)
-      by (destruct (g_acc core pcAddrInit g); first [exact I | contradiction]).
-    assert (Hsn : match g_acc core pcAddrInit g with
+    assert (Hcore : match g_acc pcAddrInit g with AccRevCap _ | AccRevBit _ | AccRevWrite _ _ _ => False | _ => True end)
+      by (destruct (g_acc pcAddrInit g); first [exact I | contradiction]).
+    assert (Hsn : match g_acc pcAddrInit g with
                   | AccStore _ _ _ _ => iScanMsbA s1' = iScanMsbA s1 /\ iRevSnoopHitA s1' = iRevSnoopHitA s1
                   | _ => True
                   end)
-      by (destruct (g_acc core pcAddrInit g); first [exact I | contradiction]).
-    assert (Hxs : specRevStateA (sMemA s2) = mkRev8 core b t c e ist ir sa st).
+      by (destruct (g_acc pcAddrInit g); first [exact I | contradiction]).
+    assert (Hxs : specRevStateA (sMemA s2) = mkRev8 b t c e ist ir sa st).
     { destruct Hm as [[_ [_ [_ Hrv]]] _].
-      change (RevRel core (g_revOff core pcAddrInit g) (specRevStateA (sMemA s2)) (iRevA s1)) in Hrv.
+      change (RevRel (g_revOff pcAddrInit g) (specRevStateA (sMemA s2)) (iRevA s1)) in Hrv.
       rewrite ER, Hoff in Hrv.
-      exact (RevRel_eq core _ _ _ _ _ _ _ _ _ _ _ _ _ Hrv). }
-    exists (writeSubTreeState NPMS s2 (setRevSA (sMemA s2) (mkRev8 core b' t' c' e' ist' ir' sa' st'))).
+      exact (RevRel_eq _ _ _ _ _ _ _ _ _ _ _ _ _ Hrv). }
+    exists (writeSubTreeState NPMS s2 (setRevSA (sMemA s2) (mkRev8 b' t' c' e' ist' ir' sa' st'))).
     split.
     - eapply ConsAction; [apply In_specRevokerStep | | apply NilAction; reflexivity].
       unfold Spec.specRevokerStep.
       apply SemAction_liftAction_iff; eexists; split; [| reflexivity].
       exact (Hspec Hxs _).
     - exists g.
-      eapply (RefRelG_mem_frame core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+      eapply (RefRelG_mem_frame pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                 clintS clint plicS plic initLine fwcs) with (g := g) (s1 := s1) (s2 := s2);
         [exact E1 | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity | exact HP
         | | | | | | | exact Hg].
       + intros L.
-        exact (lineContent_upd core initLine specRegions (length pre) sRevR pfS (sMemA s2)
-                 (mkRev8 core b' t' c' e' ist' ir' sa' st') L I).
-      + exact (FetchViewExt_upd core specRegions (length pre) sRevR pfS (sMemA s2) (mkRev8 core b' t' c' e' ist' ir' sa' st') I).
-      + apply (MemRelC_revLock g g s1 s1' s2 _ mr (mkRev12 core b' t' c' e' ist' ir' sa' st' ph sc sb sh)
-                 (sMemA s2) (mkRev8 core b' t' c' e' ist' ir' sa' st')).
+        exact (lineContent_upd initLine specRegions (length pre) sRevR pfS (sMemA s2)
+                 (mkRev8 b' t' c' e' ist' ir' sa' st') L I).
+      + exact (FetchViewExt_upd specRegions (length pre) sRevR pfS (sMemA s2) (mkRev8 b' t' c' e' ist' ir' sa' st') I).
+      + apply (MemRelC_revLock g g s1 s1' s2 _ mr (mkRev12 b' t' c' e' ist' ir' sa' st' ph sc sb sh)
+                 (sMemA s2) (mkRev8 b' t' c' e' ist' ir' sa' st')).
         * rewrite iRegions_eq, EM; reflexivity.
         * rewrite iRegions_eq, EM'; reflexivity.
         * apply ReadFrameS_refl.
@@ -975,8 +971,8 @@ Section RevSteps.
           [intros P; reflexivity | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity
           | | exact Ha1].
         intros L.
-        exact (lineContent_upd core initLine specRegions (length pre) sRevR pfS (sMemA s2)
-                 (mkRev8 core b' t' c' e' ist' ir' sa' st') L I).
+        exact (lineContent_upd initLine specRegions (length pre) sRevR pfS (sMemA s2)
+                 (mkRev8 b' t' c' e' ist' ir' sa' st') L I).
       + unfold RevokerRel; unfold iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd].
         split; [rewrite Hph; intros Hc'; discriminate Hc' |].
         unfold rpCheck; rewrite Q2, Q3, Q4.
@@ -986,7 +982,7 @@ Section RevSteps.
   Qed.
 
   Lemma stepOK_idle :
-    STEPOK (@implRevokerIdleStepSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
+    STEPOK (@implRevokerIdleStepSys pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config implRegions revI type).
   Proof.
     intros s1 s1' s2 Hsem [g Hg].
@@ -997,7 +993,7 @@ Section RevSteps.
     destruct m as [mr [mst [mrq [mrp []]]]].
     remember (revOfRA mr) as x eqn:Ex; symmetry in Ex.
     destruct x as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh []]]]]]]]]]]]].
-    destruct (idle_char core pre post revBase revPfB revPfA _ mr mst mrq mrp m' _
+    destruct (idle_char pre post revBase revPfB revPfA _ mr mst mrq mrp m' _
                 b t c e ist ir sa st ph sc sb sh Ex Hm')
       as [-> | [[Hnp [Hph [Hodd [Hnd [Hidle [st' [rq' [ph' [-> [Hrq [HrqV [Hreq Hph']]]]]]]]]]]]
               | [[Hnp [Hph [Hodd [Hdone ->]]]]
@@ -1010,24 +1006,24 @@ Section RevSteps.
     - (* the cap read of position sa is sent; the spec stutters *)
       apply andb_prop in Hnp as [_ Hnpw].
       pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hcn Hd Hf Hs Hfr Hw Hrk].
-      assert (ER : iRevA s1 = mkRev12 core b t c e ist ir sa st ph sc sb sh)
+      assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh)
         by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
-      assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 core b t c e ist ir sa st ph' sc sb false) ,,
+      assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir sa st ph' sc sb false) ,,
                                  (st' ,, (rq' ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
-      assert (ER' : iRevA s1' = mkRev12 core b t c e ist ir sa st ph' sc sb false).
+      assert (ER' : iRevA s1' = mkRev12 b t c e ist ir sa st ph' sc sb false).
       { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
-      assert (HP : forall P, AllPorts core P implRegions (iRegionsA s1') = AllPorts core P implRegions (iRegionsA s1)).
+      assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
       { intros P; rewrite !iRegions_eq, EM', EM; cbn [Fst]; unfold setRevR; apply AllPorts_upd; exact I. }
-      assert (Hacc0 : g_acc core pcAddrInit g = AccNone).
+      assert (Hacc0 : g_acc pcAddrInit g = AccNone).
       { apply (AccessRel_rdy_none g s1 s2 Ha).
         - unfold iMemSt; rewrite EM; exact Hidle.
         - rewrite iRegions_eq, EM; exact Hnpw. }
       pose proof Ha as Ha'; unfold AccessRel in Ha'; rewrite Hacc0 in Ha'.
       destruct Ha' as [Hi0 [Hrp0 [Hq0 [Hoff0 [Hdm0 [Hrn0 Hsec0]]]]]].
       exists s2; split; [apply NilAction; reflexivity |].
-      exists (mkGhost core pcAddrInit (g_chain core pcAddrInit g) (g_rf0 core pcAddrInit g) (g_cnwb core pcAddrInit g)
-                (g_revOff core pcAddrInit g) (g_d2aFo core pcAddrInit g) (AccRevCap (RdPend false))).
-      eapply (RefRelG_mem_frame core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+      exists (mkGhost pcAddrInit (g_chain pcAddrInit g) (g_rf0 pcAddrInit g) (g_cnwb pcAddrInit g)
+                (g_revOff pcAddrInit g) (g_d2aFo pcAddrInit g) (AccRevCap (RdPend false))).
+      eapply (RefRelG_mem_frame pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                 clintS clint plicS plic initLine fwcs) with (g := g) (s1 := s1) (s2 := s2) (ms' := sMemA s2);
         [exact E1 | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity | | exact HP
@@ -1036,7 +1032,7 @@ Section RevSteps.
       + eapply (MemRelC_revImpl g _ s1 s1' s2 mr); [rewrite iRegions_eq, EM; reflexivity
                                                      | rewrite iRegions_eq, EM'; reflexivity | |].
         * destruct Hm as [[_ [_ [_ Hrv]]] _].
-          change (RevRel core (g_revOff core pcAddrInit g) (specRevState core pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
+          change (RevRel (g_revOff pcAddrInit g) (specRevState pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
           rewrite ER in Hrv; exact Hrv.
         * exact Hm.
       + unfold AccessRel; cbn [g_acc g_revOff].
@@ -1059,21 +1055,21 @@ Section RevSteps.
       apply andb_prop in Hnp as [Hwr Hnpw]; apply negb_true_iff in Hwr.
       exact (idle_lock g s1 s1' s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh
                b t c (epochInc e) (if ir then true else ist) ir sa st Hg EM Ex Hph Hwr Hnpw E1
-               (fun Hx env => specRevStep_done core config pre post revBase revPfB revPfA env (sMemA s2)
+               (fun Hx env => specRevStep_done config pre post revBase revPfB revPfA env (sMemA s2)
                                 b t c e ist ir sa st Hx Hodd Hdone)).
     - (* even epoch, kick: lockstep *)
       apply andb_prop in Hnp as [Hwr Hnpw]; apply negb_true_iff in Hwr.
       subst c.
       exact (idle_lock g s1 s1' s2 mr mst mrq mrp b t true e ist ir sa st ph sc sb sh
                b t false (epochMkOdd e) false ir b t Hg EM Ex Hph Hwr Hnpw E1
-               (fun Hx env => specRevStep_even core config pre post revBase revPfB revPfA env (sMemA s2)
+               (fun Hx env => specRevStep_even config pre post revBase revPfB revPfA env (sMemA s2)
                                 b t true e ist ir sa st Hx Hev)).
     - (* even epoch, no kick: lockstep *)
       apply andb_prop in Hnp as [Hwr Hnpw]; apply negb_true_iff in Hwr.
       subst c.
       exact (idle_lock g s1 s1' s2 mr mst mrq mrp b t false e ist ir sa st ph sc sb sh
                b t false e false ir sa st Hg EM Ex Hph Hwr Hnpw E1
-               (fun Hx env => specRevStep_even core config pre post revBase revPfB revPfA env (sMemA s2)
+               (fun Hx env => specRevStep_even config pre post revBase revPfB revPfA env (sMemA s2)
                                 b t false e ist ir sa st Hx Hev)).
   Qed.
 
@@ -1097,59 +1093,59 @@ Section RevSteps.
     exact (revTab_line config specRegions (Is_true_eq_true _ Hdisj) (Is_true_eq_true _ HrevTab) a Ha).
   Qed.
 
-  Local Abbreviation PQ := (PortsQuiet core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation PQ := (PortsQuiet pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                               mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation DNA := (dmNotAccessing core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation DNA := (dmNotAccessing pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
-  Local Abbreviation sSecondA := (sSecond core pcAddrInit pre post revBase revPfB revPfA).
+  Local Abbreviation sSecondA := (sSecond pcAddrInit pre post revBase revPfB revPfA).
 
   Lemma scan_commit :
     forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp b t c e ist ir sa st ph sc sb sh st' ph' ms1,
       RELG g s1 s2 ->
       iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-      revOfRA mr = mkRev12 core b t c e ist ir sa st ph sc sb sh ->
+      revOfRA mr = mkRev12 b t c e ist ir sa st ph sc sb sh ->
       s1' = writeSubTreeState NPMI s1
-              (setRevRA mr (mkRev12 core b t c e ist ir (scanNext sa) st ph' sc sb sh) ,, (st' ,, (mrq ,, (mrp ,, tt)))) ->
+              (setRevRA mr (mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh) ,, (st' ,, (mrq ,, (mrp ,, tt)))) ->
       msIdle st' = true -> rpIdle ph' = true ->
-      g_revOff core pcAddrInit g = RevEq -> accTakesHead (g_acc core pcAddrInit g) = false ->
+      g_revOff pcAddrInit g = RevEq -> accTakesHead (g_acc pcAddrInit g) = false ->
       optValid mrp = false -> PQ s1 -> DNA s1 -> optValid (sSecondA s2) = false ->
-      ReadFrameS core specRegions (sMemA s2) ms1 ->
-      SemAction (subEnv NPMS envS s2) (@SpecRevoker.specRevokerStep core [] specRegions revS config type) (sMemA s2)
-        (setRevSA ms1 (mkRev8 core b t c e ist ir (scanNext sa) st)) Zmod.zero ->
+      ReadFrameS specRegions (sMemA s2) ms1 ->
+      SemAction (subEnv NPMS envS s2) (@SpecRevoker.specRevokerStep [] specRegions revS config type) (sMemA s2)
+        (setRevSA ms1 (mkRev8 b t c e ist ir (scanNext sa) st)) Zmod.zero ->
       exists s2', SemActions envS specActs s2 s2' /\ exists g', RELG g' s1' s2'.
   Proof.
     intros g s1 s1' s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh st' ph' ms1
            Hg EM Ex E1 Hidle' Hph' Hoff Htk Hrp Hq Hdm Hsec Hfr Hspec.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp0 He Ha Hc Hd Hf Hs Hfrt Hw Hrk].
     destruct (rpIdle_excl _ Hph') as [Q1 [Q2 [Q3 Q4]]].
-    assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 core b t c e ist ir (scanNext sa) st ph' sc sb sh) ,,
+    assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh) ,,
                                (st' ,, (mrq ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
-    assert (ER' : iRevA s1' = mkRev12 core b t c e ist ir (scanNext sa) st ph' sc sb sh).
+    assert (ER' : iRevA s1' = mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh).
     { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
-    assert (HP : forall P, AllPorts core P implRegions (iRegionsA s1') = AllPorts core P implRegions (iRegionsA s1)).
+    assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
     { intros P; rewrite !iRegions_eq, EM', EM; cbn [Fst]; unfold setRevR; apply AllPorts_upd; exact I. }
-    exists (writeSubTreeState NPMS s2 (setRevSA ms1 (mkRev8 core b t c e ist ir (scanNext sa) st))).
+    exists (writeSubTreeState NPMS s2 (setRevSA ms1 (mkRev8 b t c e ist ir (scanNext sa) st))).
     split.
     - eapply ConsAction; [apply In_specRevokerStep | | apply NilAction; reflexivity].
       unfold Spec.specRevokerStep.
       apply SemAction_liftAction_iff; eexists; split; [exact Hspec | reflexivity].
-    - exists (mkGhost core pcAddrInit (g_chain core pcAddrInit g) (g_rf0 core pcAddrInit g) (g_cnwb core pcAddrInit g)
-                RevEq (g_d2aFo core pcAddrInit g) AccNone).
-      eapply (RefRelG_mem_frame core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    - exists (mkGhost pcAddrInit (g_chain pcAddrInit g) (g_rf0 pcAddrInit g) (g_cnwb pcAddrInit g)
+                RevEq (g_d2aFo pcAddrInit g) AccNone).
+      eapply (RefRelG_mem_frame pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                 clintS clint plicS plic initLine fwcs) with (g := g) (s1 := s1) (s2 := s2);
         [exact E1 | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity | | exact HP
         | | | | | | | exact Hg].
       + cbn [g_acc accTakesHead]; rewrite Htk; reflexivity.
       + intros L.
-        transitivity (lineContent core initLine specRegions ms1 L).
-        * exact (lineContent_upd core initLine specRegions (length pre) sRevR pfS ms1
-                   (mkRev8 core b t c e ist ir (scanNext sa) st) L I).
-        * exact (lineContent_readFrame core initLine specRegions _ _ Hfr L).
-      + exact (FetchViewExt_trans core specRegions _ _ _ (FetchViewExt_readFrame core specRegions _ _ Hfr)
-                 (FetchViewExt_upd core specRegions (length pre) sRevR pfS ms1 (mkRev8 core b t c e ist ir (scanNext sa) st) I)).
-      + apply (MemRelC_revLock g _ s1 s1' s2 _ mr (mkRev12 core b t c e ist ir (scanNext sa) st ph' sc sb sh) ms1
-                 (mkRev8 core b t c e ist ir (scanNext sa) st)).
+        transitivity (lineContent initLine specRegions ms1 L).
+        * exact (lineContent_upd initLine specRegions (length pre) sRevR pfS ms1
+                   (mkRev8 b t c e ist ir (scanNext sa) st) L I).
+        * exact (lineContent_readFrame initLine specRegions _ _ Hfr L).
+      + exact (FetchViewExt_trans specRegions _ _ _ (FetchViewExt_readFrame specRegions _ _ Hfr)
+                 (FetchViewExt_upd specRegions (length pre) sRevR pfS ms1 (mkRev8 b t c e ist ir (scanNext sa) st) I)).
+      + apply (MemRelC_revLock g _ s1 s1' s2 _ mr (mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh) ms1
+                 (mkRev8 b t c e ist ir (scanNext sa) st)).
         * rewrite iRegions_eq, EM; reflexivity.
         * rewrite iRegions_eq, EM'; reflexivity.
         * exact Hfr.
@@ -1178,23 +1174,23 @@ Section RevSteps.
     forall g (s1 : IState) (s2 : SState) mr mst mrq mrp b t c e ist ir sa st ph sc sb sh,
       RELG g s1 s2 ->
       iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-      revOfRA mr = mkRev12 core b t c e ist ir sa st ph sc sb sh ->
+      revOfRA mr = mkRev12 b t c e ist ir sa st ph sc sb sh ->
       rpWaitCapRp ph = true -> msReadRpReady mst = true -> isReqRevoker mrq = true ->
-      g_acc core pcAddrInit g = AccRevCap (RdReady (msReadRpReadyV mst)) /\
-      optValid mrp = false /\ PQ s1 /\ DNA s1 /\ g_revOff core pcAddrInit g <> RevImplAhead /\
+      g_acc pcAddrInit g = AccRevCap (RdReady (msReadRpReadyV mst)) /\
+      optValid mrp = false /\ PQ s1 /\ DNA s1 /\ g_revOff pcAddrInit g <> RevImplAhead /\
       optValid (sSecondA s2) = false /\ epochOdd e = true /\ scanDone sa st = false /\
-      (g_revOff core pcAddrInit g = RevSpecAhead -> capNeedsCheck config (msReadRpReadyV mst) = false) /\
-      (g_revOff core pcAddrInit g <> RevSpecAhead ->
+      (g_revOff pcAddrInit g = RevSpecAhead -> capNeedsCheck config (msReadRpReadyV mst) = false) /\
+      (g_revOff pcAddrInit g <> RevSpecAhead ->
          lineKind implRegions (lineOf false (scanFull sa)) = Some true /\
-         msReadRpReadyV mst = memValAt core pre post revBase revPfB revPfA initLine (sMemA s2) (scanFull sa) capSz).
+         msReadRpReadyV mst = memValAt pre post revBase revPfB revPfA initLine (sMemA s2) (scanFull sa) capSz).
   Proof.
     intros g s1 s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh Hg EM Ex Hph Hrdy Hreq.
     destruct Hg as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
-    assert (ER : iRevA s1 = mkRev12 core b t c e ist ir sa st ph sc sb sh) by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
+    assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh) by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
     destruct (rpWaitCapRp_excl _ Hph) as [P0 [P2 [P3 P4]]].
     assert (H1 : msReadRpReady (iMemStA s1) = true) by (unfold iMemSt; rewrite EM; exact Hrdy).
     assert (H2 : isReqRevoker (iRequesterA s1) = true) by (unfold iRequester; rewrite EM; exact Hreq).
-    assert (Hacc : g_acc core pcAddrInit g = AccRevCap (RdReady (msReadRpReadyV mst))).
+    assert (Hacc : g_acc pcAddrInit g = AccRevCap (RdReady (msReadRpReadyV mst))).
     { destruct (AccessRel_rpReady_rev g s1 s2 Ha H1 H2) as [[Ea _] | [_ Hb]].
       - unfold iMemSt in Ea; rewrite EM in Ea; exact Ea.
       - unfold iRevPhase in Hb; rewrite ER in Hb; cbn [mkRev12 Fst Snd] in Hb; rewrite P3 in Hb; discriminate Hb. }
@@ -1210,12 +1206,12 @@ Section RevSteps.
     split; [exact Hsec0 |]. split; [exact Hodd |]. split; [exact Hnd |].
     split.
     - intros E; rewrite E in K5; exact K5.
-    - intros E; revert K5; destruct (g_revOff core pcAddrInit g) eqn:Eo; intros K5;
+    - intros E; revert K5; destruct (g_revOff pcAddrInit g) eqn:Eo; intros K5;
         [exact K5 | exact K5 | exfalso; exact (E eq_refl)].
   Qed.
 
   Lemma stepOK_waitCapRp :
-    STEPOK (@implRevokerWaitCapRpStepSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
+    STEPOK (@implRevokerWaitCapRpStepSys pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config implRegions revI type).
   Proof.
     intros s1 s1' s2 Hsem [g Hg].
@@ -1226,7 +1222,7 @@ Section RevSteps.
     destruct m as [mr [mst [mrq [mrp []]]]].
     remember (revOfRA mr) as x eqn:Ex; symmetry in Ex.
     destruct x as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh []]]]]]]]]]]]].
-    destruct (waitCapRp_char core config pre post revBase revPfB revPfA _ mr mst mrq mrp m' _
+    destruct (waitCapRp_char config pre post revBase revPfB revPfA _ mr mst mrq mrp m' _
                 b t c e ist ir sa st ph sc sb sh Ex Hm')
       as [-> | [[Hph [Hrdy [Hreq [Hck [st' [ph' [-> [Hidle' Hph']]]]]]]]
               | [Hph [Hrdy [Hreq [Hck [st' [ph' [-> [Hidle' Hph']]]]]]]]]].
@@ -1237,28 +1233,28 @@ Section RevSteps.
     - (* a check is needed: the cap and its base are saved; the spec stutters *)
       destruct (waitCapRp_facts g s1 s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh Hg EM Ex Hph Hrdy Hreq)
         as [Hacc [Hrp0 [Hq0 [Hdm0 [Hoff0 [Hsec0 [Hodd [Hnd [Hsa Hnsa]]]]]]]]].
-      assert (Hoff : g_revOff core pcAddrInit g = RevEq).
-      { destruct (g_revOff core pcAddrInit g) eqn:Eo.
+      assert (Hoff : g_revOff pcAddrInit g = RevEq).
+      { destruct (g_revOff pcAddrInit g) eqn:Eo.
         - reflexivity.
         - exfalso; exact (Hoff0 eq_refl).
         - rewrite (Hsa eq_refl) in Hck; discriminate Hck. }
-      assert (Hns : g_revOff core pcAddrInit g <> RevSpecAhead) by (rewrite Hoff; discriminate).
+      assert (Hns : g_revOff pcAddrInit g <> RevSpecAhead) by (rewrite Hoff; discriminate).
       destruct (Hnsa Hns) as [Hlk Hv].
       pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
-      assert (ER : iRevA s1 = mkRev12 core b t c e ist ir sa st ph sc sb sh)
+      assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh)
         by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
-      assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 core b t c e ist ir sa st ph' (msReadRpReadyV mst)
+      assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir sa st ph' (msReadRpReadyV mst)
                                                  (capBase (msReadRpReadyV mst)) sh) ,,
                                  (st' ,, (mrq ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
-      assert (ER' : iRevA s1' = mkRev12 core b t c e ist ir sa st ph' (msReadRpReadyV mst) (capBase (msReadRpReadyV mst)) sh).
+      assert (ER' : iRevA s1' = mkRev12 b t c e ist ir sa st ph' (msReadRpReadyV mst) (capBase (msReadRpReadyV mst)) sh).
       { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
-      assert (HP : forall P, AllPorts core P implRegions (iRegionsA s1') = AllPorts core P implRegions (iRegionsA s1)).
+      assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
       { intros P; rewrite !iRegions_eq, EM', EM; cbn [Fst]; unfold setRevR; apply AllPorts_upd; exact I. }
       destruct (rpWaitRevBitRq_excl _ Hph') as [Q0 [Q1 [Q3 Q4]]].
       exists s2; split; [apply NilAction; reflexivity |].
-      exists (mkGhost core pcAddrInit (g_chain core pcAddrInit g) (g_rf0 core pcAddrInit g) (g_cnwb core pcAddrInit g)
-                (g_revOff core pcAddrInit g) (g_d2aFo core pcAddrInit g) AccNone).
-      eapply (RefRelG_mem_frame core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+      exists (mkGhost pcAddrInit (g_chain pcAddrInit g) (g_rf0 pcAddrInit g) (g_cnwb pcAddrInit g)
+                (g_revOff pcAddrInit g) (g_d2aFo pcAddrInit g) AccNone).
+      eapply (RefRelG_mem_frame pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                 clintS clint plicS plic initLine fwcs) with (g := g) (s1 := s1) (s2 := s2) (ms' := sMemA s2);
         [exact E1 | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity | | exact HP
@@ -1267,7 +1263,7 @@ Section RevSteps.
       + eapply (MemRelC_revImpl g _ s1 s1' s2 mr); [rewrite iRegions_eq, EM; reflexivity
                                                      | rewrite iRegions_eq, EM'; reflexivity | |].
         * destruct Hm as [[_ [_ [_ Hrv]]] _].
-          change (RevRel core (g_revOff core pcAddrInit g) (specRevState core pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
+          change (RevRel (g_revOff pcAddrInit g) (specRevState pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
           rewrite ER in Hrv; exact Hrv.
         * exact Hm.
       + unfold AccessRel; cbn [g_acc g_revOff].
@@ -1287,21 +1283,21 @@ Section RevSteps.
       destruct (waitCapRp_facts g s1 s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh Hg EM Ex Hph Hrdy Hreq)
         as [Hacc [Hrp0 [Hq0 [Hdm0 [Hoff0 [Hsec0 [Hodd [Hnd [Hsa Hnsa]]]]]]]]].
       pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
-      assert (ER : iRevA s1 = mkRev12 core b t c e ist ir sa st ph sc sb sh)
+      assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh)
         by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
-      destruct (g_revOff core pcAddrInit g) eqn:Eo.
+      destruct (g_revOff pcAddrInit g) eqn:Eo.
       + (* the spec takes the position's step *)
         destruct (Hnsa ltac:(discriminate)) as [Hlk Hv].
-        assert (Hxs : specRevStateA (sMemA s2) = mkRev8 core b t c e ist ir sa st).
+        assert (Hxs : specRevStateA (sMemA s2) = mkRev8 b t c e ist ir sa st).
         { destruct Hm as [[_ [_ [_ Hrv]]] _].
-          change (RevRel core (g_revOff core pcAddrInit g) (specRevStateA (sMemA s2)) (iRevA s1)) in Hrv.
+          change (RevRel (g_revOff pcAddrInit g) (specRevStateA (sMemA s2)) (iRevA s1)) in Hrv.
           rewrite ER, Eo in Hrv.
-          exact (RevRel_eq core _ _ _ _ _ _ _ _ _ _ _ _ _ Hrv). }
+          exact (RevRel_eq _ _ _ _ _ _ _ _ _ _ _ _ _ Hrv). }
         assert (Hk1 : lineKind specRegions (lineOf false (scanFull sa)) = Some true)
           by (rewrite lineKind_revSwap; exact Hlk).
-        destruct (specRevStep_scan core config pre post revBase revPfB revPfA initLine fwcs (subEnv NPMS envS s2) (sMemA s2)
+        destruct (specRevStep_scan config pre post revBase revPfB revPfA initLine fwcs (subEnv NPMS envS s2) (sMemA s2)
                     b t c e ist ir sa st
-                    (specEnvOK_mem core pcAddrInit pre post revBase revPfB revPfA initLine fwcs s2) Hxs Hodd Hnd Hk1
+                    (specEnvOK_mem pcAddrInit pre post revBase revPfB revPfA initLine fwcs s2) Hxs Hodd Hnd Hk1
                     (lineUnique_spec _)
                     (fun Hc' => ltac:(exfalso; rewrite <- Hv in Hc'; rewrite Hc' in Hck; discriminate Hck)))
           as [ms1 [Hfr1 Hsem1]].
@@ -1310,17 +1306,17 @@ Section RevSteps.
                                              | exact Hsec0 | exact Hfr1 | exact Hsem1].
       + exfalso; exact (Hoff0 eq_refl).
       + (* the spec took the position's step already: the offset closes *)
-        assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 core b t c e ist ir (scanNext sa) st ph' sc sb sh) ,,
+        assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh) ,,
                                    (st' ,, (mrq ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
-        assert (ER' : iRevA s1' = mkRev12 core b t c e ist ir (scanNext sa) st ph' sc sb sh).
+        assert (ER' : iRevA s1' = mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh).
         { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
-        assert (HP : forall P, AllPorts core P implRegions (iRegionsA s1') = AllPorts core P implRegions (iRegionsA s1)).
+        assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
         { intros P; rewrite !iRegions_eq, EM', EM; cbn [Fst]; unfold setRevR; apply AllPorts_upd; exact I. }
         destruct (rpIdle_excl _ Hph') as [Q1 [Q2 [Q3 Q4]]].
         exists s2; split; [apply NilAction; reflexivity |].
-        exists (mkGhost core pcAddrInit (g_chain core pcAddrInit g) (g_rf0 core pcAddrInit g) (g_cnwb core pcAddrInit g)
-                  RevEq (g_d2aFo core pcAddrInit g) AccNone).
-        eapply (RefRelG_mem_frame core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+        exists (mkGhost pcAddrInit (g_chain pcAddrInit g) (g_rf0 pcAddrInit g) (g_cnwb pcAddrInit g)
+                  RevEq (g_d2aFo pcAddrInit g) AccNone).
+        eapply (RefRelG_mem_frame pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                   mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                   clintS clint plicS plic initLine fwcs) with (g := g) (s1 := s1) (s2 := s2) (ms' := sMemA s2);
           [exact E1 | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity | | exact HP
@@ -1329,11 +1325,11 @@ Section RevSteps.
         * eapply (MemRelC_revImpl g _ s1 s1' s2 mr); [rewrite iRegions_eq, EM; reflexivity
                                                        | rewrite iRegions_eq, EM'; reflexivity | |].
           -- destruct Hm as [[_ [_ [_ Hrv]]] _].
-             change (RevRel core (g_revOff core pcAddrInit g) (specRevState core pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
+             change (RevRel (g_revOff pcAddrInit g) (specRevState pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
              rewrite ER, Eo in Hrv.
              cbn [g_revOff].
-             apply (RevRel_advance core RevSpecAhead RevEq _ b t c e ist ir sa st ph sc sb sh ph' sc sb sh Hrv).
-             pose proof (RevRel_scan core _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hrv) as Esa; cbn [revOffAddr] in Esa |- *.
+             apply (RevRel_advance RevSpecAhead RevEq _ b t c e ist ir sa st ph sc sb sh ph' sc sb sh Hrv).
+             pose proof (RevRel_scan _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hrv) as Esa; cbn [revOffAddr] in Esa |- *.
              rewrite Esa, scanNext_eq; apply Zmod_sub_add_one.
           -- exact Hm.
         * unfold AccessRel; cbn [g_acc g_revOff].
@@ -1357,23 +1353,23 @@ Section RevSteps.
     forall g (s1 : IState) (s2 : SState) mr mst mrq mrp b t c e ist ir sa st ph sc sb sh,
       RELG g s1 s2 ->
       iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-      revOfRA mr = mkRev12 core b t c e ist ir sa st ph sc sb sh ->
+      revOfRA mr = mkRev12 b t c e ist ir sa st ph sc sb sh ->
       rpWaitRevBitRp ph = true -> msReadRpReady mst = true -> isReqRevoker mrq = true ->
-      g_acc core pcAddrInit g = AccRevBit (RdReady (msReadRpReadyV mst)) /\
-      optValid mrp = false /\ PQ s1 /\ DNA s1 /\ g_revOff core pcAddrInit g = RevEq /\
+      g_acc pcAddrInit g = AccRevBit (RdReady (msReadRpReadyV mst)) /\
+      optValid mrp = false /\ PQ s1 /\ DNA s1 /\ g_revOff pcAddrInit g = RevEq /\
       optValid (sSecondA s2) = false /\ epochOdd e = true /\ scanDone sa st = false /\
       capNeedsCheck config sc = true /\ sb = capBase sc /\
       lineKind implRegions (lineOf false (scanFull sa)) = Some true /\
-      (sh = false -> memValAt core pre post revBase revPfB revPfA initLine (sMemA s2) (scanFull sa) capSz = sc) /\
-      revBitOfVal config sb (msReadRpReadyV mst) = revBitOf core config pre post revBase revPfB revPfA initLine (sMemA s2) sb.
+      (sh = false -> memValAt pre post revBase revPfB revPfA initLine (sMemA s2) (scanFull sa) capSz = sc) /\
+      revBitOfVal config sb (msReadRpReadyV mst) = revBitOf config pre post revBase revPfB revPfA initLine (sMemA s2) sb.
   Proof.
     intros g s1 s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh Hg EM Ex Hph Hrdy Hreq.
     destruct Hg as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
-    assert (ER : iRevA s1 = mkRev12 core b t c e ist ir sa st ph sc sb sh) by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
+    assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh) by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
     destruct (rpWaitRevBitRp_excl _ Hph) as [P0 [P1 [P2 P4]]].
     assert (H1 : msReadRpReady (iMemStA s1) = true) by (unfold iMemSt; rewrite EM; exact Hrdy).
     assert (H2 : isReqRevoker (iRequesterA s1) = true) by (unfold iRequester; rewrite EM; exact Hreq).
-    assert (Hacc : g_acc core pcAddrInit g = AccRevBit (RdReady (msReadRpReadyV mst))).
+    assert (Hacc : g_acc pcAddrInit g = AccRevBit (RdReady (msReadRpReadyV mst))).
     { destruct (AccessRel_rpReady_rev g s1 s2 Ha H1 H2) as [[_ Hb] | [Ea _]].
       - unfold iRevPhase in Hb; rewrite ER in Hb; cbn [mkRev12 Fst Snd] in Hb; rewrite P1 in Hb; discriminate Hb.
       - unfold iMemSt in Ea; rewrite EM in Ea; exact Ea. }
@@ -1396,7 +1392,7 @@ Section RevSteps.
   Qed.
 
   Lemma stepOK_waitRevBitRp :
-    STEPOK (@implRevokerWaitRevBitRpStepSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
+    STEPOK (@implRevokerWaitRevBitRpStepSys pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config implRegions revI type).
   Proof.
     intros s1 s1' s2 Hsem [g Hg].
@@ -1407,7 +1403,7 @@ Section RevSteps.
     destruct m as [mr [mst [mrq [mrp []]]]].
     remember (revOfRA mr) as x eqn:Ex; symmetry in Ex.
     destruct x as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh []]]]]]]]]]]]].
-    destruct (waitRevBitRp_char core config pre post revBase revPfB revPfA _ mr mst mrq mrp m' _
+    destruct (waitRevBitRp_char config pre post revBase revPfB revPfA _ mr mst mrq mrp m' _
                 b t c e ist ir sa st ph sc sb sh Ex Hm')
       as [-> | [Hph [Hrdy [Hreq [st' [ph' [Hidle' Hcases]]]]]]].
     - (* nothing changes *)
@@ -1417,21 +1413,21 @@ Section RevSteps.
     - destruct (waitRevBitRp_facts g s1 s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh Hg EM Ex Hph Hrdy Hreq)
         as [Hacc [Hrp0 [Hq0 [Hdm0 [Hoff [Hsec0 [Hodd [Hnd [Hnc [Hsb [Hlk [Hmv Hrbv]]]]]]]]]]]].
       pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
-      assert (ER : iRevA s1 = mkRev12 core b t c e ist ir sa st ph sc sb sh)
+      assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh)
         by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
       destruct Hcases as [[Hsh [Hph' ->]] | [[Hsh [Hrb [Hph' ->]]] | [Hsh [Hrb [Hph' ->]]]]].
       + (* a store hit the position: it is retried; the spec stutters *)
-        assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 core b t c e ist ir sa st ph' sc sb sh) ,,
+        assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir sa st ph' sc sb sh) ,,
                                    (st' ,, (mrq ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
-        assert (ER' : iRevA s1' = mkRev12 core b t c e ist ir sa st ph' sc sb sh).
+        assert (ER' : iRevA s1' = mkRev12 b t c e ist ir sa st ph' sc sb sh).
         { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
-        assert (HP : forall P, AllPorts core P implRegions (iRegionsA s1') = AllPorts core P implRegions (iRegionsA s1)).
+        assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
         { intros P; rewrite !iRegions_eq, EM', EM; cbn [Fst]; unfold setRevR; apply AllPorts_upd; exact I. }
         destruct (rpIdle_excl _ Hph') as [Q1 [Q2 [Q3 Q4]]].
         exists s2; split; [apply NilAction; reflexivity |].
-        exists (mkGhost core pcAddrInit (g_chain core pcAddrInit g) (g_rf0 core pcAddrInit g) (g_cnwb core pcAddrInit g)
-                  (g_revOff core pcAddrInit g) (g_d2aFo core pcAddrInit g) AccNone).
-        eapply (RefRelG_mem_frame core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+        exists (mkGhost pcAddrInit (g_chain pcAddrInit g) (g_rf0 pcAddrInit g) (g_cnwb pcAddrInit g)
+                  (g_revOff pcAddrInit g) (g_d2aFo pcAddrInit g) AccNone).
+        eapply (RefRelG_mem_frame pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                   mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                   clintS clint plicS plic initLine fwcs) with (g := g) (s1 := s1) (s2 := s2) (ms' := sMemA s2);
           [exact E1 | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity | | exact HP
@@ -1440,7 +1436,7 @@ Section RevSteps.
         * eapply (MemRelC_revImpl g _ s1 s1' s2 mr); [rewrite iRegions_eq, EM; reflexivity
                                                        | rewrite iRegions_eq, EM'; reflexivity | |].
           -- destruct Hm as [[_ [_ [_ Hrv]]] _].
-             change (RevRel core (g_revOff core pcAddrInit g) (specRevState core pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
+             change (RevRel (g_revOff pcAddrInit g) (specRevState pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
              rewrite ER in Hrv; exact Hrv.
           -- exact Hm.
         * unfold AccessRel; cbn [g_acc g_revOff].
@@ -1457,17 +1453,17 @@ Section RevSteps.
           split; [intros Hc'; discriminate Hc' | split; [intros Hc'; discriminate Hc' |]].
           split; [intros Hc'; discriminate Hc' | exact I].
       + (* the rev bit is set: the untagged cap is to be written; the spec stutters *)
-        assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 core b t c e ist ir sa st ph' sc sb sh) ,,
+        assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir sa st ph' sc sb sh) ,,
                                    (st' ,, (mrq ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
-        assert (ER' : iRevA s1' = mkRev12 core b t c e ist ir sa st ph' sc sb sh).
+        assert (ER' : iRevA s1' = mkRev12 b t c e ist ir sa st ph' sc sb sh).
         { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
-        assert (HP : forall P, AllPorts core P implRegions (iRegionsA s1') = AllPorts core P implRegions (iRegionsA s1)).
+        assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
         { intros P; rewrite !iRegions_eq, EM', EM; cbn [Fst]; unfold setRevR; apply AllPorts_upd; exact I. }
         destruct (rpWriteCap_excl _ Hph') as [Q0 [Q1 [Q2 Q3]]].
         exists s2; split; [apply NilAction; reflexivity |].
-        exists (mkGhost core pcAddrInit (g_chain core pcAddrInit g) (g_rf0 core pcAddrInit g) (g_cnwb core pcAddrInit g)
-                  (g_revOff core pcAddrInit g) (g_d2aFo core pcAddrInit g) AccNone).
-        eapply (RefRelG_mem_frame core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+        exists (mkGhost pcAddrInit (g_chain pcAddrInit g) (g_rf0 pcAddrInit g) (g_cnwb pcAddrInit g)
+                  (g_revOff pcAddrInit g) (g_d2aFo pcAddrInit g) AccNone).
+        eapply (RefRelG_mem_frame pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                   mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
                   clintS clint plicS plic initLine fwcs) with (g := g) (s1 := s1) (s2 := s2) (ms' := sMemA s2);
           [exact E1 | reflexivity | reflexivity | reflexivity | reflexivity | reflexivity | | exact HP
@@ -1476,7 +1472,7 @@ Section RevSteps.
         * eapply (MemRelC_revImpl g _ s1 s1' s2 mr); [rewrite iRegions_eq, EM; reflexivity
                                                        | rewrite iRegions_eq, EM'; reflexivity | |].
           -- destruct Hm as [[_ [_ [_ Hrv]]] _].
-             change (RevRel core (g_revOff core pcAddrInit g) (specRevState core pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
+             change (RevRel (g_revOff pcAddrInit g) (specRevState pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
              rewrite ER in Hrv; exact Hrv.
           -- exact Hm.
         * unfold AccessRel; cbn [g_acc g_revOff].
@@ -1493,16 +1489,16 @@ Section RevSteps.
           split; [intros _ _; exact (Hmv Hsh) |].
           split; [intros _ _; rewrite <- Hrbv; exact Hrb | exact I].
       + (* the rev bit is clear: the spec takes the position's step *)
-        assert (Hxs : specRevStateA (sMemA s2) = mkRev8 core b t c e ist ir sa st).
+        assert (Hxs : specRevStateA (sMemA s2) = mkRev8 b t c e ist ir sa st).
         { destruct Hm as [[_ [_ [_ Hrv]]] _].
-          change (RevRel core (g_revOff core pcAddrInit g) (specRevStateA (sMemA s2)) (iRevA s1)) in Hrv.
+          change (RevRel (g_revOff pcAddrInit g) (specRevStateA (sMemA s2)) (iRevA s1)) in Hrv.
           rewrite ER, Hoff in Hrv.
-          exact (RevRel_eq core _ _ _ _ _ _ _ _ _ _ _ _ _ Hrv). }
+          exact (RevRel_eq _ _ _ _ _ _ _ _ _ _ _ _ _ Hrv). }
         assert (Hk1 : lineKind specRegions (lineOf false (scanFull sa)) = Some true)
           by (rewrite lineKind_revSwap; exact Hlk).
-        destruct (specRevStep_scan core config pre post revBase revPfB revPfA initLine fwcs (subEnv NPMS envS s2) (sMemA s2)
+        destruct (specRevStep_scan config pre post revBase revPfB revPfA initLine fwcs (subEnv NPMS envS s2) (sMemA s2)
                     b t c e ist ir sa st
-                    (specEnvOK_mem core pcAddrInit pre post revBase revPfB revPfA initLine fwcs s2) Hxs Hodd Hnd Hk1
+                    (specEnvOK_mem pcAddrInit pre post revBase revPfB revPfA initLine fwcs s2) Hxs Hodd Hnd Hk1
                     (lineUnique_spec _)
                     (fun _ => ltac:(rewrite (Hmv Hsh); split; [exact (revTab_needsCheck sc Hnc) |
                                       split; [apply lineUnique_spec | rewrite <- Hsb, <- Hrbv; exact Hrb]])))
@@ -1516,7 +1512,7 @@ Section RevSteps.
 
   Theorem stepOK_implRevokerStepsSys :
     forall act,
-      In act (@implRevokerStepsSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      In act (@implRevokerStepsSys pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config implRegions revI type) ->
       STEPOK act.
   Proof.

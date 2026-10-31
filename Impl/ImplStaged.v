@@ -60,7 +60,6 @@ Definition IterWorkState (num_stages : nat) (StateK : Kind) : Kind :=
   }.
 
 Section GenericIterativeHardware.
-  Variable dom : string.
   Variable InpK StateK OutK : Kind.
   Variable num_stages : nat.
   Local Abbreviation stepsSz := (iterStepsSz num_stages).
@@ -72,8 +71,8 @@ Section GenericIterativeHardware.
   Local Abbreviation WorkK := (IterWorkState num_stages StateK).
 
   (* Hardware state is JUST the single `work` register (`busy`, `stepsRem`, `state`). *)
-  Definition stagedIterTree : Tree DomainElem :=
-    Leaf "work" (dom, EReg (Build_Reg WorkK (Some (getDefault WorkK)) false)).
+  Definition stagedIterTree : Tree Elem :=
+    Leaf "work" (EReg (Build_Reg WorkK (Some (getDefault WorkK)))).
 
   Definition stagedWorkRegPath : RegPath stagedIterTree :=
     @Build_RegPath stagedIterTree tt I.
@@ -140,7 +139,7 @@ Section GenericIterativeHardware.
       Retv).
 
   Definition stagedIterMod : Mod stagedIterTree :=
-    fun ty => [ (dom, stagedIterStep ty) ].
+    fun ty => [ stagedIterStep ty ].
 
 End GenericIterativeHardware.
 
@@ -149,33 +148,32 @@ End GenericIterativeHardware.
  * =========================================================================== *)
 
 Section GenericPipelinedHardware.
-  Variable dom : string.
   Variable InpK StateK OutK : Kind.
   Variable num_stages : nat.
   Variable initFn     : forall ty, ty InpK -> LetExpr ty StateK.
   Variable stepFn     : forall ty, ty StateK -> LetExpr ty StateK.
   Variable finishFn   : forall ty, ty StateK -> LetExpr ty OutK.
 
-  Fixpoint stagedStagesTail (n : nat) : list (Tree DomainElem) :=
+  Fixpoint stagedStagesTail (n : nat) : list (Tree Elem) :=
     match n with
     | 0%nat => []
     | S m =>
         [ Node ("stages_" ++ hex_string_of_Z (Z.of_nat m))
-               (fifoTree dom 1 StateK :: stagedStagesTail m) ]
+               (fifoTree 1 StateK :: stagedStagesTail m) ]
     end.
 
-  Definition stagedStagesTree (n : nat) : Tree DomainElem :=
+  Definition stagedStagesTree (n : nat) : Tree Elem :=
     Node ("stages_" ++ hex_string_of_Z (Z.of_nat n))
-         (fifoTree dom 1 StateK :: stagedStagesTail n).
+         (fifoTree 1 StateK :: stagedStagesTail n).
 
   (* The pipeline tree is simply the chain of stage FIFOs `stagedStagesTree num_stages`
    * (no extra output FIFO and no extra latency cycle). *)
-  Definition stagedPipeTree : Tree DomainElem :=
+  Definition stagedPipeTree : Tree Elem :=
     stagedStagesTree num_stages.
 
   Fixpoint stagedLiftLastStage {ty : Kind -> Type} {k : Kind}
     (n : nat)
-    (a : Action ty (fifoTree dom 1 StateK) k) :
+    (a : Action ty (fifoTree 1 StateK) k) :
     Action ty (stagedStagesTree n) k :=
     match n with
     | 0%nat => liftAction child0Path a
@@ -184,25 +182,25 @@ Section GenericPipelinedHardware.
 
   Definition stagedPipeCanEnq (ty : Kind -> Type) :
     Action ty stagedPipeTree Bool :=
-    LetA full0 : Bool <- liftAction child0Path (@isFull dom 1 StateK ty) ;
+    LetA full0 : Bool <- liftAction child0Path (@isFull 1 StateK ty) ;
     Return (Not #full0).
 
   Definition stagedPipeEnq (ty : Kind -> Type) (inp : ty InpK) :
     Action ty stagedPipeTree (Bit 0) :=
     LetL st0 : StateK <- initFn ty inp ;
-    liftAction child0Path (@enq dom 1 StateK ty st0).
+    liftAction child0Path (@enq 1 StateK ty st0).
 
   Definition stagedPipeStepAdjacent (ty : Kind -> Type) (m : nat) :
     Action ty (stagedStagesTree (S m)) (Bit 0) :=
-    LetA optIn : Option StateK <- liftAction child0Path (@first dom 1 StateK ty) ;
+    LetA optIn : Option StateK <- liftAction child0Path (@first 1 StateK ty) ;
     LetA nextFull : Bool <-
-      liftAction child1Path (liftAction child0Path (@isFull dom 1 StateK ty)) ;
+      liftAction child1Path (liftAction child0Path (@isFull 1 StateK ty)) ;
     If (And [ #optIn`"valid" ; Not #nextFull ]) Then (
       Let curSt   : StateK <- #optIn`"data" ;
       LetL nextSt : StateK <- stepFn ty curSt ;
       LetA _ : Bit 0 <-
-        liftAction child1Path (liftAction child0Path (@enq dom 1 StateK ty nextSt)) ;
-      LetA _ : Bit 0 <- liftAction child0Path (@deq dom 1 StateK ty) ;
+        liftAction child1Path (liftAction child0Path (@enq 1 StateK ty nextSt)) ;
+      LetA _ : Bit 0 <- liftAction child0Path (@deq 1 StateK ty) ;
       Retv
     ) Else (
       Retv
@@ -224,14 +222,14 @@ Section GenericPipelinedHardware.
     stagedPipeStageRulesChain ty num_stages.
 
   Definition stagedPipeMod : Mod stagedPipeTree :=
-    fun ty => map (fun r => (dom, r)) (stagedPipeAllStageRules ty).
+    fun ty => stagedPipeAllStageRules ty.
 
   (* Reads directly from the final pipeline stage `stages_0` and applies `finishFn`
    * combinationally with zero extra latency. *)
   Definition stagedPipeFirst (ty : Kind -> Type) :
     Action ty stagedPipeTree (Option OutK) :=
     LetA optLast : Option StateK <-
-      stagedLiftLastStage num_stages (@first dom 1 StateK ty) ;
+      stagedLiftLastStage num_stages (@first 1 StateK ty) ;
     Let lastSt  : StateK <- #optLast`"data" ;
     LetL outVal : OutK   <- finishFn ty lastSt ;
     Return (ITE (#optLast`"valid")
@@ -241,6 +239,6 @@ Section GenericPipelinedHardware.
   (* Dequeues directly from the final pipeline stage `stages_0`. *)
   Definition stagedPipeDeq (ty : Kind -> Type) :
     Action ty stagedPipeTree (Bit 0) :=
-    stagedLiftLastStage num_stages (@deq dom 1 StateK ty).
+    stagedLiftLastStage num_stages (@deq 1 StateK ty).
 
 End GenericPipelinedHardware.

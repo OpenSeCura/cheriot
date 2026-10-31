@@ -45,18 +45,17 @@ Local Open Scope guru_scope.
  * commits (spec) or writes back (impl). *)
 
 Section GhostChain.
-  Variable core : string.
   Variable pcAddrInit : Z.
 
-  Local Abbreviation RfSt := (RfState core pcAddrInit).
+  Local Abbreviation RfSt := (RfState pcAddrInit).
 
   (* --- 1. Evaluation Helpers --- *)
 
   Definition readPcc (rf : RfSt) : type FullECapWithTag :=
-    readGpr core pcAddrInit Zmod.zero rf.
+    readGpr pcAddrInit Zmod.zero rf.
 
   Definition writePcc (v : type FullECapWithTag) (rf : RfSt) : RfSt :=
-    updGpr core pcAddrInit Zmod.zero v rf.
+    updGpr pcAddrInit Zmod.zero v rf.
 
   Definition evalDecode (fo : type FetchOut) : type RegReadIn :=
     evalLetExpr (@wrappedDecode type fo).
@@ -105,7 +104,7 @@ Section GhostChain.
       let mdOp : type MulDivUnion := mdOpt.(Fst) in
       let addr : type Addr := (aluDstVal aluOut).(Snd).(Snd).(Fst) in
       let resAddr := evalLetExpr (@SpecMulDiv.MulDiv type addr mdOp) in
-      writeGprVal core pcAddrInit (aluDstIdx aluOut) (mkMulDivCap resAddr) rf
+      writeGprVal pcAddrInit (aluDstIdx aluOut) (mkMulDivCap resAddr) rf
     else rf.
 
   (* --- 2. Ghost Entries and Items --- *)
@@ -128,7 +127,7 @@ Section GhostChain.
 
   (* What the entry computes from the chain register file before it *)
   Definition geAluIn (rf0 : RfSt) (e : GEntry) : type AluInInstGroup :=
-    evalRegRead core pcAddrInit (evalDecode (ge_fetchOut e)) rf0.
+    evalRegRead pcAddrInit (evalDecode (ge_fetchOut e)) rf0.
 
   Definition geAluOut (rf0 : RfSt) (e : GEntry) : type AluOutUnion :=
     evalAluOut (readPcc rf0) (geAluIn rf0 e).
@@ -139,10 +138,10 @@ Section GhostChain.
   Definition GInstStep (rf0 rf1 : RfSt) (e : GEntry) : Prop :=
     isVirtualCsrAluOut (ge_aluOut e) = false /\
     ge_aluOut e = geAluOut rf0 e /\
-    evalIsInterruptPending core pcAddrInit (ge_meip e) (ge_mtip e) rf0 = false /\
+    evalIsInterruptPending pcAddrInit (ge_meip e) (ge_mtip e) rf0 = false /\
     exists (execOut : type ExecuteOut) (rfMid : RfSt),
       SemAction defaultEnv
-        (@executeNonDeferred core pcAddrInit type (readPcc rf0) (ge_meip e) (ge_mtip e) (ge_aluOut e))
+        (@executeNonDeferred pcAddrInit type (readPcc rf0) (ge_meip e) (ge_mtip e) (ge_aluOut e))
         rf0 rfMid execOut /\
       execDataMem execOut = ge_dm e /\
       rf1 = specMulDivWb (ge_aluOut e) execOut (writePcc (execNextPcc execOut) rfMid).
@@ -153,7 +152,7 @@ Section GhostChain.
       forall rf, GChain rf [] rf
   | GChainTick :
       forall rf G rf',
-        GChain (evalIncrementMcycle core pcAddrInit rf) G rf' ->
+        GChain (evalIncrementMcycle pcAddrInit rf) G rf' ->
         GChain rf (GTick :: G) rf'
   | GChainInst :
       forall rf0 rf1 e G rf',
@@ -190,7 +189,7 @@ Section GhostChain.
   Lemma GChain_snoc_tick :
     forall rf0 G rf1,
       GChain rf0 G rf1 ->
-      GChain rf0 (G ++ [GTick]) (evalIncrementMcycle core pcAddrInit rf1).
+      GChain rf0 (G ++ [GTick]) (evalIncrementMcycle pcAddrInit rf1).
   Proof.
     intros rf0 G rf1 H.
     eapply GChain_app; [exact H |].
@@ -228,27 +227,27 @@ Section GhostChain.
     forall e, In (GInst e) G -> EntryAvoids e d.
 
   Lemma readPcc_writeGprVal :
-    forall d v rf, readPcc (writeGprVal core pcAddrInit d v rf) = readPcc rf.
+    forall d v rf, readPcc (writeGprVal pcAddrInit d v rf) = readPcc rf.
   Proof.
     intros d v rf; unfold readPcc; apply readGpr_zero_writeGprVal.
   Qed.
 
   Lemma evalIsInterruptPending_writeGprVal :
     forall meip mtip d v rf,
-      evalIsInterruptPending core pcAddrInit meip mtip (writeGprVal core pcAddrInit d v rf) =
-      evalIsInterruptPending core pcAddrInit meip mtip rf.
+      evalIsInterruptPending pcAddrInit meip mtip (writeGprVal pcAddrInit d v rf) =
+      evalIsInterruptPending pcAddrInit meip mtip rf.
   Proof.
     intros meip mtip d v rf.
-    assert (Hr : forall i, evalReadRegsList (csrPathsWithKind core pcAddrInit) i
-                             (writeGprVal core pcAddrInit d v rf) =
-                           evalReadRegsList (csrPathsWithKind core pcAddrInit) i rf)
-      by (intros i; exact (readCsr_writeGprVal core pcAddrInit i d v rf)).
+    assert (Hr : forall i, evalReadRegsList (csrPathsWithKind pcAddrInit) i
+                             (writeGprVal pcAddrInit d v rf) =
+                           evalReadRegsList (csrPathsWithKind pcAddrInit) i rf)
+      by (intros i; exact (readCsr_writeGprVal pcAddrInit i d v rf)).
     unfold evalIsInterruptPending; rewrite !Hr; reflexivity.
   Qed.
 
   Lemma geAluIn_writeGprVal :
     forall e d v rf,
-      EntryAvoids e d -> geAluIn (writeGprVal core pcAddrInit d v rf) e = geAluIn rf e.
+      EntryAvoids e d -> geAluIn (writeGprVal pcAddrInit d v rf) e = geAluIn rf e.
   Proof.
     intros e d v rf [H1 [H2 _]].
     unfold geAluIn; apply evalRegRead_writeGprVal; [exact H1 | exact H2].
@@ -256,7 +255,7 @@ Section GhostChain.
 
   Lemma geAluOut_writeGprVal :
     forall e d v rf,
-      EntryAvoids e d -> geAluOut (writeGprVal core pcAddrInit d v rf) e = geAluOut rf e.
+      EntryAvoids e d -> geAluOut (writeGprVal pcAddrInit d v rf) e = geAluOut rf e.
   Proof.
     intros e d v rf Hav.
     unfold geAluOut; rewrite readPcc_writeGprVal, (geAluIn_writeGprVal e d v rf Hav).
@@ -265,7 +264,7 @@ Section GhostChain.
 
   Lemma writePcc_writeGprVal :
     forall p d v rf,
-      writePcc p (writeGprVal core pcAddrInit d v rf) = writeGprVal core pcAddrInit d v (writePcc p rf).
+      writePcc p (writeGprVal pcAddrInit d v rf) = writeGprVal pcAddrInit d v (writePcc p rf).
   Proof.
     intros p d v rf; unfold writePcc.
     symmetry; apply writeGprVal_updGpr_zero_comm.
@@ -274,8 +273,8 @@ Section GhostChain.
   Lemma specMulDivWb_writeGprVal :
     forall a x d v rf,
       RegAvoid d (aluDstIdx a) ->
-      specMulDivWb a x (writeGprVal core pcAddrInit d v rf) =
-      writeGprVal core pcAddrInit d v (specMulDivWb a x rf).
+      specMulDivWb a x (writeGprVal pcAddrInit d v rf) =
+      writeGprVal pcAddrInit d v (specMulDivWb a x rf).
   Proof.
     intros a x d v rf Hav.
     unfold specMulDivWb.
@@ -288,13 +287,13 @@ Section GhostChain.
     forall rf0 rf1 e d v,
       EntryAvoids e d ->
       GInstStep rf0 rf1 e ->
-      GInstStep (writeGprVal core pcAddrInit d v rf0) (writeGprVal core pcAddrInit d v rf1) e.
+      GInstStep (writeGprVal pcAddrInit d v rf0) (writeGprVal pcAddrInit d v rf1) e.
   Proof.
     intros rf0 rf1 e d v Hav [Hvc [Halu [Hint [execOut [rfMid [Hsem [Hdm Hrf1]]]]]]].
     split; [exact Hvc |].
     split; [rewrite (geAluOut_writeGprVal e d v rf0 Hav); exact Halu |].
     split; [rewrite evalIsInterruptPending_writeGprVal; exact Hint |].
-    exists execOut, (writeGprVal core pcAddrInit d v rfMid); split; [| split; [exact Hdm |]].
+    exists execOut, (writeGprVal pcAddrInit d v rfMid); split; [| split; [exact Hdm |]].
     - rewrite readPcc_writeGprVal.
       apply SemAction_executeNonDeferred_writeGprVal; [| exact Hsem].
       destruct Hav as [_ [_ Hdst]].
@@ -306,8 +305,8 @@ Section GhostChain.
 
   Lemma evalIncrementMcycle_writeGprVal :
     forall d v rf,
-      evalIncrementMcycle core pcAddrInit (writeGprVal core pcAddrInit d v rf) =
-      writeGprVal core pcAddrInit d v (evalIncrementMcycle core pcAddrInit rf).
+      evalIncrementMcycle pcAddrInit (writeGprVal pcAddrInit d v rf) =
+      writeGprVal pcAddrInit d v (evalIncrementMcycle pcAddrInit rf).
   Proof.
     intros d v rf; rewrite !writeGprVal_unfold.
     destruct (negb (Zmod.eqb d Zmod.zero)); [| reflexivity].
@@ -318,7 +317,7 @@ Section GhostChain.
     forall G rf0 rf' d v,
       ChainAvoids G d ->
       GChain rf0 G rf' ->
-      GChain (writeGprVal core pcAddrInit d v rf0) G (writeGprVal core pcAddrInit d v rf').
+      GChain (writeGprVal pcAddrInit d v rf0) G (writeGprVal pcAddrInit d v rf').
   Proof.
     intros G rf0 rf' d v Hav H; revert Hav.
     induction H as [rf | rf G rf' H IH | rf0 rf1 e G rf' Hs H IH]; intros Hav.
@@ -335,8 +334,8 @@ Section GhostChain.
     forall entries G rf0 rf',
       (forall m c, In (m, c) entries -> ChainAvoids G m) ->
       GChain rf0 G rf' ->
-      GChain (flushMulDivCaps core pcAddrInit entries rf0) G
-             (flushMulDivCaps core pcAddrInit entries rf').
+      GChain (flushMulDivCaps pcAddrInit entries rf0) G
+             (flushMulDivCaps pcAddrInit entries rf').
   Proof.
     induction entries as [| [m c] rest IH]; intros G rf0 rf' Hav H; cbn [flushMulDivCaps].
     - exact H.

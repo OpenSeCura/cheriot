@@ -129,7 +129,6 @@ Proof.
 Qed.
 
 Section GenericIterativeHardwareProof.
-  Variable dom : string.
   Variable InpK StateK OutK : Kind.
   Variable num_stages : nat.
   Local Abbreviation stepsSz := (iterStepsSz num_stages).
@@ -139,7 +138,7 @@ Section GenericIterativeHardwareProof.
   Variable finishFn   : forall ty, ty StateK -> LetExpr ty OutK.
   Variable specFn     : forall ty, ty InpK -> LetExpr ty OutK.
 
-  Local Abbreviation iterTree := (stagedIterTree dom StateK num_stages).
+  Local Abbreviation iterTree := (stagedIterTree StateK num_stages).
 
   Definition IterTargetSteps (inp : type InpK) : nat :=
     Z.to_nat (Zmod.unsigned (evalLetExpr (numStepsFn type inp))).
@@ -149,7 +148,7 @@ Section GenericIterativeHardwareProof.
    * and `state = StageValAt initFn stepFn m inp`. *)
   Definition IterStateAtStep
     (inp : type InpK) (m : nat)
-    (s : TreeState DomainElemState iterTree) : Prop :=
+    (s : TreeState ElemState iterTree) : Prop :=
     s @% "busy" = true /\
     (m <= IterTargetSteps inp)%nat /\
     Z.to_nat (Zmod.unsigned (s @% "stepsRem")) = (IterTargetSteps inp - m)%nat /\
@@ -194,9 +193,9 @@ Section GenericIterativeHardwareProof.
    * the hardware state to step `m = 0` with accumulator `StageValAt initFn stepFn 0 inp`. *)
   Theorem Iter_Enq_Step0 :
     forall {env : Env iterTree}
-           (inp : type InpK) (s s' : TreeState DomainElemState iterTree) ret,
+           (inp : type InpK) (s s' : TreeState ElemState iterTree) ret,
       s @% "busy" = false ->
-      SemAction env (stagedIterEnq dom InpK StateK num_stages numStepsFn initFn type inp) s s' ret ->
+      SemAction env (stagedIterEnq InpK StateK num_stages numStepsFn initFn type inp) s s' ret ->
       IterStateAtStep inp 0%nat s'.
   Proof.
     intros env inp [busy [stepsRem [st []]]] s' ret Hidle Hsem.
@@ -217,10 +216,10 @@ Section GenericIterativeHardwareProof.
    * the hardware state to step `S m` with accumulator `StageValAt initFn stepFn (S m) inp`. *)
   Theorem Iter_Step_Inductive :
     forall {env : Env iterTree}
-           (inp : type InpK) (m : nat) (s s' : TreeState DomainElemState iterTree) ret,
+           (inp : type InpK) (m : nat) (s s' : TreeState ElemState iterTree) ret,
       IterStateAtStep inp m s ->
       (m < IterTargetSteps inp)%nat ->
-      SemAction env (stagedIterStep dom StateK num_stages stepFn type) s s' ret ->
+      SemAction env (stagedIterStep StateK num_stages stepFn type) s s' ret ->
       IterStateAtStep inp (S m) s'.
   Proof.
     intros env inp m [busy [stepsRem [st []]]] s' ret
@@ -260,11 +259,11 @@ Section GenericIterativeHardwareProof.
    * with zero extra latency and no output FIFO. *)
   Theorem Iter_First_Spec :
     forall {env : Env iterTree}
-           (inp : type InpK) (s s' : TreeState DomainElemState iterTree) optOut,
+           (inp : type InpK) (s s' : TreeState ElemState iterTree) optOut,
       evalLetExpr (finishFn type (StageValAt initFn stepFn (IterTargetSteps inp) inp)) =
         evalLetExpr (specFn type inp) ->
       IterStateAtStep inp (IterTargetSteps inp) s ->
-      SemAction env (stagedIterFirst dom StateK OutK num_stages finishFn type) s s' optOut ->
+      SemAction env (stagedIterFirst StateK OutK num_stages finishFn type) s s' optOut ->
       s' = s /\
       optOut = evalExpr (mkSome (Const type OutK (evalLetExpr (specFn type inp)))).
   Proof.
@@ -292,9 +291,9 @@ Section GenericIterativeHardwareProof.
   (* Theorem 4D (Dequeue clears `busy` at `m = IterTargetSteps inp`): *)
   Theorem Iter_Deq_Idle :
     forall {env : Env iterTree}
-           (inp : type InpK) (s s' : TreeState DomainElemState iterTree) ret,
+           (inp : type InpK) (s s' : TreeState ElemState iterTree) ret,
       IterStateAtStep inp (IterTargetSteps inp) s ->
-      SemAction env (stagedIterDeq dom StateK num_stages type) s s' ret ->
+      SemAction env (stagedIterDeq StateK num_stages type) s s' ret ->
       s' @% "busy" = false.
   Proof.
     intros env inp [busy [stepsRem [st []]]] s' ret [Hbusy [_ [Hrem Hst]]] Hsem.
@@ -321,7 +320,6 @@ End GenericIterativeHardwareProof.
  * =========================================================================== *)
 
 Section GenericPipelinedHardwareProof.
-  Variable dom : string.
   Variable InpK StateK OutK : Kind.
   Variable num_stages : nat.
   Variable initFn     : forall ty, ty InpK -> LetExpr ty StateK.
@@ -329,36 +327,36 @@ Section GenericPipelinedHardwareProof.
   Variable finishFn   : forall ty, ty StateK -> LetExpr ty OutK.
   Variable specFn     : forall ty, ty InpK -> LetExpr ty OutK.
 
-  Local Abbreviation stagesTree n := (stagedStagesTree dom StateK n).
-  Local Abbreviation pipeTree := (stagedPipeTree dom StateK num_stages).
+  Local Abbreviation stagesTree n := (stagedStagesTree StateK n).
+  Local Abbreviation pipeTree := (stagedPipeTree StateK num_stages).
 
   Fixpoint stagedLastFifo (n : nat) :
-    TreeState DomainElemState (stagesTree n) ->
-    TreeState DomainElemState (fifoTree dom 1 StateK) :=
-    match n return TreeState DomainElemState (stagesTree n) ->
-                   TreeState DomainElemState (fifoTree dom 1 StateK) with
+    TreeState ElemState (stagesTree n) ->
+    TreeState ElemState (fifoTree 1 StateK) :=
+    match n return TreeState ElemState (stagesTree n) ->
+                   TreeState ElemState (fifoTree 1 StateK) with
     | 0%nat => fun s => s.(Fst)
     | S m   => fun s => stagedLastFifo m (s.(Snd).(Fst))
     end.
 
   Fixpoint stagedUpdateLastFifo (n : nat) :
-    TreeState DomainElemState (stagesTree n) ->
-    TreeState DomainElemState (fifoTree dom 1 StateK) ->
-    TreeState DomainElemState (stagesTree n) :=
-    match n return TreeState DomainElemState (stagesTree n) ->
-                   TreeState DomainElemState (fifoTree dom 1 StateK) ->
-                   TreeState DomainElemState (stagesTree n) with
+    TreeState ElemState (stagesTree n) ->
+    TreeState ElemState (fifoTree 1 StateK) ->
+    TreeState ElemState (stagesTree n) :=
+    match n return TreeState ElemState (stagesTree n) ->
+                   TreeState ElemState (fifoTree 1 StateK) ->
+                   TreeState ElemState (stagesTree n) with
     | 0%nat => fun _ f' => (f' ,, tt)
     | S m   => fun s f' => (s.(Fst) ,, (stagedUpdateLastFifo m (s.(Snd).(Fst)) f' ,, tt))
     end.
 
   Fixpoint stagedLastSubEnv (n : nat) :
     Env (stagesTree n) ->
-    TreeState DomainElemState (stagesTree n) ->
-    Env (fifoTree dom 1 StateK) :=
+    TreeState ElemState (stagesTree n) ->
+    Env (fifoTree 1 StateK) :=
     match n return Env (stagesTree n) ->
-                   TreeState DomainElemState (stagesTree n) ->
-                   Env (fifoTree dom 1 StateK) with
+                   TreeState ElemState (stagesTree n) ->
+                   Env (fifoTree 1 StateK) with
     | 0%nat => fun env s => subEnv child0Path env (s.(Fst) ,, s.(Snd))
     | S m   => fun env s =>
         stagedLastSubEnv m
@@ -368,10 +366,10 @@ Section GenericPipelinedHardwareProof.
 
   Lemma evalActionPropGen_stagedLiftLastStage :
     forall (n : nat) {k : Kind} {env : Env (stagesTree n)}
-           (a : Action type (fifoTree dom 1 StateK) k)
-           (st : TreeState DomainElemState (stagesTree n))
-           (P : TreeState DomainElemState (stagesTree n) -> type k -> Prop),
-      evalActionPropGen env (stagedLiftLastStage dom StateK n a) st P <->
+           (a : Action type (fifoTree 1 StateK) k)
+           (st : TreeState ElemState (stagesTree n))
+           (P : TreeState ElemState (stagesTree n) -> type k -> Prop),
+      evalActionPropGen env (stagedLiftLastStage StateK n a) st P <->
       evalActionPropGen (stagedLastSubEnv n env st) a (stagedLastFifo n st)
         (fun f' v => P (stagedUpdateLastFifo n st f') v).
   Proof.
@@ -391,7 +389,7 @@ Section GenericPipelinedHardwareProof.
    * (`fifo1_size = 1`) and its element equals `StageValAt initFn stepFn k inp`. *)
   Definition PipeStageAtStep
     (inp : type InpK) (k : nat)
-    (f : TreeState DomainElemState (fifoTree dom 1 StateK)) : Prop :=
+    (f : TreeState ElemState (fifoTree 1 StateK)) : Prop :=
     fifo1_size f = Zmod.of_Z 2 1 /\
     fifo1_elem f = StageValAt initFn stepFn k inp.
 
@@ -400,9 +398,9 @@ Section GenericPipelinedHardwareProof.
    * to `PipeStageAtStep inp 0`. *)
   Theorem Pipe_Enq_Stage0 :
     forall {env : Env pipeTree}
-           (inp : type InpK) (s s' : TreeState DomainElemState pipeTree) ret,
+           (inp : type InpK) (s s' : TreeState ElemState pipeTree) ret,
       fifo1_size (s.(Fst)) = Zmod.of_Z 2 0 ->
-      SemAction env (stagedPipeEnq dom InpK StateK num_stages initFn type inp) s s' ret ->
+      SemAction env (stagedPipeEnq InpK StateK num_stages initFn type inp) s s' ret ->
       PipeStageAtStep inp 0%nat (s'.(Fst)).
   Proof.
     intros env inp [f0 st_rest] s' ret Hempty Hsem.
@@ -439,10 +437,10 @@ Section GenericPipelinedHardwareProof.
   Theorem Pipe_Step_Adjacent_Inductive :
     forall (inp : type InpK) (k m : nat)
            {env : Env (stagesTree (S m))}
-           (st st' : TreeState DomainElemState (stagesTree (S m))) ret,
+           (st st' : TreeState ElemState (stagesTree (S m))) ret,
       PipeStageAtStep inp k (st.(Fst)) ->
       fifo1_size (st.(Snd).(Fst).(Fst)) = Zmod.of_Z 2 0 ->
-      SemAction env (stagedPipeStepAdjacent dom StateK stepFn type m) st st' ret ->
+      SemAction env (stagedPipeStepAdjacent StateK stepFn type m) st st' ret ->
       fifo1_size (st'.(Fst)) = Zmod.of_Z 2 0 /\
       PipeStageAtStep inp (S k) (st'.(Snd).(Fst).(Fst)).
   Proof.
@@ -480,11 +478,11 @@ Section GenericPipelinedHardwareProof.
    * `Some (evalLetExpr (specFn type inp))` without any extra `outFifo` or `Finish` rule. *)
   Theorem Pipe_First_Spec :
     forall {env : Env pipeTree}
-           (inp : type InpK) (s s' : TreeState DomainElemState pipeTree) optOut,
+           (inp : type InpK) (s s' : TreeState ElemState pipeTree) optOut,
       evalLetExpr (finishFn type (StageValAt initFn stepFn num_stages inp)) =
         evalLetExpr (specFn type inp) ->
       PipeStageAtStep inp num_stages (stagedLastFifo num_stages s) ->
-      SemAction env (stagedPipeFirst dom StateK OutK num_stages finishFn type) s s' optOut ->
+      SemAction env (stagedPipeFirst StateK OutK num_stages finishFn type) s s' optOut ->
       s' = s /\
       optOut = evalExpr (mkSome (Const type OutK (evalLetExpr (specFn type inp)))).
   Proof.
@@ -505,7 +503,7 @@ Section GenericPipelinedHardwareProof.
               evalExpr (mkSome (Const type OutK out))).
     { intros v out; reflexivity. }
     rewrite Hite.
-    assert (Hupd_id : forall (n : nat) (st : TreeState DomainElemState (stagesTree n)),
+    assert (Hupd_id : forall (n : nat) (st : TreeState ElemState (stagesTree n)),
               stagedUpdateLastFifo n st (stagedLastFifo n st) = st).
     { clear; induction n as [| m IHm]; intros st;
         [destruct st as [f0 []]; reflexivity
@@ -518,9 +516,9 @@ Section GenericPipelinedHardwareProof.
   (* Theorem 5D (Pipeline output dequeue empties the final stage): *)
   Theorem Pipe_Deq_LastStage :
     forall {env : Env pipeTree}
-           (s s' : TreeState DomainElemState pipeTree) ret,
+           (s s' : TreeState ElemState pipeTree) ret,
       fifo1_size (stagedLastFifo num_stages s) = Zmod.of_Z 2 1 ->
-      SemAction env (stagedPipeDeq dom StateK num_stages type) s s' ret ->
+      SemAction env (stagedPipeDeq StateK num_stages type) s s' ret ->
       fifo1_size (stagedLastFifo num_stages s') = Zmod.of_Z 2 0.
   Proof.
     intros env s s' ret Hlast_full Hsem.
@@ -530,7 +528,7 @@ Section GenericPipelinedHardwareProof.
     rewrite evalActionPropGen_stagedLiftLastStage, evalActionPropGen_fifo_deq, Hlast_full.
     change (Zmod.eqb (Zmod.of_Z 2 1) (Zmod.of_Z 2 0)) with false; cbn [negb].
     intros [<- <-].
-    assert (Hlast_upd : forall (n : nat) (st : TreeState DomainElemState (stagesTree n)) f',
+    assert (Hlast_upd : forall (n : nat) (st : TreeState ElemState (stagesTree n)) f',
               stagedLastFifo n (stagedUpdateLastFifo n st f') = f').
     { clear; induction n as [| m IHm]; intros st f';
         [destruct st as [f0 []]; reflexivity

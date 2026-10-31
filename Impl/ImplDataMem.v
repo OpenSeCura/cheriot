@@ -41,13 +41,12 @@ Definition DataMemStateList : list (string * Kind) :=
 Definition DataMemState : Kind := TaggedUnion DataMemStateList.
 
 Section DataMemStages.
-  Variable dom : string.
   Variable capacity : nat.
 
-  Definition implDataMemTree : Tree DomainElem :=
+  Definition implDataMemTree : Tree Elem :=
     Node "" [
-      Node "inputBuf" [ fifoTree dom capacity MemFenceReq ] ;
-      Leaf "state"    (dom, EReg (Build_Reg DataMemState (Some (getDefault _)) false))
+      Node "inputBuf" [ fifoTree capacity MemFenceReq ] ;
+      Leaf "state"    (EReg (Build_Reg DataMemState (Some (getDefault _))))
     ].
 
   Definition pState : RegPath implDataMemTree :=
@@ -63,12 +62,12 @@ Section DataMemStages.
     Eval cbn in (getNodePath implDataMemTree ".inputBuf.fifo").
 
   Definition dataMemIsEmpty (ty : Kind -> Type) : Action ty implDataMemTree Bool :=
-    LetA inEmpty : Bool         <- liftAction np_dmInputFifo (@isEmpty dom capacity MemFenceReq ty) ;
+    LetA inEmpty : Bool         <- liftAction np_dmInputFifo (@isEmpty capacity MemFenceReq ty) ;
     LetA state   : DataMemState <- @readState ty ;
     Return (And [ #inEmpty ; #state `? "LoadRq" ]).
 
   Definition dataMemIsFull (ty : Kind -> Type) : Action ty implDataMemTree Bool :=
-    liftAction np_dmInputFifo (@isFull dom capacity MemFenceReq ty).
+    liftAction np_dmInputFifo (@isFull capacity MemFenceReq ty).
 
   Definition dataMemEnq (ty : Kind -> Type)
     (dstIdx : ty (Bit RegIdxSzReal)) (addr : ty Addr) (op : ty MemFenceUnion) :
@@ -78,7 +77,7 @@ Section DataMemStages.
       "addr"   ::= #addr ;
       "op"     ::= #op
     } ;
-    liftAction np_dmInputFifo (@enq dom capacity MemFenceReq ty req).
+    liftAction np_dmInputFifo (@enq capacity MemFenceReq ty req).
 
   Definition implDataMemIfc (ty : Kind -> Type) : @DataMemIfc ty := {|
     dataMemTree     := implDataMemTree ;
@@ -88,16 +87,16 @@ Section DataMemStages.
   |}.
 
   Variable pcAddrInit : Z.
-  Variable bpTree fetchTree decodeTree mulDivTree : Tree DomainElem.
+  Variable bpTree fetchTree decodeTree mulDivTree : Tree Elem.
   Variable executeIfc : forall ty, @ExecuteIfc ty.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable ty : Kind -> Type.
 
-  Local Abbreviation rfTree := (rfTree dom pcAddrInit).
+  Local Abbreviation rfTree := (rfTree pcAddrInit).
   Local Abbreviation memTree := (memIfc ty).(memTree).
   Local Abbreviation executeTree := (executeIfc ty).(executeTree).
-  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree decodeTree executeTree implDataMemTree mulDivTree).
-  Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
+  Local Abbreviation coreTree := (coreTree rfTree bpTree memTree fetchTree decodeTree executeTree implDataMemTree mulDivTree).
+  Local Abbreviation gprPathsWithKind := (gprPathsWithKind pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.rf.").
@@ -121,7 +120,7 @@ Section DataMemStages.
     If (isNotZero #dstIdx) Then (
       Let waitFalse : Bool <- ConstBool false ;
       Act (liftAction np_rf (writeRegsList gprPathsWithKind #dstIdx #dstVal)) ;
-      liftAction np_waitBits (@writeGprWaitBit dom ty dstIdx waitFalse)
+      liftAction np_waitBits (@writeGprWaitBit ty dstIdx waitFalse)
     ) ;
     Retv.
 
@@ -138,7 +137,7 @@ Section DataMemStages.
    * ========================================================================= *)
   Definition loadRqOrStoreOrFence : Action ty coreTree (Bit 0) :=
     LetA state     : DataMemState       <- liftAction np_dataMem (@readState ty) ;
-    LetA inputHead : Option MemFenceReq <- liftAction np_inputFifo (@first dom capacity MemFenceReq ty) ;
+    LetA inputHead : Option MemFenceReq <- liftAction np_inputFifo (@first capacity MemFenceReq ty) ;
 
     If (And [ #state `? "LoadRq" ; #inputHead`"valid" ]) Then (
       Let  req    : MemFenceReq      <- #inputHead`"data" ;
@@ -157,7 +156,7 @@ Section DataMemStages.
           Let memSize   : Bit LgLgNumBytesFullCapSz <- ##st`"memSize" ;
           LetA accepted : Bool                      <- liftAction np_mem ((memIfc ty).(mem_writeMem) stAddr stVal memSize) ;
           If #accepted Then (
-            liftAction np_inputFifo (@deq dom capacity MemFenceReq ty)
+            liftAction np_inputFifo (@deq capacity MemFenceReq ty)
           ) ;
           Retv
         ) Else (
@@ -169,7 +168,7 @@ Section DataMemStages.
           If #accepted Then (
             Let nextState : DataMemState <- UNION (DataMemStateList, "LoadRp" ::= #ld) ;
             Act (liftAction np_dataMem (@writeState ty nextState)) ;
-            liftAction np_inputFifo (@deq dom capacity MemFenceReq ty)
+            liftAction np_inputFifo (@deq capacity MemFenceReq ty)
           ) ;
           Retv
         ) ;
@@ -187,7 +186,7 @@ Section DataMemStages.
           Act (If #isFenceI Then (
             liftAction np_execute (executeIfc ty).(execute_clearFenceIPend)
           ) ; Retv) ;
-          liftAction np_inputFifo (@deq dom capacity MemFenceReq ty)
+          liftAction np_inputFifo (@deq capacity MemFenceReq ty)
         ) ;
         Retv
       ) ;

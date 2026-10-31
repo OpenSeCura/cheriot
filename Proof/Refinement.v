@@ -37,7 +37,6 @@ Local Open Scope guru_scope.
  * that meets them. The envs, `Rule` and `R` stay abstract here. *)
 
 Section TopLevelGlue.
-  Variable core : string.
   Variable pcAddrInit : Z.
   Variable issueWidth : nat.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
@@ -47,27 +46,27 @@ Section TopLevelGlue.
   (* Spec and impl region lists. They are meant to differ only at the revoker index
    * (the impl revoker region has extra leaves); the glue does not need that link. *)
   Variable specRegions : list MemRegion.
-  Variable clintS : @ClintInstance core specRegions.
-  Variable revSpec : @RevokerInstance core [] specRegions.
-  Variable plicS : @PlicInstance core (S (S (length (collectIrqActions core specRegions)))) specRegions.
+  Variable clintS : @ClintInstance specRegions.
+  Variable revSpec : @RevokerInstance [] specRegions.
+  Variable plicS : @PlicInstance (S (S (length (collectIrqActions specRegions)))) specRegions.
   Variable implRegions : list MemRegion.
-  Variable clint : @ClintInstance core implRegions.
-  Variable rev : @RevokerInstance core (implRevokerExtraChildren core) implRegions.
-  Variable plic : @PlicInstance core (S (S (length (collectIrqActions core implRegions)))) implRegions.
+  Variable clint : @ClintInstance implRegions.
+  Variable rev : @RevokerInstance implRevokerExtraChildren implRegions.
+  Variable plic : @PlicInstance (S (S (length (collectIrqActions implRegions)))) implRegions.
 
-  Local Abbreviation sTree := (SpecTree core pcAddrInit specRegions).
+  Local Abbreviation sTree := (SpecTree pcAddrInit specRegions).
   Local Abbreviation iTree :=
-    (ImplTree core pcAddrInit fetchCapacity instCapacity decodeCapacity
+    (ImplTree pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
               mulDivMode config implRegions).
-  Local Abbreviation SState := (SpecState core pcAddrInit specRegions).
+  Local Abbreviation SState := (SpecState pcAddrInit specRegions).
   Local Abbreviation IState :=
-    (ImplState core pcAddrInit fetchCapacity instCapacity decodeCapacity
+    (ImplState pcAddrInit fetchCapacity instCapacity decodeCapacity
                dataMemCapacity mulCapacity divCapacity mulStages divStages
                mulDivMode config implRegions).
-  Local Abbreviation specMod := (@spec core pcAddrInit config specRegions clintS revSpec plicS).
+  Local Abbreviation specMod := (@spec pcAddrInit config specRegions clintS revSpec plicS).
   Local Abbreviation pipeMod :=
-    (@pipelinedMod core pcAddrInit issueWidth fetchCapacity instCapacity decodeCapacity
+    (@pipelinedMod pcAddrInit issueWidth fetchCapacity instCapacity decodeCapacity
        dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
        config implRegions clint rev plic).
 
@@ -98,90 +97,90 @@ Section TopLevelGlue.
       R p s1 s2 ->
       exists p' s2',
         Ext p p' /\
-        (forall o, Agrees p' o -> SemActions (env2 o) (map snd (specMod type)) s2 s2') /\
+        (forall o, Agrees p' o -> SemActions (env2 o) (specMod type) s2 s2') /\
         R p' s1' s2'.
 
   (* One obligation per `ImplActionKind` group of `pipelinedMod`. *)
   Record RefinementObligations : Prop := {
     ob_peripheral :
       forall act,
-        In act (@implPeripheralSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        In act (@implPeripheralSteps pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config implRegions clint plic type) ->
         ActStepSim act ;
     ob_fetchRqStage :
-      ActStepSim (@fetchRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      ActStepSim (@fetchRqStage pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                     config implRegions rev type) ;
     ob_fetchRps :
       forall act,
-        In act (@fetchRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        In act (@fetchRps pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config implRegions type) ->
         ActStepSim act ;
     ob_fetchAssembleStage :
-      ActStepSim (@fetchAssembleStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      ActStepSim (@fetchAssembleStage pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                     config implRegions rev type) ;
     ob_decodeAndRegReadStage :
-      ActStepSim (@decodeAndRegReadStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      ActStepSim (@decodeAndRegReadStage pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                     config implRegions rev type) ;
     ob_aluAndExecuteStage :
-      ActStepSim (@aluAndExecuteNonDeferredStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      ActStepSim (@aluAndExecuteNonDeferredStage pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                     config implRegions clint rev plic type) ;
     ob_loadRqOrStoreOrFenceStage :
-      ActStepSim (@loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      ActStepSim (@loadRqOrStoreOrFenceStage pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                     config implRegions rev type) ;
     ob_dataWriteRqs :
       forall act,
-        In act (@dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        In act (@dataWriteRqs pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config implRegions type) ->
         ActStepSim act ;
     ob_dataReadRqs :
       forall act,
-        In act (@dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        In act (@dataReadRqs pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config implRegions type) ->
         ActStepSim act ;
     ob_dataReadRps :
       forall act,
-        In act (@dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        In act (@dataReadRps pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config implRegions type) ->
         ActStepSim act ;
     ob_loadRpAndIssueRevRqStage :
-      ActStepSim (@loadRpAndIssueRevRqStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      ActStepSim (@loadRpAndIssueRevRqStage pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                     config implRegions rev type) ;
     ob_revRpAndWriteBackStage :
-      ActStepSim (@revRpAndWriteBackStage core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      ActStepSim (@revRpAndWriteBackStage pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                     config implRegions rev type) ;
     ob_mulDivStageActions :
       forall act,
-        In act (@mulDivStageActions core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        In act (@mulDivStageActions pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config implRegions type) ->
         ActStepSim act ;
     ob_revokerStepsSys :
       forall act,
-        In act (@implRevokerStepsSys core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        In act (@implRevokerStepsSys pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config implRegions rev type) ->
         ActStepSim act ;
     ob_fenceIAcks :
       forall act,
-        In act (@fenceIAcks core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        In act (@fenceIAcks pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config implRegions type) ->
         ActStepSim act ;
     ob_setCanProceedSteps :
       forall act,
-        In act (@setCanProceedSteps core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        In act (@setCanProceedSteps pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
                   config implRegions type) ->
         ActStepSim act
@@ -192,10 +191,10 @@ Section TopLevelGlue.
   Lemma obligations_StepSim :
     RefinementObligations ->
     StepSim iTree sTree env1 O P env2 Agrees Ext
-      (map snd (pipeMod type)) (map snd (specMod type)) R Rule.
+      (pipeMod type) (specMod type) R Rule.
   Proof.
     intros Hob p s1 s1' s2 a Hin Ha Hrule Hr.
-    pose proof (In_pipelinedMod_ImplActionKind core pcAddrInit issueWidth
+    pose proof (In_pipelinedMod_ImplActionKind pcAddrInit issueWidth
                   fetchCapacity instCapacity decodeCapacity dataMemCapacity
                   mulCapacity divCapacity mulStages divStages mulDivMode
                   config implRegions clint rev plic type a Hin) as Hkind.
@@ -234,8 +233,8 @@ Section TopLevelGlue.
       forall old1 new1,
         SemMod env1 pipeMod old1 new1 ->
         (forall s s' a,
-           SemActions env1 (map snd (pipeMod type)) old1 s ->
-           In a (map snd (pipeMod type)) ->
+           SemActions env1 (pipeMod type) old1 s ->
+           In a (pipeMod type) ->
            SemAction env1 a s s' Zmod.zero ->
            Rule s s') ->
         forall old2,
@@ -247,7 +246,7 @@ Section TopLevelGlue.
     intros Hob p0 Hinit old1 new1 Hsem Hrule old2 Hinit2.
     destruct Hsem as [old1 new1 Hinit1 Hrun].
     destruct (run_sim iTree sTree env1 O P env2 Agrees Ext Ext_refl Ext_trans Agrees_Ext
-                (map snd (pipeMod type)) (map snd (specMod type)) R Rule
+                (pipeMod type) (specMod type) R Rule
                 (obligations_StepSim Hob) old1 new1 Hrun Hrule p0 old2
                 (Hinit old1 old2 Hinit1 Hinit2))
       as [p' [new2 [_ [Hval Hr]]]].

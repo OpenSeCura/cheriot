@@ -31,26 +31,25 @@ Local Open Scope guru_scope.
  * =========================================================================== *)
 
 Section SpecDom.
-  Variable core : string.
   Variable pcAddrInit : Z.
 
-  Definition specSysTree (regions : list MemRegion) : Tree DomainElem :=
+  Definition specSysTree (regions : list MemRegion) : Tree Elem :=
     Node "sys" [
-      specCoreTree core pcAddrInit regions
+      specCoreTree pcAddrInit regions
     ].
 
   Section Spec.
     Variable config : RevConfig.
     Variable regions : list MemRegion.
-    Variable clint : @ClintInstance core regions.
-    Variable rev : @RevokerInstance core [] regions.
-    Variable plic : @PlicInstance core (S (S (length (collectIrqActions core regions)))) regions.
+    Variable clint : @ClintInstance regions.
+    Variable rev : @RevokerInstance [] regions.
+    Variable plic : @PlicInstance (S (S (length (collectIrqActions regions)))) regions.
     Local Abbreviation sysTree := (specSysTree regions).
-    Local Abbreviation incrementMcycle := (incrementMcycle core pcAddrInit).
-    Local Abbreviation specFetch := (specFetch core pcAddrInit).
-    Local Abbreviation specExecuteDeferred := (specExecuteDeferred core pcAddrInit).
-    Local Abbreviation regRead := (regRead core pcAddrInit).
-    Local Abbreviation executeNonDeferred := (executeNonDeferred core pcAddrInit).
+    Local Abbreviation incrementMcycle := (incrementMcycle pcAddrInit).
+    Local Abbreviation specFetch := (specFetch pcAddrInit).
+    Local Abbreviation specExecuteDeferred := (specExecuteDeferred pcAddrInit).
+    Local Abbreviation regRead := (regRead pcAddrInit).
+    Local Abbreviation executeNonDeferred := (executeNonDeferred pcAddrInit).
 
     Section Ty.
       Variable ty : Kind -> Type.
@@ -93,14 +92,14 @@ Section SpecDom.
 
       (* Autonomous Fence.I ack steps for fenceI-enabled regions *)
       Definition specFenceIAckSteps : list (Action ty sysTree (Bit 0)) :=
-        map (fun act => liftAction np_mem (act ty)) (collectFenceIAckActions core regions).
+        map (fun act => liftAction np_mem (act ty)) (collectFenceIAckActions regions).
 
       (* ===========================================================================
        * Second Line of a Data Access Spilling into the Next Line
        * =========================================================================== *)
 
       Definition specSecondLine : Action ty sysTree (Bit 0) :=
-        liftAction np_core (specSecondLineStep core pcAddrInit config regions ty).
+        liftAction np_core (specSecondLineStep pcAddrInit config regions ty).
 
       (* ===========================================================================
        * Atomic Core Pipeline Step (specStep)
@@ -111,7 +110,7 @@ Section SpecDom.
 
       Definition specStep : Action ty sysTree (Bit 0) :=
         LetA fenceIWait : Bool <- liftAction np_mem (specMemReadFenceIWait regions) ;
-        LetA secondLine : Option SecondLine <- liftAction np_core (readSecondLine core pcAddrInit regions ty) ;
+        LetA secondLine : Option SecondLine <- liftAction np_core (readSecondLine pcAddrInit regions ty) ;
         If (And [ Not #fenceIWait ; Not (##secondLine`"valid") ]) Then (
           (* MEIP and MTIP are sampled from PLIC and CLINT here, where both domains are reachable. *)
           LetA meip : Bool <- liftAction np_mem (plicMeipSystem plic ty) ;
@@ -127,12 +126,12 @@ Section SpecDom.
           LetA aluInInstGroup : AluInInstGroup <- liftAction np_rf (regRead regReadIn) ;
 
           (* 4. Alu Control, Routing, and Execution *)
-          LetA pcc    : FullECapWithTag <- liftAction np_rf (readRegsList (gprPathsWithKind core pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal))) ;
+          LetA pcc    : FullECapWithTag <- liftAction np_rf (readRegsList (gprPathsWithKind pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal))) ;
           LetL aluOut : AluOutUnion     <- wrappedAlu pcc aluInInstGroup ;
 
           (* 5. Commit Non-Deferred (GPRs, SCRs, CSRs, PCC, Traps) *)
           LetA execOut : ExecuteOut <- liftAction np_rf (executeNonDeferred pcc meip mtip aluOut) ;
-          Act (liftAction np_rf (writeRegsList (gprPathsWithKind core pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal)) (##execOut`"nextPcc"))) ;
+          Act (liftAction np_rf (writeRegsList (gprPathsWithKind pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal)) (##execOut`"nextPcc"))) ;
 
           (* 6. Commit Deferred (Memory Loads, Stores, Fences, MulDiv) *)
           Let  dstIdx     : Bit RegIdxSzReal     <- ##aluOut`"dstIdx" ;
@@ -153,7 +152,7 @@ Section SpecDom.
 
     Definition spec : Mod sysTree :=
       fun ty =>
-        map (fun a => (core, a)) (
+        (
           [ Retv ; specRevokerStep ty ]
           ++ specPlicPendingsSteps ty
           ++ [

@@ -34,39 +34,39 @@ Local Open Scope guru_scope.
  * 1. SHIFT-FIFO LIST EXTRACTION & INITIALIZATION LEMMAS
  * =========================================================================== *)
 
-Definition fifo_size {dom : string} {capacity : nat} {k : Kind}
-  (f : TreeState DomainElemState (fifoTree dom capacity k))
+Definition fifo_size {capacity : nat} {k : Kind}
+  (f : TreeState ElemState (fifoTree capacity k))
   : bits (Z.log2_up (Z.of_nat (capacity + 1))) :=
   f.(Snd).(Fst).
 
-Definition fifo_elems_all {dom : string} {capacity : nat} {k : Kind}
-  (f : TreeState DomainElemState (fifoTree dom capacity k)) : list (type k) :=
-  map (fun rk => readRegOfKind rk f) (elemPathsWithKind dom capacity k).
+Definition fifo_elems_all {capacity : nat} {k : Kind}
+  (f : TreeState ElemState (fifoTree capacity k)) : list (type k) :=
+  map (fun rk => readRegOfKind rk f) (elemPathsWithKind capacity k).
 
-Definition fifo_to_list {dom : string} {capacity : nat} {k : Kind}
-  (f : TreeState DomainElemState (fifoTree dom capacity k)) : list (type k) :=
+Definition fifo_to_list {capacity : nat} {k : Kind}
+  (f : TreeState ElemState (fifoTree capacity k)) : list (type k) :=
   firstn (Z.to_nat (Zmod.unsigned (fifo_size f))) (fifo_elems_all f).
 
 Lemma InitStateConsistent_fifo_size :
-  forall (dom : string) (capacity : nat) (k : Kind)
-         (f : TreeState DomainElemState (fifoTree dom capacity k)),
-    InitStateConsistent (fifoTree dom capacity k) f ->
+  forall (capacity : nat) (k : Kind)
+         (f : TreeState ElemState (fifoTree capacity k)),
+    InitStateConsistent (fifoTree capacity k) f ->
     fifo_size f = Zmod.zero.
 Proof.
-  intros dom capacity k [s_elems [s_size []]] [_ [Hsz _]].
+  intros capacity k [s_elems [s_size []]] [_ [Hsz _]].
   unfold fifo_size; cbn [Fst Snd].
   exact Hsz.
 Qed.
 
 Lemma InitStateConsistent_fifo_to_list :
-  forall (dom : string) (capacity : nat) (k : Kind)
-         (f : TreeState DomainElemState (fifoTree dom capacity k)),
-    InitStateConsistent (fifoTree dom capacity k) f ->
+  forall (capacity : nat) (k : Kind)
+         (f : TreeState ElemState (fifoTree capacity k)),
+    InitStateConsistent (fifoTree capacity k) f ->
     fifo_to_list f = [].
 Proof.
-  intros dom capacity k f Hinit.
+  intros capacity k f Hinit.
   unfold fifo_to_list.
-  rewrite (InitStateConsistent_fifo_size dom capacity k f Hinit).
+  rewrite (InitStateConsistent_fifo_size capacity k f Hinit).
   rewrite Zmod.unsigned_0.
   reflexivity.
 Qed.
@@ -76,7 +76,6 @@ Qed.
  * =========================================================================== *)
 
 Section StateProjections.
-  Variable core : string.
   Variable pcAddrInit : Z.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
   Variable mulCapacity divCapacity mulStages divStages : nat.
@@ -84,93 +83,87 @@ Section StateProjections.
   Variable revCfg : RevConfig.
   Variable regions : list MemRegion.
 
-  Local Abbreviation specMemTree := (specMemTree core).
-  Local Abbreviation implMemTree := (implMemTree core).
-  Local Abbreviation implRegionsTree := (implRegionsTree core).
-  Local Abbreviation memRegionTree := (memRegionTree core).
-  Local Abbreviation implMemRegionTree := (implMemRegionTree core).
-  Local Abbreviation memRegionKindTree := (memRegionKindTree core).
 
   (* --- 3A. Top-Level Tree & State Types --- *)
 
-  Definition SpecTree : Tree DomainElem :=
-    specSysTree core pcAddrInit regions.
+  Definition SpecTree : Tree Elem :=
+    specSysTree pcAddrInit regions.
 
-  Definition ImplTree : Tree DomainElem :=
-    implSysTree core pcAddrInit fetchCapacity instCapacity decodeCapacity
+  Definition ImplTree : Tree Elem :=
+    implSysTree pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode revCfg regions.
 
   Definition SpecState : Type :=
-    TreeState DomainElemState SpecTree.
+    TreeState ElemState SpecTree.
 
   Definition ImplState : Type :=
-    TreeState DomainElemState ImplTree.
+    TreeState ElemState ImplTree.
 
-  Definition RfTree : Tree DomainElem :=
-    rfTree core pcAddrInit.
+  Definition RfTree : Tree Elem :=
+    rfTree pcAddrInit.
 
   Definition RfState : Type :=
-    TreeState DomainElemState RfTree.
+    TreeState ElemState RfTree.
 
-  Definition WaitBitsTree : Tree DomainElem :=
-    waitBitsTree core.
+  Definition WaitBitsTree : Tree Elem :=
+    waitBitsTree.
 
   Definition WaitBitsState : Type :=
-    TreeState DomainElemState WaitBitsTree.
+    TreeState ElemState WaitBitsTree.
 
-  Definition BpTree : Tree DomainElem :=
+  Definition BpTree : Tree Elem :=
     implBpTree.
 
   Definition BpState : Type :=
-    TreeState DomainElemState BpTree.
+    TreeState ElemState BpTree.
 
-  Definition FetchTree : Tree DomainElem :=
-    implFetchTree core pcAddrInit fetchCapacity instCapacity.
+  Definition FetchTree : Tree Elem :=
+    implFetchTree pcAddrInit fetchCapacity instCapacity.
 
   Definition FetchState : Type :=
-    TreeState DomainElemState FetchTree.
+    TreeState ElemState FetchTree.
 
-  Definition DecodeTree : Tree DomainElem :=
-    implDecodeTree core decodeCapacity.
+  Definition DecodeTree : Tree Elem :=
+    implDecodeTree decodeCapacity.
 
   Definition DecodeState : Type :=
-    TreeState DomainElemState DecodeTree.
+    TreeState ElemState DecodeTree.
 
-  Definition ExecuteTree : Tree DomainElem :=
-    implExecuteTree core.
+  Definition ExecuteTree : Tree Elem :=
+    implExecuteTree.
 
   Definition ExecuteState : Type :=
-    TreeState DomainElemState ExecuteTree.
+    TreeState ElemState ExecuteTree.
 
-  Definition DataMemTree : Tree DomainElem :=
-    implDataMemTree core dataMemCapacity.
+  Definition DataMemTree : Tree Elem :=
+    implDataMemTree dataMemCapacity.
 
   Definition DataMemSubState : Type :=
-    TreeState DomainElemState DataMemTree.
+    TreeState ElemState DataMemTree.
 
-  Definition MulDivSubTree : Tree DomainElem :=
-    implMulDivTree core mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode.
+  Definition MulDivSubTree : Tree Elem :=
+    implMulDivTree mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode.
 
   Definition MulDivSubState : Type :=
-    TreeState DomainElemState MulDivSubTree.
+    TreeState ElemState MulDivSubTree.
 
-  Definition SpecMemSubTree : Tree DomainElem :=
+  Definition SpecMemSubTree : Tree Elem :=
     specMemTree regions.
 
   Definition SpecMemSubState : Type :=
-    TreeState DomainElemState SpecMemSubTree.
+    TreeState ElemState SpecMemSubTree.
 
-  Definition ImplMemSubTree : Tree DomainElem :=
+  Definition ImplMemSubTree : Tree Elem :=
     implMemTree regions.
 
   Definition ImplMemSubState : Type :=
-    TreeState DomainElemState ImplMemSubTree.
+    TreeState ElemState ImplMemSubTree.
 
   (* --- 3B. Spec State Subtree Projections --- *)
 
   Definition spec_core (s2 : SpecState)
-    : TreeState DomainElemState (specCoreTree core pcAddrInit regions) :=
+    : TreeState ElemState (specCoreTree pcAddrInit regions) :=
     s2.(Fst).
 
   Definition spec_rf (s2 : SpecState) : RfState :=
@@ -182,8 +175,8 @@ Section StateProjections.
   (* --- 3C. Impl State Subtree Projections --- *)
 
   Definition impl_core (s1 : ImplState)
-    : TreeState DomainElemState
-        (coreTree core RfTree BpTree ImplMemSubTree FetchTree DecodeTree ExecuteTree DataMemTree MulDivSubTree) :=
+    : TreeState ElemState
+        (coreTree RfTree BpTree ImplMemSubTree FetchTree DecodeTree ExecuteTree DataMemTree MulDivSubTree) :=
     s1.(Fst).
 
   Definition impl_rf (s1 : ImplState) : RfState :=
@@ -219,16 +212,16 @@ Section StateProjections.
   (* --- 3D. Memory Region & Device Projections (`revoker`, `clint`, `plic`, `fenceIAck`, `mems`) --- *)
 
   Definition projImplRegionSpecState (r : MemRegion)
-    (sr : TreeState DomainElemState (implMemRegionTree r))
-    : TreeState DomainElemState (memRegionTree r) :=
+    (sr : TreeState ElemState (implMemRegionTree r))
+    : TreeState ElemState (memRegionTree r) :=
     sr.(Fst).
 
   Fixpoint projImplMemRegions (rs : list MemRegion)
-    : TreeState DomainElemState (implRegionsTree rs) ->
-      TreeState DomainElemState (specMemTree rs) :=
+    : TreeState ElemState (implRegionsTree rs) ->
+      TreeState ElemState (specMemTree rs) :=
     match rs return
-      TreeState DomainElemState (implRegionsTree rs) ->
-      TreeState DomainElemState (specMemTree rs)
+      TreeState ElemState (implRegionsTree rs) ->
+      TreeState ElemState (specMemTree rs)
     with
     | nil => fun _ => tt
     | r :: rest => fun s =>
@@ -241,21 +234,21 @@ Section StateProjections.
 
   (* Nth region state extraction for `specMemTree` and `implRegionsTree` *)
   Fixpoint nthSpecRegionState (idx : nat) (rs : list MemRegion)
-    : TreeState DomainElemState (specMemTree rs) ->
-      TreeState DomainElemState (nth idx (map memRegionTree rs) (Node "" [])) :=
+    : TreeState ElemState (specMemTree rs) ->
+      TreeState ElemState (nth idx (map memRegionTree rs) (Node "" [])) :=
     match rs return
-      TreeState DomainElemState (specMemTree rs) ->
-      TreeState DomainElemState (nth idx (map memRegionTree rs) (Node "" []))
+      TreeState ElemState (specMemTree rs) ->
+      TreeState ElemState (nth idx (map memRegionTree rs) (Node "" []))
     with
     | nil => fun _ =>
-        match idx return TreeState DomainElemState (nth idx [] (Node "" [])) with
+        match idx return TreeState ElemState (nth idx [] (Node "" [])) with
         | 0%nat => tt
         | S _ => tt
         end
     | r0 :: rest =>
         match idx return
-          TreeState DomainElemState (specMemTree (r0 :: rest)) ->
-          TreeState DomainElemState (nth idx (map memRegionTree (r0 :: rest)) (Node "" []))
+          TreeState ElemState (specMemTree (r0 :: rest)) ->
+          TreeState ElemState (nth idx (map memRegionTree (r0 :: rest)) (Node "" []))
         with
         | 0%nat => fun s => s.(Fst)
         | S idx' => fun s => nthSpecRegionState idx' rest s.(Snd).(Fst)
@@ -263,21 +256,21 @@ Section StateProjections.
     end.
 
   Fixpoint nthImplRegionState (idx : nat) (rs : list MemRegion)
-    : TreeState DomainElemState (implRegionsTree rs) ->
-      TreeState DomainElemState (nth idx (map implMemRegionTree rs) (Node "" [])) :=
+    : TreeState ElemState (implRegionsTree rs) ->
+      TreeState ElemState (nth idx (map implMemRegionTree rs) (Node "" [])) :=
     match rs return
-      TreeState DomainElemState (implRegionsTree rs) ->
-      TreeState DomainElemState (nth idx (map implMemRegionTree rs) (Node "" []))
+      TreeState ElemState (implRegionsTree rs) ->
+      TreeState ElemState (nth idx (map implMemRegionTree rs) (Node "" []))
     with
     | nil => fun _ =>
-        match idx return TreeState DomainElemState (nth idx [] (Node "" [])) with
+        match idx return TreeState ElemState (nth idx [] (Node "" [])) with
         | 0%nat => tt
         | S _ => tt
         end
     | r0 :: rest =>
         match idx return
-          TreeState DomainElemState (implRegionsTree (r0 :: rest)) ->
-          TreeState DomainElemState (nth idx (map implMemRegionTree (r0 :: rest)) (Node "" []))
+          TreeState ElemState (implRegionsTree (r0 :: rest)) ->
+          TreeState ElemState (nth idx (map implMemRegionTree (r0 :: rest)) (Node "" []))
         with
         | 0%nat => fun s => s.(Fst)
         | S idx' => fun s => nthImplRegionState idx' rest s.(Snd).(Fst)
@@ -285,15 +278,15 @@ Section StateProjections.
     end.
 
   Definition spec_regionAt (idx : nat) (s2 : SpecState)
-    : TreeState DomainElemState (nth idx (map memRegionTree regions) (Node "" [])) :=
+    : TreeState ElemState (nth idx (map memRegionTree regions) (Node "" [])) :=
     nthSpecRegionState idx regions (spec_mem s2).
 
   Definition impl_regionAt (idx : nat) (s1 : ImplState)
-    : TreeState DomainElemState (nth idx (map implMemRegionTree regions) (Node "" [])) :=
+    : TreeState ElemState (nth idx (map implMemRegionTree regions) (Node "" [])) :=
     nthImplRegionState idx regions (impl_mem s1).(Fst).
 
   Definition impl_regionSpecAt (idx : nat) (s1 : ImplState)
-    : TreeState DomainElemState (nth idx (map memRegionTree regions) (Node "" [])) :=
+    : TreeState ElemState (nth idx (map memRegionTree regions) (Node "" [])) :=
     nthSpecRegionState idx regions (projImplMemSpecState (impl_mem s1)).
 
   (* Named projections for `mems`, `revoker`, `clint`, `plic`, `fenceIAck` *)
@@ -331,10 +324,10 @@ Section StateProjections.
     impl_regionSpecAt fenceIAckIdx s1.
 
   (* Projection from `implRevokerTree core` (8 base leaves + 4 extra leaves)
-   * onto `revokerTree core []` (the 8 architectural revoker registers). *)
+   * onto `revokerTree []` (the 8 architectural revoker registers). *)
   Definition projImplRevokerArchState
-    (s_rev : TreeState DomainElemState (implRevokerTree core))
-    : TreeState DomainElemState (Node "revoker" (revokerChildren core [])) :=
+    (s_rev : TreeState ElemState implRevokerTree)
+    : TreeState ElemState (Node "revoker" (revokerChildren [])) :=
     (s_rev.(Fst) ,,
     (s_rev.(Snd).(Fst) ,,
     (s_rev.(Snd).(Snd).(Fst) ,,
@@ -376,11 +369,11 @@ Section StateProjections.
     sf.(Snd).(Snd).(Snd).(Snd).(Fst).
 
   Definition fetch_fetchBufFifo (sf : FetchState)
-    : TreeState DomainElemState (fifoTree core fetchCapacity FetchBufEntry) :=
+    : TreeState ElemState (fifoTree fetchCapacity FetchBufEntry) :=
     sf.(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).(Fst).
 
   Definition fetch_instFifo (sf : FetchState)
-    : TreeState DomainElemState (fifoTree core instCapacity AssembledInst) :=
+    : TreeState ElemState (fifoTree instCapacity AssembledInst) :=
     sf.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).(Fst).
 
   (* 3. Decode stage (`implDecodeTree`) *)
@@ -388,12 +381,12 @@ Section StateProjections.
     sd.(Fst).
 
   Definition decode_toAluFifo (sd : DecodeState)
-    : TreeState DomainElemState (fifoTree core decodeCapacity DecodeToAluEntry) :=
+    : TreeState ElemState (fifoTree decodeCapacity DecodeToAluEntry) :=
     sd.(Snd).(Fst).(Fst).
 
   (* 4. DataMem stage (`implDataMemTree`) *)
   Definition dataMem_fifo (sdm : DataMemSubState)
-    : TreeState DomainElemState (fifoTree core dataMemCapacity MemFenceReq) :=
+    : TreeState ElemState (fifoTree dataMemCapacity MemFenceReq) :=
     sdm.(Fst).(Fst).
 
   Definition dataMem_state (sdm : DataMemSubState) : type DataMemState :=
@@ -401,11 +394,11 @@ Section StateProjections.
 
   (* 5. Scoreboard WaitBits (`waitBitsTree`) *)
   Definition readWaitBit (idx : bits RegIdxSzReal) (wb : WaitBitsState) : bool :=
-    evalReadRegsList (gprWaitPathsWithKind core) idx wb.
+    evalReadRegsList gprWaitPathsWithKind idx wb.
 
   Definition writeWaitBit (idx : bits RegIdxSzReal) (val : bool) (wb : WaitBitsState)
     : WaitBitsState :=
-    evalWriteRegsList (gprWaitPathsWithKind core) idx val wb.
+    evalWriteRegsList gprWaitPathsWithKind idx val wb.
 
   Definition waitBitsMask (wb : WaitBitsState) (idx : bits RegIdxSzReal) : bool :=
     readWaitBit idx wb.
@@ -420,7 +413,7 @@ Section StateProjections.
   Definition writeGprVal
     (dstIdx : bits RegIdxSzReal) (val : type FullECapWithTag) (rf : RfState) : RfState :=
     if negb (Zmod.eqb dstIdx Zmod.zero)
-    then evalWriteRegsList (gprPathsWithKind core pcAddrInit) dstIdx val rf
+    then evalWriteRegsList (gprPathsWithKind pcAddrInit) dstIdx val rf
     else rf.
 
   (* Single-entry MulDiv writeback helper: if `busy = true`, write `dstIdx <- resCap` to `rf` *)
@@ -470,8 +463,8 @@ Section StateProjections.
     (num_stages : nat)
     (finishFn : forall ty, ty StateK -> LetExpr ty OutK)
     (projRes : type OutK -> type Addr)
-    (s_iter : TreeState DomainElemState (stagedIterTree core StateK num_stages))
-    (s_dstFifo : TreeState DomainElemState (fifoTree core MulDivFifoCapacity RegIdx))
+    (s_iter : TreeState ElemState (stagedIterTree StateK num_stages))
+    (s_dstFifo : TreeState ElemState (fifoTree MulDivFifoCapacity RegIdx))
     : list (bits RegIdxSzReal * type FullECapWithTag) :=
     let busy := s_iter.(Fst) in
     let st   := s_iter.(Snd).(Snd).(Fst) in
@@ -487,21 +480,21 @@ Section StateProjections.
 
   (* Extract active stage values from a pipelined multiplier (`stagedStagesTree`) *)
   Fixpoint extractPipeStageStates {StateK : Kind} (n : nat)
-    : TreeState DomainElemState (stagedStagesTree core StateK n) ->
+    : TreeState ElemState (stagedStagesTree StateK n) ->
       list (type StateK) :=
     match n return
-      TreeState DomainElemState (stagedStagesTree core StateK n) ->
+      TreeState ElemState (stagedStagesTree StateK n) ->
       list (type StateK)
     with
     | 0%nat => fun s =>
-        @fifo_to_list core 1 StateK (s.(Fst))
+        @fifo_to_list 1 StateK (s.(Fst))
     | S m => fun s =>
-        (extractPipeStageStates m s.(Snd).(Fst) ++ @fifo_to_list core 1 StateK (s.(Fst)))%list
+        (extractPipeStageStates m s.(Snd).(Fst) ++ @fifo_to_list 1 StateK (s.(Fst)))%list
     end.
 
   Definition extractPipeEngineEntries
-    (s_pipe : TreeState DomainElemState (mulPipeTree core (Z.to_nat Xlen) mulStages))
-    (s_dstFifo : TreeState DomainElemState (fifoTree core MulDivFifoCapacity RegIdx))
+    (s_pipe : TreeState ElemState (mulPipeTree (Z.to_nat Xlen) mulStages))
+    (s_dstFifo : TreeState ElemState (fifoTree MulDivFifoCapacity RegIdx))
     : list (bits RegIdxSzReal * type FullECapWithTag) :=
     let stList  := extractPipeStageStates mulStages s_pipe in
     let dstList := fifo_to_list s_dstFifo in
@@ -514,8 +507,8 @@ Section StateProjections.
   Definition extractMulDivEntries (smd : MulDivSubState)
     : list (bits RegIdxSzReal * type FullECapWithTag) :=
     match mulDivMode as m
-      return TreeState DomainElemState
-               (implMulDivTree core mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages m) ->
+      return TreeState ElemState
+               (implMulDivTree mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages m) ->
              list (bits RegIdxSzReal * type FullECapWithTag)
     with
     | PipelinedMul_IterDiv => fun s =>
@@ -571,28 +564,28 @@ Section StateProjections.
       cbn [InitStateConsistent Fst Snd] in Hinit.
       destruct Hinit as [[HmulReq [[HmulPipe [HmulDst _]] _]] [[HdivReq [[HdivIter [HdivDst _]] _]] _]].
       unfold extractPipeEngineEntries, extractIterEngineEntries; cbn [Fst Snd].
-      rewrite (InitStateConsistent_fifo_to_list core MulDivFifoCapacity RegIdx mulDstF HmulDst).
-      rewrite (InitStateConsistent_fifo_to_list core mulCapacity MulReq mulReqF HmulReq).
-      rewrite (InitStateConsistent_fifo_to_list core MulDivFifoCapacity RegIdx divDstF HdivDst).
-      rewrite (InitStateConsistent_fifo_to_list core divCapacity DivReq divReqF HdivReq).
+      rewrite (InitStateConsistent_fifo_to_list MulDivFifoCapacity RegIdx mulDstF HmulDst).
+      rewrite (InitStateConsistent_fifo_to_list mulCapacity MulReq mulReqF HmulReq).
+      rewrite (InitStateConsistent_fifo_to_list MulDivFifoCapacity RegIdx divDstF HdivDst).
+      rewrite (InitStateConsistent_fifo_to_list divCapacity DivReq divReqF HdivReq).
       reflexivity.
     - (* IterMul_SeparateIterDiv *)
       destruct smd as [[mulReqF [[mulIter [mulDstF []]] []]] [[divReqF [[divIter [divDstF []]] []]] []]].
       cbn [InitStateConsistent Fst Snd] in Hinit.
       destruct Hinit as [[HmulReq [[HmulIter [HmulDst _]] _]] [[HdivReq [[HdivIter [HdivDst _]] _]] _]].
       unfold extractIterEngineEntries; cbn [Fst Snd].
-      rewrite (InitStateConsistent_fifo_to_list core MulDivFifoCapacity RegIdx mulDstF HmulDst).
-      rewrite (InitStateConsistent_fifo_to_list core mulCapacity MulReq mulReqF HmulReq).
-      rewrite (InitStateConsistent_fifo_to_list core MulDivFifoCapacity RegIdx divDstF HdivDst).
-      rewrite (InitStateConsistent_fifo_to_list core divCapacity DivReq divReqF HdivReq).
+      rewrite (InitStateConsistent_fifo_to_list MulDivFifoCapacity RegIdx mulDstF HmulDst).
+      rewrite (InitStateConsistent_fifo_to_list mulCapacity MulReq mulReqF HmulReq).
+      rewrite (InitStateConsistent_fifo_to_list MulDivFifoCapacity RegIdx divDstF HdivDst).
+      rewrite (InitStateConsistent_fifo_to_list divCapacity DivReq divReqF HdivReq).
       reflexivity.
     - (* IterMul_SharedIterDiv *)
       destruct smd as [reqF [[sharedIter [dstF []]] []]].
       cbn [InitStateConsistent Fst Snd] in Hinit.
       destruct Hinit as [Hreq [[Hiter [Hdst _]] _]].
       unfold extractIterEngineEntries; cbn [Fst Snd].
-      rewrite (InitStateConsistent_fifo_to_list core MulDivFifoCapacity RegIdx dstF Hdst).
-      rewrite (InitStateConsistent_fifo_to_list core mulCapacity MulDivReq reqF Hreq).
+      rewrite (InitStateConsistent_fifo_to_list MulDivFifoCapacity RegIdx dstF Hdst).
+      rewrite (InitStateConsistent_fifo_to_list mulCapacity MulDivReq reqF Hreq).
       reflexivity.
   Qed.
 
@@ -718,8 +711,8 @@ Section StateProjections.
       exists (pcc : type FullECapWithTag) (meip mtip : bool)
              (aluOut : type AluOutUnion) (execOut : type ExecuteOut)
              (rf_mid : RfState),
-        SemAction defaultEnv (executeNonDeferred core pcAddrInit pcc meip mtip aluOut) rf0 rf_mid execOut /\
-        rf1 = evalWriteRegsList (gprPathsWithKind core pcAddrInit) (Zmod.zero : bits RegIdxSzReal) (execOut.(Snd).(Snd).(Snd).(Snd).(Fst)) rf_mid /\
+        SemAction defaultEnv (executeNonDeferred pcAddrInit pcc meip mtip aluOut) rf0 rf_mid execOut /\
+        rf1 = evalWriteRegsList (gprPathsWithKind pcAddrInit) (Zmod.zero : bits RegIdxSzReal) (execOut.(Snd).(Snd).(Snd).(Snd).(Fst)) rf_mid /\
         execOut.(Snd).(Fst) = (req.(Snd).(Snd).(Fst) ,, (true ,, tt)) /\
         aluOut.(Snd).(Fst) = ghost_dstIdx /\
         aluOut.(Snd).(Snd).(Fst).(Snd).(Snd).(Fst) = ghost_addr
@@ -753,9 +746,9 @@ Section StateProjections.
                  (aluOut : type AluOutUnion) (execOut : type ExecuteOut)
                  (rf_mid : RfState),
             isVirtualCsrAluOut aluOut = false /\
-            SemAction defaultEnv (executeNonDeferred core pcAddrInit pcc meip mtip aluOut) rf0 rf_mid execOut /\
+            SemAction defaultEnv (executeNonDeferred pcAddrInit pcc meip mtip aluOut) rf0 rf_mid execOut /\
             execOut.(Snd).(Fst).(Snd).(Fst) = false /\
-            rf1 = evalWriteRegsList (gprPathsWithKind core pcAddrInit)
+            rf1 = evalWriteRegsList (gprPathsWithKind pcAddrInit)
                     (Zmod.zero : bits RegIdxSzReal)
                     (execOut.(Snd).(Snd).(Snd).(Snd).(Fst)) rf_mid
       end
@@ -885,7 +878,7 @@ Section StateProjections.
     intros [[s_fifo []] [s_st []]] [[Hfifo _] [Hst _]].
     unfold DataMemEmpty, dataMemPendingQueue, isDataMemLoadRq, dataMem_fifo, dataMem_state.
     cbn [Fst Snd].
-    rewrite (InitStateConsistent_fifo_to_list core dataMemCapacity MemFenceReq s_fifo Hfifo).
+    rewrite (InitStateConsistent_fifo_to_list dataMemCapacity MemFenceReq s_fifo Hfifo).
     cbn in Hst; subst s_st.
     split; reflexivity.
   Qed.
@@ -902,13 +895,13 @@ Section StateProjections.
 
   (* Check whether any external memory region has `fenceIWait = true` *)
   Fixpoint anyRegionFenceIWait (rs : list MemRegion)
-    : TreeState DomainElemState (specMemTree rs) -> bool :=
-    match rs return TreeState DomainElemState (specMemTree rs) -> bool with
+    : TreeState ElemState (specMemTree rs) -> bool :=
+    match rs return TreeState ElemState (specMemTree rs) -> bool with
     | nil => fun _ => false
     | r :: rest => fun s =>
         let wait_r :=
           match r.(regionKind) as rk
-            return TreeState DomainElemState (memRegionKindTree r rk) -> bool
+            return TreeState ElemState (memRegionKindTree r rk) -> bool
           with
           | ExternalMem => fun sr => sr.(Fst).(Snd).(Snd).(Fst)
           | CustomMem children _ _ _ => fun _ => false
@@ -924,18 +917,18 @@ Section StateProjections.
 
   (* Message conservation between `fenceIRq`, `fenceIAck`, and `fenceIWait` across all regions *)
   Fixpoint regionsFenceIMsgConservation (rs : list MemRegion)
-    : TreeState DomainElemState (specMemTree rs) ->
-      TreeState DomainElemState (specMemTree rs) -> Prop :=
+    : TreeState ElemState (specMemTree rs) ->
+      TreeState ElemState (specMemTree rs) -> Prop :=
     match rs return
-      TreeState DomainElemState (specMemTree rs) ->
-      TreeState DomainElemState (specMemTree rs) -> Prop
+      TreeState ElemState (specMemTree rs) ->
+      TreeState ElemState (specMemTree rs) -> Prop
     with
     | nil => fun _ _ => True
     | r :: rest => fun s1 s2 =>
         let region_inv :=
           match r.(regionKind) as rk
-            return TreeState DomainElemState (memRegionKindTree r rk) ->
-                   TreeState DomainElemState (memRegionKindTree r rk) -> Prop
+            return TreeState ElemState (memRegionKindTree r rk) ->
+                   TreeState ElemState (memRegionKindTree r rk) -> Prop
           with
           | ExternalMem => fun sr1 sr2 =>
               let f1 := sr1.(Fst) in
@@ -986,7 +979,7 @@ Section StateProjections.
 
   (* Helper: `InitStateConsistent` on `implMemTree` implies `InitStateConsistent` on its projected `specMemTree` *)
   Lemma InitStateConsistent_projImplRegionSpecState :
-    forall (r : MemRegion) (sr : TreeState DomainElemState (implMemRegionTree r)),
+    forall (r : MemRegion) (sr : TreeState ElemState (implMemRegionTree r)),
       InitStateConsistent (implMemRegionTree r) sr ->
       InitStateConsistent (memRegionTree r) (projImplRegionSpecState r sr).
   Proof.
@@ -1158,7 +1151,7 @@ Section StateProjections.
     pose proof (proj1 (proj1 (proj2 (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (proj1 Hinit))))))))))) as Hfifo.
     pose proof (InitStateConsistent_impl_mulDiv s1 Hinit) as Hmd.
     pose proof (InitStateConsistent_extractMulDivEntries (impl_mulDiv s1) Hmd) as Hmd_nil.
-    pose proof (InitStateConsistent_fifo_to_list core decodeCapacity DecodeToAluEntry (decode_toAluFifo (impl_decode s1)) Hfifo) as Hdec_nil.
+    pose proof (InitStateConsistent_fifo_to_list decodeCapacity DecodeToAluEntry (decode_toAluFifo (impl_decode s1)) Hfifo) as Hdec_nil.
     split.
     - exact Hwb0.
     - exists (waitBitsMask (impl_waitBits s1)).

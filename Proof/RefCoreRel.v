@@ -38,7 +38,7 @@ Local Open Scope guru_scope.
  * - the memory (RefMemRel.v) and the interrupt latches;
  * - what each pending ghost entry needs to be replayed by the spec. *)
 
-Local Abbreviation TS t := (TreeState DomainElemState t).
+Local Abbreviation TS t := (TreeState ElemState t).
 
 (* --- 1. Tagged-Union and Struct Field Helpers --- *)
 
@@ -158,7 +158,6 @@ Inductive Access :=
 (* --- 3. The Relation's Parameters --- *)
 
 Section CoreRel.
-  Variable core : string.
   Variable pcAddrInit : Z.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
   Variable mulCapacity divCapacity mulStages divStages : nat.
@@ -169,89 +168,89 @@ Section CoreRel.
   Variable revPfB : Is_true ((0 <=? revBase) && (revBase + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z.
   Variable revPfA : Is_true (revBase mod (2 ^ LgLineBytes) =? 0)%Z.
 
-  Local Abbreviation specRegions := (specRegionsOf core pre post revBase revPfB revPfA).
-  Local Abbreviation implRegions := (implRegionsOf core pre post revBase revPfB revPfA).
+  Local Abbreviation specRegions := (specRegionsOf pre post revBase revPfB revPfA).
+  Local Abbreviation implRegions := (implRegionsOf pre post revBase revPfB revPfA).
 
-  Variable clintS : @ClintInstance core specRegions.
-  Variable clint : @ClintInstance core implRegions.
-  Variable plicS : @PlicInstance core (S (S (length (collectIrqActions core specRegions)))) specRegions.
-  Variable plic : @PlicInstance core (S (S (length (collectIrqActions core implRegions)))) implRegions.
+  Variable clintS : @ClintInstance specRegions.
+  Variable clint : @ClintInstance implRegions.
+  Variable plicS : @PlicInstance (S (S (length (collectIrqActions specRegions)))) specRegions.
+  Variable plic : @PlicInstance (S (S (length (collectIrqActions implRegions)))) implRegions.
   Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
   Variable fwcs : nat -> nat -> nat.
 
   Local Abbreviation IState :=
-    (ImplState core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    (ImplState pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions).
-  Local Abbreviation SState := (SpecState core pcAddrInit specRegions).
-  Local Abbreviation RfSt := (RfState core pcAddrInit).
+  Local Abbreviation SState := (SpecState pcAddrInit specRegions).
+  Local Abbreviation RfSt := (RfState pcAddrInit).
   Local Abbreviation GEntryT := (GEntry).
   Local Abbreviation GItemT := (GItem).
 
   (* --- 3. Accessors --- *)
 
   Definition iRf (s1 : IState) : RfSt :=
-    impl_rf core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    impl_rf pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
             mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1.
   Definition iFlush (s1 : IState) : RfSt :=
-    flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1.
   Definition iWb (s1 : IState) :=
-    impl_waitBits core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    impl_waitBits pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                   mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1.
   Definition iMem (s1 : IState) :=
-    impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
              mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1.
   Definition iFetch (s1 : IState) :=
-    impl_fetch core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1.
   Definition iDecode (s1 : IState) :=
-    impl_decode core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1.
   Definition iExec (s1 : IState) :=
-    impl_execute core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                  mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1.
   Definition iDm (s1 : IState) :=
-    impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                  mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1.
 
-  Definition iRegions (s1 : IState) : TS (implRegionsTree core implRegions) := (iMem s1).(Fst).
+  Definition iRegions (s1 : IState) : TS (implRegionsTree implRegions) := (iMem s1).(Fst).
   Definition iMemSt (s1 : IState) : type MemState := (iMem s1).(Snd).(Fst).
   Definition iRequester (s1 : IState) : type Requester := (iMem s1).(Snd).(Snd).(Fst).
   Definition iReadRp (s1 : IState) : type (Option LineReadRp) := (iMem s1).(Snd).(Snd).(Snd).(Fst).
 
   Definition iFetchPc (s1 : IState) : type Addr :=
-    fetch_pc core pcAddrInit fetchCapacity instCapacity (iFetch s1).
+    fetch_pc pcAddrInit fetchCapacity instCapacity (iFetch s1).
   Definition iPredEpoch (s1 : IState) : type Epoch :=
-    fetch_predEpoch core pcAddrInit fetchCapacity instCapacity (iFetch s1).
+    fetch_predEpoch pcAddrInit fetchCapacity instCapacity (iFetch s1).
   Definition iCurParcel (s1 : IState) : type (Option (Bit LgFetchParcels)) :=
-    fetch_curParcelOpt core pcAddrInit fetchCapacity instCapacity (iFetch s1).
+    fetch_curParcelOpt pcAddrInit fetchCapacity instCapacity (iFetch s1).
   Definition iStraddle (s1 : IState) : type (Option StraddleHalf) :=
-    fetch_straddleOpt core pcAddrInit fetchCapacity instCapacity (iFetch s1).
+    fetch_straddleOpt pcAddrInit fetchCapacity instCapacity (iFetch s1).
   Definition iFetchBuf (s1 : IState) : list (type FetchBufEntry) :=
-    fifo_to_list (fetch_fetchBufFifo core pcAddrInit fetchCapacity instCapacity (iFetch s1)).
+    fifo_to_list (fetch_fetchBufFifo pcAddrInit fetchCapacity instCapacity (iFetch s1)).
   Definition iInstBuf (s1 : IState) : list (type AssembledInst) :=
-    fifo_to_list (fetch_instFifo core pcAddrInit fetchCapacity instCapacity (iFetch s1)).
+    fifo_to_list (fetch_instFifo pcAddrInit fetchCapacity instCapacity (iFetch s1)).
   Definition iD2a (s1 : IState) : list (type DecodeToAluEntry) :=
-    fifo_to_list (decode_toAluFifo core decodeCapacity (iDecode s1)).
-  Definition iExecEpoch (s1 : IState) : type Epoch := exec_epoch core (iExec s1).
-  Definition iFenceIPending (s1 : IState) : bool := exec_fenceIPending core (iExec s1).
+    fifo_to_list (decode_toAluFifo decodeCapacity (iDecode s1)).
+  Definition iExecEpoch (s1 : IState) : type Epoch := exec_epoch (iExec s1).
+  Definition iFenceIPending (s1 : IState) : bool := exec_fenceIPending (iExec s1).
   Definition iDmBuf (s1 : IState) : list (type MemFenceReq) :=
-    fifo_to_list (dataMem_fifo core dataMemCapacity (iDm s1)).
-  Definition iDmSt (s1 : IState) : type DataMemState := dataMem_state core dataMemCapacity (iDm s1).
-  Definition iPcc (s1 : IState) : type FullECapWithTag := readPcc core pcAddrInit (iRf s1).
+    fifo_to_list (dataMem_fifo dataMemCapacity (iDm s1)).
+  Definition iDmSt (s1 : IState) : type DataMemState := dataMem_state dataMemCapacity (iDm s1).
+  Definition iPcc (s1 : IState) : type FullECapWithTag := readPcc pcAddrInit (iRf s1).
 
-  Definition sRf (s2 : SState) : RfSt := spec_rf core pcAddrInit specRegions s2.
-  Definition sMem (s2 : SState) : TS (specMemTree core specRegions) := spec_mem core pcAddrInit specRegions s2.
+  Definition sRf (s2 : SState) : RfSt := spec_rf pcAddrInit specRegions s2.
+  Definition sMem (s2 : SState) : TS (specMemTree specRegions) := spec_mem pcAddrInit specRegions s2.
   Definition sSecond (s2 : SState) : type (Option SecondLine) :=
-    (spec_core core pcAddrInit specRegions s2).(Snd).(Snd).(Fst).
+    (spec_core pcAddrInit specRegions s2).(Snd).(Snd).(Fst).
 
   (* Devices *)
-  Definition sClint (s2 : SState) := specClintState core pre post revBase revPfB revPfA clintS (sMem s2).
-  Definition iClint (s1 : IState) := implClintState core pre post revBase revPfB revPfA clint (iRegions s1).
-  Definition sPlic (s2 : SState) := specPlicState core pre post revBase revPfB revPfA plicS (sMem s2).
-  Definition iPlic (s1 : IState) := implPlicState core pre post revBase revPfB revPfA plic (iRegions s1).
-  Definition sRev (s2 : SState) := specRevState core pre post revBase revPfB revPfA (sMem s2).
-  Definition iRev (s1 : IState) := implRevState core pre post revBase revPfB revPfA (iRegions s1).
+  Definition sClint (s2 : SState) := specClintState pre post revBase revPfB revPfA clintS (sMem s2).
+  Definition iClint (s1 : IState) := implClintState pre post revBase revPfB revPfA clint (iRegions s1).
+  Definition sPlic (s2 : SState) := specPlicState pre post revBase revPfB revPfA plicS (sMem s2).
+  Definition iPlic (s1 : IState) := implPlicState pre post revBase revPfB revPfA plic (iRegions s1).
+  Definition sRev (s2 : SState) := specRevState pre post revBase revPfB revPfA (sMem s2).
+  Definition iRev (s1 : IState) := implRevState pre post revBase revPfB revPfA (iRegions s1).
 
   (* Impl revoker: [ base; top; control; epoch; intStatus; intReq; scanAddr; sweepTop; revPhase;
    * revScanCap; revScanBase; revStoreSnoopHit ] *)
@@ -269,7 +268,7 @@ Section CoreRel.
   (* A committed load whose value the impl has not written back yet *)
   Definition cnwbApply (c : option (bits RegIdxSzReal * type FullECapWithTag)) (rf : RfSt) : RfSt :=
     match c with
-    | Some (d, v) => writeGprVal core pcAddrInit d v rf
+    | Some (d, v) => writeGprVal pcAddrInit d v rf
     | None => rf
     end.
 
@@ -307,22 +306,22 @@ Section CoreRel.
 
   Definition RfRel (g : Ghost) (s1 : IState) (s2 : SState) : Prop :=
     sRf s2 = cnwbApply (g_cnwb g) (g_rf0 g) /\
-    GChain core pcAddrInit (g_rf0 g) (g_chain g) (iFlush s1) /\
+    GChain pcAddrInit (g_rf0 g) (g_chain g) (iFlush s1) /\
     (forall d v, g_cnwb g = Some (d, v) -> ChainAvoids (g_chain g) d) /\
     LoadsAvoided (g_chain g).
 
   (* --- 6. Memory and Interrupt Latches --- *)
 
   Definition MemRelC (g : Ghost) (s1 : IState) (s2 : SState) : Prop :=
-    MemRel core pre post revBase revPfB revPfA clintS clint plicS plic (g_revOff g) (sMem s2) (iRegions s1) /\
-    DevInv core pre post revBase revPfB revPfA clint plic (iRegions s1) /\
-    SnapshotOK core fwcs specRegions (sMem s2).
+    MemRel pre post revBase revPfB revPfA clintS clint plicS plic (g_revOff g) (sMem s2) (iRegions s1) /\
+    DevInv pre post revBase revPfB revPfA clint plic (iRegions s1) /\
+    SnapshotOK fwcs specRegions (sMem s2).
 
   (* While entries are pending, the spec's latches do not exceed any entry's *)
   Definition LatchRel (g : Ghost) (s2 : SState) : Prop :=
     forall e, In (GInst e) (g_chain g) ->
-      (clintSampled core (sClint s2) = true -> ge_mtip e = true) /\
-      (plicMeipOf core (sPlic s2) = true -> ge_meip e = true).
+      (clintSampled (sClint s2) = true -> ge_mtip e = true) /\
+      (plicMeipOf (sPlic s2) = true -> ge_meip e = true).
 
   (* --- 7. Replay Facts of Pending Entries --- *)
 
@@ -330,31 +329,31 @@ Section CoreRel.
   Definition ReplayRel (g : Ghost) (s2 : SState) : Prop :=
     forall G1 e G2 rfe,
       g_chain g = (G1 ++ GInst e :: G2)%list ->
-      GChain core pcAddrInit (g_rf0 g) G1 rfe ->
-      FetchAllowedInst core initLine fwcs specRegions (sMem s2) (readPcc core pcAddrInit rfe)
+      GChain pcAddrInit (g_rf0 g) G1 rfe ->
+      FetchAllowedInst initLine fwcs specRegions (sMem s2) (readPcc pcAddrInit rfe)
         (ge_fetchOut e).
 
   (* --- 8. Ports of the Impl Regions --- *)
 
-  Definition extPortRq (r : MemRegion) (y : TS (implExternalMemRegionTree core r)) : type (Option PortRq) :=
+  Definition extPortRq (r : MemRegion) (y : TS (implExternalMemRegionTree r)) : type (Option PortRq) :=
     y.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).
 
   (* all data reads accepted by the region have been answered / all but one *)
-  Definition extDataQuiet (r : MemRegion) (y : TS (implExternalMemRegionTree core r)) : Prop :=
-    length (implDataAccRqs core r y) = length y.(Fst).(Snd).(Snd).(Fst).
-  Definition extDataOut (r : MemRegion) (y : TS (implExternalMemRegionTree core r)) : Prop :=
-    length (implDataAccRqs core r y) = S (length y.(Fst).(Snd).(Snd).(Fst)).
+  Definition extDataQuiet (r : MemRegion) (y : TS (implExternalMemRegionTree r)) : Prop :=
+    length (implDataAccRqs r y) = length y.(Fst).(Snd).(Snd).(Fst).
+  Definition extDataOut (r : MemRegion) (y : TS (implExternalMemRegionTree r)) : Prop :=
+    length (implDataAccRqs r y) = S (length y.(Fst).(Snd).(Snd).(Fst)).
 
-  Definition RegionPort (P : forall r, TS (implExternalMemRegionTree core r) -> Prop) (r : MemRegion)
-    : TS (implMemRegionTree core r) -> Prop :=
-    match r.(regionKind) as k return TS (implMemRegionKindTree core r k) -> Prop with
+  Definition RegionPort (P : forall r, TS (implExternalMemRegionTree r) -> Prop) (r : MemRegion)
+    : TS (implMemRegionTree r) -> Prop :=
+    match r.(regionKind) as k return TS (implMemRegionKindTree r k) -> Prop with
     | ExternalMem => fun y => P r y
     | CustomMem _ _ _ _ => fun _ => True
     end.
 
-  Fixpoint AllPorts (P : forall r, TS (implExternalMemRegionTree core r) -> Prop) (l : list MemRegion)
-    : TS (implRegionsTree core l) -> Prop :=
-    match l as l0 return TS (implRegionsTree core l0) -> Prop with
+  Fixpoint AllPorts (P : forall r, TS (implExternalMemRegionTree r) -> Prop) (l : list MemRegion)
+    : TS (implRegionsTree l) -> Prop :=
+    match l as l0 return TS (implRegionsTree l0) -> Prop with
     | [] => fun _ => True
     | r :: l' => fun mi => RegionPort P r mi.(Fst) /\ AllPorts P l' mi.(Snd).(Fst)
     end.
@@ -389,7 +388,7 @@ Section CoreRel.
    * read is `L` *)
   Definition PortsReadOut (L : type Addr) (s1 : IState) : Prop :=
     AllPorts (fun r y => optValid (extPortRq r y) = false /\
-                (if isRegionAddrB r L then extDataOut r y /\ hd Zmod.zero (implDataAccRqs core r y) = L
+                (if isRegionAddrB r L then extDataOut r y /\ hd Zmod.zero (implDataAccRqs r y) = L
                  else extDataQuiet r y))
       implRegions (iRegions s1).
 
@@ -472,22 +471,22 @@ Section CoreRel.
     end.
 
   (* Content of line `L` of the spec memory as a data read returns it (ExternalMem lines) *)
-  Definition RegionLineContent (r : MemRegion) : TS (memRegionTree core r) -> type Addr -> type LineReadRp :=
-    match r.(regionKind) as k return TS (memRegionKindTree core r k) -> type Addr -> type LineReadRp with
+  Definition RegionLineContent (r : MemRegion) : TS (memRegionTree r) -> type Addr -> type LineReadRp :=
+    match r.(regionKind) as k return TS (memRegionKindTree r k) -> type Addr -> type LineReadRp with
     | ExternalMem => fun x L =>
         evalLineWriteRqTrace (initLine r) x.(Snd).(Snd).(Snd).(Fst) L
     | CustomMem _ _ _ _ => fun _ _ => getDefault LineReadRp
     end.
 
-  Fixpoint lineContent (l : list MemRegion) : TS (specMemTree core l) -> type Addr -> type LineReadRp :=
-    match l as l0 return TS (specMemTree core l0) -> type Addr -> type LineReadRp with
+  Fixpoint lineContent (l : list MemRegion) : TS (specMemTree l) -> type Addr -> type LineReadRp :=
+    match l as l0 return TS (specMemTree l0) -> type Addr -> type LineReadRp with
     | [] => fun _ _ => getDefault LineReadRp
     | r :: l' => fun m L =>
         if isRegionAddrB r L then RegionLineContent r m.(Fst) L else lineContent l' m.(Snd).(Fst) L
     end.
 
   (* A single-line read of `size` bytes at `addr` from spec memory `m` *)
-  Definition memValAt (m : TS (specMemTree core specRegions)) (addr : type Addr)
+  Definition memValAt (m : TS (specMemTree specRegions)) (addr : type Addr)
     (size : type (Bit LgLgNumBytesFullCapSz)) : type FullCapWithTag :=
     evalLetExpr (memAssembleCapRead (Var type Addr addr) (Var type (Bit LgLgNumBytesFullCapSz) size)
                    (Var type CapPacket (specPkt addr (lineContent specRegions m (lineOf false addr))))).
@@ -497,13 +496,13 @@ Section CoreRel.
     evalExpr (##lookup`"revByteAddr").
 
   (* What `readRevBit` returns on spec memory `m` *)
-  Definition revBitOf (m : TS (specMemTree core specRegions)) (base : type (Bit (AddrSz + 1))) : bool :=
+  Definition revBitOf (m : TS (specMemTree specRegions)) (base : type (Bit (AddrSz + 1))) : bool :=
     let lookup := evalLetExpr (@computeRevBitAddr config type base) in
     let v := memValAt m (revByteAddrOf base) byteSz in
     evalExpr (extractRevBit lookup (TruncLsb (AddrSz - 8) 8 (##v`"addr"))).
 
   (* The register write of a completed load (`specCompleteLoad`) on spec memory `m` *)
-  Definition specLoadWb (m : TS (specMemTree core specRegions)) (pending : type PendingLoad)
+  Definition specLoadWb (m : TS (specMemTree specRegions)) (pending : type PendingLoad)
     (memVal : type FullCapWithTag) : bits RegIdxSzReal * type FullECapWithTag :=
     let outcome := evalLetExpr (dispatchLoadResponse config pending memVal) in
     if evalExpr ((Var type LoadOutcome outcome) `? "RevLookup")
@@ -516,7 +515,7 @@ Section CoreRel.
       let wb : type WbCmd := evalExpr ((Var type LoadOutcome outcome) `! "Writeback") in
       (evalExpr (##wb`"dstIdx"), evalExpr (##wb`"dstVal")).
 
-  Definition revWb (m : TS (specMemTree core specRegions)) (rc : type RevCmd) : bits RegIdxSzReal * type FullECapWithTag :=
+  Definition revWb (m : TS (specMemTree specRegions)) (rc : type RevCmd) : bits RegIdxSzReal * type FullECapWithTag :=
     let pr : type PendingRev := evalExpr (##rc`"pendingRev") in
     let wb := evalLetExpr (dispatchRevResponse pr (revBitOf m (evalExpr (##rc`"base")))) in
     (evalExpr (##wb`"dstIdx"), evalExpr (##wb`"dstVal")).
@@ -565,7 +564,7 @@ Section CoreRel.
 
   (* The scan position of the impl revoker (a capability slot index) *)
   Definition iScanMsb (s1 : IState) : bits TagAddrWidth :=
-    revScanAddr core (projImplRevokerArchState core (iRev s1)).
+    revScanAddr (projImplRevokerArchState (iRev s1)).
 
   (* The store snoop (`implRevokerSnoopStore`): a store of `2^memSize` bytes at `addr` touches the
    * capability slot `scanAddrMsb` (its own slot, or the next one when it spills into it) *)
@@ -597,7 +596,7 @@ Section CoreRel.
 
   (* The scan address of the impl revoker as a full address *)
   Definition iScanAddr (s1 : IState) : type Addr :=
-    evalExpr ({< Var type (Bit TagAddrWidth) (revScanAddr core (projImplRevokerArchState core (iRev s1))),
+    evalExpr ({< Var type (Bit TagAddrWidth) (revScanAddr (projImplRevokerArchState (iRev s1))),
                  Const type (Bit LgNumBytesFullCapSz) Zmod.zero >}).
 
   (* The merged value of a crossing load: the first line's packet `pkt0` merged with the second
@@ -701,11 +700,11 @@ Section CoreRel.
 
   (* An architectural revoker state: [ base; top; control; epoch; intStatus; intRequested;
    * scanAddr; sweepTop ] *)
-  Local Abbreviation RevArch := (TS (Node "revoker" (revokerChildren core []))).
+  Local Abbreviation RevArch := (TS (Node "revoker" (revokerChildren []))).
 
   Definition revSweepTopOf (x : RevArch) : bits TagAddrWidth := x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).
   Definition revEpochOf (x : RevArch) : bits Xlen := x.(Snd).(Snd).(Snd).(Fst).
-  Definition iRevArch (s1 : IState) : RevArch := projImplRevokerArchState core (iRev s1).
+  Definition iRevArch (s1 : IState) : RevArch := projImplRevokerArchState (iRev s1).
 
   Definition scanFull (a : bits TagAddrWidth) : type Addr :=
     evalExpr ({< Var type (Bit TagAddrWidth) a, Const type (Bit LgNumBytesFullCapSz) Zmod.zero >}).
@@ -728,7 +727,7 @@ Section CoreRel.
   (* The revoker's write waiting in the memory is the spec revoker step's write at position `sa`
    * (the impl's scanAddr is one ahead) *)
   Definition RevWriteOK (s1 : IState) (s2 : SState) (addr : type Addr) (pkt : type CapPacket) : Prop :=
-    exists sa, revScanAddr core (iRevArch s1) = Zmod.add sa Zmod.one /\ addr = scanFull sa /\
+    exists sa, revScanAddr (iRevArch s1) = Zmod.add sa Zmod.one /\ addr = scanFull sa /\
       revSweepingAt (iRevArch s1) sa /\
       capNeedsCheck (memValAt (sMem s2) addr capSz) = true /\
       revBitOf (sMem s2) (capBase (memValAt (sMem s2) addr capSz)) = true /\
@@ -761,7 +760,7 @@ Section CoreRel.
    * cap needs a check, scanAddr's line is ExternalMem, and the saved cap is the cap at scanAddr
    * unless a store hit it; at WriteCap its rev bit is set. *)
   Definition RevokerRel (g : Ghost) (s1 : IState) (s2 : SState) : Prop :=
-    (rpIdle (iRevPhase s1) = false -> revSweepingAt (iRevArch s1) (revScanAddr core (iRevArch s1))) /\
+    (rpIdle (iRevPhase s1) = false -> revSweepingAt (iRevArch s1) (revScanAddr (iRevArch s1))) /\
     (rpCheck (iRevPhase s1) = true ->
        capNeedsCheck (iRevScanCap s1) = true /\ iRevScanBase s1 = capBase (iRevScanCap s1) /\
        lineKind implRegions (lineOf false (iScanAddr s1)) = Some true) /\
@@ -848,8 +847,8 @@ Section CoreRel.
     filter (fun d => negb (Zmod.eqb d Zmod.zero))
       (dmInFlightDst s1 ++
        map mrDst (filter (fun q => opIsLoad (mrOp q)) (iDmBuf s1)) ++
-       map fst (extractMulDivEntries core mulCapacity divCapacity mulStages divStages mulDivMode
-                  (impl_mulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+       map fst (extractMulDivEntries mulCapacity divCapacity mulStages divStages mulDivMode
+                  (impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                      mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1)))%list.
 
   Definition d2aWriters (l : list (type DecodeToAluEntry)) : list (bits RegIdxSzReal) :=
@@ -858,13 +857,13 @@ Section CoreRel.
   Definition ScoreRel (g : Ghost) (s1 : IState) : Prop :=
     let W := (olderWriters s1 ++ d2aWriters (iD2a s1))%list in
     NoDup W /\
-    (forall r, readWaitBit core r (iWb s1) = true <-> In r W) /\
+    (forall r, readWaitBit r (iWb s1) = true <-> In r W) /\
     length (g_d2aFo g) = length (iD2a s1) /\
     (* each live decode-to-ALU entry read registers no older writer writes *)
     (forall l1 j l2 fo,
        iD2a s1 = (l1 ++ j :: l2)%list -> nth_error (g_d2aFo g) (length l1) = Some fo ->
        daLive s1 j = true ->
-       daAluIn j = evalRegRead core pcAddrInit (evalDecode fo) (iFlush s1) /\
+       daAluIn j = evalRegRead pcAddrInit (evalDecode fo) (iFlush s1) /\
        RegAvoidAll (olderWriters s1 ++ d2aWriters l1) (decCs1 fo) /\
        RegAvoidAll (olderWriters s1 ++ d2aWriters l1) (decCs2 fo)).
 
@@ -925,7 +924,7 @@ Section CoreRel.
        evalExpr (@getPacketParcel type fp) = lastParcel /\
        sh.(Snd).(Fst) = preExcAt pcc fp /\
        (exists rpPrev,
-          LineAllowed core initLine fwcs specRegions (sMem s2) (lineAddrOf fp) rpPrev /\
+          LineAllowed initLine fwcs specRegions (sMem s2) (lineAddrOf fp) rpPrev /\
           sh.(Fst) = pktParcel (fetchPktOf rpPrev) lastParcel) /\
        match live with
        | [] => iFetchPc s1 = evalExpr (memNextLineAddr (Var type Addr fp))
@@ -944,12 +943,12 @@ Section CoreRel.
    * predicts the sequential PC unless it needs prediction; after a faulting instruction
    * anything may follow (it traps and redirects). `LiveChainG` takes only the pieces it
    * reads (PCC, spec memory, frontier), so steps that keep them keep it by conversion. *)
-  Fixpoint LiveChainG (pcc : type FullECapWithTag) (m : TS (specMemTree core specRegions))
+  Fixpoint LiveChainG (pcc : type FullECapWithTag) (m : TS (specMemTree specRegions))
     (frontier : type Addr -> Prop) (pc : type Addr) (l : list (type FetchOut * type Addr)) : Prop :=
     match l with
     | [] => frontier pc
     | (fo, pp) :: l' =>
-        FetchAllowedInst core initLine fwcs specRegions m (pccWithAddr pcc pc) fo /\
+        FetchAllowedInst initLine fwcs specRegions m (pccWithAddr pcc pc) fo /\
         (if foFault fo then True
          else (needsPredOf (foInst fo) = false -> pp = seqPcOf pc (foInst fo)) /\ LiveChainG pcc m frontier pp l')
     end.
@@ -968,12 +967,12 @@ Section CoreRel.
       let E := fbInRegion s1 r in
       let rcv := y.(Fst).(Fst).(Snd).(Fst) in
       let rdRp := y.(Snd).(Fst).(Snd).(Snd).(Snd).(Fst) in
-      exists C, implFetchAccRqs core r y = (rev (map (fun f => lineAddrOf (fbPcAddr f)) E) ++ C)%list /\
+      exists C, implFetchAccRqs r y = (rev (map (fun f => lineAddrOf (fbPcAddr f)) E) ++ C)%list /\
                 (length C + (if optValid rdRp then 1 else 0))%nat = length rcv /\
                 (optValid rdRp = true ->
                    exists f E', E = f :: E' /\
                      (fbLive s1 f = true ->
-                        LineAllowed core initLine fwcs specRegions (sMem s2) (lineAddrOf (fbPcAddr f)) (optData rdRp))))
+                        LineAllowed initLine fwcs specRegions (sMem s2) (lineAddrOf (fbPcAddr f)) (optData rdRp))))
       implRegions (iRegions s1).
 
   Definition StalePrefix {A : Type} (live : A -> bool) (l : list A) : Prop :=
@@ -992,11 +991,11 @@ Section CoreRel.
   (* --- 14. Well-Formedness --- *)
 
   Definition WfRel (g : Ghost) (s1 : IState) (s2 : SState) : Prop :=
-    fifo_wf (fetch_fetchBufFifo core pcAddrInit fetchCapacity instCapacity (iFetch s1)) /\
-    fifo_wf (fetch_instFifo core pcAddrInit fetchCapacity instCapacity (iFetch s1)) /\
-    fifo_wf (decode_toAluFifo core decodeCapacity (iDecode s1)) /\
-    fifo_wf (dataMem_fifo core dataMemCapacity (iDm s1)) /\
-    AllPorts (fun r y => ImplExternalRegionHandshakeInv core r y /\ RegionFenceICountInv core r y.(Fst))
+    fifo_wf (fetch_fetchBufFifo pcAddrInit fetchCapacity instCapacity (iFetch s1)) /\
+    fifo_wf (fetch_instFifo pcAddrInit fetchCapacity instCapacity (iFetch s1)) /\
+    fifo_wf (decode_toAluFifo decodeCapacity (iDecode s1)) /\
+    fifo_wf (dataMem_fifo dataMemCapacity (iDm s1)) /\
+    AllPorts (fun r y => ImplExternalRegionHandshakeInv r y /\ RegionFenceICountInv r y.(Fst))
       implRegions (iRegions s1).
 
   (* --- 15. The Relation --- *)
@@ -1022,7 +1021,7 @@ Section CoreRel.
   (* --- 16. Frame Lemmas --- *)
 
   Lemma RegionPort_impl :
-    forall (P Q : forall r, TS (implExternalMemRegionTree core r) -> Prop) r (y : TS (implMemRegionTree core r)),
+    forall (P Q : forall r, TS (implExternalMemRegionTree r) -> Prop) r (y : TS (implMemRegionTree r)),
       (forall r y, P r y -> Q r y) -> RegionPort P r y -> RegionPort Q r y.
   Proof.
     intros P Q r; unfold RegionPort, implMemRegionTree.
@@ -1030,7 +1029,7 @@ Section CoreRel.
   Qed.
 
   Lemma AllPorts_impl :
-    forall (P Q : forall r, TS (implExternalMemRegionTree core r) -> Prop) l (mi : TS (implRegionsTree core l)),
+    forall (P Q : forall r, TS (implExternalMemRegionTree r) -> Prop) l (mi : TS (implRegionsTree l)),
       (forall r y, P r y -> Q r y) -> AllPorts P l mi -> AllPorts Q l mi.
   Proof.
     intros P Q l; induction l as [| r l IH]; intros mi HPQ H; cbn [AllPorts] in *; [exact I |].
@@ -1073,8 +1072,8 @@ Section CoreRel.
 
   Lemma FrontierRel_mono :
     forall s1 s2 s2' fp,
-      SnapshotOK core fwcs specRegions (sMem s2) ->
-      FetchViewExt core specRegions (sMem s2) (sMem s2') ->
+      SnapshotOK fwcs specRegions (sMem s2) ->
+      FetchViewExt specRegions (sMem s2) (sMem s2') ->
       FrontierRel s1 s2 fp -> FrontierRel s1 s2' fp.
   Proof.
     intros s1 s2 s2' fp Hsnap Hext H; unfold FrontierRel in *; cbv zeta in *.
@@ -1083,19 +1082,19 @@ Section CoreRel.
     destruct H3 as [Ha [Hb [Hc [[rpPrev [Hal Hsh]] Hd]]]].
     split; [exact Ha | split; [exact Hb | split; [exact Hc | split; [| exact Hd]]]].
     exists rpPrev; split; [| exact Hsh].
-    exact (LineAllowed_fetchViewExt core initLine specRegions fwcs _ _ _ _ Hsnap Hext Hal).
+    exact (LineAllowed_fetchViewExt initLine specRegions fwcs _ _ _ _ Hsnap Hext Hal).
   Qed.
 
   Lemma LiveChainG_mono :
     forall pcc m m' (F F' : type Addr -> Prop) l pc,
-      SnapshotOK core fwcs specRegions m -> FetchViewExt core specRegions m m' ->
+      SnapshotOK fwcs specRegions m -> FetchViewExt specRegions m m' ->
       (forall p, F p -> F' p) ->
       LiveChainG pcc m F pc l -> LiveChainG pcc m' F' pc l.
   Proof.
     intros pcc m m' F F' l; induction l as [| [fo pp] l IH]; intros pc Hsnap Hext HF H; cbn [LiveChainG] in *.
     - exact (HF pc H).
     - destruct H as [Hfa Hrest]; split.
-      + exact (FetchAllowedInst_fetchViewExt core initLine fwcs specRegions m m' _ _ Hsnap Hext Hfa).
+      + exact (FetchAllowedInst_fetchViewExt initLine fwcs specRegions m m' _ _ Hsnap Hext Hfa).
       + destruct (foFault fo); [exact I |].
         destruct Hrest as [Hp Hl]; split; [exact Hp | exact (IH pp Hsnap Hext HF Hl)].
   Qed.
@@ -1160,14 +1159,14 @@ Section CoreRel.
    * ports, the impl revoker, the line contents and (monotonically) the fetch view *)
   Lemma RefRelG_regions_frame :
     forall g (s1 s1' : IState) (s2 s2' : SState) mi' ms',
-      s1' = writeSubTreeState (Impl.np_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+      s1' = writeSubTreeState (Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config implRegions)
               s1 (mi' ,, (iMem s1).(Snd)) ->
-      s2' = writeSubTreeState (Spec.np_mem core pcAddrInit specRegions) s2 ms' ->
+      s2' = writeSubTreeState (Spec.np_mem pcAddrInit specRegions) s2 ms' ->
       (forall P, AllPorts P implRegions (iRegions s1') = AllPorts P implRegions (iRegions s1)) ->
       iRev s1' = iRev s1 ->
       (forall L, lineContent specRegions (sMem s2') L = lineContent specRegions (sMem s2) L) ->
-      FetchViewExt core specRegions (sMem s2) (sMem s2') ->
+      FetchViewExt specRegions (sMem s2) (sMem s2') ->
       MemRelC g s1' s2' -> LatchRel g s2' ->
       RefRelG g s1 s2 -> RefRelG g s1' s2'.
   Proof.
@@ -1182,7 +1181,7 @@ Section CoreRel.
     - exact Hmem.
     - exact Hlat.
     - unfold ReplayRel in *; intros G1 e G2 rfe Hg Hch.
-      exact (FetchAllowedInst_fetchViewExt core initLine fwcs specRegions _ _ _ _ Hsnap Hext (Hrp G1 e G2 rfe Hg Hch)).
+      exact (FetchAllowedInst_fetchViewExt initLine fwcs specRegions _ _ _ _ Hsnap Hext (Hrp G1 e G2 rfe Hg Hch)).
     - rewrite E2; exact He.
     - refine (AccessRel_frame g s1 s1' s2 s2' HP HR _ _ _ Edm _ Hlc Ha);
         [rewrite E1 | rewrite E1 | rewrite E1 | rewrite E2]; reflexivity.
@@ -1206,7 +1205,7 @@ Section CoreRel.
         intros Hv; destruct (HC3 Hv) as [f [E' [HE Hl']]].
         exists f, E'; split; [rewrite E1; exact HE |].
         intros Hlive; rewrite E1 in Hlive.
-        exact (LineAllowed_fetchViewExt core initLine specRegions fwcs _ _ _ _ Hsnap Hext (Hl' Hlive)).
+        exact (LineAllowed_fetchViewExt initLine specRegions fwcs _ _ _ _ Hsnap Hext (Hl' Hlive)).
     - unfold WfRel in *; rewrite HP; rewrite E1; exact Hw.
     - exact (RevokerRel_frame g g s1 s1' s2 s2' eq_refl eq_refl HR Hlc Hrk).
   Qed.
@@ -1214,21 +1213,21 @@ Section CoreRel.
   (* --- 16b. Steps While a fence.i Waits --- *)
 
   (* A region's spec part with its fetch subtree's fenceIWait and fenceIAck trace replaced *)
-  Definition setAcksS (r : MemRegion) (x : TS (externalMemRegionTree core r)) (w : bool) (a : list bool)
-    : TS (externalMemRegionTree core r) :=
+  Definition setAcksS (r : MemRegion) (x : TS (externalMemRegionTree r)) (w : bool) (a : list bool)
+    : TS (externalMemRegionTree r) :=
     ((x.(Fst).(Fst) ,, (x.(Fst).(Snd).(Fst) ,, (w ,, (x.(Fst).(Snd).(Snd).(Snd).(Fst) ,,
        (a ,, x.(Fst).(Snd).(Snd).(Snd).(Snd).(Snd)))))) ,, x.(Snd)).
 
-  Definition setAcksI (r : MemRegion) (y : TS (implExternalMemRegionTree core r)) (w : bool) (a : list bool)
-    : TS (implExternalMemRegionTree core r) :=
+  Definition setAcksI (r : MemRegion) (y : TS (implExternalMemRegionTree r)) (w : bool) (a : list bool)
+    : TS (implExternalMemRegionTree r) :=
     (setAcksS r y.(Fst) w a ,, y.(Snd)).
 
   (* A port predicate that reads neither fenceIWait nor the fenceIAck trace *)
-  Definition AckInsensitive (P : forall r, TS (implExternalMemRegionTree core r) -> Prop) : Prop :=
+  Definition AckInsensitive (P : forall r, TS (implExternalMemRegionTree r) -> Prop) : Prop :=
     forall r y w a, P r (setAcksI r y w a) = P r y.
 
   Lemma RegionPort_conj :
-    forall (P Q : forall r, TS (implExternalMemRegionTree core r) -> Prop) r (y : TS (implMemRegionTree core r)),
+    forall (P Q : forall r, TS (implExternalMemRegionTree r) -> Prop) r (y : TS (implMemRegionTree r)),
       RegionPort P r y -> RegionPort Q r y -> RegionPort (fun r y => P r y /\ Q r y) r y.
   Proof.
     intros P Q r; unfold RegionPort, implMemRegionTree.
@@ -1236,7 +1235,7 @@ Section CoreRel.
   Qed.
 
   Lemma AllPorts_conj :
-    forall (P Q : forall r, TS (implExternalMemRegionTree core r) -> Prop) l (mi : TS (implRegionsTree core l)),
+    forall (P Q : forall r, TS (implExternalMemRegionTree r) -> Prop) l (mi : TS (implRegionsTree l)),
       AllPorts P l mi -> AllPorts Q l mi -> AllPorts (fun r y => P r y /\ Q r y) l mi.
   Proof.
     intros P Q l; induction l as [| r l IH]; intros mi HP HQ; cbn [AllPorts] in *; [exact I |].
@@ -1315,15 +1314,15 @@ Section CoreRel.
    * (`FenceRel`), so the fetch view of the spec memory is not read *)
   Lemma RefRelG_wait_frame :
     forall g (s1 s1' : IState) (s2 s2' : SState) mi' ms',
-      s1' = writeSubTreeState (Impl.np_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+      s1' = writeSubTreeState (Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config implRegions)
               s1 (mi' ,, (iMem s1).(Snd)) ->
-      s2' = writeSubTreeState (Spec.np_mem core pcAddrInit specRegions) s2 ms' ->
+      s2' = writeSubTreeState (Spec.np_mem pcAddrInit specRegions) s2 ms' ->
       ~ NoFenceIWait s1 ->
       (forall P, AckInsensitive P -> AllPorts P implRegions (iRegions s1') = AllPorts P implRegions (iRegions s1)) ->
       iRev s1' = iRev s1 ->
       (forall L, lineContent specRegions (sMem s2') L = lineContent specRegions (sMem s2) L) ->
-      AllPorts (fun r y => RegionFenceICountInv core r y.(Fst)) implRegions (iRegions s1') ->
+      AllPorts (fun r y => RegionFenceICountInv r y.(Fst)) implRegions (iRegions s1') ->
       MemRelC g s1' s2' -> LatchRel g s2' ->
       RefRelG g s1 s2 -> RefRelG g s1' s2'.
   Proof.
@@ -1383,7 +1382,7 @@ Section CoreRel.
       destruct Hw as [W1 [W2 [W3 [W4 W5]]]].
       split; [rewrite E1; exact W1 |]; split; [rewrite E1; exact W2 |]; split; [rewrite E1; exact W3 |].
       split; [rewrite E1; exact W4 |].
-      refine (AllPorts_conj (fun r y => ImplExternalRegionHandshakeInv core r y) _ _ _ _ Hfc).
+      refine (AllPorts_conj (fun r y => ImplExternalRegionHandshakeInv r y) _ _ _ _ Hfc).
       rewrite HP by (intros r y w a; reflexivity).
       revert W5; apply AllPorts_impl; intros r y [Hy _]; exact Hy.
     - exact (RevokerRel_frame g g s1 s1' s2 s2' eq_refl eq_refl HR Hlc Hrk).
@@ -1394,14 +1393,14 @@ Section CoreRel.
    * The caller re-establishes the components that read what changed. *)
   Lemma RefRelG_mem_frame :
     forall g g' (s1 s1' : IState) (s2 s2' : SState) mi' ms',
-      s1' = writeSubTreeState (Impl.np_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+      s1' = writeSubTreeState (Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config implRegions) s1 mi' ->
-      s2' = writeSubTreeState (Spec.np_mem core pcAddrInit specRegions) s2 ms' ->
+      s2' = writeSubTreeState (Spec.np_mem pcAddrInit specRegions) s2 ms' ->
       g_chain g' = g_chain g -> g_rf0 g' = g_rf0 g -> g_cnwb g' = g_cnwb g -> g_d2aFo g' = g_d2aFo g ->
       accTakesHead (g_acc g') = accTakesHead (g_acc g) ->
       (forall P, AllPorts P implRegions (iRegions s1') = AllPorts P implRegions (iRegions s1)) ->
       (forall L, lineContent specRegions (sMem s2') L = lineContent specRegions (sMem s2) L) ->
-      FetchViewExt core specRegions (sMem s2) (sMem s2') ->
+      FetchViewExt specRegions (sMem s2) (sMem s2') ->
       MemRelC g' s1' s2' -> LatchRel g' s2' -> AccessRel g' s1' s2' -> RevokerRel g' s1' s2' ->
       RefRelG g s1 s2 -> RefRelG g' s1' s2'.
   Proof.
@@ -1416,7 +1415,7 @@ Section CoreRel.
     - exact Hmem.
     - exact Hlat.
     - unfold ReplayRel in *; rewrite Ech, Erf; intros G1 e G2 rfe Hg Hch.
-      exact (FetchAllowedInst_fetchViewExt core initLine fwcs specRegions _ _ _ _ Hsnap Hext (Hrp G1 e G2 rfe Hg Hch)).
+      exact (FetchAllowedInst_fetchViewExt initLine fwcs specRegions _ _ _ _ Hsnap Hext (Hrp G1 e G2 rfe Hg Hch)).
     - unfold EagerRel in *; rewrite Ech; rewrite E2; exact He.
     - exact Hacc.
     - unfold CnwbRel in *; rewrite Ecn; destruct Hc as [Hc1 Hc2]; rewrite Edm, Hrw; exact (conj Hc1 Hc2).
@@ -1439,15 +1438,15 @@ Section CoreRel.
         intros Hv; destruct (HC3 Hv) as [f [E' [HE Hl']]].
         exists f, E'; split; [rewrite E1; exact HE |].
         intros Hlive; rewrite E1 in Hlive.
-        exact (LineAllowed_fetchViewExt core initLine specRegions fwcs _ _ _ _ Hsnap Hext (Hl' Hlive)).
+        exact (LineAllowed_fetchViewExt initLine specRegions fwcs _ _ _ _ Hsnap Hext (Hl' Hlive)).
     - unfold WfRel in *; rewrite HP; rewrite E1; exact Hw.
     - exact Hrev.
   Qed.
 
   (* A port predicate that reads neither the data requests, their readies, the writes nor
    * `portRq`: the request ports leave it unchanged *)
-  Definition RqInsensitive (P : forall r, TS (implExternalMemRegionTree core r) -> Prop) : Prop :=
-    forall r (y y' : TS (implExternalMemRegionTree core r)),
+  Definition RqInsensitive (P : forall r, TS (implExternalMemRegionTree r) -> Prop) : Prop :=
+    forall r (y y' : TS (implExternalMemRegionTree r)),
       y'.(Fst).(Fst) = y.(Fst).(Fst) -> y'.(Fst).(Snd).(Snd).(Fst) = y.(Fst).(Snd).(Snd).(Fst) ->
       y'.(Snd).(Fst) = y.(Snd).(Fst) ->
       y'.(Snd).(Snd).(Snd).(Snd).(Fst) = y.(Snd).(Snd).(Snd).(Snd).(Fst) ->
@@ -1464,14 +1463,14 @@ Section CoreRel.
    * requests and `portRq` must be unchanged *)
     Lemma RefRelG_rq_frame :
     forall g g' (s1 s1' : IState) (s2 s2' : SState) mi' ms',
-      s1' = writeSubTreeState (Impl.np_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+      s1' = writeSubTreeState (Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config implRegions) s1 mi' ->
-      s2' = writeSubTreeState (Spec.np_mem core pcAddrInit specRegions) s2 ms' ->
+      s2' = writeSubTreeState (Spec.np_mem pcAddrInit specRegions) s2 ms' ->
       g_chain g' = g_chain g -> g_rf0 g' = g_rf0 g -> g_cnwb g' = g_cnwb g -> g_d2aFo g' = g_d2aFo g ->
       accTakesHead (g_acc g') = accTakesHead (g_acc g) ->
       (forall P, RqInsensitive P -> AllPorts P implRegions (iRegions s1') = AllPorts P implRegions (iRegions s1)) ->
       (forall L, lineContent specRegions (sMem s2') L = lineContent specRegions (sMem s2) L) ->
-      FetchViewExt core specRegions (sMem s2) (sMem s2') ->
+      FetchViewExt specRegions (sMem s2) (sMem s2') ->
       MemRelC g' s1' s2' -> LatchRel g' s2' -> AccessRel g' s1' s2' -> RevokerRel g' s1' s2' ->
       RefRelG g s1 s2 -> RefRelG g' s1' s2'.
   Proof.
@@ -1486,7 +1485,7 @@ Section CoreRel.
     - exact Hmem.
     - exact Hlat.
     - unfold ReplayRel in *; rewrite Ech, Erf; intros G1 e G2 rfe Hg Hch.
-      exact (FetchAllowedInst_fetchViewExt core initLine fwcs specRegions _ _ _ _ Hsnap Hext (Hrp G1 e G2 rfe Hg Hch)).
+      exact (FetchAllowedInst_fetchViewExt initLine fwcs specRegions _ _ _ _ Hsnap Hext (Hrp G1 e G2 rfe Hg Hch)).
     - unfold EagerRel in *; rewrite Ech; rewrite E2; exact He.
     - exact Hacc.
     - unfold CnwbRel in *; rewrite Ecn; destruct Hc as [Hc1 Hc2]; rewrite Edm, Hrw; exact (conj Hc1 Hc2).
@@ -1509,7 +1508,7 @@ Section CoreRel.
         intros Hv; destruct (HC3 Hv) as [f [E' [HE Hl']]].
         exists f, E'; split; [rewrite E1; exact HE |].
         intros Hlive; rewrite E1 in Hlive.
-        exact (LineAllowed_fetchViewExt core initLine specRegions fwcs _ _ _ _ Hsnap Hext (Hl' Hlive)).
+        exact (LineAllowed_fetchViewExt initLine specRegions fwcs _ _ _ _ Hsnap Hext (Hl' Hlive)).
     - unfold WfRel in *; rewrite HP by rqins_tac; rewrite E1; exact Hw.
     - exact Hrev.
   Qed.
@@ -1518,8 +1517,8 @@ Section CoreRel.
 
   Lemma flushMulDivCaps_incr :
     forall entries rf,
-      flushMulDivCaps core pcAddrInit entries (evalIncrementMcycle core pcAddrInit rf) =
-      evalIncrementMcycle core pcAddrInit (flushMulDivCaps core pcAddrInit entries rf).
+      flushMulDivCaps pcAddrInit entries (evalIncrementMcycle pcAddrInit rf) =
+      evalIncrementMcycle pcAddrInit (flushMulDivCaps pcAddrInit entries rf).
   Proof.
     induction entries as [| [m c] rest IH]; intros rf; cbn [flushMulDivCaps]; [reflexivity |].
     rewrite <- evalIncrementMcycle_writeGprVal; apply IH.
@@ -1527,22 +1526,22 @@ Section CoreRel.
 
   Lemma evalRegRead_incr :
     forall regReadIn rf,
-      evalRegRead core pcAddrInit regReadIn (evalIncrementMcycle core pcAddrInit rf) =
-      evalRegRead core pcAddrInit regReadIn rf.
+      evalRegRead pcAddrInit regReadIn (evalIncrementMcycle pcAddrInit rf) =
+      evalRegRead pcAddrInit regReadIn rf.
   Proof.
     intros regReadIn rf; unfold evalRegRead.
-    pose proof (fun i => readGpr_evalIncrementMcycle core pcAddrInit i rf) as H; unfold readGpr in H.
+    pose proof (fun i => readGpr_evalIncrementMcycle pcAddrInit i rf) as H; unfold readGpr in H.
     rewrite !H; reflexivity.
   Qed.
 
   Lemma readPcc_incr :
-    forall rf, readPcc core pcAddrInit (evalIncrementMcycle core pcAddrInit rf) = readPcc core pcAddrInit rf.
+    forall rf, readPcc pcAddrInit (evalIncrementMcycle pcAddrInit rf) = readPcc pcAddrInit rf.
   Proof.
     intros rf; unfold readPcc; apply readGpr_evalIncrementMcycle.
   Qed.
 
   Lemma cnwbApply_incr :
-    forall c rf, evalIncrementMcycle core pcAddrInit (cnwbApply c rf) = cnwbApply c (evalIncrementMcycle core pcAddrInit rf).
+    forall c rf, evalIncrementMcycle pcAddrInit (cnwbApply c rf) = cnwbApply c (evalIncrementMcycle pcAddrInit rf).
   Proof.
     intros [[d v] |] rf; cbn [cnwbApply]; [apply evalIncrementMcycle_writeGprVal | reflexivity].
   Qed.
@@ -1594,14 +1593,14 @@ Section CoreRel.
   Qed.
 
   Local Abbreviation NPRF :=
-    (Impl.np_rf core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    (Impl.np_rf pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions).
 
   (* Common part of the two tick cases: everything but the chain-dependent components *)
   Lemma tick_impl_facts :
     forall (s1 s1' : IState),
-      s1' = writeSubTreeState NPRF s1 (evalIncrementMcycle core pcAddrInit (iRf s1)) ->
-      iFlush s1' = evalIncrementMcycle core pcAddrInit (iFlush s1) /\ iPcc s1' = iPcc s1.
+      s1' = writeSubTreeState NPRF s1 (evalIncrementMcycle pcAddrInit (iRf s1)) ->
+      iFlush s1' = evalIncrementMcycle pcAddrInit (iFlush s1) /\ iPcc s1' = iPcc s1.
   Proof.
     intros s1 s1' E1; split.
     - rewrite E1; unfold iFlush, flushMulDiv, flushMulDivOn; apply flushMulDivCaps_incr.
@@ -1610,7 +1609,7 @@ Section CoreRel.
 
   Lemma ScoreRel_tick :
     forall g g' (s1 s1' : IState),
-      s1' = writeSubTreeState NPRF s1 (evalIncrementMcycle core pcAddrInit (iRf s1)) ->
+      s1' = writeSubTreeState NPRF s1 (evalIncrementMcycle pcAddrInit (iRf s1)) ->
       g_d2aFo g' = g_d2aFo g ->
       ScoreRel g s1 -> ScoreRel g' s1'.
   Proof.
@@ -1627,9 +1626,9 @@ Section CoreRel.
 
   Lemma FrontRel_tick :
     forall g g' (s1 s1' : IState) (s2 : SState),
-      s1' = writeSubTreeState NPRF s1 (evalIncrementMcycle core pcAddrInit (iRf s1)) ->
+      s1' = writeSubTreeState NPRF s1 (evalIncrementMcycle pcAddrInit (iRf s1)) ->
       g_d2aFo g' = g_d2aFo g ->
-      SnapshotOK core fwcs specRegions (sMem s2) ->
+      SnapshotOK fwcs specRegions (sMem s2) ->
       FrontRel g s1 s2 -> FrontRel g' s1' s2.
   Proof.
     intros g g' s1 s1' s2 E1 Ed Hsnap Hfr.
@@ -1641,7 +1640,7 @@ Section CoreRel.
     split.
     - unfold LiveChain in *; rewrite Hpcc.
       unfold liveInsts in *; rewrite Ed.
-      refine (LiveChainG_mono _ _ _ (FrontierRel s1 s2) _ _ _ Hsnap (FetchViewExt_refl core _ _) _ _).
+      refine (LiveChainG_mono _ _ _ (FrontierRel s1 s2) _ _ _ Hsnap (FetchViewExt_refl _ _) _ _).
       + intros p Hp; unfold FrontierRel in *; cbv zeta in *; rewrite Hpcc; rewrite E1; exact Hp.
       + rewrite E1; exact F6.
     - rewrite E1; exact F7.
@@ -1650,7 +1649,7 @@ Section CoreRel.
   (* Tick with entries pending: the spec stutters and the chain records the tick *)
   Lemma RefRelG_tick_ghost :
     forall g (s1 s1' : IState) (s2 : SState),
-      s1' = writeSubTreeState NPRF s1 (evalIncrementMcycle core pcAddrInit (iRf s1)) ->
+      s1' = writeSubTreeState NPRF s1 (evalIncrementMcycle pcAddrInit (iRf s1)) ->
       g_chain g <> [] ->
       RefRelG g s1 s2 ->
       RefRelG (mkGhost (g_chain g ++ [GTick]) (g_rf0 g) (g_cnwb g) (g_revOff g) (g_d2aFo g) (g_acc g)) s1' s2.
@@ -1662,7 +1661,7 @@ Section CoreRel.
     - unfold RfRel in *; cbn [g_chain g_rf0 g_cnwb] in *.
       destruct Hrf as [R1 [R2 [R3 R4]]].
       split; [exact R1 |].
-      split; [rewrite Hflush; exact (GChain_snoc_tick core pcAddrInit _ _ _ R2) |].
+      split; [rewrite Hflush; exact (GChain_snoc_tick pcAddrInit _ _ _ R2) |].
       split.
       + intros d v Hcn; apply ChainAvoids_app; [exact (R3 d v Hcn) |].
         intros e [Hin | []]; discriminate Hin.
@@ -1698,16 +1697,16 @@ Section CoreRel.
     - refine (RevokerRel_frame g _ s1 s1' s2 s2 eq_refl eq_refl _ (fun L => eq_refl) Hrk); rewrite E1; reflexivity.
   Qed.
 
-  Local Abbreviation NPRFS := (Spec.np_rf core pcAddrInit specRegions).
+  Local Abbreviation NPRFS := (Spec.np_rf pcAddrInit specRegions).
 
   (* Tick with no entry pending: lockstep with the spec tick *)
   Lemma RefRelG_tick_lockstep :
     forall g (s1 s1' : IState) (s2 s2' : SState),
-      s1' = writeSubTreeState NPRF s1 (evalIncrementMcycle core pcAddrInit (iRf s1)) ->
-      s2' = writeSubTreeState NPRFS s2 (evalIncrementMcycle core pcAddrInit (sRf s2)) ->
+      s1' = writeSubTreeState NPRF s1 (evalIncrementMcycle pcAddrInit (iRf s1)) ->
+      s2' = writeSubTreeState NPRFS s2 (evalIncrementMcycle pcAddrInit (sRf s2)) ->
       g_chain g = [] ->
       RefRelG g s1 s2 ->
-      RefRelG (mkGhost [] (evalIncrementMcycle core pcAddrInit (g_rf0 g)) (g_cnwb g) (g_revOff g) (g_d2aFo g) (g_acc g))
+      RefRelG (mkGhost [] (evalIncrementMcycle pcAddrInit (g_rf0 g)) (g_cnwb g) (g_revOff g) (g_d2aFo g) (g_acc g))
         s1' s2'.
   Proof.
     intros g s1 s1' s2 s2' E1 E2 Hnil H.
@@ -1719,8 +1718,8 @@ Section CoreRel.
     - unfold RfRel in *; cbn [g_chain g_rf0 g_cnwb] in *.
       destruct Hrf as [R1 [R2 [R3 R4]]].
       rewrite Hnil in R2; apply GChain_nil_inv in R2.
-      split; [rewrite E2; change (evalIncrementMcycle core pcAddrInit (sRf s2) =
-                                   cnwbApply (g_cnwb g) (evalIncrementMcycle core pcAddrInit (g_rf0 g)));
+      split; [rewrite E2; change (evalIncrementMcycle pcAddrInit (sRf s2) =
+                                   cnwbApply (g_cnwb g) (evalIncrementMcycle pcAddrInit (g_rf0 g)));
               rewrite R1; apply cnwbApply_incr |].
       split; [rewrite Hflush, R2; apply GChainNil |].
       split; [intros d v _ e [] |].

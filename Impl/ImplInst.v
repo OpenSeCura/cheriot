@@ -46,23 +46,23 @@ Definition ImplMulDivMode : MulDivMode := PipelinedMul_IterDiv.
 Definition implConcreteRegions : list MemRegion := [
   ramRegion ;
   revTableRegion ;
-  @clintMemRegion "core" ClintBaseAddr I I ;
-  @revokerMemRegion "core" (implRevokerExtraChildren "core") RevokerBaseAddr I I ;
-  @plicMemRegion "core" 3 PlicBaseAddr I I ;
+  @clintMemRegion ClintBaseAddr I I ;
+  @revokerMemRegion implRevokerExtraChildren RevokerBaseAddr I I ;
+  @plicMemRegion 3 PlicBaseAddr I I ;
   uartRegion
 ].
 
-Definition implConcreteClint : @ClintInstance "core" implConcreteRegions :=
-  @Build_ClintInstance "core" implConcreteRegions 2%nat ClintBaseAddr I I eq_refl.
+Definition implConcreteClint : @ClintInstance implConcreteRegions :=
+  @Build_ClintInstance implConcreteRegions 2%nat ClintBaseAddr I I eq_refl.
 
-Definition implConcreteRevoker : @RevokerInstance "core" (implRevokerExtraChildren "core") implConcreteRegions :=
-  @Build_RevokerInstance "core" (implRevokerExtraChildren "core") implConcreteRegions 3%nat RevokerBaseAddr I I eq_refl.
+Definition implConcreteRevoker : @RevokerInstance implRevokerExtraChildren implConcreteRegions :=
+  @Build_RevokerInstance implRevokerExtraChildren implConcreteRegions 3%nat RevokerBaseAddr I I eq_refl.
 
-Definition implConcretePlic : @PlicInstance "core" 3%nat implConcreteRegions :=
-  @Build_PlicInstance "core" 3%nat implConcreteRegions 4%nat PlicBaseAddr I I I eq_refl.
+Definition implConcretePlic : @PlicInstance 3%nat implConcreteRegions :=
+  @Build_PlicInstance 3%nat implConcreteRegions 4%nat PlicBaseAddr I I I eq_refl.
 
-Definition implSysTreeInst : Tree DomainElem :=
-  implSysTree "core"
+Definition implSysTreeInst : Tree Elem :=
+  implSysTree
               PcAddrInit
               DefaultFetchCapacity
               DefaultInstCapacity
@@ -76,26 +76,8 @@ Definition implSysTreeInst : Tree DomainElem :=
               concreteRevConfig
               implConcreteRegions.
 
-Definition forwardDatapathModInst : Mod implSysTreeInst :=
-  @forwardDatapathMod "core"
-                      PcAddrInit
-                      DefaultFetchCapacity
-                      DefaultInstCapacity
-                      DefaultDecodeCapacity
-                      DefaultDataMemCapacity
-                      DefaultMulCapacity
-                      DefaultDivCapacity
-                      ImplMulStages
-                      ImplDivStages
-                      ImplMulDivMode
-                      concreteRevConfig
-                      implConcreteRegions
-                      implConcreteClint
-                      implConcreteRevoker
-                      implConcretePlic.
-
 Definition pipelinedModInst : Mod implSysTreeInst :=
-  @pipelinedMod "core"
+  @pipelinedMod
                 PcAddrInit
                 DefaultIssueWidth
                 DefaultFetchCapacity
@@ -116,6 +98,5 @@ Definition pipelinedModInst : Mod implSysTreeInst :=
 From Guru Require Import Extraction Compiler.
 Set Extraction Output Directory "./Impl".
 
-Definition compiledMod (sim : bool) :=
-  compile (if sim then forwardDatapathModInst else pipelinedModInst) sim.
+Definition compiledMod := compile pipelinedModInst.
 Extraction "Compile" kindSize Z.log2_up getDefault isEq compiledMod.

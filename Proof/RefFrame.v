@@ -37,12 +37,12 @@ Local Open Scope guru_scope.
  *    to the line contents and to the fetch view of the spec memory;
  * 3. the memory relation survives an update at a position where it is trivial. *)
 
-Local Abbreviation TS t := (TreeState DomainElemState t).
+Local Abbreviation TS t := (TreeState ElemState t).
 
 (* --- 1. Other Positions --- *)
 
 Section RegionAtOther.
-  Variable regionTree : MemRegion -> Tree DomainElem.
+  Variable regionTree : MemRegion -> Tree Elem.
 
   Lemma regionStateAt_upd_other :
     forall (i j : nat) (regions : list MemRegion) (r0 r1 : MemRegion)
@@ -73,20 +73,19 @@ Definition isCustomR (r : MemRegion) : Prop :=
   end.
 
 Section CustomInvisible.
-  Variable core : string.
   Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
 
   Lemma RegionPort_custom :
-    forall P r (y : TS (implMemRegionTree core r)), isCustomR r -> RegionPort core P r y = True.
+    forall P r (y : TS (implMemRegionTree r)), isCustomR r -> RegionPort P r y = True.
   Proof.
     intros P r; unfold isCustomR, RegionPort, implMemRegionTree.
     destruct (regionKind r); intros y H; [contradiction | reflexivity].
   Qed.
 
   Lemma AllPorts_upd :
-    forall P l idx r0 (pf : nth_error l idx = Some r0) (mi : TS (implRegionsTree core l)) v,
+    forall P l idx r0 (pf : nth_error l idx = Some r0) (mi : TS (implRegionsTree l)) v,
       isCustomR r0 ->
-      AllPorts core P l (updRegionStateAt (implMemRegionTree core) idx l r0 pf mi v) = AllPorts core P l mi.
+      AllPorts P l (updRegionStateAt implMemRegionTree idx l r0 pf mi v) = AllPorts P l mi.
   Proof.
     intros P l; induction l as [| r rs IH]; intros [| i'] r0 pf mi v Hc; try discriminate pf.
     - cbn [AllPorts updRegionStateAt Fst Snd].
@@ -100,18 +99,18 @@ Section CustomInvisible.
   Qed.
 
   Lemma RegionLineContent_custom :
-    forall r (x : TS (memRegionTree core r)) L,
-      isCustomR r -> RegionLineContent core initLine r x L = getDefault LineReadRp.
+    forall r (x : TS (memRegionTree r)) L,
+      isCustomR r -> RegionLineContent initLine r x L = getDefault LineReadRp.
   Proof.
     intros r; unfold isCustomR, RegionLineContent, memRegionTree.
     destruct (regionKind r); intros x L H; [contradiction | reflexivity].
   Qed.
 
   Lemma lineContent_upd :
-    forall l idx r0 (pf : nth_error l idx = Some r0) (ms : TS (specMemTree core l)) w L,
+    forall l idx r0 (pf : nth_error l idx = Some r0) (ms : TS (specMemTree l)) w L,
       isCustomR r0 ->
-      lineContent core initLine l (updRegionStateAt (memRegionTree core) idx l r0 pf ms w) L =
-      lineContent core initLine l ms L.
+      lineContent initLine l (updRegionStateAt memRegionTree idx l r0 pf ms w) L =
+      lineContent initLine l ms L.
   Proof.
     intros l; induction l as [| r rs IH]; intros [| i'] r0 pf ms w L Hc; try discriminate pf.
     - cbn [lineContent updRegionStateAt Fst Snd].
@@ -125,16 +124,16 @@ Section CustomInvisible.
   Qed.
 
   Lemma RegionFetchViewExt_custom :
-    forall r (x y : TS (memRegionTree core r)), isCustomR r -> RegionFetchViewExt core r x y.
+    forall r (x y : TS (memRegionTree r)), isCustomR r -> RegionFetchViewExt r x y.
   Proof.
     intros r; unfold isCustomR, RegionFetchViewExt, memRegionTree.
     destruct (regionKind r); intros x y H; [contradiction | exact I].
   Qed.
 
   Lemma FetchViewExt_upd :
-    forall l idx r0 (pf : nth_error l idx = Some r0) (ms : TS (specMemTree core l)) w,
+    forall l idx r0 (pf : nth_error l idx = Some r0) (ms : TS (specMemTree l)) w,
       isCustomR r0 ->
-      FetchViewExt core l ms (updRegionStateAt (memRegionTree core) idx l r0 pf ms w).
+      FetchViewExt l ms (updRegionStateAt memRegionTree idx l r0 pf ms w).
   Proof.
     intros l; induction l as [| r rs IH]; intros [| i'] r0 pf ms w Hc; try discriminate pf.
     - cbn [FetchViewExt updRegionStateAt Fst Snd].
@@ -148,17 +147,17 @@ Section CustomInvisible.
   Qed.
 
   Lemma RegionSnapshotOK_custom :
-    forall r fwc (x : TS (memRegionTree core r)), isCustomR r -> RegionSnapshotOK core r fwc x.
+    forall r fwc (x : TS (memRegionTree r)), isCustomR r -> RegionSnapshotOK r fwc x.
   Proof.
     intros r fwc; unfold isCustomR, RegionSnapshotOK, memRegionTree.
     destruct (regionKind r); intros x H; [contradiction | exact I].
   Qed.
 
   Lemma SnapshotOK_upd :
-    forall l fwcs idx r0 (pf : nth_error l idx = Some r0) (ms : TS (specMemTree core l)) w,
+    forall l fwcs idx r0 (pf : nth_error l idx = Some r0) (ms : TS (specMemTree l)) w,
       isCustomR r0 ->
-      SnapshotOK core fwcs l ms ->
-      SnapshotOK core fwcs l (updRegionStateAt (memRegionTree core) idx l r0 pf ms w).
+      SnapshotOK fwcs l ms ->
+      SnapshotOK fwcs l (updRegionStateAt memRegionTree idx l r0 pf ms w).
   Proof.
     intros l; induction l as [| r rs IH]; intros fwcs [| i'] r0 pf ms w Hc Hs; try discriminate pf.
     - cbn [SnapshotOK updRegionStateAt Fst Snd] in *.
@@ -176,16 +175,15 @@ End CustomInvisible.
 (* --- 3. The Memory Relation at Trivial Positions --- *)
 
 Section MemRelUpd.
-  Variable core : string.
   Variables cp pp : nat.
 
   Lemma MemRelPost_upd :
     forall l i idx r0S r0I (pfS : nth_error l idx = Some r0S) (pfI : nth_error l idx = Some r0I)
-           (ms : TS (specMemTree core l)) (mi : TS (implRegionsTree core l)) v w,
-      (forall x y, RegionRelAt core cp pp (i + idx) r0S x y) ->
-      MemRelPost core cp pp i l ms mi ->
-      MemRelPost core cp pp i l (updRegionStateAt (memRegionTree core) idx l r0S pfS ms v)
-                                (updRegionStateAt (implMemRegionTree core) idx l r0I pfI mi w).
+           (ms : TS (specMemTree l)) (mi : TS (implRegionsTree l)) v w,
+      (forall x y, RegionRelAt cp pp (i + idx) r0S x y) ->
+      MemRelPost cp pp i l ms mi ->
+      MemRelPost cp pp i l (updRegionStateAt memRegionTree idx l r0S pfS ms v)
+                                (updRegionStateAt implMemRegionTree idx l r0I pfI mi w).
   Proof.
     intros l; induction l as [| r rs IH]; intros i [| i'] r0S r0I pfS pfI ms mi v w Htriv Hrel;
       try discriminate pfS.
@@ -209,14 +207,14 @@ Section MemRelUpd.
     forall sRev iRev post l i idx r0S r0I
            (pfS : nth_error (l ++ sRev :: post) idx = Some r0S)
            (pfI : nth_error (l ++ iRev :: post) idx = Some r0I)
-           (ms : TS (specMemTree core (l ++ sRev :: post))) (mi : TS (implRegionsTree core (l ++ iRev :: post)))
+           (ms : TS (specMemTree (l ++ sRev :: post))) (mi : TS (implRegionsTree (l ++ iRev :: post)))
            v w,
       idx <> length l ->
-      (forall x y, RegionRelAt core cp pp (i + idx) r0S x y) ->
-      MemRelPre core cp pp i l sRev iRev post ms mi ->
-      MemRelPre core cp pp i l sRev iRev post
-        (updRegionStateAt (memRegionTree core) idx (l ++ sRev :: post) r0S pfS ms v)
-        (updRegionStateAt (implMemRegionTree core) idx (l ++ iRev :: post) r0I pfI mi w).
+      (forall x y, RegionRelAt cp pp (i + idx) r0S x y) ->
+      MemRelPre cp pp i l sRev iRev post ms mi ->
+      MemRelPre cp pp i l sRev iRev post
+        (updRegionStateAt memRegionTree idx (l ++ sRev :: post) r0S pfS ms v)
+        (updRegionStateAt implMemRegionTree idx (l ++ iRev :: post) r0I pfI mi w).
   Proof.
     intros sRev iRev post l; induction l as [| r rs IH];
       intros i [| i'] r0S r0I pfS pfI ms mi v w Hne Htriv Hrel.
@@ -245,15 +243,15 @@ Section MemRelUpd.
     forall sRev iRev post l i idxS idxI r0S r0I
            (pfS : nth_error (l ++ sRev :: post) idxS = Some r0S)
            (pfI : nth_error (l ++ iRev :: post) idxI = Some r0I)
-           (ms : TS (specMemTree core (l ++ sRev :: post))) (mi : TS (implRegionsTree core (l ++ iRev :: post)))
+           (ms : TS (specMemTree (l ++ sRev :: post))) (mi : TS (implRegionsTree (l ++ iRev :: post)))
            v w,
       idxI = idxS ->
       idxS <> length l ->
-      (forall x y, RegionRelAt core cp pp (i + idxS) r0S x y) ->
-      MemRelPre core cp pp i l sRev iRev post ms mi ->
-      MemRelPre core cp pp i l sRev iRev post
-        (updRegionStateAt (memRegionTree core) idxS (l ++ sRev :: post) r0S pfS ms v)
-        (updRegionStateAt (implMemRegionTree core) idxI (l ++ iRev :: post) r0I pfI mi w).
+      (forall x y, RegionRelAt cp pp (i + idxS) r0S x y) ->
+      MemRelPre cp pp i l sRev iRev post ms mi ->
+      MemRelPre cp pp i l sRev iRev post
+        (updRegionStateAt memRegionTree idxS (l ++ sRev :: post) r0S pfS ms v)
+        (updRegionStateAt implMemRegionTree idxI (l ++ iRev :: post) r0I pfI mi w).
   Proof.
     intros sRev iRev post l i idxS idxI r0S r0I pfS pfI ms mi v w E; subst idxI.
     apply MemRelPre_upd.
@@ -264,18 +262,18 @@ Section MemRelUpd.
     forall sRev iRev post l i idxS idxI r0S r0I
            (pfS : nth_error (l ++ sRev :: post) idxS = Some r0S)
            (pfI : nth_error (l ++ iRev :: post) idxI = Some r0I)
-           (ms : TS (specMemTree core (l ++ sRev :: post))) (mi : TS (implRegionsTree core (l ++ iRev :: post)))
+           (ms : TS (specMemTree (l ++ sRev :: post))) (mi : TS (implRegionsTree (l ++ iRev :: post)))
            w,
       idxI = idxS ->
       idxS <> length l ->
-      (forall x y, RegionRelAt core cp pp (i + idxS) r0S x y) ->
-      MemRelPre core cp pp i l sRev iRev post ms mi ->
-      MemRelPre core cp pp i l sRev iRev post ms
-        (updRegionStateAt (implMemRegionTree core) idxI (l ++ iRev :: post) r0I pfI mi w).
+      (forall x y, RegionRelAt cp pp (i + idxS) r0S x y) ->
+      MemRelPre cp pp i l sRev iRev post ms mi ->
+      MemRelPre cp pp i l sRev iRev post ms
+        (updRegionStateAt implMemRegionTree idxI (l ++ iRev :: post) r0I pfI mi w).
   Proof.
     intros sRev iRev post l i idxS idxI r0S r0I pfS pfI ms mi w E Hne Htriv H.
     pose proof (MemRelPre_upd2 sRev iRev post l i idxS idxI r0S r0I pfS pfI ms mi
-                  (regionStateAt (memRegionTree core) idxS (l ++ sRev :: post) r0S pfS ms) w E Hne Htriv H) as H'.
+                  (regionStateAt memRegionTree idxS (l ++ sRev :: post) r0S pfS ms) w E Hne Htriv H) as H'.
     rewrite updRegionStateAt_regionStateAt in H'; exact H'.
   Qed.
 
@@ -284,7 +282,7 @@ End MemRelUpd.
 (* --- 4. Steps of the Region at a Position --- *)
 
 Lemma SemAction_genNthRegionAction_iff :
-  forall (regionTree : MemRegion -> Tree DomainElem) idx regions r0 (pf : nth_error regions idx = Some r0) {k}
+  forall (regionTree : MemRegion -> Tree Elem) idx regions r0 (pf : nth_error regions idx = Some r0) {k}
          (act : Action type (regionTree r0) k) (env : Env (regionsTree regionTree regions))
          (s s' : TS (regionsTree regionTree regions)) (v : type k),
     SemAction env (@genNthRegionAction regionTree type idx regions r0 pf k act) s s' v <->

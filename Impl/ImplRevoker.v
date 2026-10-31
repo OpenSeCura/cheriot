@@ -43,25 +43,24 @@ Definition RevPhase : Kind := TaggedUnion RevPhaseList.
 Abbreviation mkRevPhase tag := (UNION (RevPhaseList, tag ::= Const ltac:(getTy) (Bit 0) Zmod.zero)) (only parsing).
 
 Section ImplRevoker.
-  Variable dom : string.
 
-  Definition implRevokerExtraChildren : list (Tree DomainElem) :=
-    [ Leaf "revPhase"         (dom, EReg (Build_Reg RevPhase (Some (getDefault _)) false)) ;
-      Leaf "revScanCap"       (dom, EReg (Build_Reg FullCapWithTag (Some (getDefault _)) false)) ;
-      Leaf "revScanBase"      (dom, EReg (Build_Reg (Bit (AddrSz + 1)) (Some Zmod.zero) false)) ;
-      Leaf "revStoreSnoopHit" (dom, EReg (Build_Reg Bool (Some false) false)) ].
+  Definition implRevokerExtraChildren : list (Tree Elem) :=
+    [ Leaf "revPhase"         (EReg (Build_Reg RevPhase (Some (getDefault _)))) ;
+      Leaf "revScanCap"       (EReg (Build_Reg FullCapWithTag (Some (getDefault _)))) ;
+      Leaf "revScanBase"      (EReg (Build_Reg (Bit (AddrSz + 1)) (Some Zmod.zero))) ;
+      Leaf "revStoreSnoopHit" (EReg (Build_Reg Bool (Some false))) ].
 
-  Definition implRevokerTree : Tree DomainElem :=
-    Node "revoker" (revokerChildren dom implRevokerExtraChildren).
+  Definition implRevokerTree : Tree Elem :=
+    Node "revoker" (revokerChildren implRevokerExtraChildren).
 
-  Local Definition pBase               : RegPath implRevokerTree := Eval cbv in (revokerBasePath dom implRevokerExtraChildren).
-  Local Definition pTop                : RegPath implRevokerTree := Eval cbv in (revokerTopPath dom implRevokerExtraChildren).
-  Local Definition pControl            : RegPath implRevokerTree := Eval cbv in (revokerControlPath dom implRevokerExtraChildren).
-  Local Definition pEpoch              : RegPath implRevokerTree := Eval cbv in (revokerEpochPath dom implRevokerExtraChildren).
-  Local Definition pInterruptStatus    : RegPath implRevokerTree := Eval cbv in (revokerInterruptStatusPath dom implRevokerExtraChildren).
-  Local Definition pInterruptRequested : RegPath implRevokerTree := Eval cbv in (revokerInterruptRequestedPath dom implRevokerExtraChildren).
-  Local Definition pScanAddr           : RegPath implRevokerTree := Eval cbv in (revokerScanAddrPath dom implRevokerExtraChildren).
-  Local Definition pSweepTop           : RegPath implRevokerTree := Eval cbv in (revokerSweepTopPath dom implRevokerExtraChildren).
+  Local Definition pBase               : RegPath implRevokerTree := Eval cbv in (revokerBasePath implRevokerExtraChildren).
+  Local Definition pTop                : RegPath implRevokerTree := Eval cbv in (revokerTopPath implRevokerExtraChildren).
+  Local Definition pControl            : RegPath implRevokerTree := Eval cbv in (revokerControlPath implRevokerExtraChildren).
+  Local Definition pEpoch              : RegPath implRevokerTree := Eval cbv in (revokerEpochPath implRevokerExtraChildren).
+  Local Definition pInterruptStatus    : RegPath implRevokerTree := Eval cbv in (revokerInterruptStatusPath implRevokerExtraChildren).
+  Local Definition pInterruptRequested : RegPath implRevokerTree := Eval cbv in (revokerInterruptRequestedPath implRevokerExtraChildren).
+  Local Definition pScanAddr           : RegPath implRevokerTree := Eval cbv in (revokerScanAddrPath implRevokerExtraChildren).
+  Local Definition pSweepTop           : RegPath implRevokerTree := Eval cbv in (revokerSweepTopPath implRevokerExtraChildren).
   Local Definition pRevPhase           : RegPath implRevokerTree := Eval cbv in (getChildRegPathTree implRevokerTree "revPhase").
   Local Definition pRevScanCap         : RegPath implRevokerTree := Eval cbv in (getChildRegPathTree implRevokerTree "revScanCap").
   Local Definition pRevScanBase        : RegPath implRevokerTree := Eval cbv in (getChildRegPathTree implRevokerTree "revScanBase").
@@ -95,7 +94,7 @@ Section ImplRevoker.
 
     (* Split-Phase Autonomous Revoker Steps *)
     Variable revConfig    : RevConfig.
-    Variable memTree      : Tree DomainElem.
+    Variable memTree      : Tree Elem.
     Variable revAct       : forall {k : Kind}, Action ty implRevokerTree k -> Action ty memTree k.
     Variable readMemRq      : ty Addr -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree Bool.
     Variable getMemRp       : Action ty memTree (Option FullCapWithTag).
@@ -263,4 +262,4 @@ Section ImplRevoker.
 
 End ImplRevoker.
 
-Arguments implRevokerSnoopStore dom [ty] addr memSize.
+Arguments implRevokerSnoopStore [ty] addr memSize.

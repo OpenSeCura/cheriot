@@ -34,69 +34,68 @@ Local Open Scope guru_scope.
  * =========================================================================== *)
 
 Section RfActionCommutes.
-  Variable dom : string.
   Variable pcAddrInit : Z.
 
-  Local Abbreviation rTree := (rfTree dom pcAddrInit).
+  Local Abbreviation rTree := (rfTree pcAddrInit).
   Context {env : Env rTree}.
   Local Opaque gprPathsWithKind scrPathsWithKind csrPathsWithKind.
 
   Lemma ActionCommutes_readCsr_updGpr :
     forall wIdx wbVal (idxExpr : Expr type (Bit CsrIdxSz)),
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (readRegsList (csrPathsWithKind dom pcAddrInit) idxExpr).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (readRegsList (csrPathsWithKind pcAddrInit) idxExpr).
   Proof.
     intros wIdx wbVal idxExpr env0 s P.
     rewrite !evalActionPropGen_readRegsList.
-    change (evalReadRegsList (csrPathsWithKind dom pcAddrInit) (evalExpr idxExpr) (updGpr dom pcAddrInit wIdx wbVal s))
-      with (readCsr dom pcAddrInit (evalExpr idxExpr) (updGpr dom pcAddrInit wIdx wbVal s)).
-    change (evalReadRegsList (csrPathsWithKind dom pcAddrInit) (evalExpr idxExpr) s)
-      with (readCsr dom pcAddrInit (evalExpr idxExpr) s).
+    change (evalReadRegsList (csrPathsWithKind pcAddrInit) (evalExpr idxExpr) (updGpr pcAddrInit wIdx wbVal s))
+      with (readCsr pcAddrInit (evalExpr idxExpr) (updGpr pcAddrInit wIdx wbVal s)).
+    change (evalReadRegsList (csrPathsWithKind pcAddrInit) (evalExpr idxExpr) s)
+      with (readCsr pcAddrInit (evalExpr idxExpr) s).
     rewrite readCsr_updGpr.
     reflexivity.
   Qed.
 
   Lemma ActionCommutes_writeCsr_updGpr :
     forall wIdx wbVal (idxExpr : Expr type (Bit CsrIdxSz)) (valExpr : Expr type (Bit Xlen)),
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (writeRegsList (csrPathsWithKind dom pcAddrInit) idxExpr valExpr).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (writeRegsList (csrPathsWithKind pcAddrInit) idxExpr valExpr).
   Proof.
     intros wIdx wbVal idxExpr valExpr env0 s P.
     rewrite !evalActionPropGen_writeRegsList.
-    change (evalWriteRegsList (csrPathsWithKind dom pcAddrInit) (evalExpr idxExpr) (evalExpr valExpr) (updGpr dom pcAddrInit wIdx wbVal s))
-      with (updCsr dom pcAddrInit (evalExpr idxExpr) (evalExpr valExpr) (updGpr dom pcAddrInit wIdx wbVal s)).
-    change (evalWriteRegsList (csrPathsWithKind dom pcAddrInit) (evalExpr idxExpr) (evalExpr valExpr) s)
-      with (updCsr dom pcAddrInit (evalExpr idxExpr) (evalExpr valExpr) s).
+    change (evalWriteRegsList (csrPathsWithKind pcAddrInit) (evalExpr idxExpr) (evalExpr valExpr) (updGpr pcAddrInit wIdx wbVal s))
+      with (updCsr pcAddrInit (evalExpr idxExpr) (evalExpr valExpr) (updGpr pcAddrInit wIdx wbVal s)).
+    change (evalWriteRegsList (csrPathsWithKind pcAddrInit) (evalExpr idxExpr) (evalExpr valExpr) s)
+      with (updCsr pcAddrInit (evalExpr idxExpr) (evalExpr valExpr) s).
     rewrite updGpr_updCsr_comm.
     reflexivity.
   Qed.
 
   Lemma ActionCommutes_readScr_updGpr :
     forall wIdx wbVal (idxExpr : Expr type (Bit ScrIdxSz)),
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (readRegsList (scrPathsWithKind dom pcAddrInit) idxExpr).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (readRegsList (scrPathsWithKind pcAddrInit) idxExpr).
   Proof.
     intros wIdx wbVal idxExpr env0 s P.
     rewrite !evalActionPropGen_readRegsList.
-    change (evalReadRegsList (scrPathsWithKind dom pcAddrInit) (evalExpr idxExpr) (updGpr dom pcAddrInit wIdx wbVal s))
-      with (readScr dom pcAddrInit (evalExpr idxExpr) (updGpr dom pcAddrInit wIdx wbVal s)).
-    change (evalReadRegsList (scrPathsWithKind dom pcAddrInit) (evalExpr idxExpr) s)
-      with (readScr dom pcAddrInit (evalExpr idxExpr) s).
+    change (evalReadRegsList (scrPathsWithKind pcAddrInit) (evalExpr idxExpr) (updGpr pcAddrInit wIdx wbVal s))
+      with (readScr pcAddrInit (evalExpr idxExpr) (updGpr pcAddrInit wIdx wbVal s)).
+    change (evalReadRegsList (scrPathsWithKind pcAddrInit) (evalExpr idxExpr) s)
+      with (readScr pcAddrInit (evalExpr idxExpr) s).
     rewrite readScr_updGpr.
     reflexivity.
   Qed.
 
   Lemma ActionCommutes_writeScr_updGpr :
     forall wIdx wbVal (idxExpr : Expr type (Bit ScrIdxSz)) (valExpr : Expr type FullECapWithTag),
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (writeRegsList (scrPathsWithKind dom pcAddrInit) idxExpr valExpr).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (writeRegsList (scrPathsWithKind pcAddrInit) idxExpr valExpr).
   Proof.
     intros wIdx wbVal idxExpr valExpr env0 s P.
     rewrite !evalActionPropGen_writeRegsList.
-    change (evalWriteRegsList (scrPathsWithKind dom pcAddrInit) (evalExpr idxExpr) (evalExpr valExpr) (updGpr dom pcAddrInit wIdx wbVal s))
-      with (updScr dom pcAddrInit (evalExpr idxExpr) (evalExpr valExpr) (updGpr dom pcAddrInit wIdx wbVal s)).
-    change (evalWriteRegsList (scrPathsWithKind dom pcAddrInit) (evalExpr idxExpr) (evalExpr valExpr) s)
-      with (updScr dom pcAddrInit (evalExpr idxExpr) (evalExpr valExpr) s).
+    change (evalWriteRegsList (scrPathsWithKind pcAddrInit) (evalExpr idxExpr) (evalExpr valExpr) (updGpr pcAddrInit wIdx wbVal s))
+      with (updScr pcAddrInit (evalExpr idxExpr) (evalExpr valExpr) (updGpr pcAddrInit wIdx wbVal s)).
+    change (evalWriteRegsList (scrPathsWithKind pcAddrInit) (evalExpr idxExpr) (evalExpr valExpr) s)
+      with (updScr pcAddrInit (evalExpr idxExpr) (evalExpr valExpr) s).
     rewrite updGpr_updScr_comm.
     reflexivity.
   Qed.
@@ -104,15 +103,15 @@ Section RfActionCommutes.
   Lemma ActionCommutes_readGpr_updGpr_other :
     forall wIdx wbVal (idxExpr : Expr type (Bit RegIdxSzReal)),
       evalExpr idxExpr <> wIdx ->
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (readRegsList (gprPathsWithKind dom pcAddrInit) idxExpr).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (readRegsList (gprPathsWithKind pcAddrInit) idxExpr).
   Proof.
     intros wIdx wbVal idxExpr Hneq env0 s P.
     rewrite !evalActionPropGen_readRegsList.
-    change (evalReadRegsList (gprPathsWithKind dom pcAddrInit) (evalExpr idxExpr) (updGpr dom pcAddrInit wIdx wbVal s))
-      with (readGpr dom pcAddrInit (evalExpr idxExpr) (updGpr dom pcAddrInit wIdx wbVal s)).
-    change (evalReadRegsList (gprPathsWithKind dom pcAddrInit) (evalExpr idxExpr) s)
-      with (readGpr dom pcAddrInit (evalExpr idxExpr) s).
+    change (evalReadRegsList (gprPathsWithKind pcAddrInit) (evalExpr idxExpr) (updGpr pcAddrInit wIdx wbVal s))
+      with (readGpr pcAddrInit (evalExpr idxExpr) (updGpr pcAddrInit wIdx wbVal s)).
+    change (evalReadRegsList (gprPathsWithKind pcAddrInit) (evalExpr idxExpr) s)
+      with (readGpr pcAddrInit (evalExpr idxExpr) s).
     rewrite readGpr_updGpr_other by exact Hneq.
     reflexivity.
   Qed.
@@ -120,16 +119,16 @@ Section RfActionCommutes.
   Lemma ActionCommutes_writeGpr_updGpr_other :
     forall wIdx wbVal (idxExpr : Expr type (Bit RegIdxSzReal)) (valExpr : Expr type FullECapWithTag),
       wIdx <> evalExpr idxExpr ->
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (writeRegsList (gprPathsWithKind dom pcAddrInit) idxExpr valExpr).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (writeRegsList (gprPathsWithKind pcAddrInit) idxExpr valExpr).
   Proof.
     intros wIdx wbVal idxExpr valExpr Hneq env0 s P.
     rewrite !evalActionPropGen_writeRegsList.
-    change (evalWriteRegsList (gprPathsWithKind dom pcAddrInit) (evalExpr idxExpr) (evalExpr valExpr) (updGpr dom pcAddrInit wIdx wbVal s))
-      with (updGpr dom pcAddrInit (evalExpr idxExpr) (evalExpr valExpr) (updGpr dom pcAddrInit wIdx wbVal s)).
-    change (evalWriteRegsList (gprPathsWithKind dom pcAddrInit) (evalExpr idxExpr) (evalExpr valExpr) s)
-      with (updGpr dom pcAddrInit (evalExpr idxExpr) (evalExpr valExpr) s).
-    rewrite (updGpr_comm dom pcAddrInit wIdx (evalExpr idxExpr) wbVal (evalExpr valExpr) s Hneq).
+    change (evalWriteRegsList (gprPathsWithKind pcAddrInit) (evalExpr idxExpr) (evalExpr valExpr) (updGpr pcAddrInit wIdx wbVal s))
+      with (updGpr pcAddrInit (evalExpr idxExpr) (evalExpr valExpr) (updGpr pcAddrInit wIdx wbVal s)).
+    change (evalWriteRegsList (gprPathsWithKind pcAddrInit) (evalExpr idxExpr) (evalExpr valExpr) s)
+      with (updGpr pcAddrInit (evalExpr idxExpr) (evalExpr valExpr) s).
+    rewrite (updGpr_comm pcAddrInit wIdx (evalExpr idxExpr) wbVal (evalExpr valExpr) s Hneq).
     reflexivity.
   Qed.
 
@@ -148,10 +147,10 @@ Section RfActionCommutes.
            (dstIdx : bits RegIdxSzReal) (valExpr : Expr type FullECapWithTag)
            {k : Kind} (cont : bits 0 -> Action type rTree k),
       (Zmod.eqb dstIdx Zmod.zero = false -> wIdx <> dstIdx) ->
-      (forall v, ActionCommutes (updGpr dom pcAddrInit wIdx wbVal) (cont v)) ->
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
+      (forall v, ActionCommutes (updGpr pcAddrInit wIdx wbVal) (cont v)) ->
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
         (IfElse nm (isNotZero (Var type (Bit RegIdxSzReal) dstIdx))
-                (writeRegsList (gprPathsWithKind dom pcAddrInit)
+                (writeRegsList (gprPathsWithKind pcAddrInit)
                                (Var type (Bit RegIdxSzReal) dstIdx) valExpr)
                 Retv
                 cont).
@@ -169,8 +168,8 @@ Section RfActionCommutes.
 
   Lemma ActionCommutes_incrementMinstret_updGpr :
     forall wIdx wbVal,
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (@incrementMinstret dom pcAddrInit type).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (@incrementMinstret pcAddrInit type).
   Proof.
     intros wIdx wbVal.
     unfold incrementMinstret.
@@ -182,8 +181,8 @@ Section RfActionCommutes.
 
   Lemma ActionCommutes_incrementMcycle_updGpr :
     forall wIdx wbVal,
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (@incrementMcycle dom pcAddrInit type).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (@incrementMcycle pcAddrInit type).
   Proof.
     intros wIdx wbVal.
     unfold incrementMcycle.
@@ -195,8 +194,8 @@ Section RfActionCommutes.
 
   Lemma ActionCommutes_updateMshwmOnStore_updGpr :
     forall wIdx wbVal (stAddr : type Addr),
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (@updateMshwmOnStore dom pcAddrInit type stAddr).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (@updateMshwmOnStore pcAddrInit type stAddr).
   Proof.
     intros wIdx wbVal stAddr.
     unfold updateMshwmOnStore.
@@ -217,8 +216,8 @@ Section RfActionCommutes.
 
   Lemma ActionCommutes_isInterruptPending_updGpr :
     forall wIdx wbVal (meip mtip : bool),
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (@isInterruptPending dom pcAddrInit type meip mtip).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (@isInterruptPending pcAddrInit type meip mtip).
   Proof.
     intros wIdx wbVal meip mtip.
     unfold isInterruptPending.
@@ -230,8 +229,8 @@ Section RfActionCommutes.
 
   Lemma ActionCommutes_handleTrap_updGpr :
     forall wIdx wbVal (currPcc : type FullECapWithTag) (newMcause newMtval : type (Bit Xlen)),
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (@handleTrap dom pcAddrInit type currPcc newMcause newMtval).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (@handleTrap pcAddrInit type currPcc newMcause newMtval).
   Proof.
     intros wIdx wbVal currPcc newMcause newMtval.
     unfold handleTrap.
@@ -248,8 +247,8 @@ Section RfActionCommutes.
 
   Lemma ActionCommutes_executeInterrupt_updGpr :
     forall wIdx wbVal (currPcc : type FullECapWithTag) (meip mtip : bool),
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (@executeInterrupt dom pcAddrInit type currPcc meip mtip).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (@executeInterrupt pcAddrInit type currPcc meip mtip).
   Proof.
     intros wIdx wbVal currPcc meip mtip.
     unfold executeInterrupt.
@@ -261,8 +260,8 @@ Section RfActionCommutes.
   Lemma ActionCommutes_executeSequential_updGpr :
     forall wIdx wbVal (currPcc : type FullECapWithTag) (aluOut : type AluOutUnion),
       (Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false -> wIdx <> aluOut.(Snd).(Fst)) ->
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (@executeSequential dom pcAddrInit type currPcc aluOut).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (@executeSequential pcAddrInit type currPcc aluOut).
   Proof.
     intros wIdx wbVal currPcc aluOut Hdst.
     unfold executeSequential.
@@ -282,8 +281,8 @@ Section RfActionCommutes.
   Lemma ActionCommutes_executeNonSequential_updGpr :
     forall wIdx wbVal (currPcc : type FullECapWithTag) (meip mtip : bool) (aluOut : type AluOutUnion),
       (Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false -> wIdx <> aluOut.(Snd).(Fst)) ->
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (@executeNonSequential dom pcAddrInit type currPcc meip mtip aluOut).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (@executeNonSequential pcAddrInit type currPcc meip mtip aluOut).
   Proof.
     intros wIdx wbVal currPcc meip mtip aluOut Hdst.
     unfold executeNonSequential.
@@ -375,8 +374,8 @@ Section RfActionCommutes.
   Theorem ActionCommutes_executeNonDeferred_updGpr :
     forall wIdx wbVal (currPcc : type FullECapWithTag) (meip mtip : bool) (aluOut : type AluOutUnion),
       (Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false -> wIdx <> aluOut.(Snd).(Fst)) ->
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (@executeNonDeferred dom pcAddrInit type currPcc meip mtip aluOut).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (@executeNonDeferred pcAddrInit type currPcc meip mtip aluOut).
   Proof.
     intros wIdx wbVal currPcc meip mtip aluOut Hdst.
     unfold executeNonDeferred.
@@ -396,11 +395,11 @@ Section RfActionCommutes.
 
   Theorem SemAction_isInterruptPending_updGpr :
     forall wIdx wbVal (meip mtip : bool)
-           (rf rf' : TreeState DomainElemState rTree) (res : bool),
-      SemAction env (@isInterruptPending dom pcAddrInit type meip mtip) rf rf' res ->
-      SemAction env (@isInterruptPending dom pcAddrInit type meip mtip)
-        (updGpr dom pcAddrInit wIdx wbVal rf)
-        (updGpr dom pcAddrInit wIdx wbVal rf')
+           (rf rf' : TreeState ElemState rTree) (res : bool),
+      SemAction env (@isInterruptPending pcAddrInit type meip mtip) rf rf' res ->
+      SemAction env (@isInterruptPending pcAddrInit type meip mtip)
+        (updGpr pcAddrInit wIdx wbVal rf)
+        (updGpr pcAddrInit wIdx wbVal rf')
         res.
   Proof.
     intros wIdx wbVal meip mtip rf rf' res Hsem.
@@ -411,11 +410,11 @@ Section RfActionCommutes.
 
   Theorem SemAction_handleTrap_updGpr :
     forall wIdx wbVal (currPcc : type FullECapWithTag) (mcauseVal mtvalVal : type (Bit Xlen))
-           (rf rf' : TreeState DomainElemState rTree) (execOut : type ExecuteOut),
-      SemAction env (@handleTrap dom pcAddrInit type currPcc mcauseVal mtvalVal) rf rf' execOut ->
-      SemAction env (@handleTrap dom pcAddrInit type currPcc mcauseVal mtvalVal)
-        (updGpr dom pcAddrInit wIdx wbVal rf)
-        (updGpr dom pcAddrInit wIdx wbVal rf')
+           (rf rf' : TreeState ElemState rTree) (execOut : type ExecuteOut),
+      SemAction env (@handleTrap pcAddrInit type currPcc mcauseVal mtvalVal) rf rf' execOut ->
+      SemAction env (@handleTrap pcAddrInit type currPcc mcauseVal mtvalVal)
+        (updGpr pcAddrInit wIdx wbVal rf)
+        (updGpr pcAddrInit wIdx wbVal rf')
         execOut.
   Proof.
     intros wIdx wbVal currPcc mcauseVal mtvalVal rf rf' execOut Hsem.
@@ -426,11 +425,11 @@ Section RfActionCommutes.
 
   Theorem SemAction_executeInterrupt_updGpr :
     forall wIdx wbVal (currPcc : type FullECapWithTag) (meip mtip : bool)
-           (rf rf' : TreeState DomainElemState rTree) (execOut : type ExecuteOut),
-      SemAction env (@executeInterrupt dom pcAddrInit type currPcc meip mtip) rf rf' execOut ->
-      SemAction env (@executeInterrupt dom pcAddrInit type currPcc meip mtip)
-        (updGpr dom pcAddrInit wIdx wbVal rf)
-        (updGpr dom pcAddrInit wIdx wbVal rf')
+           (rf rf' : TreeState ElemState rTree) (execOut : type ExecuteOut),
+      SemAction env (@executeInterrupt pcAddrInit type currPcc meip mtip) rf rf' execOut ->
+      SemAction env (@executeInterrupt pcAddrInit type currPcc meip mtip)
+        (updGpr pcAddrInit wIdx wbVal rf)
+        (updGpr pcAddrInit wIdx wbVal rf')
         execOut.
   Proof.
     intros wIdx wbVal currPcc meip mtip rf rf' execOut Hsem.
@@ -441,12 +440,12 @@ Section RfActionCommutes.
 
   Theorem SemAction_executeSequential_updGpr :
     forall wIdx wbVal (currPcc : type FullECapWithTag) (aluOut : type AluOutUnion)
-           (rf rf' : TreeState DomainElemState rTree) (mulDivOpt : type (Option MulDivUnion)),
+           (rf rf' : TreeState ElemState rTree) (mulDivOpt : type (Option MulDivUnion)),
       (Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false -> wIdx <> aluOut.(Snd).(Fst)) ->
-      SemAction env (@executeSequential dom pcAddrInit type currPcc aluOut) rf rf' mulDivOpt ->
-      SemAction env (@executeSequential dom pcAddrInit type currPcc aluOut)
-        (updGpr dom pcAddrInit wIdx wbVal rf)
-        (updGpr dom pcAddrInit wIdx wbVal rf')
+      SemAction env (@executeSequential pcAddrInit type currPcc aluOut) rf rf' mulDivOpt ->
+      SemAction env (@executeSequential pcAddrInit type currPcc aluOut)
+        (updGpr pcAddrInit wIdx wbVal rf)
+        (updGpr pcAddrInit wIdx wbVal rf')
         mulDivOpt.
   Proof.
     intros wIdx wbVal currPcc aluOut rf rf' mulDivOpt Hdst Hsem.
@@ -457,13 +456,13 @@ Section RfActionCommutes.
 
   Theorem SemAction_executeNonSequential_updGpr :
     forall wIdx wbVal (currPcc : type FullECapWithTag) (meip mtip : bool)
-           (aluOut : type AluOutUnion) (rf rf' : TreeState DomainElemState rTree)
+           (aluOut : type AluOutUnion) (rf rf' : TreeState ElemState rTree)
            (execOut : type ExecuteOut),
       (Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false -> wIdx <> aluOut.(Snd).(Fst)) ->
-      SemAction env (@executeNonSequential dom pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
-      SemAction env (@executeNonSequential dom pcAddrInit type currPcc meip mtip aluOut)
-        (updGpr dom pcAddrInit wIdx wbVal rf)
-        (updGpr dom pcAddrInit wIdx wbVal rf')
+      SemAction env (@executeNonSequential pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
+      SemAction env (@executeNonSequential pcAddrInit type currPcc meip mtip aluOut)
+        (updGpr pcAddrInit wIdx wbVal rf)
+        (updGpr pcAddrInit wIdx wbVal rf')
         execOut.
   Proof.
     intros wIdx wbVal currPcc meip mtip aluOut rf rf' execOut Hdst Hsem.
@@ -474,13 +473,13 @@ Section RfActionCommutes.
 
   Theorem SemAction_executeNonDeferred_updGpr :
     forall wIdx wbVal (currPcc : type FullECapWithTag) (meip mtip : bool)
-           (aluOut : type AluOutUnion) (rf rf' : TreeState DomainElemState rTree)
+           (aluOut : type AluOutUnion) (rf rf' : TreeState ElemState rTree)
            (execOut : type ExecuteOut),
       (Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false -> wIdx <> aluOut.(Snd).(Fst)) ->
-      SemAction env (@executeNonDeferred dom pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
-      SemAction env (@executeNonDeferred dom pcAddrInit type currPcc meip mtip aluOut)
-        (updGpr dom pcAddrInit wIdx wbVal rf)
-        (updGpr dom pcAddrInit wIdx wbVal rf')
+      SemAction env (@executeNonDeferred pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
+      SemAction env (@executeNonDeferred pcAddrInit type currPcc meip mtip aluOut)
+        (updGpr pcAddrInit wIdx wbVal rf)
+        (updGpr pcAddrInit wIdx wbVal rf')
         execOut.
   Proof.
     intros wIdx wbVal currPcc meip mtip aluOut rf rf' execOut Hdst Hsem.
@@ -497,8 +496,8 @@ Section RfActionCommutes.
       let nonSeqOp : type NonSequentialUnion := evalExpr (#aluOp `! "NonSequential") in
       let noExcOp : type NoExceptionUnion := evalExpr (#nonSeqOp `! "NoException") in
       evalExpr (#noExcOp `? "DataMem") = true ->
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (@executeNonSequential dom pcAddrInit type currPcc meip mtip aluOut).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (@executeNonSequential pcAddrInit type currPcc meip mtip aluOut).
   Proof.
     intros wIdx wbVal currPcc meip mtip aluOut aluOp nonSeqOp noExcOp Hdm.
     unfold executeNonSequential.
@@ -533,8 +532,8 @@ Section RfActionCommutes.
       let noExcOp : type NoExceptionUnion := evalExpr (#nonSeqOp `! "NoException") in
       evalExpr (#aluOp `? "Sequential") = false ->
       evalExpr (#noExcOp `? "DataMem") = true ->
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (@executeNonDeferred dom pcAddrInit type currPcc meip mtip aluOut).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (@executeNonDeferred pcAddrInit type currPcc meip mtip aluOut).
   Proof.
     intros wIdx wbVal currPcc meip mtip aluOut aluOp nonSeqOp noExcOp Hseq Hdm.
     unfold executeNonDeferred.
@@ -564,9 +563,9 @@ Section RfActionCommutes.
     forall wIdx wbVal (nm1 nm2 : string) (idx : bits RegIdxSzReal)
            (cont : type FullECapWithTag -> Action type rTree k'),
       (Zmod.eqb idx Zmod.zero = false -> idx <> wIdx) ->
-      (forall cs, ActionCommutes (updGpr dom pcAddrInit wIdx wbVal) (cont cs)) ->
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (LetAction nm1 (readRegsList (gprPathsWithKind dom pcAddrInit) (Var type (Bit RegIdxSzReal) idx))
+      (forall cs, ActionCommutes (updGpr pcAddrInit wIdx wbVal) (cont cs)) ->
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (LetAction nm1 (readRegsList (gprPathsWithKind pcAddrInit) (Var type (Bit RegIdxSzReal) idx))
           (fun csRaw =>
              LetExp nm2 (ITE0 (isNotZero (Var type (Bit RegIdxSzReal) idx)) (Var type FullECapWithTag csRaw))
                cont)).
@@ -576,14 +575,14 @@ Section RfActionCommutes.
     rewrite !evalActionPropGen_readRegsList.
     cbn [evalActionPropGen].
     change (evalExpr (Var type (Bit RegIdxSzReal) idx)) with idx.
-    change (evalReadRegsList (gprPathsWithKind dom pcAddrInit) idx (updGpr dom pcAddrInit wIdx wbVal s))
-      with (readGpr dom pcAddrInit idx (updGpr dom pcAddrInit wIdx wbVal s)).
-    change (evalReadRegsList (gprPathsWithKind dom pcAddrInit) idx s)
-      with (readGpr dom pcAddrInit idx s).
+    change (evalReadRegsList (gprPathsWithKind pcAddrInit) idx (updGpr pcAddrInit wIdx wbVal s))
+      with (readGpr pcAddrInit idx (updGpr pcAddrInit wIdx wbVal s)).
+    change (evalReadRegsList (gprPathsWithKind pcAddrInit) idx s)
+      with (readGpr pcAddrInit idx s).
     unfold ITE0.
     erewrite (evalExpr_ITE_ext (isNotZero (Var type (Bit RegIdxSzReal) idx))
-                (Var type FullECapWithTag (readGpr dom pcAddrInit idx (updGpr dom pcAddrInit wIdx wbVal s)))
-                (Var type FullECapWithTag (readGpr dom pcAddrInit idx s))).
+                (Var type FullECapWithTag (readGpr pcAddrInit idx (updGpr pcAddrInit wIdx wbVal s)))
+                (Var type FullECapWithTag (readGpr pcAddrInit idx s))).
     - apply Hcont.
     - intros Hnz; apply isNotZero_true_iff in Hnz.
       cbn [evalExpr].
@@ -597,8 +596,8 @@ Section RfActionCommutes.
       let cs2Idx : bits RegIdxSzReal := evalExpr (##decodeOut`"cs2Idx") in
       (Zmod.eqb cs1Idx Zmod.zero = false -> cs1Idx <> wIdx) ->
       (Zmod.eqb cs2Idx Zmod.zero = false -> cs2Idx <> wIdx) ->
-      ActionCommutes (updGpr dom pcAddrInit wIdx wbVal)
-        (@regRead dom pcAddrInit type regReadIn).
+      ActionCommutes (updGpr pcAddrInit wIdx wbVal)
+        (@regRead pcAddrInit type regReadIn).
   Proof.
     intros wIdx wbVal regReadIn decodeOut cs1Idx cs2Idx Hcs1 Hcs2.
     unfold regRead.
@@ -610,16 +609,16 @@ Section RfActionCommutes.
 
   Theorem SemAction_regRead_updGpr :
     forall wIdx wbVal (regReadIn : type RegReadIn)
-           (rf rf' : TreeState DomainElemState rTree) (out : type AluInInstGroup),
+           (rf rf' : TreeState ElemState rTree) (out : type AluInInstGroup),
       let decodeOut : type DecodeOut := evalExpr (##regReadIn`"decodeOut") in
       let cs1Idx : bits RegIdxSzReal := evalExpr (##decodeOut`"cs1Idx") in
       let cs2Idx : bits RegIdxSzReal := evalExpr (##decodeOut`"cs2Idx") in
       (Zmod.eqb cs1Idx Zmod.zero = false -> cs1Idx <> wIdx) ->
       (Zmod.eqb cs2Idx Zmod.zero = false -> cs2Idx <> wIdx) ->
-      SemAction env (@regRead dom pcAddrInit type regReadIn) rf rf' out ->
-      SemAction env (@regRead dom pcAddrInit type regReadIn)
-        (updGpr dom pcAddrInit wIdx wbVal rf)
-        (updGpr dom pcAddrInit wIdx wbVal rf')
+      SemAction env (@regRead pcAddrInit type regReadIn) rf rf' out ->
+      SemAction env (@regRead pcAddrInit type regReadIn)
+        (updGpr pcAddrInit wIdx wbVal rf)
+        (updGpr pcAddrInit wIdx wbVal rf')
         out.
   Proof.
     intros wIdx wbVal regReadIn rf rf' out decodeOut cs1Idx cs2Idx Hcs1 Hcs2 Hsem.
@@ -635,19 +634,18 @@ End RfActionCommutes.
  * =========================================================================== *)
 
 Section FlushMulDivLemmas.
-  Variable core : string.
   Variable pcAddrInit : Z.
-  Context {env : Env (RfTree core pcAddrInit)}.
+  Context {env : Env (RfTree pcAddrInit)}.
 
   Local Opaque gprPathsWithKind scrPathsWithKind csrPathsWithKind
                evalWriteRegsList evalReadRegsList.
-  Local Strategy opaque [evalWriteRegsList evalReadRegsList DomainElemState gprPathsWithKind scrPathsWithKind csrPathsWithKind].
+  Local Strategy opaque [evalWriteRegsList evalReadRegsList ElemState gprPathsWithKind scrPathsWithKind csrPathsWithKind].
 
   Lemma writeGprVal_unfold :
-    forall dstIdx val (rf : RfState core pcAddrInit),
-      writeGprVal core pcAddrInit dstIdx val rf =
+    forall dstIdx val (rf : RfState pcAddrInit),
+      writeGprVal pcAddrInit dstIdx val rf =
       if negb (Zmod.eqb dstIdx Zmod.zero)
-      then updGpr core pcAddrInit dstIdx val rf
+      then updGpr pcAddrInit dstIdx val rf
       else rf.
   Proof.
     intros dstIdx val rf; reflexivity.
@@ -660,17 +658,17 @@ Section FlushMulDivLemmas.
                executeInterrupt handleTrap isInterruptPending regRead.
 
   Lemma writeGprVal_zero :
-    forall dstIdx val (rf : RfState core pcAddrInit),
+    forall dstIdx val (rf : RfState pcAddrInit),
       Zmod.eqb dstIdx Zmod.zero = true ->
-      writeGprVal core pcAddrInit dstIdx val rf = rf.
+      writeGprVal pcAddrInit dstIdx val rf = rf.
   Proof.
     intros dstIdx val rf Hz.
     rewrite writeGprVal_unfold, Hz; reflexivity.
   Qed.
 
   Lemma writeGprVal_zero_literal :
-    forall val (rf : RfState core pcAddrInit),
-      writeGprVal core pcAddrInit Zmod.zero val rf = rf.
+    forall val (rf : RfState pcAddrInit),
+      writeGprVal pcAddrInit Zmod.zero val rf = rf.
   Proof.
     intros val rf.
     apply writeGprVal_zero.
@@ -678,17 +676,17 @@ Section FlushMulDivLemmas.
   Qed.
 
   Lemma writeGprVal_nonzero :
-    forall dstIdx val (rf : RfState core pcAddrInit),
+    forall dstIdx val (rf : RfState pcAddrInit),
       Zmod.eqb dstIdx Zmod.zero = false ->
-      writeGprVal core pcAddrInit dstIdx val rf = updGpr core pcAddrInit dstIdx val rf.
+      writeGprVal pcAddrInit dstIdx val rf = updGpr pcAddrInit dstIdx val rf.
   Proof.
     intros dstIdx val rf Hnz.
     rewrite writeGprVal_unfold, Hnz; reflexivity.
   Qed.
 
   Lemma writeGprVal_Snd :
-    forall dstIdx val (rf : RfState core pcAddrInit),
-      (writeGprVal core pcAddrInit dstIdx val rf).(Snd) = rf.(Snd).
+    forall dstIdx val (rf : RfState pcAddrInit),
+      (writeGprVal pcAddrInit dstIdx val rf).(Snd) = rf.(Snd).
   Proof.
     intros dstIdx val rf.
     rewrite writeGprVal_unfold.
@@ -698,9 +696,9 @@ Section FlushMulDivLemmas.
   Local Strategy opaque [rfTree TreeState].
 
   Lemma readScr_writeGprVal :
-    forall sIdx dstIdx val (rf : RfState core pcAddrInit),
-      readScr core pcAddrInit sIdx (writeGprVal core pcAddrInit dstIdx val rf) =
-      readScr core pcAddrInit sIdx rf.
+    forall sIdx dstIdx val (rf : RfState pcAddrInit),
+      readScr pcAddrInit sIdx (writeGprVal pcAddrInit dstIdx val rf) =
+      readScr pcAddrInit sIdx rf.
   Proof.
     intros sIdx dstIdx val rf.
     rewrite writeGprVal_unfold.
@@ -708,9 +706,9 @@ Section FlushMulDivLemmas.
   Qed.
 
   Lemma readCsr_writeGprVal :
-    forall cIdx dstIdx val (rf : RfState core pcAddrInit),
-      readCsr core pcAddrInit cIdx (writeGprVal core pcAddrInit dstIdx val rf) =
-      readCsr core pcAddrInit cIdx rf.
+    forall cIdx dstIdx val (rf : RfState pcAddrInit),
+      readCsr pcAddrInit cIdx (writeGprVal pcAddrInit dstIdx val rf) =
+      readCsr pcAddrInit cIdx rf.
   Proof.
     intros cIdx dstIdx val rf.
     rewrite writeGprVal_unfold.
@@ -718,10 +716,10 @@ Section FlushMulDivLemmas.
   Qed.
 
   Lemma readGpr_writeGprVal_other :
-    forall rIdx dstIdx val (rf : RfState core pcAddrInit),
+    forall rIdx dstIdx val (rf : RfState pcAddrInit),
       (Zmod.eqb dstIdx Zmod.zero = false -> rIdx <> dstIdx) ->
-      readGpr core pcAddrInit rIdx (writeGprVal core pcAddrInit dstIdx val rf) =
-      readGpr core pcAddrInit rIdx rf.
+      readGpr pcAddrInit rIdx (writeGprVal pcAddrInit dstIdx val rf) =
+      readGpr pcAddrInit rIdx rf.
   Proof.
     intros rIdx dstIdx val rf Hneq.
     rewrite writeGprVal_unfold.
@@ -731,9 +729,9 @@ Section FlushMulDivLemmas.
   Qed.
 
   Lemma readGpr_zero_writeGprVal :
-    forall dstIdx val (rf : RfState core pcAddrInit),
-      readGpr core pcAddrInit Zmod.zero (writeGprVal core pcAddrInit dstIdx val rf) =
-      readGpr core pcAddrInit Zmod.zero rf.
+    forall dstIdx val (rf : RfState pcAddrInit),
+      readGpr pcAddrInit Zmod.zero (writeGprVal pcAddrInit dstIdx val rf) =
+      readGpr pcAddrInit Zmod.zero rf.
   Proof.
     intros dstIdx val rf.
     apply readGpr_writeGprVal_other.
@@ -744,37 +742,37 @@ Section FlushMulDivLemmas.
   Local Transparent RfTree RfState writeGprVal updGpr.
 
   Lemma writeGprVal_comm :
-    forall idx1 val1 idx2 val2 (rf : RfState core pcAddrInit),
+    forall idx1 val1 idx2 val2 (rf : RfState pcAddrInit),
       (Zmod.eqb idx1 Zmod.zero = false -> Zmod.eqb idx2 Zmod.zero = false -> idx1 <> idx2) ->
-      writeGprVal core pcAddrInit idx1 val1 (writeGprVal core pcAddrInit idx2 val2 rf) =
-      writeGprVal core pcAddrInit idx2 val2 (writeGprVal core pcAddrInit idx1 val1 rf).
+      writeGprVal pcAddrInit idx1 val1 (writeGprVal pcAddrInit idx2 val2 rf) =
+      writeGprVal pcAddrInit idx2 val2 (writeGprVal pcAddrInit idx1 val1 rf).
   Proof.
     intros idx1 val1 idx2 val2 rf Hneq.
     unfold writeGprVal.
-    change (evalWriteRegsList (gprPathsWithKind core pcAddrInit)) with (updGpr core pcAddrInit).
+    change (evalWriteRegsList (gprPathsWithKind pcAddrInit)) with (updGpr pcAddrInit).
     destruct (Zmod.eqb idx1 Zmod.zero) eqn:Hz1;
       destruct (Zmod.eqb idx2 Zmod.zero) eqn:Hz2; cbn [negb]; try reflexivity.
     apply updGpr_comm; exact (not_eq_sym (Hneq eq_refl eq_refl)).
   Qed.
 
   Lemma writeGprVal_updGpr_other_comm :
-    forall dstIdx val wIdx wVal (rf : RfState core pcAddrInit),
+    forall dstIdx val wIdx wVal (rf : RfState pcAddrInit),
       (Zmod.eqb dstIdx Zmod.zero = false -> dstIdx <> wIdx) ->
-      writeGprVal core pcAddrInit dstIdx val (updGpr core pcAddrInit wIdx wVal rf) =
-      updGpr core pcAddrInit wIdx wVal (writeGprVal core pcAddrInit dstIdx val rf).
+      writeGprVal pcAddrInit dstIdx val (updGpr pcAddrInit wIdx wVal rf) =
+      updGpr pcAddrInit wIdx wVal (writeGprVal pcAddrInit dstIdx val rf).
   Proof.
     intros dstIdx val wIdx wVal rf Hneq.
     unfold writeGprVal.
-    change (evalWriteRegsList (gprPathsWithKind core pcAddrInit)) with (updGpr core pcAddrInit).
+    change (evalWriteRegsList (gprPathsWithKind pcAddrInit)) with (updGpr pcAddrInit).
     destruct (Zmod.eqb dstIdx Zmod.zero) eqn:Hz; cbn [negb].
     - reflexivity.
     - apply updGpr_comm; exact (not_eq_sym (Hneq eq_refl)).
   Qed.
 
   Lemma writeGprVal_updGpr_zero_comm :
-    forall dstIdx val pccVal (rf : RfState core pcAddrInit),
-      writeGprVal core pcAddrInit dstIdx val (updGpr core pcAddrInit Zmod.zero pccVal rf) =
-      updGpr core pcAddrInit Zmod.zero pccVal (writeGprVal core pcAddrInit dstIdx val rf).
+    forall dstIdx val pccVal (rf : RfState pcAddrInit),
+      writeGprVal pcAddrInit dstIdx val (updGpr pcAddrInit Zmod.zero pccVal rf) =
+      updGpr pcAddrInit Zmod.zero pccVal (writeGprVal pcAddrInit dstIdx val rf).
   Proof.
     intros dstIdx val pccVal rf.
     apply writeGprVal_updGpr_other_comm.
@@ -783,32 +781,32 @@ Section FlushMulDivLemmas.
   Qed.
 
   Lemma writeGprVal_updScr_comm :
-    forall dstIdx val sIdx sVal (rf : RfState core pcAddrInit),
-      writeGprVal core pcAddrInit dstIdx val (updScr core pcAddrInit sIdx sVal rf) =
-      updScr core pcAddrInit sIdx sVal (writeGprVal core pcAddrInit dstIdx val rf).
+    forall dstIdx val sIdx sVal (rf : RfState pcAddrInit),
+      writeGprVal pcAddrInit dstIdx val (updScr pcAddrInit sIdx sVal rf) =
+      updScr pcAddrInit sIdx sVal (writeGprVal pcAddrInit dstIdx val rf).
   Proof.
     intros dstIdx val sIdx sVal rf.
     unfold writeGprVal.
-    change (evalWriteRegsList (gprPathsWithKind core pcAddrInit)) with (updGpr core pcAddrInit).
+    change (evalWriteRegsList (gprPathsWithKind pcAddrInit)) with (updGpr pcAddrInit).
     destruct (negb (Zmod.eqb dstIdx Zmod.zero)); [apply updGpr_updScr_comm | reflexivity].
   Qed.
 
   Lemma writeGprVal_updCsr_comm :
-    forall dstIdx val cIdx cVal (rf : RfState core pcAddrInit),
-      writeGprVal core pcAddrInit dstIdx val (updCsr core pcAddrInit cIdx cVal rf) =
-      updCsr core pcAddrInit cIdx cVal (writeGprVal core pcAddrInit dstIdx val rf).
+    forall dstIdx val cIdx cVal (rf : RfState pcAddrInit),
+      writeGprVal pcAddrInit dstIdx val (updCsr pcAddrInit cIdx cVal rf) =
+      updCsr pcAddrInit cIdx cVal (writeGprVal pcAddrInit dstIdx val rf).
   Proof.
     intros dstIdx val cIdx cVal rf.
     unfold writeGprVal.
-    change (evalWriteRegsList (gprPathsWithKind core pcAddrInit)) with (updGpr core pcAddrInit).
+    change (evalWriteRegsList (gprPathsWithKind pcAddrInit)) with (updGpr pcAddrInit).
     destruct (negb (Zmod.eqb dstIdx Zmod.zero)); [apply updGpr_updCsr_comm | reflexivity].
   Qed.
 
   Lemma ActionCommutes_writeGprVal {k : Kind} :
-    forall dstIdx val (act : Action type (RfTree core pcAddrInit) k),
+    forall dstIdx val (act : Action type (RfTree pcAddrInit) k),
       (Zmod.eqb dstIdx Zmod.zero = false ->
-       ActionCommutes (updGpr core pcAddrInit dstIdx val) act) ->
-      ActionCommutes (writeGprVal core pcAddrInit dstIdx val) act.
+       ActionCommutes (updGpr pcAddrInit dstIdx val) act) ->
+      ActionCommutes (writeGprVal pcAddrInit dstIdx val) act.
   Proof.
     intros dstIdx val act Hcomm env0 s P.
     unfold writeGprVal, updGpr in *.
@@ -824,8 +822,8 @@ Section FlushMulDivLemmas.
       (Zmod.eqb dstIdx Zmod.zero = false ->
        Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false ->
        dstIdx <> aluOut.(Snd).(Fst)) ->
-      ActionCommutes (writeGprVal core pcAddrInit dstIdx val)
-        (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut).
+      ActionCommutes (writeGprVal pcAddrInit dstIdx val)
+        (@executeNonDeferred pcAddrInit type currPcc meip mtip aluOut).
   Proof.
     intros dstIdx val currPcc meip mtip aluOut Hdst.
     apply ActionCommutes_writeGprVal; intros Hz.
@@ -834,15 +832,15 @@ Section FlushMulDivLemmas.
 
   Theorem SemAction_executeNonDeferred_writeGprVal :
     forall dstIdx val (currPcc : type FullECapWithTag) (meip mtip : bool)
-           (aluOut : type AluOutUnion) (rf rf' : RfState core pcAddrInit)
+           (aluOut : type AluOutUnion) (rf rf' : RfState pcAddrInit)
            (execOut : type ExecuteOut),
       (Zmod.eqb dstIdx Zmod.zero = false ->
        Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false ->
        dstIdx <> aluOut.(Snd).(Fst)) ->
-      SemAction env (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
-      SemAction env (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut)
-        (writeGprVal core pcAddrInit dstIdx val rf)
-        (writeGprVal core pcAddrInit dstIdx val rf')
+      SemAction env (@executeNonDeferred pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
+      SemAction env (@executeNonDeferred pcAddrInit type currPcc meip mtip aluOut)
+        (writeGprVal pcAddrInit dstIdx val rf)
+        (writeGprVal pcAddrInit dstIdx val rf')
         execOut.
   Proof.
     intros dstIdx val currPcc meip mtip aluOut rf rf' execOut Hdst Hsem.
@@ -853,17 +851,17 @@ Section FlushMulDivLemmas.
 
   Theorem SemAction_executeNonDeferred_DataMem_writeGprVal :
     forall dstIdx val (currPcc : type FullECapWithTag) (meip mtip : bool)
-           (aluOut : type AluOutUnion) (rf rf' : RfState core pcAddrInit)
+           (aluOut : type AluOutUnion) (rf rf' : RfState pcAddrInit)
            (execOut : type ExecuteOut),
       let aluOp : type AluOpUnion := evalExpr (##aluOut`"Op") in
       let nonSeqOp : type NonSequentialUnion := evalExpr (#aluOp `! "NonSequential") in
       let noExcOp : type NoExceptionUnion := evalExpr (#nonSeqOp `! "NoException") in
       evalExpr (#aluOp `? "Sequential") = false ->
       evalExpr (#noExcOp `? "DataMem") = true ->
-      SemAction env (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
-      SemAction env (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut)
-        (writeGprVal core pcAddrInit dstIdx val rf)
-        (writeGprVal core pcAddrInit dstIdx val rf')
+      SemAction env (@executeNonDeferred pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
+      SemAction env (@executeNonDeferred pcAddrInit type currPcc meip mtip aluOut)
+        (writeGprVal pcAddrInit dstIdx val rf)
+        (writeGprVal pcAddrInit dstIdx val rf')
         execOut.
   Proof.
     intros dstIdx val currPcc meip mtip aluOut rf rf' execOut aluOp nonSeqOp noExcOp Hseq Hdm Hsem.
@@ -879,8 +877,8 @@ Section FlushMulDivLemmas.
       let cs2Idx : bits RegIdxSzReal := evalExpr (##decodeOut`"cs2Idx") in
       (Zmod.eqb dstIdx Zmod.zero = false -> Zmod.eqb cs1Idx Zmod.zero = false -> cs1Idx <> dstIdx) ->
       (Zmod.eqb dstIdx Zmod.zero = false -> Zmod.eqb cs2Idx Zmod.zero = false -> cs2Idx <> dstIdx) ->
-      ActionCommutes (writeGprVal core pcAddrInit dstIdx val)
-        (@regRead core pcAddrInit type regReadIn).
+      ActionCommutes (writeGprVal pcAddrInit dstIdx val)
+        (@regRead pcAddrInit type regReadIn).
   Proof.
     intros dstIdx val regReadIn decodeOut cs1Idx cs2Idx Hcs1 Hcs2.
     apply ActionCommutes_writeGprVal; intros Hz.
@@ -889,16 +887,16 @@ Section FlushMulDivLemmas.
 
   Theorem SemAction_regRead_writeGprVal :
     forall dstIdx val (regReadIn : type RegReadIn)
-           (rf rf' : RfState core pcAddrInit) (out : type AluInInstGroup),
+           (rf rf' : RfState pcAddrInit) (out : type AluInInstGroup),
       let decodeOut : type DecodeOut := evalExpr (##regReadIn`"decodeOut") in
       let cs1Idx : bits RegIdxSzReal := evalExpr (##decodeOut`"cs1Idx") in
       let cs2Idx : bits RegIdxSzReal := evalExpr (##decodeOut`"cs2Idx") in
       (Zmod.eqb dstIdx Zmod.zero = false -> Zmod.eqb cs1Idx Zmod.zero = false -> cs1Idx <> dstIdx) ->
       (Zmod.eqb dstIdx Zmod.zero = false -> Zmod.eqb cs2Idx Zmod.zero = false -> cs2Idx <> dstIdx) ->
-      SemAction env (@regRead core pcAddrInit type regReadIn) rf rf' out ->
-      SemAction env (@regRead core pcAddrInit type regReadIn)
-        (writeGprVal core pcAddrInit dstIdx val rf)
-        (writeGprVal core pcAddrInit dstIdx val rf')
+      SemAction env (@regRead pcAddrInit type regReadIn) rf rf' out ->
+      SemAction env (@regRead pcAddrInit type regReadIn)
+        (writeGprVal pcAddrInit dstIdx val rf)
+        (writeGprVal pcAddrInit dstIdx val rf')
         out.
   Proof.
     intros dstIdx val regReadIn rf rf' out decodeOut cs1Idx cs2Idx Hcs1 Hcs2 Hsem.
@@ -910,25 +908,25 @@ Section FlushMulDivLemmas.
   (* --- `flushMulDivCaps` Structural and Commutation Lemmas --- *)
 
   Lemma flushMulDivCaps_nil :
-    forall (rf : RfState core pcAddrInit),
-      flushMulDivCaps core pcAddrInit [] rf = rf.
+    forall (rf : RfState pcAddrInit),
+      flushMulDivCaps pcAddrInit [] rf = rf.
   Proof.
     intros rf; reflexivity.
   Qed.
 
   Lemma flushMulDivCaps_cons :
-    forall dstIdx resCap rest (rf : RfState core pcAddrInit),
-      flushMulDivCaps core pcAddrInit ((dstIdx, resCap) :: rest) rf =
-      flushMulDivCaps core pcAddrInit rest (writeGprVal core pcAddrInit dstIdx resCap rf).
+    forall dstIdx resCap rest (rf : RfState pcAddrInit),
+      flushMulDivCaps pcAddrInit ((dstIdx, resCap) :: rest) rf =
+      flushMulDivCaps pcAddrInit rest (writeGprVal pcAddrInit dstIdx resCap rf).
   Proof.
     intros dstIdx resCap rest rf; reflexivity.
   Qed.
 
   Lemma flushMulDivCaps_app :
     forall (l1 l2 : list (bits RegIdxSzReal * type FullECapWithTag))
-           (rf : RfState core pcAddrInit),
-      flushMulDivCaps core pcAddrInit (l1 ++ l2)%list rf =
-      flushMulDivCaps core pcAddrInit l2 (flushMulDivCaps core pcAddrInit l1 rf).
+           (rf : RfState pcAddrInit),
+      flushMulDivCaps pcAddrInit (l1 ++ l2)%list rf =
+      flushMulDivCaps pcAddrInit l2 (flushMulDivCaps pcAddrInit l1 rf).
   Proof.
     induction l1 as [| [dstIdx resCap] rest IH]; intros l2 rf; cbn [flushMulDivCaps app].
     - reflexivity.
@@ -937,9 +935,9 @@ Section FlushMulDivLemmas.
 
   Lemma flushMulDivCaps_snoc :
     forall (entries : list (bits RegIdxSzReal * type FullECapWithTag))
-           dstIdx resCap (rf : RfState core pcAddrInit),
-      flushMulDivCaps core pcAddrInit (entries ++ [(dstIdx, resCap)])%list rf =
-      writeGprVal core pcAddrInit dstIdx resCap (flushMulDivCaps core pcAddrInit entries rf).
+           dstIdx resCap (rf : RfState pcAddrInit),
+      flushMulDivCaps pcAddrInit (entries ++ [(dstIdx, resCap)])%list rf =
+      writeGprVal pcAddrInit dstIdx resCap (flushMulDivCaps pcAddrInit entries rf).
   Proof.
     intros entries dstIdx resCap rf.
     rewrite flushMulDivCaps_app; reflexivity.
@@ -947,8 +945,8 @@ Section FlushMulDivLemmas.
 
   Local Strategy 0 [rfTree TreeState].
   Lemma flushMulDivCaps_Snd :
-    forall entries (rf : RfState core pcAddrInit),
-      (flushMulDivCaps core pcAddrInit entries rf).(Snd) = rf.(Snd).
+    forall entries (rf : RfState pcAddrInit),
+      (flushMulDivCaps pcAddrInit entries rf).(Snd) = rf.(Snd).
   Proof.
     induction entries as [| [dstIdx resCap] rest IH]; intros rf; cbn [flushMulDivCaps].
     - reflexivity.
@@ -957,9 +955,9 @@ Section FlushMulDivLemmas.
   Local Strategy opaque [rfTree TreeState].
 
   Lemma readScr_flushMulDivCaps :
-    forall sIdx entries (rf : RfState core pcAddrInit),
-      readScr core pcAddrInit sIdx (flushMulDivCaps core pcAddrInit entries rf) =
-      readScr core pcAddrInit sIdx rf.
+    forall sIdx entries (rf : RfState pcAddrInit),
+      readScr pcAddrInit sIdx (flushMulDivCaps pcAddrInit entries rf) =
+      readScr pcAddrInit sIdx rf.
   Proof.
     intros sIdx entries; induction entries as [| [dstIdx resCap] rest IH]; intros rf; cbn [flushMulDivCaps].
     - reflexivity.
@@ -967,9 +965,9 @@ Section FlushMulDivLemmas.
   Qed.
 
   Lemma readCsr_flushMulDivCaps :
-    forall cIdx entries (rf : RfState core pcAddrInit),
-      readCsr core pcAddrInit cIdx (flushMulDivCaps core pcAddrInit entries rf) =
-      readCsr core pcAddrInit cIdx rf.
+    forall cIdx entries (rf : RfState pcAddrInit),
+      readCsr pcAddrInit cIdx (flushMulDivCaps pcAddrInit entries rf) =
+      readCsr pcAddrInit cIdx rf.
   Proof.
     intros cIdx entries; induction entries as [| [dstIdx resCap] rest IH]; intros rf; cbn [flushMulDivCaps].
     - reflexivity.
@@ -977,9 +975,9 @@ Section FlushMulDivLemmas.
   Qed.
 
   Lemma readGpr_zero_flushMulDivCaps :
-    forall entries (rf : RfState core pcAddrInit),
-      readGpr core pcAddrInit Zmod.zero (flushMulDivCaps core pcAddrInit entries rf) =
-      readGpr core pcAddrInit Zmod.zero rf.
+    forall entries (rf : RfState pcAddrInit),
+      readGpr pcAddrInit Zmod.zero (flushMulDivCaps pcAddrInit entries rf) =
+      readGpr pcAddrInit Zmod.zero rf.
   Proof.
     induction entries as [| [dstIdx resCap] rest IH]; intros rf; cbn [flushMulDivCaps].
     - reflexivity.
@@ -987,13 +985,13 @@ Section FlushMulDivLemmas.
   Qed.
 
   Lemma readGpr_flushMulDivCaps_other :
-    forall rIdx entries (rf : RfState core pcAddrInit),
+    forall rIdx entries (rf : RfState pcAddrInit),
       (forall dstIdx resCap,
          In (dstIdx, resCap) entries ->
          Zmod.eqb dstIdx Zmod.zero = false ->
          rIdx <> dstIdx) ->
-      readGpr core pcAddrInit rIdx (flushMulDivCaps core pcAddrInit entries rf) =
-      readGpr core pcAddrInit rIdx rf.
+      readGpr pcAddrInit rIdx (flushMulDivCaps pcAddrInit entries rf) =
+      readGpr pcAddrInit rIdx rf.
   Proof.
     intros rIdx entries.
     induction entries as [| [dstIdx resCap] rest IH]; intros rf Hneq; cbn [flushMulDivCaps].
@@ -1005,60 +1003,60 @@ Section FlushMulDivLemmas.
   Qed.
 
   Lemma updScr_flushMulDivCaps_comm :
-    forall sIdx sVal entries (rf : RfState core pcAddrInit),
-      flushMulDivCaps core pcAddrInit entries (updScr core pcAddrInit sIdx sVal rf) =
-      updScr core pcAddrInit sIdx sVal (flushMulDivCaps core pcAddrInit entries rf).
+    forall sIdx sVal entries (rf : RfState pcAddrInit),
+      flushMulDivCaps pcAddrInit entries (updScr pcAddrInit sIdx sVal rf) =
+      updScr pcAddrInit sIdx sVal (flushMulDivCaps pcAddrInit entries rf).
   Proof.
     intros sIdx sVal entries.
     induction entries as [| [dstIdx resCap] rest IH]; intros rf.
     - reflexivity.
-    - rewrite (flushMulDivCaps_cons dstIdx resCap rest (updScr core pcAddrInit sIdx sVal rf)),
+    - rewrite (flushMulDivCaps_cons dstIdx resCap rest (updScr pcAddrInit sIdx sVal rf)),
               (flushMulDivCaps_cons dstIdx resCap rest rf).
       rewrite (writeGprVal_updScr_comm dstIdx resCap sIdx sVal rf).
       apply IH.
   Qed.
 
   Lemma updCsr_flushMulDivCaps_comm :
-    forall cIdx cVal entries (rf : RfState core pcAddrInit),
-      flushMulDivCaps core pcAddrInit entries (updCsr core pcAddrInit cIdx cVal rf) =
-      updCsr core pcAddrInit cIdx cVal (flushMulDivCaps core pcAddrInit entries rf).
+    forall cIdx cVal entries (rf : RfState pcAddrInit),
+      flushMulDivCaps pcAddrInit entries (updCsr pcAddrInit cIdx cVal rf) =
+      updCsr pcAddrInit cIdx cVal (flushMulDivCaps pcAddrInit entries rf).
   Proof.
     intros cIdx cVal entries.
     induction entries as [| [dstIdx resCap] rest IH]; intros rf.
     - reflexivity.
-    - rewrite (flushMulDivCaps_cons dstIdx resCap rest (updCsr core pcAddrInit cIdx cVal rf)),
+    - rewrite (flushMulDivCaps_cons dstIdx resCap rest (updCsr pcAddrInit cIdx cVal rf)),
               (flushMulDivCaps_cons dstIdx resCap rest rf).
       rewrite (writeGprVal_updCsr_comm dstIdx resCap cIdx cVal rf).
       apply IH.
   Qed.
 
   Lemma updGpr_zero_flushMulDivCaps_comm :
-    forall pccVal entries (rf : RfState core pcAddrInit),
-      flushMulDivCaps core pcAddrInit entries (updGpr core pcAddrInit Zmod.zero pccVal rf) =
-      updGpr core pcAddrInit Zmod.zero pccVal (flushMulDivCaps core pcAddrInit entries rf).
+    forall pccVal entries (rf : RfState pcAddrInit),
+      flushMulDivCaps pcAddrInit entries (updGpr pcAddrInit Zmod.zero pccVal rf) =
+      updGpr pcAddrInit Zmod.zero pccVal (flushMulDivCaps pcAddrInit entries rf).
   Proof.
     intros pccVal entries.
     induction entries as [| [dstIdx resCap] rest IH]; intros rf.
     - reflexivity.
-    - rewrite (flushMulDivCaps_cons dstIdx resCap rest (updGpr core pcAddrInit Zmod.zero pccVal rf)),
+    - rewrite (flushMulDivCaps_cons dstIdx resCap rest (updGpr pcAddrInit Zmod.zero pccVal rf)),
               (flushMulDivCaps_cons dstIdx resCap rest rf).
       rewrite (writeGprVal_updGpr_zero_comm dstIdx resCap pccVal rf).
       apply IH.
   Qed.
 
   Lemma updGpr_other_flushMulDivCaps_comm :
-    forall wIdx wVal entries (rf : RfState core pcAddrInit),
+    forall wIdx wVal entries (rf : RfState pcAddrInit),
       (forall dstIdx resCap,
          In (dstIdx, resCap) entries ->
          Zmod.eqb dstIdx Zmod.zero = false ->
          dstIdx <> wIdx) ->
-      flushMulDivCaps core pcAddrInit entries (updGpr core pcAddrInit wIdx wVal rf) =
-      updGpr core pcAddrInit wIdx wVal (flushMulDivCaps core pcAddrInit entries rf).
+      flushMulDivCaps pcAddrInit entries (updGpr pcAddrInit wIdx wVal rf) =
+      updGpr pcAddrInit wIdx wVal (flushMulDivCaps pcAddrInit entries rf).
   Proof.
     intros wIdx wVal entries.
     induction entries as [| [dstIdx resCap] rest IH]; intros rf Hneq.
     - reflexivity.
-    - rewrite (flushMulDivCaps_cons dstIdx resCap rest (updGpr core pcAddrInit wIdx wVal rf)),
+    - rewrite (flushMulDivCaps_cons dstIdx resCap rest (updGpr pcAddrInit wIdx wVal rf)),
               (flushMulDivCaps_cons dstIdx resCap rest rf).
       rewrite (writeGprVal_updGpr_other_comm dstIdx resCap wIdx wVal rf).
       + apply IH; intros d r Hin Hz; exact (Hneq d r (or_intror Hin) Hz).
@@ -1066,14 +1064,14 @@ Section FlushMulDivLemmas.
   Qed.
 
   Lemma writeGprVal_flushMulDivCaps_comm :
-    forall wIdx wVal entries (rf : RfState core pcAddrInit),
+    forall wIdx wVal entries (rf : RfState pcAddrInit),
       (forall dstIdx resCap,
          In (dstIdx, resCap) entries ->
          Zmod.eqb dstIdx Zmod.zero = false ->
          Zmod.eqb wIdx Zmod.zero = false ->
          dstIdx <> wIdx) ->
-      flushMulDivCaps core pcAddrInit entries (writeGprVal core pcAddrInit wIdx wVal rf) =
-      writeGprVal core pcAddrInit wIdx wVal (flushMulDivCaps core pcAddrInit entries rf).
+      flushMulDivCaps pcAddrInit entries (writeGprVal pcAddrInit wIdx wVal rf) =
+      writeGprVal pcAddrInit wIdx wVal (flushMulDivCaps pcAddrInit entries rf).
   Proof.
     intros wIdx wVal entries.
     induction entries as [| [dstIdx resCap] rest IH]; intros rf Hneq; cbn [flushMulDivCaps].
@@ -1085,11 +1083,11 @@ Section FlushMulDivLemmas.
 
   Theorem SemAction_isInterruptPending_flushMulDivCaps :
     forall entries (meip mtip : bool)
-           (rf rf' : RfState core pcAddrInit) (res : bool),
-      SemAction env (@isInterruptPending core pcAddrInit type meip mtip) rf rf' res ->
-      SemAction env (@isInterruptPending core pcAddrInit type meip mtip)
-        (flushMulDivCaps core pcAddrInit entries rf)
-        (flushMulDivCaps core pcAddrInit entries rf')
+           (rf rf' : RfState pcAddrInit) (res : bool),
+      SemAction env (@isInterruptPending pcAddrInit type meip mtip) rf rf' res ->
+      SemAction env (@isInterruptPending pcAddrInit type meip mtip)
+        (flushMulDivCaps pcAddrInit entries rf)
+        (flushMulDivCaps pcAddrInit entries rf')
         res.
   Proof.
     induction entries as [| [dstIdx resCap] rest IH]; intros meip mtip rf rf' res Hsem; cbn [flushMulDivCaps].
@@ -1102,11 +1100,11 @@ Section FlushMulDivLemmas.
 
   Theorem SemAction_executeInterrupt_flushMulDivCaps :
     forall entries (currPcc : type FullECapWithTag) (meip mtip : bool)
-           (rf rf' : RfState core pcAddrInit) (execOut : type ExecuteOut),
-      SemAction env (@executeInterrupt core pcAddrInit type currPcc meip mtip) rf rf' execOut ->
-      SemAction env (@executeInterrupt core pcAddrInit type currPcc meip mtip)
-        (flushMulDivCaps core pcAddrInit entries rf)
-        (flushMulDivCaps core pcAddrInit entries rf')
+           (rf rf' : RfState pcAddrInit) (execOut : type ExecuteOut),
+      SemAction env (@executeInterrupt pcAddrInit type currPcc meip mtip) rf rf' execOut ->
+      SemAction env (@executeInterrupt pcAddrInit type currPcc meip mtip)
+        (flushMulDivCaps pcAddrInit entries rf)
+        (flushMulDivCaps pcAddrInit entries rf')
         execOut.
   Proof.
     induction entries as [| [dstIdx resCap] rest IH]; intros currPcc meip mtip rf rf' execOut Hsem; cbn [flushMulDivCaps].
@@ -1119,16 +1117,16 @@ Section FlushMulDivLemmas.
 
   Theorem SemAction_executeSequential_flushMulDivCaps :
     forall entries (currPcc : type FullECapWithTag) (aluOut : type AluOutUnion)
-           (rf rf' : RfState core pcAddrInit) (mulDivOpt : type (Option MulDivUnion)),
+           (rf rf' : RfState pcAddrInit) (mulDivOpt : type (Option MulDivUnion)),
       (forall dstIdx resCap,
          In (dstIdx, resCap) entries ->
          Zmod.eqb dstIdx Zmod.zero = false ->
          Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false ->
          dstIdx <> aluOut.(Snd).(Fst)) ->
-      SemAction env (@executeSequential core pcAddrInit type currPcc aluOut) rf rf' mulDivOpt ->
-      SemAction env (@executeSequential core pcAddrInit type currPcc aluOut)
-        (flushMulDivCaps core pcAddrInit entries rf)
-        (flushMulDivCaps core pcAddrInit entries rf')
+      SemAction env (@executeSequential pcAddrInit type currPcc aluOut) rf rf' mulDivOpt ->
+      SemAction env (@executeSequential pcAddrInit type currPcc aluOut)
+        (flushMulDivCaps pcAddrInit entries rf)
+        (flushMulDivCaps pcAddrInit entries rf')
         mulDivOpt.
   Proof.
     induction entries as [| [dstIdx resCap] rest IH]; intros currPcc aluOut rf rf' mulDivOpt Hneq Hsem; cbn [flushMulDivCaps].
@@ -1142,16 +1140,16 @@ Section FlushMulDivLemmas.
 
   Theorem SemAction_executeNonSequential_flushMulDivCaps :
     forall entries (currPcc : type FullECapWithTag) (meip mtip : bool) (aluOut : type AluOutUnion)
-           (rf rf' : RfState core pcAddrInit) (execOut : type ExecuteOut),
+           (rf rf' : RfState pcAddrInit) (execOut : type ExecuteOut),
       (forall dstIdx resCap,
          In (dstIdx, resCap) entries ->
          Zmod.eqb dstIdx Zmod.zero = false ->
          Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false ->
          dstIdx <> aluOut.(Snd).(Fst)) ->
-      SemAction env (@executeNonSequential core pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
-      SemAction env (@executeNonSequential core pcAddrInit type currPcc meip mtip aluOut)
-        (flushMulDivCaps core pcAddrInit entries rf)
-        (flushMulDivCaps core pcAddrInit entries rf')
+      SemAction env (@executeNonSequential pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
+      SemAction env (@executeNonSequential pcAddrInit type currPcc meip mtip aluOut)
+        (flushMulDivCaps pcAddrInit entries rf)
+        (flushMulDivCaps pcAddrInit entries rf')
         execOut.
   Proof.
     induction entries as [| [dstIdx resCap] rest IH]; intros currPcc meip mtip aluOut rf rf' execOut Hneq Hsem; cbn [flushMulDivCaps].
@@ -1165,16 +1163,16 @@ Section FlushMulDivLemmas.
 
   Theorem SemAction_executeNonDeferred_flushMulDivCaps :
     forall entries (currPcc : type FullECapWithTag) (meip mtip : bool) (aluOut : type AluOutUnion)
-           (rf rf' : RfState core pcAddrInit) (execOut : type ExecuteOut),
+           (rf rf' : RfState pcAddrInit) (execOut : type ExecuteOut),
       (forall dstIdx resCap,
          In (dstIdx, resCap) entries ->
          Zmod.eqb dstIdx Zmod.zero = false ->
          Zmod.eqb (aluOut.(Snd).(Fst)) Zmod.zero = false ->
          dstIdx <> aluOut.(Snd).(Fst)) ->
-      SemAction env (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
-      SemAction env (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut)
-        (flushMulDivCaps core pcAddrInit entries rf)
-        (flushMulDivCaps core pcAddrInit entries rf')
+      SemAction env (@executeNonDeferred pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
+      SemAction env (@executeNonDeferred pcAddrInit type currPcc meip mtip aluOut)
+        (flushMulDivCaps pcAddrInit entries rf)
+        (flushMulDivCaps pcAddrInit entries rf')
         execOut.
   Proof.
     induction entries as [| [dstIdx resCap] rest IH]; intros currPcc meip mtip aluOut rf rf' execOut Hneq Hsem; cbn [flushMulDivCaps].
@@ -1187,16 +1185,16 @@ Section FlushMulDivLemmas.
 
   Theorem SemAction_executeNonDeferred_DataMem_flushMulDivCaps :
     forall entries (currPcc : type FullECapWithTag) (meip mtip : bool) (aluOut : type AluOutUnion)
-           (rf rf' : RfState core pcAddrInit) (execOut : type ExecuteOut),
+           (rf rf' : RfState pcAddrInit) (execOut : type ExecuteOut),
       let aluOp : type AluOpUnion := evalExpr (##aluOut`"Op") in
       let nonSeqOp : type NonSequentialUnion := evalExpr (#aluOp `! "NonSequential") in
       let noExcOp : type NoExceptionUnion := evalExpr (#nonSeqOp `! "NoException") in
       evalExpr (#aluOp `? "Sequential") = false ->
       evalExpr (#noExcOp `? "DataMem") = true ->
-      SemAction env (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
-      SemAction env (@executeNonDeferred core pcAddrInit type currPcc meip mtip aluOut)
-        (flushMulDivCaps core pcAddrInit entries rf)
-        (flushMulDivCaps core pcAddrInit entries rf')
+      SemAction env (@executeNonDeferred pcAddrInit type currPcc meip mtip aluOut) rf rf' execOut ->
+      SemAction env (@executeNonDeferred pcAddrInit type currPcc meip mtip aluOut)
+        (flushMulDivCaps pcAddrInit entries rf)
+        (flushMulDivCaps pcAddrInit entries rf')
         execOut.
   Proof.
     induction entries as [| [dstIdx resCap] rest IH];
@@ -1208,7 +1206,7 @@ Section FlushMulDivLemmas.
 
   Theorem SemAction_regRead_flushMulDivCaps :
     forall entries (regReadIn : type RegReadIn)
-           (rf rf' : RfState core pcAddrInit) (out : type AluInInstGroup),
+           (rf rf' : RfState pcAddrInit) (out : type AluInInstGroup),
       let decodeOut : type DecodeOut := evalExpr (##regReadIn`"decodeOut") in
       let cs1Idx : bits RegIdxSzReal := evalExpr (##decodeOut`"cs1Idx") in
       let cs2Idx : bits RegIdxSzReal := evalExpr (##decodeOut`"cs2Idx") in
@@ -1222,10 +1220,10 @@ Section FlushMulDivLemmas.
          Zmod.eqb dstIdx Zmod.zero = false ->
          Zmod.eqb cs2Idx Zmod.zero = false ->
          cs2Idx <> dstIdx) ->
-      SemAction env (@regRead core pcAddrInit type regReadIn) rf rf' out ->
-      SemAction env (@regRead core pcAddrInit type regReadIn)
-        (flushMulDivCaps core pcAddrInit entries rf)
-        (flushMulDivCaps core pcAddrInit entries rf')
+      SemAction env (@regRead pcAddrInit type regReadIn) rf rf' out ->
+      SemAction env (@regRead pcAddrInit type regReadIn)
+        (flushMulDivCaps pcAddrInit entries rf)
+        (flushMulDivCaps pcAddrInit entries rf')
         out.
   Proof.
     induction entries as [| [dstIdx resCap] rest IH];
@@ -1250,38 +1248,38 @@ Section FlushMulDivLemmas.
     Local Strategy opaque [MulDivSubState extractMulDivEntries].
 
     Lemma flushMulDivOn_preserve :
-      forall (rf : RfState core pcAddrInit)
-             (smd smd' : MulDivSubState core mulCapacity divCapacity mulStages divStages mulDivMode),
-        extractMulDivEntries core mulCapacity divCapacity mulStages divStages mulDivMode smd' =
-        extractMulDivEntries core mulCapacity divCapacity mulStages divStages mulDivMode smd ->
-        flushMulDivOn core pcAddrInit mulCapacity divCapacity mulStages divStages mulDivMode rf smd' =
-        flushMulDivOn core pcAddrInit mulCapacity divCapacity mulStages divStages mulDivMode rf smd.
+      forall (rf : RfState pcAddrInit)
+             (smd smd' : MulDivSubState mulCapacity divCapacity mulStages divStages mulDivMode),
+        extractMulDivEntries mulCapacity divCapacity mulStages divStages mulDivMode smd' =
+        extractMulDivEntries mulCapacity divCapacity mulStages divStages mulDivMode smd ->
+        flushMulDivOn pcAddrInit mulCapacity divCapacity mulStages divStages mulDivMode rf smd' =
+        flushMulDivOn pcAddrInit mulCapacity divCapacity mulStages divStages mulDivMode rf smd.
     Proof.
       intros rf smd smd' Heq.
       unfold flushMulDivOn; rewrite Heq; reflexivity.
     Qed.
 
     Lemma flushMulDivOn_wb_pop :
-      forall dstIdx resCap (rf : RfState core pcAddrInit)
-             (smd smd' : MulDivSubState core mulCapacity divCapacity mulStages divStages mulDivMode),
-        extractMulDivEntries core mulCapacity divCapacity mulStages divStages mulDivMode smd =
-        (dstIdx, resCap) :: extractMulDivEntries core mulCapacity divCapacity mulStages divStages mulDivMode smd' ->
-        flushMulDivOn core pcAddrInit mulCapacity divCapacity mulStages divStages mulDivMode
-          (writeGprVal core pcAddrInit dstIdx resCap rf) smd' =
-        flushMulDivOn core pcAddrInit mulCapacity divCapacity mulStages divStages mulDivMode rf smd.
+      forall dstIdx resCap (rf : RfState pcAddrInit)
+             (smd smd' : MulDivSubState mulCapacity divCapacity mulStages divStages mulDivMode),
+        extractMulDivEntries mulCapacity divCapacity mulStages divStages mulDivMode smd =
+        (dstIdx, resCap) :: extractMulDivEntries mulCapacity divCapacity mulStages divStages mulDivMode smd' ->
+        flushMulDivOn pcAddrInit mulCapacity divCapacity mulStages divStages mulDivMode
+          (writeGprVal pcAddrInit dstIdx resCap rf) smd' =
+        flushMulDivOn pcAddrInit mulCapacity divCapacity mulStages divStages mulDivMode rf smd.
     Proof.
       intros dstIdx resCap rf smd smd' Hpop.
       unfold flushMulDivOn; rewrite Hpop; reflexivity.
     Qed.
 
     Lemma flushMulDivOn_enq :
-      forall dstIdx resCap (rf : RfState core pcAddrInit)
-             (smd smd' : MulDivSubState core mulCapacity divCapacity mulStages divStages mulDivMode),
-        extractMulDivEntries core mulCapacity divCapacity mulStages divStages mulDivMode smd' =
-        (extractMulDivEntries core mulCapacity divCapacity mulStages divStages mulDivMode smd ++ [(dstIdx, resCap)])%list ->
-        flushMulDivOn core pcAddrInit mulCapacity divCapacity mulStages divStages mulDivMode rf smd' =
-        writeGprVal core pcAddrInit dstIdx resCap
-          (flushMulDivOn core pcAddrInit mulCapacity divCapacity mulStages divStages mulDivMode rf smd).
+      forall dstIdx resCap (rf : RfState pcAddrInit)
+             (smd smd' : MulDivSubState mulCapacity divCapacity mulStages divStages mulDivMode),
+        extractMulDivEntries mulCapacity divCapacity mulStages divStages mulDivMode smd' =
+        (extractMulDivEntries mulCapacity divCapacity mulStages divStages mulDivMode smd ++ [(dstIdx, resCap)])%list ->
+        flushMulDivOn pcAddrInit mulCapacity divCapacity mulStages divStages mulDivMode rf smd' =
+        writeGprVal pcAddrInit dstIdx resCap
+          (flushMulDivOn pcAddrInit mulCapacity divCapacity mulStages divStages mulDivMode rf smd).
     Proof.
       intros dstIdx resCap rf smd smd' Henq.
       unfold flushMulDivOn; rewrite Henq, flushMulDivCaps_snoc; reflexivity.
@@ -1296,7 +1294,6 @@ End FlushMulDivLemmas.
  * =========================================================================== *)
 
 Section GhostListLemmas.
-  Variable core : string.
   Variable pcAddrInit : Z.
 
   Local Opaque rfTree TreeState getDefault
@@ -1304,7 +1301,7 @@ Section GhostListLemmas.
                evalWriteRegsList evalReadRegsList
                updGpr readGpr updScr readScr updCsr readCsr writeGprVal
                evalActionPropGen executeNonDeferred.
-  Local Strategy opaque [rfTree TreeState DomainElemState gprPathsWithKind scrPathsWithKind csrPathsWithKind
+  Local Strategy opaque [rfTree TreeState ElemState gprPathsWithKind scrPathsWithKind csrPathsWithKind
                          evalWriteRegsList evalReadRegsList
                          writeGprVal updGpr readGpr updScr readScr updCsr readCsr].
 
@@ -1417,16 +1414,16 @@ Section GhostListLemmas.
 
   Lemma GhostStep_waitMask_det :
     forall rf0 rf1 wm0 wm1 req,
-      GhostStep core pcAddrInit rf0 rf1 wm0 wm1 req ->
+      GhostStep pcAddrInit rf0 rf1 wm0 wm1 req ->
       wm1 = stepWaitMask req wm0.
   Proof.
     intros rf0 rf1 wm0 wm1 req Hstep.
-    exact (ghost_waitMask_step core pcAddrInit rf0 rf1 wm0 wm1 req Hstep).
+    exact (ghost_waitMask_step pcAddrInit rf0 rf1 wm0 wm1 req Hstep).
   Qed.
 
   Lemma GhostList_waitMask_det :
     forall rf0 wm0 reqs rf2 wm2,
-      GhostList core pcAddrInit rf0 wm0 reqs rf2 wm2 ->
+      GhostList pcAddrInit rf0 wm0 reqs rf2 wm2 ->
       wm2 = foldWaitMask reqs wm0.
   Proof.
     intros rf0 wm0 reqs rf2 wm2 Hgl.
@@ -1437,19 +1434,19 @@ Section GhostListLemmas.
 
   Lemma GhostStep_change_waitMask :
     forall rf0 rf1 wm0 wm1 req wm0',
-      GhostStep core pcAddrInit rf0 rf1 wm0 wm1 req ->
-      GhostStep core pcAddrInit rf0 rf1 wm0' (stepWaitMask req wm0') req.
+      GhostStep pcAddrInit rf0 rf1 wm0 wm1 req ->
+      GhostStep pcAddrInit rf0 rf1 wm0' (stepWaitMask req wm0') req.
   Proof.
     intros rf0 rf1 wm0 wm1 req wm0' Hstep.
     constructor.
     - reflexivity.
-    - exact (ghost_rf_step core pcAddrInit rf0 rf1 wm0 wm1 req Hstep).
+    - exact (ghost_rf_step pcAddrInit rf0 rf1 wm0 wm1 req Hstep).
   Qed.
 
   Lemma GhostList_change_waitMask :
     forall rf0 wm0 reqs rf2 wm2 wm0',
-      GhostList core pcAddrInit rf0 wm0 reqs rf2 wm2 ->
-      GhostList core pcAddrInit rf0 wm0' reqs rf2 (foldWaitMask reqs wm0').
+      GhostList pcAddrInit rf0 wm0 reqs rf2 wm2 ->
+      GhostList pcAddrInit rf0 wm0' reqs rf2 (foldWaitMask reqs wm0').
   Proof.
     intros rf0 wm0 reqs rf2 wm2 wm0' Hgl.
     revert wm0'.
@@ -1464,8 +1461,8 @@ Section GhostListLemmas.
 
   Theorem GhostList_single :
     forall rf0 rf1 wm0 wm1 req,
-      GhostStep core pcAddrInit rf0 rf1 wm0 wm1 req ->
-      GhostList core pcAddrInit rf0 wm0 [req] rf1 wm1.
+      GhostStep pcAddrInit rf0 rf1 wm0 wm1 req ->
+      GhostList pcAddrInit rf0 wm0 [req] rf1 wm1.
   Proof.
     intros rf0 rf1 wm0 wm1 req Hstep.
     eapply GhostCons; [exact Hstep | apply GhostNil].
@@ -1473,9 +1470,9 @@ Section GhostListLemmas.
 
   Theorem GhostList_app :
     forall rf0 wm0 l1 rf1 wm1 l2 rf2 wm2,
-      GhostList core pcAddrInit rf0 wm0 l1 rf1 wm1 ->
-      GhostList core pcAddrInit rf1 wm1 l2 rf2 wm2 ->
-      GhostList core pcAddrInit rf0 wm0 (l1 ++ l2)%list rf2 wm2.
+      GhostList pcAddrInit rf0 wm0 l1 rf1 wm1 ->
+      GhostList pcAddrInit rf1 wm1 l2 rf2 wm2 ->
+      GhostList pcAddrInit rf0 wm0 (l1 ++ l2)%list rf2 wm2.
   Proof.
     intros rf0 wm0 l1 rf1 wm1 l2 rf2 wm2 H1 H2.
     revert l2 rf2 wm2 H2.
@@ -1487,9 +1484,9 @@ Section GhostListLemmas.
 
   Theorem GhostList_snoc :
     forall rf0 wm0 reqs rf2 wm2 rf3 wm3 req,
-      GhostList core pcAddrInit rf0 wm0 reqs rf2 wm2 ->
-      GhostStep core pcAddrInit rf2 rf3 wm2 wm3 req ->
-      GhostList core pcAddrInit rf0 wm0 (reqs ++ [req])%list rf3 wm3.
+      GhostList pcAddrInit rf0 wm0 reqs rf2 wm2 ->
+      GhostStep pcAddrInit rf2 rf3 wm2 wm3 req ->
+      GhostList pcAddrInit rf0 wm0 (reqs ++ [req])%list rf3 wm3.
   Proof.
     intros rf0 wm0 reqs rf2 wm2 rf3 wm3 req Hgl Hstep.
     eapply GhostList_app; [exact Hgl | apply GhostList_single; exact Hstep].
@@ -1497,10 +1494,10 @@ Section GhostListLemmas.
 
   Theorem GhostList_cons_inv :
     forall rf0 wm0 req reqs rf2 wm2,
-      GhostList core pcAddrInit rf0 wm0 (req :: reqs) rf2 wm2 ->
+      GhostList pcAddrInit rf0 wm0 (req :: reqs) rf2 wm2 ->
       exists rf1 wm1,
-        GhostStep core pcAddrInit rf0 rf1 wm0 wm1 req /\
-        GhostList core pcAddrInit rf1 wm1 reqs rf2 wm2.
+        GhostStep pcAddrInit rf0 rf1 wm0 wm1 req /\
+        GhostList pcAddrInit rf1 wm1 reqs rf2 wm2.
   Proof.
     intros rf0 wm0 req reqs rf2 wm2 Hgl.
     inversion Hgl; subst.
@@ -1511,10 +1508,10 @@ Section GhostListLemmas.
 
   Theorem GhostList_app_inv :
     forall l1 l2 rf0 wm0 rf2 wm2,
-      GhostList core pcAddrInit rf0 wm0 (l1 ++ l2)%list rf2 wm2 ->
+      GhostList pcAddrInit rf0 wm0 (l1 ++ l2)%list rf2 wm2 ->
       exists rf1 wm1,
-        GhostList core pcAddrInit rf0 wm0 l1 rf1 wm1 /\
-        GhostList core pcAddrInit rf1 wm1 l2 rf2 wm2.
+        GhostList pcAddrInit rf0 wm0 l1 rf1 wm1 /\
+        GhostList pcAddrInit rf1 wm1 l2 rf2 wm2.
   Proof.
     induction l1 as [| req rest IH]; intros l2 rf0 wm0 rf2 wm2 Hgl; simpl in *.
     - exists rf0, wm0; split; [apply GhostNil | exact Hgl].
@@ -1526,17 +1523,17 @@ Section GhostListLemmas.
 
   Theorem GhostList_snoc_inv :
     forall reqs req rf0 wm0 rf3 wm3,
-      GhostList core pcAddrInit rf0 wm0 (reqs ++ [req])%list rf3 wm3 ->
+      GhostList pcAddrInit rf0 wm0 (reqs ++ [req])%list rf3 wm3 ->
       exists rf2 wm2,
-        GhostList core pcAddrInit rf0 wm0 reqs rf2 wm2 /\
-        GhostStep core pcAddrInit rf2 rf3 wm2 wm3 req.
+        GhostList pcAddrInit rf0 wm0 reqs rf2 wm2 /\
+        GhostStep pcAddrInit rf2 rf3 wm2 wm3 req.
   Proof.
     intros reqs req rf0 wm0 rf3 wm3 Hgl.
     destruct (GhostList_app_inv reqs [req] rf0 wm0 rf3 wm3 Hgl)
       as [rf2 [wm2 [Hreqs Hsingle]]].
     destruct (GhostList_cons_inv rf2 wm2 req [] rf3 wm3 Hsingle)
       as [rf_end [wm_end [Hstep Hnil]]].
-    destruct (GhostList_nil_inv core pcAddrInit rf_end wm_end rf3 wm3 Hnil) as [-> ->].
+    destruct (GhostList_nil_inv pcAddrInit rf_end wm_end rf3 wm3 Hnil) as [-> ->].
     exists rf2, wm2; split; [exact Hreqs | exact Hstep].
   Qed.
 
@@ -1547,22 +1544,22 @@ Section GhostListLemmas.
     Local Strategy opaque [DataMemSubState isDataMemLoadRq].
 
     Lemma DataMemInFlightRel_LoadRq_True :
-      forall (sdm : DataMemSubState core dataMemCapacity)
-             (rf_spec : RfState core pcAddrInit)
+      forall (sdm : DataMemSubState dataMemCapacity)
+             (rf_spec : RfState pcAddrInit)
              (wm0 : bits RegIdxSzReal -> bool),
-        isDataMemLoadRq core dataMemCapacity sdm = true ->
-        DataMemInFlightRel core pcAddrInit dataMemCapacity sdm rf_spec rf_spec wm0 wm0.
+        isDataMemLoadRq dataMemCapacity sdm = true ->
+        DataMemInFlightRel pcAddrInit dataMemCapacity sdm rf_spec rf_spec wm0 wm0.
     Proof.
       intros sdm rf_spec wm0 Hrq.
       unfold DataMemInFlightRel; rewrite Hrq; split; reflexivity.
     Qed.
 
     Lemma DataMemInFlightRel_LoadRq_inv :
-      forall (sdm : DataMemSubState core dataMemCapacity)
-             (rf_spec rf_after : RfState core pcAddrInit)
+      forall (sdm : DataMemSubState dataMemCapacity)
+             (rf_spec rf_after : RfState pcAddrInit)
              (wm0 wm_after : bits RegIdxSzReal -> bool),
-        isDataMemLoadRq core dataMemCapacity sdm = true ->
-        DataMemInFlightRel core pcAddrInit dataMemCapacity sdm rf_spec rf_after wm0 wm_after ->
+        isDataMemLoadRq dataMemCapacity sdm = true ->
+        DataMemInFlightRel pcAddrInit dataMemCapacity sdm rf_spec rf_after wm0 wm_after ->
         rf_after = rf_spec /\ wm_after = wm0.
     Proof.
       intros sdm rf_spec rf_after wm0 wm_after Hrq Hrel.
@@ -1570,30 +1567,30 @@ Section GhostListLemmas.
     Qed.
 
     Lemma DataMemInFlightRel_NotLoadRq_inv :
-      forall (sdm : DataMemSubState core dataMemCapacity)
-             (rf_spec rf_after : RfState core pcAddrInit)
+      forall (sdm : DataMemSubState dataMemCapacity)
+             (rf_spec rf_after : RfState pcAddrInit)
              (wm0 wm_after : bits RegIdxSzReal -> bool),
-        isDataMemLoadRq core dataMemCapacity sdm = false ->
-        DataMemInFlightRel core pcAddrInit dataMemCapacity sdm rf_spec rf_after wm0 wm_after ->
-        exists req, GhostStep core pcAddrInit rf_spec rf_after wm0 wm_after req.
+        isDataMemLoadRq dataMemCapacity sdm = false ->
+        DataMemInFlightRel pcAddrInit dataMemCapacity sdm rf_spec rf_after wm0 wm_after ->
+        exists req, GhostStep pcAddrInit rf_spec rf_after wm0 wm_after req.
     Proof.
       intros sdm rf_spec rf_after wm0 wm_after Hrq Hrel.
       unfold DataMemInFlightRel in Hrel; rewrite Hrq in Hrel; exact Hrel.
     Qed.
 
     Theorem GhostList_drain_to_inflight :
-      forall (sdm sdm' : DataMemSubState core dataMemCapacity)
-             (rf_spec rf_after rf_impl : RfState core pcAddrInit)
+      forall (sdm sdm' : DataMemSubState dataMemCapacity)
+             (rf_spec rf_after rf_impl : RfState pcAddrInit)
              (wm0 wm_after wm_impl : bits RegIdxSzReal -> bool)
              (req : type MemFenceReq) (reqs : list (type MemFenceReq)),
-        isDataMemLoadRq core dataMemCapacity sdm = true ->
-        isDataMemLoadRq core dataMemCapacity sdm' = false ->
-        DataMemInFlightRel core pcAddrInit dataMemCapacity sdm rf_spec rf_after wm0 wm_after ->
-        GhostList core pcAddrInit rf_after wm_after (req :: reqs) rf_impl wm_impl ->
+        isDataMemLoadRq dataMemCapacity sdm = true ->
+        isDataMemLoadRq dataMemCapacity sdm' = false ->
+        DataMemInFlightRel pcAddrInit dataMemCapacity sdm rf_spec rf_after wm0 wm_after ->
+        GhostList pcAddrInit rf_after wm_after (req :: reqs) rf_impl wm_impl ->
         exists rf_after' wm_after',
-          GhostStep core pcAddrInit rf_spec rf_after' wm0 wm_after' req /\
-          DataMemInFlightRel core pcAddrInit dataMemCapacity sdm' rf_spec rf_after' wm0 wm_after' /\
-          GhostList core pcAddrInit rf_after' wm_after' reqs rf_impl wm_impl.
+          GhostStep pcAddrInit rf_spec rf_after' wm0 wm_after' req /\
+          DataMemInFlightRel pcAddrInit dataMemCapacity sdm' rf_spec rf_after' wm0 wm_after' /\
+          GhostList pcAddrInit rf_after' wm_after' reqs rf_impl wm_impl.
     Proof.
       intros sdm sdm' rf_spec rf_after rf_impl wm0 wm_after wm_impl req reqs Hrq HnotRq Hrel Hgl.
       destruct (DataMemInFlightRel_LoadRq_inv sdm rf_spec rf_after wm0 wm_after Hrq Hrel) as [-> ->].
@@ -1613,24 +1610,24 @@ Section GhostListLemmas.
     forall wIdx wbVal rf0 rf1 wm0 wm1 req,
       wIdx <> Zmod.zero ->
       (Zmod.eqb (req.(Fst)) Zmod.zero = false -> wIdx <> req.(Fst)) ->
-      GhostStep core pcAddrInit rf0 rf1 wm0 wm1 req ->
-      GhostStep core pcAddrInit
-        (updGpr core pcAddrInit wIdx wbVal rf0)
-        (updGpr core pcAddrInit wIdx wbVal rf1)
+      GhostStep pcAddrInit rf0 rf1 wm0 wm1 req ->
+      GhostStep pcAddrInit
+        (updGpr pcAddrInit wIdx wbVal rf0)
+        (updGpr pcAddrInit wIdx wbVal rf1)
         wm0 wm1 req.
   Proof.
     intros wIdx wbVal rf0 rf1 wm0 wm1 req Hnz Hneq Hstep.
-    pose proof (ghost_waitMask_step core pcAddrInit rf0 rf1 wm0 wm1 req Hstep) as Hwm.
-    destruct (ghost_rf_step core pcAddrInit rf0 rf1 wm0 wm1 req Hstep)
+    pose proof (ghost_waitMask_step pcAddrInit rf0 rf1 wm0 wm1 req Hstep) as Hwm.
+    destruct (ghost_rf_step pcAddrInit rf0 rf1 wm0 wm1 req Hstep)
       as [pcc [meip [mtip [aluOut [execOut [rf_mid [Hsem [Hrf1 [Hdm [Hdst Haddr]]]]]]]]]].
     constructor.
     - exact Hwm.
-    - exists pcc, meip, mtip, aluOut, execOut, (updGpr core pcAddrInit wIdx wbVal rf_mid).
+    - exists pcc, meip, mtip, aluOut, execOut, (updGpr pcAddrInit wIdx wbVal rf_mid).
       repeat split.
       + apply SemAction_executeNonDeferred_updGpr; [| exact Hsem].
         unfold ghost_dstIdx in Hdst; rewrite Hdst; exact Hneq.
       + rewrite Hrf1.
-        change (evalWriteRegsList (gprPathsWithKind core pcAddrInit)) with (updGpr core pcAddrInit).
+        change (evalWriteRegsList (gprPathsWithKind pcAddrInit)) with (updGpr pcAddrInit).
         apply updGpr_comm; exact (not_eq_sym Hnz).
       + exact Hdm.
       + exact Hdst.
@@ -1644,15 +1641,15 @@ Section GhostListLemmas.
       (Zmod.eqb wIdx Zmod.zero = false ->
        Zmod.eqb (req.(Fst)) Zmod.zero = false ->
        wIdx <> req.(Fst)) ->
-      GhostStep core pcAddrInit rf0 rf1 wm0 wm1 req ->
-      GhostStep core pcAddrInit
-        (writeGprVal core pcAddrInit wIdx wbVal rf0)
-        (writeGprVal core pcAddrInit wIdx wbVal rf1)
+      GhostStep pcAddrInit rf0 rf1 wm0 wm1 req ->
+      GhostStep pcAddrInit
+        (writeGprVal pcAddrInit wIdx wbVal rf0)
+        (writeGprVal pcAddrInit wIdx wbVal rf1)
         wm0 wm1 req.
   Proof.
     intros wIdx wbVal rf0 rf1 wm0 wm1 req Hneq Hstep.
-    rewrite (writeGprVal_unfold core pcAddrInit wIdx wbVal rf0),
-            (writeGprVal_unfold core pcAddrInit wIdx wbVal rf1).
+    rewrite (writeGprVal_unfold pcAddrInit wIdx wbVal rf0),
+            (writeGprVal_unfold pcAddrInit wIdx wbVal rf1).
     destruct (Zmod.eqb wIdx Zmod.zero) eqn:Hz; cbn [negb].
     - exact Hstep.
     - apply GhostStep_updGpr; [| exact (Hneq eq_refl) | exact Hstep].
@@ -1666,10 +1663,10 @@ Section GhostListLemmas.
          Zmod.eqb dstIdx Zmod.zero = false ->
          Zmod.eqb (req.(Fst)) Zmod.zero = false ->
          dstIdx <> req.(Fst)) ->
-      GhostStep core pcAddrInit rf0 rf1 wm0 wm1 req ->
-      GhostStep core pcAddrInit
-        (flushMulDivCaps core pcAddrInit entries rf0)
-        (flushMulDivCaps core pcAddrInit entries rf1)
+      GhostStep pcAddrInit rf0 rf1 wm0 wm1 req ->
+      GhostStep pcAddrInit
+        (flushMulDivCaps pcAddrInit entries rf0)
+        (flushMulDivCaps pcAddrInit entries rf1)
         wm0 wm1 req.
   Proof.
     induction entries as [| [dstIdx resCap] rest IH]; intros rf0 rf1 wm0 wm1 req Hneq Hstep; cbn [flushMulDivCaps].
@@ -1687,11 +1684,11 @@ Section GhostListLemmas.
          In req reqs ->
          Zmod.eqb (req.(Fst)) Zmod.zero = false ->
          wIdx <> req.(Fst)) ->
-      GhostList core pcAddrInit rf0 wm0 reqs rf2 wm2 ->
-      GhostList core pcAddrInit
-        (updGpr core pcAddrInit wIdx wbVal rf0) wm0
+      GhostList pcAddrInit rf0 wm0 reqs rf2 wm2 ->
+      GhostList pcAddrInit
+        (updGpr pcAddrInit wIdx wbVal rf0) wm0
         reqs
-        (updGpr core pcAddrInit wIdx wbVal rf2) wm2.
+        (updGpr pcAddrInit wIdx wbVal rf2) wm2.
   Proof.
     intros wIdx wbVal rf0 wm0 reqs rf2 wm2 Hnz Hneq Hgl.
     induction Hgl as [rf wm | rf0 rf1 rf2 wm0 wm1 wm2 req reqs Hstep Hrest IH].
@@ -1710,11 +1707,11 @@ Section GhostListLemmas.
          Zmod.eqb wIdx Zmod.zero = false ->
          Zmod.eqb (req.(Fst)) Zmod.zero = false ->
          wIdx <> req.(Fst)) ->
-      GhostList core pcAddrInit rf0 wm0 reqs rf2 wm2 ->
-      GhostList core pcAddrInit
-        (writeGprVal core pcAddrInit wIdx wbVal rf0) wm0
+      GhostList pcAddrInit rf0 wm0 reqs rf2 wm2 ->
+      GhostList pcAddrInit
+        (writeGprVal pcAddrInit wIdx wbVal rf0) wm0
         reqs
-        (writeGprVal core pcAddrInit wIdx wbVal rf2) wm2.
+        (writeGprVal pcAddrInit wIdx wbVal rf2) wm2.
   Proof.
     intros wIdx wbVal rf0 wm0 reqs rf2 wm2 Hneq Hgl.
     induction Hgl as [rf wm | rf0 rf1 rf2 wm0 wm1 wm2 req reqs Hstep Hrest IH].
@@ -1731,11 +1728,11 @@ Section GhostListLemmas.
          Zmod.eqb wIdx Zmod.zero = false ->
          Zmod.eqb (req.(Fst)) Zmod.zero = false ->
          wIdx <> req.(Fst)) ->
-      GhostList core pcAddrInit rf0 wm0 reqs rf2 wm2 ->
-      GhostList core pcAddrInit
-        (writeGprVal core pcAddrInit wIdx wbVal rf0) wm0'
+      GhostList pcAddrInit rf0 wm0 reqs rf2 wm2 ->
+      GhostList pcAddrInit
+        (writeGprVal pcAddrInit wIdx wbVal rf0) wm0'
         reqs
-        (writeGprVal core pcAddrInit wIdx wbVal rf2) (foldWaitMask reqs wm0').
+        (writeGprVal pcAddrInit wIdx wbVal rf2) (foldWaitMask reqs wm0').
   Proof.
     intros wIdx wbVal rf0 wm0 reqs rf2 wm2 wm0' Hneq Hgl.
     eapply GhostList_change_waitMask.
@@ -1750,11 +1747,11 @@ Section GhostListLemmas.
          Zmod.eqb dstIdx Zmod.zero = false ->
          Zmod.eqb (req.(Fst)) Zmod.zero = false ->
          dstIdx <> req.(Fst)) ->
-      GhostList core pcAddrInit rf0 wm0 reqs rf2 wm2 ->
-      GhostList core pcAddrInit
-        (flushMulDivCaps core pcAddrInit entries rf0) wm0
+      GhostList pcAddrInit rf0 wm0 reqs rf2 wm2 ->
+      GhostList pcAddrInit
+        (flushMulDivCaps pcAddrInit entries rf0) wm0
         reqs
-        (flushMulDivCaps core pcAddrInit entries rf2) wm2.
+        (flushMulDivCaps pcAddrInit entries rf2) wm2.
   Proof.
     induction entries as [| [dstIdx resCap] rest IH]; intros rf0 wm0 reqs rf2 wm2 Hneq Hgl; cbn [flushMulDivCaps].
     - exact Hgl.
@@ -1771,8 +1768,8 @@ Section GhostListLemmas.
   Lemma GhostStepOpt_Some_of_GhostStep :
     forall rf0 rf1 wm0 wm1 req,
       wm0 (req.(Fst)) = false ->
-      GhostStep core pcAddrInit rf0 rf1 wm0 wm1 req ->
-      GhostStepOpt core pcAddrInit rf0 rf1 wm0 wm1 (Some req).
+      GhostStep pcAddrInit rf0 rf1 wm0 wm1 req ->
+      GhostStepOpt pcAddrInit rf0 rf1 wm0 wm1 (Some req).
   Proof.
     intros rf0 rf1 wm0 wm1 req Hni Hstep.
     constructor; [intros _; exact Hni | exact Hstep].
@@ -1780,45 +1777,45 @@ Section GhostListLemmas.
 
   Lemma GhostListOpt_app :
     forall rf0 wm0 reqs1 rf1 wm1 reqs2 rf2 wm2,
-      GhostListOpt core pcAddrInit rf0 wm0 reqs1 rf1 wm1 ->
-      GhostListOpt core pcAddrInit rf1 wm1 reqs2 rf2 wm2 ->
-      GhostListOpt core pcAddrInit rf0 wm0 (reqs1 ++ reqs2) rf2 wm2.
+      GhostListOpt pcAddrInit rf0 wm0 reqs1 rf1 wm1 ->
+      GhostListOpt pcAddrInit rf1 wm1 reqs2 rf2 wm2 ->
+      GhostListOpt pcAddrInit rf0 wm0 (reqs1 ++ reqs2) rf2 wm2.
   Proof.
     intros rf0 wm0 reqs1 rf1 wm1 reqs2 rf2 wm2 H1 H2.
     induction H1 as [rf wm | r0 r1 r2 w0 w1 w2 [req |] reqs Hstep Hrest IH]; cbn [app].
     - exact H2.
-    - eapply (GhostOptCons _ _ _ _ _ _ _ _ (Some req)); [exact Hstep | exact (IH H2)].
-    - eapply (GhostOptCons _ _ _ _ _ _ _ _ None); [exact Hstep | exact (IH H2)].
+    - eapply (GhostOptCons _ _ _ _ _ _ _ (Some req)); [exact Hstep | exact (IH H2)].
+    - eapply (GhostOptCons _ _ _ _ _ _ _ None); [exact Hstep | exact (IH H2)].
   Qed.
 
   Lemma GhostListOpt_snoc_Some :
     forall rf0 wm0 reqs rf1 wm1 req rf2 wm2,
-      GhostListOpt core pcAddrInit rf0 wm0 reqs rf1 wm1 ->
-      GhostStepOpt core pcAddrInit rf1 rf2 wm1 wm2 (Some req) ->
-      GhostListOpt core pcAddrInit rf0 wm0 (reqs ++ [req]) rf2 wm2.
+      GhostListOpt pcAddrInit rf0 wm0 reqs rf1 wm1 ->
+      GhostStepOpt pcAddrInit rf1 rf2 wm1 wm2 (Some req) ->
+      GhostListOpt pcAddrInit rf0 wm0 (reqs ++ [req]) rf2 wm2.
   Proof.
     intros rf0 wm0 reqs rf1 wm1 req rf2 wm2 Hgl Hstep.
     eapply GhostListOpt_app; [exact Hgl |].
-    eapply (GhostOptCons _ _ _ _ _ _ _ _ (Some req)); [exact Hstep | apply GhostOptNil].
+    eapply (GhostOptCons _ _ _ _ _ _ _ (Some req)); [exact Hstep | apply GhostOptNil].
   Qed.
 
   Lemma GhostListOpt_snoc_None :
     forall rf0 wm0 reqs rf1 wm1 rf2 wm2,
-      GhostListOpt core pcAddrInit rf0 wm0 reqs rf1 wm1 ->
-      GhostStepOpt core pcAddrInit rf1 rf2 wm1 wm2 None ->
-      GhostListOpt core pcAddrInit rf0 wm0 reqs rf2 wm2.
+      GhostListOpt pcAddrInit rf0 wm0 reqs rf1 wm1 ->
+      GhostStepOpt pcAddrInit rf1 rf2 wm1 wm2 None ->
+      GhostListOpt pcAddrInit rf0 wm0 reqs rf2 wm2.
   Proof.
     intros rf0 wm0 reqs rf1 wm1 rf2 wm2 Hgl Hstep.
     rewrite <- (app_nil_r reqs).
     eapply GhostListOpt_app; [exact Hgl |].
-    eapply (GhostOptCons _ _ _ _ _ _ _ _ None); [exact Hstep | apply GhostOptNil].
+    eapply (GhostOptCons _ _ _ _ _ _ _ None); [exact Hstep | apply GhostOptNil].
   Qed.
 
   Lemma DataMemInFlightCmdRel_LoadRq :
-    forall (dataMemCapacity : nat) (sdm : DataMemSubState core dataMemCapacity)
+    forall (dataMemCapacity : nat) (sdm : DataMemSubState dataMemCapacity)
            (req : type MemFenceReq),
-      isDataMemLoadRq core dataMemCapacity sdm = true ->
-      DataMemInFlightCmdRel core dataMemCapacity sdm req.
+      isDataMemLoadRq dataMemCapacity sdm = true ->
+      DataMemInFlightCmdRel dataMemCapacity sdm req.
   Proof.
     intros dataMemCapacity sdm req Hrq.
     unfold DataMemInFlightCmdRel, isDataMemLoadRq in *.

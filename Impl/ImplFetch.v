@@ -28,7 +28,6 @@ Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
 Section FetchStage.
-  Variable dom : string.
   Variable pcAddrInit : Z.
   Variable fetchCapacity instCapacity : nat.
 
@@ -37,15 +36,15 @@ Section FetchStage.
     "fetchExc"  :: FetchException
   }.
 
-  Definition implFetchTree : Tree DomainElem :=
+  Definition implFetchTree : Tree Elem :=
     Node "" [
-      Leaf "fetchPc"      (dom, EReg (Build_Reg Addr (Some (Zmod.of_Z _ pcAddrInit)) false)) ;
-      Leaf "predEpoch"    (dom, EReg (Build_Reg Epoch (Some Zmod.zero) false)) ;
-      Leaf "curParcelOpt" (dom, EReg (Build_Reg (Option (Bit LgFetchParcels)) (Some (getDefault _)) false)) ;
-      Leaf "straddleOpt"  (dom, EReg (Build_Reg (Option StraddleHalf) (Some (getDefault _)) false)) ;
-      Leaf "canProceed"   (dom, EReg (Build_Reg Bool (Some true) false)) ;
-      Node "fetchBuf"     [ fifoTree dom fetchCapacity FetchBufEntry ] ;
-      Node "instBuf"      [ fifoTree dom instCapacity AssembledInst ]
+      Leaf "fetchPc"      (EReg (Build_Reg Addr (Some (Zmod.of_Z _ pcAddrInit)))) ;
+      Leaf "predEpoch"    (EReg (Build_Reg Epoch (Some Zmod.zero))) ;
+      Leaf "curParcelOpt" (EReg (Build_Reg (Option (Bit LgFetchParcels)) (Some (getDefault _)))) ;
+      Leaf "straddleOpt"  (EReg (Build_Reg (Option StraddleHalf) (Some (getDefault _)))) ;
+      Leaf "canProceed"   (EReg (Build_Reg Bool (Some true))) ;
+      Node "fetchBuf"     [ fifoTree fetchCapacity FetchBufEntry ] ;
+      Node "instBuf"      [ fifoTree instCapacity AssembledInst ]
     ].
 
   Definition pFetchPc : RegPath implFetchTree :=
@@ -103,10 +102,10 @@ Section FetchStage.
     Eval cbn in (getNodePath implFetchTree ".instBuf.fifo").
 
   Definition fetchInstFirst (ty : Kind -> Type) : Action ty implFetchTree (Option AssembledInst) :=
-    liftAction np_fetchInstFifo (@first dom instCapacity AssembledInst ty).
+    liftAction np_fetchInstFifo (@first instCapacity AssembledInst ty).
 
   Definition fetchInstDeq (ty : Kind -> Type) : Action ty implFetchTree (Bit 0) :=
-    liftAction np_fetchInstFifo (@deq dom instCapacity AssembledInst ty).
+    liftAction np_fetchInstFifo (@deq instCapacity AssembledInst ty).
 
   Definition implFetchIfc (ty : Kind -> Type) : @FetchIfc ty := {|
     fetchTree           := implFetchTree ;
@@ -136,15 +135,15 @@ Section FetchStage.
   Variable withInstIfc : forall ty, @WithInstPredIfc (noInstIfc ty).(noInstTree) ty.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable executeIfc : forall ty, @ExecuteIfc ty.
-  Variable decodeTree dataMemTree mulDivTree : Tree DomainElem.
+  Variable decodeTree dataMemTree mulDivTree : Tree Elem.
   Variable ty : Kind -> Type.
 
-  Local Abbreviation rfTree := (rfTree dom pcAddrInit).
+  Local Abbreviation rfTree := (rfTree pcAddrInit).
   Local Abbreviation bpTree := (bpTree (noInstIfc ty).(noInstTree) (withInstIfc ty).(withInstTree)).
   Local Abbreviation memTree := (memIfc ty).(memTree).
   Local Abbreviation executeTree := (executeIfc ty).(executeTree).
-  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree implFetchTree decodeTree executeTree dataMemTree mulDivTree).
-  Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
+  Local Abbreviation coreTree := (coreTree rfTree bpTree memTree implFetchTree decodeTree executeTree dataMemTree mulDivTree).
+  Local Abbreviation gprPathsWithKind := (gprPathsWithKind pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.rf.").
@@ -183,7 +182,7 @@ Section FetchStage.
    *                 FetchBufEntry into fetchBuf, and advance fetchPc to predPc.
    * ========================================================================= *)
   Definition fetchRq : Action ty coreTree (Bit 0) :=
-    LetA fetchBuf_isFull : Bool            <- liftAction np_fetchFifo (@isFull dom fetchCapacity FetchBufEntry ty) ;
+    LetA fetchBuf_isFull : Bool            <- liftAction np_fetchFifo (@isFull fetchCapacity FetchBufEntry ty) ;
     LetA fenceIPending   : Bool            <- liftAction np_execute (executeIfc ty).(execute_readFenceIPend) ;
     LetA fenceIWait      : Bool            <- liftAction np_mem ((memIfc ty).(mem_readFenceIWait)) ;
     LetA fetchPc         : Addr            <- liftAction np_fetch (@readFetchPc ty) ;
@@ -234,7 +233,7 @@ Section FetchStage.
           "predEpoch"  ::= #predEpoch ;
           "fetchExc"   ::= #preFetchExc
         } ;
-        Act (liftAction np_fetchFifo (@enq dom fetchCapacity FetchBufEntry ty entry)) ;
+        Act (liftAction np_fetchFifo (@enq fetchCapacity FetchBufEntry ty entry)) ;
         liftAction np_fetch (@writeFetchPc ty predPc)
       ) ;
       Retv
@@ -258,8 +257,8 @@ Section FetchStage.
     If #canProceed Then (
       Act (liftAction np_fetch (@clearFetchCanProceed ty)) ;
 
-      LetA fetchHead          : Option FetchBufEntry       <- liftAction np_fetchFifo (@first dom fetchCapacity FetchBufEntry ty) ;
-      LetA instBuf_isFull     : Bool                       <- liftAction np_instFifo (@isFull dom instCapacity AssembledInst ty) ;
+      LetA fetchHead          : Option FetchBufEntry       <- liftAction np_fetchFifo (@first fetchCapacity FetchBufEntry ty) ;
+      LetA instBuf_isFull     : Bool                       <- liftAction np_instFifo (@isFull instCapacity AssembledInst ty) ;
       LetA execEpoch          : Epoch                      <- liftAction np_execute (executeIfc ty).(execute_readExecEpoch) ;
       LetA predEpoch          : Epoch                      <- liftAction np_fetch (@readPredEpoch ty) ;
       LetA curParcelOpt       : Option (Bit LgFetchParcels) <- liftAction np_fetch (@readCurParcelOpt ty) ;
@@ -349,7 +348,7 @@ Section FetchStage.
       If (##fetchHead`"valid") Then (
         If (##pktOpt`"valid") Then (
           If (Not #isEpochMatch) Then (
-            Act (liftAction np_fetchFifo (@deq dom fetchCapacity FetchBufEntry ty)) ;
+            Act (liftAction np_fetchFifo (@deq fetchCapacity FetchBufEntry ty)) ;
             If (Not #hasPreFault) Then (
               liftAction np_mem ((memIfc ty).(mem_deqInstRp) alignedPc)
             ) ;
@@ -365,7 +364,7 @@ Section FetchStage.
                   "predPc"    ::= #seqPc ;
                   "execEpoch" ::= #execEpoch
                 } ;
-                liftAction np_instFifo (@enq dom instCapacity AssembledInst ty asmInst)
+                liftAction np_instFifo (@enq instCapacity AssembledInst ty asmInst)
               ) Else (
                 Let  instPred       : Addr <- ITE (Eq #currInstLastParcel #exitParcel) (##entry`"predPc") #seqPc ;
                 Let  seqNextPktAddr : Addr <- Add [ #alignedPc ; $(Z.of_nat LineBytes) ] ;
@@ -387,7 +386,7 @@ Section FetchStage.
                   Let exitMismatch   : Bool <- Not (Eq #exitParcel #currInstLastParcel) ;
                   Let predPcMismatch : Bool <- Not (Eq (##entry`"predPc") #l2PredPc) ;
 
-                  Act (liftAction np_fetchFifo (@deq dom fetchCapacity FetchBufEntry ty)) ;
+                  Act (liftAction np_fetchFifo (@deq fetchCapacity FetchBufEntry ty)) ;
                   If (Not #hasPreFault) Then (
                     liftAction np_mem ((memIfc ty).(mem_deqInstRp) alignedPc)
                   ) ;
@@ -419,7 +418,7 @@ Section FetchStage.
                     "execEpoch" ::= #execEpoch
                   } ;
                   Act (liftAction np_fetch (@clearStraddle ty)) ;
-                  liftAction np_instFifo (@enq dom instCapacity AssembledInst ty asmInst)
+                  liftAction np_instFifo (@enq instCapacity AssembledInst ty asmInst)
                 ) ;
                 Retv
               ) ;

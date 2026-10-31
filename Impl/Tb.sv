@@ -158,8 +158,8 @@ module Tb();
     .Recv_sys_core_mem________uart_lineReadRpValid(Recv_sys_core_mem________uart_lineReadRpValid),
     .decl_SendEn_sys_core_mem________uart_lineReadRpReady(decl_SendEn_sys_core_mem________uart_lineReadRpReady),
 
-    .clk_core(clk_core),
-    .rst_n_core(rst_n_core)
+    .clk(clk_core),
+    .rst_n(rst_n_core)
   );
 
   // =========================================================================

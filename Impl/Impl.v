@@ -32,44 +32,43 @@ Local Open Scope guru_scope.
  * =========================================================================== *)
 
 Section ImplDom.
-  Variable core : string.
   Variable pcAddrInit : Z.
   Variable issueWidth : nat.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity : nat.
   Variable mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
 
-  Local Abbreviation rTree := (rfTree core pcAddrInit).
-  Local Abbreviation fTree := (implFetchTree core pcAddrInit fetchCapacity instCapacity).
-  Local Abbreviation decTree := (implDecodeTree core decodeCapacity).
-  Local Abbreviation eTree := (implExecuteTree core).
-  Local Abbreviation dmTree := (implDataMemTree core dataMemCapacity).
-  Local Abbreviation mdTree := (implMulDivTree core mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode).
+  Local Abbreviation rTree := (rfTree pcAddrInit).
+  Local Abbreviation fTree := (implFetchTree pcAddrInit fetchCapacity instCapacity).
+  Local Abbreviation decTree := (implDecodeTree decodeCapacity).
+  Local Abbreviation eTree := implExecuteTree.
+  Local Abbreviation dmTree := (implDataMemTree dataMemCapacity).
+  Local Abbreviation mdTree := (implMulDivTree mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode).
 
-  Definition implSysTree (config : RevConfig) (regions : list MemRegion) : Tree DomainElem :=
+  Definition implSysTree (config : RevConfig) (regions : list MemRegion) : Tree Elem :=
     Node "sys" [
-      coreTree core rTree implBpTree (implMemTree core regions) fTree decTree eTree dmTree mdTree
+      coreTree rTree implBpTree (implMemTree regions) fTree decTree eTree dmTree mdTree
     ].
 
   Section Impl.
     Variable config : RevConfig.
     Variable regions : list MemRegion.
-    Variable clint : @ClintInstance core regions.
-    Variable rev : @RevokerInstance core (implRevokerExtraChildren core) regions.
-    Variable plic : @PlicInstance core (S (S (length (collectIrqActions core regions)))) regions.
+    Variable clint : @ClintInstance regions.
+    Variable rev : @RevokerInstance implRevokerExtraChildren regions.
+    Variable plic : @PlicInstance (S (S (length (collectIrqActions regions)))) regions.
 
     Local Abbreviation bpTree := implBpTree.
     Local Abbreviation noInstIfc := (fun ty => @implNoInstIfc ty).
     Local Abbreviation withInstIfc := (fun ty => @implWithInstIfc noInstIfc ty).
-    Local Abbreviation memTree := (implMemTree core regions).
-    Local Abbreviation memIfc := (fun ty => @implMemIfc core config regions ty rev).
-    Local Abbreviation fetchIfc := (fun ty => @implFetchIfc core pcAddrInit fetchCapacity instCapacity ty).
-    Local Abbreviation decodeIfc := (fun ty => @implDecodeIfc core decodeCapacity ty).
-    Local Abbreviation executeIfc := (fun ty => @implExecuteIfc core ty).
-    Local Abbreviation dataMemIfc := (fun ty => @implDataMemIfc core dataMemCapacity ty).
-    Local Abbreviation mulDivIfc := (fun ty => @implMulDivIfc core mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode ty).
+    Local Abbreviation memTree := (implMemTree regions).
+    Local Abbreviation memIfc := (fun ty => @implMemIfc config regions ty rev).
+    Local Abbreviation fetchIfc := (fun ty => @implFetchIfc pcAddrInit fetchCapacity instCapacity ty).
+    Local Abbreviation decodeIfc := (fun ty => @implDecodeIfc decodeCapacity ty).
+    Local Abbreviation executeIfc := (fun ty => @implExecuteIfc ty).
+    Local Abbreviation dataMemIfc := (fun ty => @implDataMemIfc dataMemCapacity ty).
+    Local Abbreviation mulDivIfc := (fun ty => @implMulDivIfc mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode ty).
     Local Abbreviation sysTree := (implSysTree config regions).
-    Local Abbreviation incrementMcycle := (incrementMcycle core pcAddrInit).
+    Local Abbreviation incrementMcycle := (incrementMcycle pcAddrInit).
 
     Section Ty.
       Variable ty : Kind -> Type.
@@ -96,72 +95,72 @@ Section ImplDom.
        * Peripheral Background Rules & Interrupt Polling on implMemTree
        * ===================================================================== *)
 
-      Local Definition implClintAction {k : Kind} (act : Action ty (Node "clint" (clintChildren core)) k)
+      Local Definition implClintAction {k : Kind} (act : Action ty (Node "clint" clintChildren) k)
         : Action ty memTree k :=
-        @implNthRegionAction core ty clint.(clintIdx) regions (clintRegion clint) clint.(pfClint) k act.
+        @implNthRegionAction ty clint.(clintIdx) regions (clintRegion clint) clint.(pfClint) k act.
 
-      Local Abbreviation nIrq := (S (S (length (collectIrqActions core regions)))).
+      Local Abbreviation nIrq := (S (S (length (collectIrqActions regions)))).
 
-      Local Definition implPlicAction {k : Kind} (act : Action ty (plicTree core nIrq) k)
+      Local Definition implPlicAction {k : Kind} (act : Action ty (plicTree nIrq) k)
         : Action ty memTree k :=
-        @implNthRegionAction core ty plic.(plicIdx) regions (plicRegion plic) plic.(pfPlic) k act.
+        @implNthRegionAction ty plic.(plicIdx) regions (plicRegion plic) plic.(pfPlic) k act.
 
       Definition implTickCycle : Action ty sysTree (Bit 0) :=
         liftAction np_rf incrementMcycle.
 
       Definition implTickTimer : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (implClintAction (clintTick core ty)).
+        liftAction np_mem (implClintAction (clintTick ty)).
 
       Definition implSampleMtipStep : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (implClintAction (clintSampleMtip core ty)).
+        liftAction np_mem (implClintAction (clintSampleMtip ty)).
 
       (* One rule per revoker phase (`implRevokerSteps`), in phase order *)
       Definition implRevokerStepsSys : list (Action ty sysTree (Bit 0)) :=
-        map (fun act => liftAction np_mem act) (@implRevokerSteps core config regions ty rev).
+        map (fun act => liftAction np_mem act) (@implRevokerSteps config regions ty rev).
 
       Definition implRevokerIdleStepSys : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (@implRevokerIdleStep core regions ty rev).
+        liftAction np_mem (@implRevokerIdleStep regions ty rev).
 
       Definition implRevokerWaitCapRpStepSys : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (@implRevokerWaitCapRpStep core config regions ty rev).
+        liftAction np_mem (@implRevokerWaitCapRpStep config regions ty rev).
 
       Definition implRevokerWaitRevBitRqStepSys : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (@implRevokerWaitRevBitRqStep core config regions ty rev).
+        liftAction np_mem (@implRevokerWaitRevBitRqStep config regions ty rev).
 
       Definition implRevokerWaitRevBitRpStepSys : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (@implRevokerWaitRevBitRpStep core config regions ty rev).
+        liftAction np_mem (@implRevokerWaitRevBitRpStep config regions ty rev).
 
       Definition implRevokerWriteCapStepSys : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (@implRevokerWriteCapStep core regions ty rev).
+        liftAction np_mem (@implRevokerWriteCapStep regions ty rev).
 
       Definition implPlicClaimStep : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (implPlicAction (@updateClaim core nIrq ty)).
+        liftAction np_mem (implPlicAction (@updateClaim nIrq ty)).
 
       Definition implPlicSampleMeipStep : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (implPlicAction (@plicSampleMeip core nIrq ty)).
+        liftAction np_mem (implPlicAction (@plicSampleMeip nIrq ty)).
 
       Local Definition implPlicUartIrqAction : Action ty memTree Bool :=
-        implPlicAction (Recv "uartIrq" (plicUartIrqPath core nIrq) (fun v => Return #v)).
+        implPlicAction (Recv "uartIrq" (plicUartIrqPath nIrq) (fun v => Return #v)).
 
       Local Fixpoint implPlicPendingStepsHelper
         (acts : list (Action ty memTree Bool))
-        (pends : list (RegOfKind (t := plicTree core nIrq) Bool))
-        (insvs : list (RegOfKind (t := plicTree core nIrq) Bool))
+        (pends : list (RegOfKind (t := plicTree nIrq) Bool))
+        (insvs : list (RegOfKind (t := plicTree nIrq) Bool))
         : list (Action ty memTree (Bit 0)) :=
         match acts, pends, insvs with
         | act :: restActs, pendRk :: restPends, insvRk :: restInsvs =>
             (LetA irqVal : Bool <- act ;
-             implPlicAction (@updatePendingLeaf core nIrq ty pendRk insvRk irqVal))
+             implPlicAction (@updatePendingLeaf nIrq ty pendRk insvRk irqVal))
             :: implPlicPendingStepsHelper restActs restPends restInsvs
         | _, _, _ => []
         end.
 
       Definition implPlicPendingsSteps : list (Action ty sysTree (Bit 0)) :=
         let memSteps :=
-          match pendingPathsWithKind core nIrq, inServicePathsWithKind core nIrq with
+          match pendingPathsWithKind nIrq, inServicePathsWithKind nIrq with
           | _ :: devPends, _ :: devInsvs =>
               implPlicPendingStepsHelper
-                (implMemCollectIrqActions core regions ty ++ [implPlicUartIrqAction])
+                (implMemCollectIrqActions regions ty ++ [implPlicUartIrqAction])
                 devPends
                 devInsvs
           | _, _ => []
@@ -182,17 +181,17 @@ Section ImplDom.
        * ===================================================================== *)
 
       Definition fetchRqStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@fetchRq core pcAddrInit fetchCapacity instCapacity noInstIfc withInstIfc memIfc executeIfc decTree dmTree mdTree ty).
+        liftAction np_core (@fetchRq pcAddrInit fetchCapacity instCapacity noInstIfc withInstIfc memIfc executeIfc decTree dmTree mdTree ty).
 
       (* =====================================================================
        * STAGE 2: Fetch Assemble, Pre-Decode & Level-2 Branch Prediction
        * ===================================================================== *)
 
       Definition fetchAssembleStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@fetchAssemble core pcAddrInit fetchCapacity instCapacity noInstIfc withInstIfc memIfc executeIfc decTree dmTree mdTree ty).
+        liftAction np_core (@fetchAssemble pcAddrInit fetchCapacity instCapacity noInstIfc withInstIfc memIfc executeIfc decTree dmTree mdTree ty).
 
       Definition setFetchCanProceedStage : Action ty sysTree (Bit 0) :=
-        liftAction np_fetch (@setFetchCanProceed core pcAddrInit fetchCapacity instCapacity ty).
+        liftAction np_fetch (@setFetchCanProceed pcAddrInit fetchCapacity instCapacity ty).
 
       (* =====================================================================
        * STAGE 3: Decode & Register Read with Scoreboard
@@ -200,11 +199,11 @@ Section ImplDom.
 
       Definition decodeAndRegReadStage : Action ty sysTree (Bit 0) :=
         liftAction np_core
-          (@decodeAndRegRead core decodeCapacity pcAddrInit
+          (@decodeAndRegRead decodeCapacity pcAddrInit
                              bpTree mdTree fetchIfc executeIfc dataMemIfc memIfc ty).
 
       Definition setDecodeCanProceedStage : Action ty sysTree (Bit 0) :=
-        liftAction np_decode (@setDecodeCanProceed core decodeCapacity ty).
+        liftAction np_decode (@setDecodeCanProceed decodeCapacity ty).
 
       (* =====================================================================
        * STAGE 4: Combined ALU + Execute Non-Deferred Stage
@@ -212,14 +211,14 @@ Section ImplDom.
 
       Definition aluAndExecuteNonDeferredStage : Action ty sysTree (Bit 0) :=
         liftAction np_core
-          (@aluAndExecuteNonDeferred core pcAddrInit
+          (@aluAndExecuteNonDeferred pcAddrInit
                                      implNoInstTree withInstIfc memIfc
                                      fetchIfc decodeIfc dataMemIfc mulDivIfc ty
-                                     (implPlicAction (@plicMeip core nIrq ty))
-                                     (implClintAction (readClintMtip core ty))).
+                                     (implPlicAction (@plicMeip nIrq ty))
+                                     (implClintAction (readClintMtip ty))).
 
       Definition setExecuteCanProceedStage : Action ty sysTree (Bit 0) :=
-        liftAction np_execute (@setExecuteCanProceed core ty).
+        liftAction np_execute (@setExecuteCanProceed ty).
 
       Definition setCanProceedSteps : list (Action ty sysTree (Bit 0)) :=
         [ setFetchCanProceedStage ;
@@ -231,48 +230,48 @@ Section ImplDom.
        * ===================================================================== *)
 
       Definition loadRqOrStoreOrFenceStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@loadRqOrStoreOrFence core dataMemCapacity pcAddrInit bpTree fTree decTree mdTree executeIfc memIfc ty).
+        liftAction np_core (@loadRqOrStoreOrFence dataMemCapacity pcAddrInit bpTree fTree decTree mdTree executeIfc memIfc ty).
 
       Definition loadRpAndWritebackStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@loadRpAndWriteback core dataMemCapacity pcAddrInit bpTree fTree decTree mdTree executeIfc memIfc ty config).
+        liftAction np_core (@loadRpAndWriteback dataMemCapacity pcAddrInit bpTree fTree decTree mdTree executeIfc memIfc ty config).
 
       Definition issueRevRqStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@issueRevRq core dataMemCapacity pcAddrInit bpTree fTree decTree mdTree executeIfc memIfc ty).
+        liftAction np_core (@issueRevRq dataMemCapacity pcAddrInit bpTree fTree decTree mdTree executeIfc memIfc ty).
 
       Definition loadRpAndIssueRevRqStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@loadRpAndIssueRevRq core dataMemCapacity pcAddrInit bpTree fTree decTree mdTree executeIfc memIfc ty config).
+        liftAction np_core (@loadRpAndIssueRevRq dataMemCapacity pcAddrInit bpTree fTree decTree mdTree executeIfc memIfc ty config).
 
       Definition revRpAndWriteBackStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@revRpAndWriteBack core dataMemCapacity pcAddrInit bpTree fTree decTree mdTree executeIfc memIfc ty).
+        liftAction np_core (@revRpAndWriteBack dataMemCapacity pcAddrInit bpTree fTree decTree mdTree executeIfc memIfc ty).
 
       Definition mulDivStageActions : list (Action ty sysTree (Bit 0)) :=
         map (fun act => liftAction np_core act)
-            (@mulDivRules core mulCapacity divCapacity mulStages divStages mulDivMode pcAddrInit bpTree memTree fTree decTree eTree dmTree ty).
+            (@mulDivRules mulCapacity divCapacity mulStages divStages mulDivMode pcAddrInit bpTree memTree fTree decTree eTree dmTree ty).
 
       Definition fetchLineRpPorts : list (Action ty sysTree (Bit 0)) :=
         map (fun act => liftAction np_mem act)
-            (implMemCollectFetchLineRpPorts core regions ty).
+            (implMemCollectFetchLineRpPorts regions ty).
 
       Definition readRpPorts : list (Action ty sysTree (Bit 0)) :=
         map (fun act => liftAction np_mem act)
-            (implMemCollectLineReadRpPorts core regions ty).
+            (implMemCollectLineReadRpPorts regions ty).
 
       Definition readRpStep : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (implMemReadRpStep core regions ty).
+        liftAction np_mem (implMemReadRpStep regions ty).
 
       Definition readRqPorts : list (Action ty sysTree (Bit 0)) :=
         map (fun act => liftAction np_mem act)
-            (implMemCollectLineReadRqPorts core regions ty).
+            (implMemCollectLineReadRqPorts regions ty).
 
       Definition readRqStep : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (implMemReadRqStep core regions ty).
+        liftAction np_mem (implMemReadRqStep regions ty).
 
       Definition writeRqPorts : list (Action ty sysTree (Bit 0)) :=
         map (fun act => liftAction np_mem act)
-            (implMemCollectLineWriteRqPorts core regions ty).
+            (implMemCollectLineWriteRqPorts regions ty).
 
       Definition writeRqStep : Action ty sysTree (Bit 0) :=
-        liftAction np_mem (implMemWriteRqStep core regions ty).
+        liftAction np_mem (implMemWriteRqStep regions ty).
 
       Definition fetchRps : list (Action ty sysTree (Bit 0)) :=
         fetchLineRpPorts.
@@ -288,7 +287,7 @@ Section ImplDom.
 
       Definition fenceIAcks : list (Action ty sysTree (Bit 0)) :=
         map (fun act => liftAction np_mem act)
-            (implMemCollectFenceIAckActions core regions ty).
+            (implMemCollectFenceIAckActions regions ty).
 
     End Ty.
 
@@ -296,8 +295,8 @@ Section ImplDom.
      * Top-Level Implementation Modules (singleCycleMod / pipelinedMod)
      * ======================================================================= *)
 
-    Definition forwardDatapathList (ty : Kind -> Type) : list (string * Action ty sysTree (Bit 0)) :=
-      map (fun a => (core, a)) (
+    Definition forwardDatapathList (ty : Kind -> Type) : list (Action ty sysTree (Bit 0)) :=
+      (
         implPeripheralSteps ty
         ++ [ fetchRqStage ty ]
         ++ fetchLineRpPorts ty
@@ -325,8 +324,8 @@ Section ImplDom.
     Definition forwardDatapathMod : Mod sysTree :=
       fun ty => forwardDatapathList ty.
 
-    Definition pipelinedList (ty : Kind -> Type) : list (string * Action ty sysTree (Bit 0)) :=
-      map (fun a => (core, a)) (
+    Definition pipelinedList (ty : Kind -> Type) : list (Action ty sysTree (Bit 0)) :=
+      (
         fetchLineRpPorts ty ++ readRpPorts ty ++ [ readRpStep ty ]
         ++ List.rev (
              [ fetchRqStage ty ]

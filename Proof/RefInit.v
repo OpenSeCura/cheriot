@@ -32,12 +32,12 @@ Local Open Scope guru_scope.
  * THE REFINEMENT RELATION HOLDS ON INITIAL STATES
  * =========================================================================== *)
 
-Local Abbreviation TS t := (TreeState DomainElemState t).
+Local Abbreviation TS t := (TreeState ElemState t).
 
 (* --- 1. Region Trees --- *)
 
 Lemma InitStateConsistent_regionsTree_cons :
-  forall (regionTree : MemRegion -> Tree DomainElem) (r : MemRegion) (rs : list MemRegion)
+  forall (regionTree : MemRegion -> Tree Elem) (r : MemRegion) (rs : list MemRegion)
          (s : TS (regionsTree regionTree (r :: rs))),
     InitStateConsistent (regionsTree regionTree (r :: rs)) s ->
     InitStateConsistent (regionTree r) s.(Fst) /\ InitStateConsistent (regionsTree regionTree rs) s.(Snd).(Fst).
@@ -47,7 +47,7 @@ Proof.
 Qed.
 
 Lemma InitStateConsistent_regionStateAt :
-  forall (regionTree : MemRegion -> Tree DomainElem) (idx : nat) (regions : list MemRegion)
+  forall (regionTree : MemRegion -> Tree Elem) (idx : nat) (regions : list MemRegion)
          (r0 : MemRegion) (pf : nth_error regions idx = Some r0) (s : TS (regionsTree regionTree regions)),
     InitStateConsistent (regionsTree regionTree regions) s ->
     InitStateConsistent (regionTree r0) (regionStateAt regionTree idx regions r0 pf s).
@@ -66,13 +66,12 @@ Proof.
 Qed.
 
 Section RegionInit.
-  Variable core : string.
 
   Lemma ExtRel_init :
-    forall r (x : TS (externalMemRegionTree core r)) (y : TS (implExternalMemRegionTree core r)),
-      InitStateConsistent (externalMemRegionTree core r) x ->
-      InitStateConsistent (implExternalMemRegionTree core r) y ->
-      ExtRel core r x y.
+    forall r (x : TS (externalMemRegionTree r)) (y : TS (implExternalMemRegionTree r)),
+      InitStateConsistent (externalMemRegionTree r) x ->
+      InitStateConsistent (implExternalMemRegionTree r) y ->
+      ExtRel r x y.
   Proof.
     intros r [[frq [frp [fw [fiq [fia []]]]]] [rq [rp [wr []]]]]
              [[[ifrq [ifrp [ifw [ifiq [ifia []]]]]] [irq [irp [iwr []]]]]
@@ -88,11 +87,11 @@ Section RegionInit.
   Qed.
 
   Lemma RegionRelAt_init :
-    forall cp pp i r (x : TS (memRegionTree core r)) (y : TS (implMemRegionTree core r)),
-      allTreeInitDet (memRegionTree core r) = true ->
-      InitStateConsistent (memRegionTree core r) x ->
-      InitStateConsistent (implMemRegionTree core r) y ->
-      RegionRelAt core cp pp i r x y.
+    forall cp pp i r (x : TS (memRegionTree r)) (y : TS (implMemRegionTree r)),
+      allTreeInitDet (memRegionTree r) = true ->
+      InitStateConsistent (memRegionTree r) x ->
+      InitStateConsistent (implMemRegionTree r) y ->
+      RegionRelAt cp pp i r x y.
   Proof.
     intros cp pp i r.
     unfold RegionRelAt, memRegionTree, implMemRegionTree.
@@ -104,60 +103,60 @@ Section RegionInit.
   Qed.
 
   Lemma MemRelPost_init :
-    forall cp pp l i (ms : TS (specMemTree core l)) (mi : TS (implRegionsTree core l)),
-      Forall (fun r => allTreeInitDet (memRegionTree core r) = true) l ->
-      InitStateConsistent (specMemTree core l) ms ->
-      InitStateConsistent (implRegionsTree core l) mi ->
-      MemRelPost core cp pp i l ms mi.
+    forall cp pp l i (ms : TS (specMemTree l)) (mi : TS (implRegionsTree l)),
+      Forall (fun r => allTreeInitDet (memRegionTree r) = true) l ->
+      InitStateConsistent (specMemTree l) ms ->
+      InitStateConsistent (implRegionsTree l) mi ->
+      MemRelPost cp pp i l ms mi.
   Proof.
     intros cp pp l; induction l as [| r l IH]; intros i ms mi Hdet Hms Hmi; cbn [MemRelPost]; [exact I |].
     inversion Hdet as [| ? ? Hr Hl]; subst.
-    destruct (InitStateConsistent_regionsTree_cons (memRegionTree core) r l ms Hms) as [Hms0 Hms1].
-    destruct (InitStateConsistent_regionsTree_cons (implMemRegionTree core) r l mi Hmi) as [Hmi0 Hmi1].
+    destruct (InitStateConsistent_regionsTree_cons memRegionTree r l ms Hms) as [Hms0 Hms1].
+    destruct (InitStateConsistent_regionsTree_cons implMemRegionTree r l mi Hmi) as [Hmi0 Hmi1].
     split; [exact (RegionRelAt_init cp pp i r _ _ Hr Hms0 Hmi0) | exact (IH (S i) _ _ Hl Hms1 Hmi1)].
   Qed.
 
   Lemma MemRelPre_init :
     forall cp pp sRev iRev post l i
-           (ms : TS (specMemTree core (l ++ sRev :: post))) (mi : TS (implRegionsTree core (l ++ iRev :: post))),
-      Forall (fun r => allTreeInitDet (memRegionTree core r) = true) l ->
-      Forall (fun r => allTreeInitDet (memRegionTree core r) = true) post ->
-      InitStateConsistent (specMemTree core (l ++ sRev :: post)) ms ->
-      InitStateConsistent (implRegionsTree core (l ++ iRev :: post)) mi ->
-      MemRelPre core cp pp i l sRev iRev post ms mi.
+           (ms : TS (specMemTree (l ++ sRev :: post))) (mi : TS (implRegionsTree (l ++ iRev :: post))),
+      Forall (fun r => allTreeInitDet (memRegionTree r) = true) l ->
+      Forall (fun r => allTreeInitDet (memRegionTree r) = true) post ->
+      InitStateConsistent (specMemTree (l ++ sRev :: post)) ms ->
+      InitStateConsistent (implRegionsTree (l ++ iRev :: post)) mi ->
+      MemRelPre cp pp i l sRev iRev post ms mi.
   Proof.
     intros cp pp sRev iRev post l; induction l as [| r l IH]; intros i ms mi Hl Hpost Hms Hmi;
       cbn [MemRelPre].
-    - destruct (InitStateConsistent_regionsTree_cons (memRegionTree core) sRev post ms Hms) as [_ Hms1].
-      destruct (InitStateConsistent_regionsTree_cons (implMemRegionTree core) iRev post mi Hmi) as [_ Hmi1].
+    - destruct (InitStateConsistent_regionsTree_cons memRegionTree sRev post ms Hms) as [_ Hms1].
+      destruct (InitStateConsistent_regionsTree_cons implMemRegionTree iRev post mi Hmi) as [_ Hmi1].
       exact (MemRelPost_init cp pp post (S i) _ _ Hpost Hms1 Hmi1).
     - inversion Hl as [| ? ? Hr Hl']; subst.
-      destruct (InitStateConsistent_regionsTree_cons (memRegionTree core) r (l ++ sRev :: post) ms Hms)
+      destruct (InitStateConsistent_regionsTree_cons memRegionTree r (l ++ sRev :: post) ms Hms)
         as [Hms0 Hms1].
-      destruct (InitStateConsistent_regionsTree_cons (implMemRegionTree core) r (l ++ iRev :: post) mi Hmi)
+      destruct (InitStateConsistent_regionsTree_cons implMemRegionTree r (l ++ iRev :: post) mi Hmi)
         as [Hmi0 Hmi1].
       split; [exact (RegionRelAt_init cp pp i r _ _ Hr Hms0 Hmi0) | exact (IH (S i) _ _ Hl' Hpost Hms1 Hmi1)].
   Qed.
 
   Lemma AllPorts_init :
-    forall (P : forall r, TS (implExternalMemRegionTree core r) -> Prop),
-      (forall r y, InitStateConsistent (implExternalMemRegionTree core r) y -> P r y) ->
-      forall l (mi : TS (implRegionsTree core l)),
-        InitStateConsistent (implRegionsTree core l) mi -> AllPorts core P l mi.
+    forall (P : forall r, TS (implExternalMemRegionTree r) -> Prop),
+      (forall r y, InitStateConsistent (implExternalMemRegionTree r) y -> P r y) ->
+      forall l (mi : TS (implRegionsTree l)),
+        InitStateConsistent (implRegionsTree l) mi -> AllPorts P l mi.
   Proof.
     intros P HP l; induction l as [| r l IH]; intros mi Hmi; cbn [AllPorts]; [exact I |].
-    destruct (InitStateConsistent_regionsTree_cons (implMemRegionTree core) r l mi Hmi) as [H0 H1].
+    destruct (InitStateConsistent_regionsTree_cons implMemRegionTree r l mi Hmi) as [H0 H1].
     split; [| exact (IH _ H1)].
     revert H0; generalize (mi.(Fst)); unfold RegionPort, implMemRegionTree.
     destruct (regionKind r); intros y Hy; [exact (HP r y Hy) | exact I].
   Qed.
 
   Lemma SnapshotOK_init :
-    forall l fwcs (m : TS (specMemTree core l)),
-      InitStateConsistent (specMemTree core l) m -> SnapshotOK core fwcs l m.
+    forall l fwcs (m : TS (specMemTree l)),
+      InitStateConsistent (specMemTree l) m -> SnapshotOK fwcs l m.
   Proof.
     induction l as [| r l IH]; intros fwcs m Hm; cbn [SnapshotOK]; [exact I |].
-    destruct (InitStateConsistent_regionsTree_cons (memRegionTree core) r l m Hm) as [H0 H1].
+    destruct (InitStateConsistent_regionsTree_cons memRegionTree r l m Hm) as [H0 H1].
     split; [| exact (IH _ _ H1)].
     revert H0; generalize (m.(Fst)); unfold RegionSnapshotOK, memRegionTree.
     destruct (regionKind r); intros x Hx; [| exact I].
@@ -168,23 +167,23 @@ Section RegionInit.
 
   (* --- 2. Devices --- *)
 
-  Lemma ClintRel_refl : forall x, ClintRel core x x.
+  Lemma ClintRel_refl : forall x, ClintRel x x.
   Proof.
     intros [a [b [c [d []]]]]; unfold ClintRel, clintWithSampled, clintSampled; cbn.
     split; [reflexivity | auto].
   Qed.
 
-  Lemma PlicRelSame_refl : forall n x, PlicRelSame core n x x.
+  Lemma PlicRelSame_refl : forall n x, PlicRelSame n x x.
   Proof.
     intros n [a [b [c [d [e [f [g [h []]]]]]]]]; unfold PlicRelSame, plicWithMeip, plicMeipOf; cbn.
     split; [reflexivity | auto].
   Qed.
 
   Lemma allTreeInitDet_node_regs :
-    forall (name : string) (g : nat -> string) (dom : string) (k : Kind) (v : type k) (l : list nat),
-      allTreeInitDet (Node name (map (fun idx => Leaf (g idx) (dom, EReg (Build_Reg k (Some v) false))) l)) = true.
+    forall (name : string) (g : nat -> string) (k : Kind) (v : type k) (l : list nat),
+      allTreeInitDet (Node name (map (fun idx => Leaf (g idx) (EReg (Build_Reg k (Some v)))) l)) = true.
   Proof.
-    intros name g dom k v l; induction l as [| a l IH]; [reflexivity |].
+    intros name g k v l; induction l as [| a l IH]; [reflexivity |].
     cbn [map allTreeInitDet] in *; exact IH.
   Qed.
 
@@ -192,16 +191,16 @@ Section RegionInit.
     forall nm c cs, allTreeInitDet (Node nm (c :: cs)) = andb (allTreeInitDet c) (allTreeInitDet (Node nm cs)).
   Proof. reflexivity. Qed.
 
-  Lemma allTreeInitDet_plicTree : forall n, allTreeInitDet (plicTree core n) = true.
+  Lemma allTreeInitDet_plicTree : forall n, allTreeInitDet (plicTree n) = true.
   Proof.
     intros n.
-    assert (H1 : allTreeInitDet (Node "priorities" (priorityLeaves core n)) = true)
+    assert (H1 : allTreeInitDet (Node "priorities" (priorityLeaves n)) = true)
       by (unfold priorityLeaves; apply allTreeInitDet_node_regs).
-    assert (H2 : allTreeInitDet (Node "pending" (pendingLeaves core n)) = true)
+    assert (H2 : allTreeInitDet (Node "pending" (pendingLeaves n)) = true)
       by (unfold pendingLeaves; apply allTreeInitDet_node_regs).
-    assert (H3 : allTreeInitDet (Node "enables" (enableLeaves core n)) = true)
+    assert (H3 : allTreeInitDet (Node "enables" (enableLeaves n)) = true)
       by (unfold enableLeaves; apply allTreeInitDet_node_regs).
-    assert (H4 : allTreeInitDet (Node "in_service" (inServiceLeaves core n)) = true)
+    assert (H4 : allTreeInitDet (Node "in_service" (inServiceLeaves n)) = true)
       by (unfold inServiceLeaves; apply allTreeInitDet_node_regs).
     unfold plicTree, plicChildren.
     rewrite !allTreeInitDet_Node_cons, H1, H2, H3, H4.
@@ -209,10 +208,10 @@ Section RegionInit.
   Qed.
 
   Lemma PlicRel_init :
-    forall n1 n2 (e : n1 = n2) (x : TS (plicTree core n1)) (y : TS (plicTree core n2)),
-      InitStateConsistent (plicTree core n1) x ->
-      InitStateConsistent (plicTree core n2) y ->
-      PlicRel core n1 n2 x y.
+    forall n1 n2 (e : n1 = n2) (x : TS (plicTree n1)) (y : TS (plicTree n2)),
+      InitStateConsistent (plicTree n1) x ->
+      InitStateConsistent (plicTree n2) y ->
+      PlicRel n1 n2 x y.
   Proof.
     intros n1 n2 e x y Hx Hy.
     exists e; destruct e; cbn [eq_rect].
@@ -221,10 +220,10 @@ Section RegionInit.
   Qed.
 
   Lemma RevRel_init :
-    forall (xs : TS (Node "revoker" (revokerChildren core []))) (xi : TS (implRevokerTree core)),
-      InitStateConsistent (Node "revoker" (revokerChildren core [])) xs ->
-      InitStateConsistent (implRevokerTree core) xi ->
-      RevRel core RevEq xs xi.
+    forall (xs : TS (Node "revoker" (revokerChildren []))) (xi : TS implRevokerTree),
+      InitStateConsistent (Node "revoker" (revokerChildren [])) xs ->
+      InitStateConsistent implRevokerTree xi ->
+      RevRel RevEq xs xi.
   Proof.
     intros [b [t [c [ep [ist [irq [sc [st []]]]]]]]]
            [b' [t' [c' [ep' [ist' [irq' [sc' [st' [ph [cap [bs [hit []]]]]]]]]]]]]
@@ -238,7 +237,7 @@ Section RegionInit.
   Qed.
 
   Lemma ClintInv_init :
-    forall x, InitStateConsistent (Node "clint" (clintChildren core)) x -> ClintInv core x.
+    forall x, InitStateConsistent (Node "clint" clintChildren) x -> ClintInv x.
   Proof.
     intros [a [b [c [d []]]]] Hx; cbn in Hx.
     destruct Hx as [_ [_ [_ [Hd _]]]]; subst.
@@ -246,7 +245,7 @@ Section RegionInit.
   Qed.
 
   Lemma PlicInv_init :
-    forall n x, InitStateConsistent (plicTree core n) x -> PlicInv core x.
+    forall n x, InitStateConsistent (plicTree n) x -> PlicInv x.
   Proof.
     intros n [a [b [c [d [e [f [g [h []]]]]]]]] Hx; cbn in Hx.
     destruct Hx as [_ [_ [_ [_ [_ [Hf _]]]]]]; subst.
@@ -258,7 +257,7 @@ End RegionInit.
 (* --- 3. Register Reads --- *)
 
 Lemma evalReadRegsList_head :
-  forall (t : Tree DomainElem) (k : Kind) (sz : Z) (rk : RegOfKind (t:=t) k) (rest : list (RegOfKind (t:=t) k))
+  forall (t : Tree Elem) (k : Kind) (sz : Z) (rk : RegOfKind (t:=t) k) (rest : list (RegOfKind (t:=t) k))
          (s : TS t),
     (Z.of_nat (S (length rest)) <= 2 ^ sz)%Z ->
     evalReadRegsList (rk :: rest) (Zmod.zero : bits sz) s = readRegOfKind rk s.
@@ -273,12 +272,12 @@ Proof.
 Qed.
 
 Lemma readPcc_init_addr :
-  forall (core : string) (pcAddrInit : Z) (rf : TS (rfTree core pcAddrInit)),
-    InitStateConsistent (rfTree core pcAddrInit) rf ->
-    (readPcc core pcAddrInit rf).(Snd).(Snd).(Fst) = (Zmod.of_Z _ pcAddrInit : bits AddrSz).
+  forall (pcAddrInit : Z) (rf : TS (rfTree pcAddrInit)),
+    InitStateConsistent (rfTree pcAddrInit) rf ->
+    (readPcc pcAddrInit rf).(Snd).(Snd).(Fst) = (Zmod.of_Z _ pcAddrInit : bits AddrSz).
 Proof.
-  intros core pcAddrInit rf Hrf.
-  rewrite (allTreeInitDet_InitState _ rf (allTreeInitDet_RfTree core pcAddrInit) Hrf).
+  intros pcAddrInit rf Hrf.
+  rewrite (allTreeInitDet_InitState _ rf (allTreeInitDet_RfTree pcAddrInit) Hrf).
   unfold readPcc, readGpr, gprPathsWithKind.
   rewrite evalReadRegsList_head by (cbn; lia).
   unfold readRegOfKind.
@@ -287,7 +286,7 @@ Proof.
 Qed.
 
 Lemma length_genCollect_cons :
-  forall (regionTree : MemRegion -> Tree DomainElem) (k : Kind)
+  forall (regionTree : MemRegion -> Tree Elem) (k : Kind)
          (getActions : forall r : MemRegion, list (forall ty, Action ty (regionTree r) k)) r rs,
     length (@genCollectRegionActions regionTree k getActions (r :: rs)) =
     (length (getActions r) + length (@genCollectRegionActions regionTree k getActions rs))%nat.
@@ -298,7 +297,6 @@ Qed.
 (* --- 4. The Relation on Initial States --- *)
 
 Section RefInitMain.
-  Variable core : string.
   Variable pcAddrInit : Z.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
   Variable mulCapacity divCapacity mulStages divStages : nat.
@@ -309,36 +307,36 @@ Section RefInitMain.
   Variable revPfB : Is_true ((0 <=? revBase) && (revBase + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z.
   Variable revPfA : Is_true (revBase mod (2 ^ LgLineBytes) =? 0)%Z.
 
-  Local Abbreviation specRegions := (specRegionsOf core pre post revBase revPfB revPfA).
-  Local Abbreviation implRegions := (implRegionsOf core pre post revBase revPfB revPfA).
+  Local Abbreviation specRegions := (specRegionsOf pre post revBase revPfB revPfA).
+  Local Abbreviation implRegions := (implRegionsOf pre post revBase revPfB revPfA).
 
-  Variable clintS : @ClintInstance core specRegions.
-  Variable clint : @ClintInstance core implRegions.
-  Variable plicS : @PlicInstance core (S (S (length (collectIrqActions core specRegions)))) specRegions.
-  Variable plic : @PlicInstance core (S (S (length (collectIrqActions core implRegions)))) implRegions.
+  Variable clintS : @ClintInstance specRegions.
+  Variable clint : @ClintInstance implRegions.
+  Variable plicS : @PlicInstance (S (S (length (collectIrqActions specRegions)))) specRegions.
+  Variable plic : @PlicInstance (S (S (length (collectIrqActions implRegions)))) implRegions.
   Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
   Variable fwcs : nat -> nat -> nat.
 
   (* The regions shared by both lists start in a determined state *)
-  Hypothesis HdetPre : Forall (fun r => allTreeInitDet (memRegionTree core r) = true) pre.
-  Hypothesis HdetPost : Forall (fun r => allTreeInitDet (memRegionTree core r) = true) post.
+  Hypothesis HdetPre : Forall (fun r => allTreeInitDet (memRegionTree r) = true) pre.
+  Hypothesis HdetPost : Forall (fun r => allTreeInitDet (memRegionTree r) = true) post.
 
   Local Abbreviation ITree :=
-    (ImplTree core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    (ImplTree pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
               mulCapacity divCapacity mulStages divStages mulDivMode config implRegions).
-  Local Abbreviation STree := (SpecTree core pcAddrInit specRegions).
+  Local Abbreviation STree := (SpecTree pcAddrInit specRegions).
 
   Lemma length_collectIrqActions_pre :
     forall l,
-      length (collectIrqActions core (l ++ specRevRegion core revBase revPfB revPfA :: post)) =
-      length (collectIrqActions core (l ++ implRevRegion core revBase revPfB revPfA :: post)).
+      length (collectIrqActions (l ++ specRevRegion revBase revPfB revPfA :: post)) =
+      length (collectIrqActions (l ++ implRevRegion revBase revPfB revPfA :: post)).
   Proof.
     induction l as [| r l IH]; cbn [app]; unfold collectIrqActions in *;
       rewrite !length_genCollect_cons; [reflexivity | rewrite IH; reflexivity].
   Qed.
 
   Lemma nIrq_eq :
-    S (S (length (collectIrqActions core specRegions))) = S (S (length (collectIrqActions core implRegions))).
+    S (S (length (collectIrqActions specRegions))) = S (S (length (collectIrqActions implRegions))).
   Proof.
     unfold specRegionsOf, implRegionsOf; rewrite length_collectIrqActions_pre; reflexivity.
   Qed.
@@ -348,64 +346,64 @@ Section RefInitMain.
   Hypothesis H1 : InitStateConsistent ITree s1.
   Hypothesis H2 : InitStateConsistent STree s2.
 
-  Local Abbreviation IMEM := (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation IMEM := (impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1).
-  Local Abbreviation IFETCH := (impl_fetch core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation IFETCH := (impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                   mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1).
-  Local Abbreviation IDEC := (impl_decode core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation IDEC := (impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1).
-  Local Abbreviation IEXEC := (impl_execute core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation IEXEC := (impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1).
-  Local Abbreviation IDM := (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation IDM := (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1).
-  Local Abbreviation IWB := (impl_waitBits core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation IWB := (impl_waitBits pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1).
-  Local Abbreviation IRF := (impl_rf core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation IRF := (impl_rf pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1).
-  Local Abbreviation IMD := (impl_mulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation IMD := (impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1).
 
-  Lemma init_mem : InitStateConsistent (implMemTree core implRegions) IMEM.
+  Lemma init_mem : InitStateConsistent (implMemTree implRegions) IMEM.
   Proof. exact (proj1 (proj1 (proj2 (proj2 (proj2 (proj1 H1)))))). Qed.
-  Lemma init_fetch : InitStateConsistent (implFetchTree core pcAddrInit fetchCapacity instCapacity) IFETCH.
+  Lemma init_fetch : InitStateConsistent (implFetchTree pcAddrInit fetchCapacity instCapacity) IFETCH.
   Proof. exact (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj1 H1))))))). Qed.
-  Lemma init_dec : InitStateConsistent (implDecodeTree core decodeCapacity) IDEC.
+  Lemma init_dec : InitStateConsistent (implDecodeTree decodeCapacity) IDEC.
   Proof. exact (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (proj1 H1)))))))). Qed.
-  Lemma init_exec : InitStateConsistent (implExecuteTree core) IEXEC.
+  Lemma init_exec : InitStateConsistent implExecuteTree IEXEC.
   Proof. exact (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (proj1 H1))))))))). Qed.
-  Lemma init_dm : InitStateConsistent (implDataMemTree core dataMemCapacity) IDM.
+  Lemma init_dm : InitStateConsistent (implDataMemTree dataMemCapacity) IDM.
   Proof. exact (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (proj1 H1)))))))))). Qed.
-  Lemma init_wb : InitStateConsistent (waitBitsTree core) IWB.
+  Lemma init_wb : InitStateConsistent waitBitsTree IWB.
   Proof. exact (proj1 (proj1 (proj2 (proj1 H1)))). Qed.
-  Lemma init_rf : InitStateConsistent (rfTree core pcAddrInit) IRF.
+  Lemma init_rf : InitStateConsistent (rfTree pcAddrInit) IRF.
   Proof. exact (proj1 (proj1 (proj1 H1))). Qed.
-  Lemma init_srf : InitStateConsistent (rfTree core pcAddrInit) (spec_rf core pcAddrInit specRegions s2).
+  Lemma init_srf : InitStateConsistent (rfTree pcAddrInit) (spec_rf pcAddrInit specRegions s2).
   Proof. exact (proj1 (proj1 (proj1 H2))). Qed.
-  Lemma init_smem : InitStateConsistent (specMemTree core specRegions) (spec_mem core pcAddrInit specRegions s2).
+  Lemma init_smem : InitStateConsistent (specMemTree specRegions) (spec_mem pcAddrInit specRegions s2).
   Proof. exact (proj1 (proj1 (proj2 (proj1 H2)))). Qed.
 
-  Lemma init_regions : InitStateConsistent (implRegionsTree core implRegions) IMEM.(Fst).
+  Lemma init_regions : InitStateConsistent (implRegionsTree implRegions) IMEM.(Fst).
   Proof. exact (proj1 init_mem). Qed.
 
   Lemma init_flush_eq :
-    flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1 =
-    spec_rf core pcAddrInit specRegions s2.
+    spec_rf pcAddrInit specRegions s2.
   Proof.
-    rewrite (InitStateConsistent_flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    rewrite (InitStateConsistent_flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1 H1).
-    exact (allTreeInitDet_InitStateConsistent_eq _ _ _ (allTreeInitDet_RfTree core pcAddrInit) init_rf init_srf).
+    exact (allTreeInitDet_InitStateConsistent_eq _ _ _ (allTreeInitDet_RfTree pcAddrInit) init_rf init_srf).
   Qed.
 
-  Lemma readWaitBit_init : forall r, readWaitBit core r IWB = false.
+  Lemma readWaitBit_init : forall r, readWaitBit r IWB = false.
   Proof.
     intros r.
-    rewrite (allTreeInitDet_InitState _ _ (eq_refl : allTreeInitDet (waitBitsTree core) = true) init_wb).
+    rewrite (allTreeInitDet_InitState _ _ (eq_refl : allTreeInitDet waitBitsTree = true) init_wb).
     unfold readWaitBit, evalReadRegsList.
-    assert (Hall : forall (paths : list (RegOfKind (t:=waitBitsTree core) Bool)) curr (acc : list (type Bool)),
-               (forall rk, In rk paths -> readRegOfKind rk (InitState (waitBitsTree core)) = false) ->
+    assert (Hall : forall (paths : list (RegOfKind (t:=waitBitsTree) Bool)) curr (acc : list (type Bool)),
+               (forall rk, In rk paths -> readRegOfKind rk (InitState waitBitsTree) = false) ->
                Forall (fun b => b = false) acc ->
-               evalReadRegsListHelper curr acc paths r (InitState (waitBitsTree core)) = false).
+               evalReadRegsListHelper curr acc paths r (InitState waitBitsTree) = false).
     { induction paths as [| rk rest IH]; intros curr acc Hp Hacc; cbn [evalReadRegsListHelper].
       - rewrite (@fold_left_evalOrBinary_default Bool acc (getDefault Bool)); [reflexivity |].
         eapply Forall_impl; [| exact Hacc]; intros b Hb; cbv beta in Hb |- *; rewrite Hb; reflexivity.
@@ -419,11 +417,11 @@ Section RefInitMain.
     destruct Hin.
   Qed.
 
-  Definition ghost0 : Ghost core pcAddrInit :=
-    mkGhost core pcAddrInit [] (spec_rf core pcAddrInit specRegions s2) None RevEq [] AccNone.
+  Definition ghost0 : Ghost pcAddrInit :=
+    mkGhost pcAddrInit [] (spec_rf pcAddrInit specRegions s2) None RevEq [] AccNone.
 
   Theorem RefRel_init :
-    RefRel core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    RefRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
       mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
       clintS clint plicS plic initLine fwcs s1 s2.
   Proof.
@@ -443,24 +441,24 @@ Section RefInitMain.
       unfold MemRelC, MemRel; cbn [g_revOff ghost0].
       split; [| split].
       + split; [| split; [| split]].
-        * exact (MemRelPre_init core _ _ _ _ post pre 0 _ _ HdetPre HdetPost init_smem init_regions).
+        * exact (MemRelPre_init _ _ _ _ post pre 0 _ _ HdetPre HdetPost init_smem init_regions).
         * unfold sClint, iClint, specClintState, implClintState, sMem, iRegions, iMem.
-          rewrite (allTreeInitDet_InitStateConsistent_eq (Node "clint" (clintChildren core)) _ _ eq_refl
-                     (InitStateConsistent_regionStateAt (memRegionTree core) clintS.(clintIdx) specRegions (clintRegion clintS) clintS.(pfClint) _ init_smem)
-                     (proj1 (InitStateConsistent_regionStateAt (implMemRegionTree core) clint.(clintIdx) implRegions (clintRegion clint) clint.(pfClint) _ init_regions))).
+          rewrite (allTreeInitDet_InitStateConsistent_eq (Node "clint" clintChildren) _ _ eq_refl
+                     (InitStateConsistent_regionStateAt memRegionTree clintS.(clintIdx) specRegions (clintRegion clintS) clintS.(pfClint) _ init_smem)
+                     (proj1 (InitStateConsistent_regionStateAt implMemRegionTree clint.(clintIdx) implRegions (clintRegion clint) clint.(pfClint) _ init_regions))).
           apply ClintRel_refl.
-        * exact (PlicRel_init core (S (S (length (collectIrqActions core specRegions)))) (S (S (length (collectIrqActions core implRegions)))) nIrq_eq _ _
-                   (InitStateConsistent_regionStateAt (memRegionTree core) plicS.(plicIdx) specRegions (plicRegion plicS) plicS.(pfPlic) _ init_smem)
-                   (proj1 (InitStateConsistent_regionStateAt (implMemRegionTree core) plic.(plicIdx) implRegions (plicRegion plic) plic.(pfPlic) _ init_regions))).
-        * exact (RevRel_init core _ _
-                   (InitStateConsistent_regionStateAt (memRegionTree core) (length pre) specRegions (specRevRegion core revBase revPfB revPfA) (nth_error_app_cons_len pre (specRevRegion core revBase revPfB revPfA) post) _ init_smem)
-                   (proj1 (InitStateConsistent_regionStateAt (implMemRegionTree core) (length pre) implRegions (implRevRegion core revBase revPfB revPfA) (nth_error_app_cons_len pre (implRevRegion core revBase revPfB revPfA) post) _ init_regions))).
+        * exact (PlicRel_init (S (S (length (collectIrqActions specRegions)))) (S (S (length (collectIrqActions implRegions)))) nIrq_eq _ _
+                   (InitStateConsistent_regionStateAt memRegionTree plicS.(plicIdx) specRegions (plicRegion plicS) plicS.(pfPlic) _ init_smem)
+                   (proj1 (InitStateConsistent_regionStateAt implMemRegionTree plic.(plicIdx) implRegions (plicRegion plic) plic.(pfPlic) _ init_regions))).
+        * exact (RevRel_init _ _
+                   (InitStateConsistent_regionStateAt memRegionTree (length pre) specRegions (specRevRegion revBase revPfB revPfA) (nth_error_app_cons_len pre (specRevRegion revBase revPfB revPfA) post) _ init_smem)
+                   (proj1 (InitStateConsistent_regionStateAt implMemRegionTree (length pre) implRegions (implRevRegion revBase revPfB revPfA) (nth_error_app_cons_len pre (implRevRegion revBase revPfB revPfA) post) _ init_regions))).
       + split.
-        * exact (ClintInv_init core _
-                   (proj1 (InitStateConsistent_regionStateAt (implMemRegionTree core) clint.(clintIdx) implRegions (clintRegion clint) clint.(pfClint) _ init_regions))).
-        * exact (PlicInv_init core (S (S (length (collectIrqActions core implRegions)))) _
-                   (proj1 (InitStateConsistent_regionStateAt (implMemRegionTree core) plic.(plicIdx) implRegions (plicRegion plic) plic.(pfPlic) _ init_regions))).
-      + exact (SnapshotOK_init core _ fwcs _ init_smem).
+        * exact (ClintInv_init _
+                   (proj1 (InitStateConsistent_regionStateAt implMemRegionTree clint.(clintIdx) implRegions (clintRegion clint) clint.(pfClint) _ init_regions))).
+        * exact (PlicInv_init (S (S (length (collectIrqActions implRegions)))) _
+                   (proj1 (InitStateConsistent_regionStateAt implMemRegionTree plic.(plicIdx) implRegions (plicRegion plic) plic.(pfPlic) _ init_regions))).
+      + exact (SnapshotOK_init _ fwcs _ init_smem).
     - (* LatchRel *)
       intros e Hin; destruct Hin.
     - (* ReplayRel *)
@@ -475,7 +473,7 @@ Section RefInitMain.
       split; [reflexivity |]; split; [reflexivity |].
       split.
       { unfold PortsQuiet.
-        apply (AllPorts_init core); [| exact init_regions].
+        apply AllPorts_init; [| exact init_regions].
         intros r y Hy.
         destruct y as [[[ifrq [ifrp [ifw [ifiq [ifia []]]]]] [irq [irp [iwr []]]]]
                        [[frdy [fval [frpr [frd []]]]] [rqr [wrr [rpv [rpr [prq []]]]]]]].
@@ -490,12 +488,12 @@ Section RefInitMain.
         unfold dmNotAccessing, iDmSt, iDm; unfold dataMem_state; rewrite (proj1 Hdst).
         split; reflexivity. }
       split.
-      { pose proof (proj1 (InitStateConsistent_regionStateAt (implMemRegionTree core) (length pre) implRegions (implRevRegion core revBase revPfB revPfA) (nth_error_app_cons_len pre (implRevRegion core revBase revPfB revPfA) post) _ init_regions))
+      { pose proof (proj1 (InitStateConsistent_regionStateAt implMemRegionTree (length pre) implRegions (implRevRegion revBase revPfB revPfA) (nth_error_app_cons_len pre (implRevRegion revBase revPfB revPfA) post) _ init_regions))
           as Hrev.
         unfold revNotReading, iRevPhase, iRev, implRevState, iRegions, iMem.
-        set (xi := (regionStateAt (implMemRegionTree core) (length pre) implRegions
-                      (implRevRegion core revBase revPfB revPfA)
-                      (nth_error_app_cons_len pre (implRevRegion core revBase revPfB revPfA) post)
+        set (xi := (regionStateAt implMemRegionTree (length pre) implRegions
+                      (implRevRegion revBase revPfB revPfA)
+                      (nth_error_app_cons_len pre (implRevRegion revBase revPfB revPfA) post)
                       IMEM.(Fst)).(Fst)) in *.
         clearbody xi.
         destruct xi as [b [t [c [ep [ist [irq [sc [st [ph [cap [bs [hit []]]]]]]]]]]]].
@@ -513,7 +511,7 @@ Section RefInitMain.
       split; intros Hc; discriminate Hc.
     - (* DmQueueRel *)
       unfold DmQueueRel, iDmBuf, iDm, dataMem_fifo; cbn [g_chain g_acc ghost0].
-      rewrite (InitStateConsistent_fifo_to_list core dataMemCapacity MemFenceReq _ (proj1 (proj1 Hdm))).
+      rewrite (InitStateConsistent_fifo_to_list dataMemCapacity MemFenceReq _ (proj1 (proj1 Hdm))).
       reflexivity.
     - (* FenceRel *)
       unfold FenceRel.
@@ -522,7 +520,7 @@ Section RefInitMain.
         rewrite (proj1 (proj2 He)); intros Hc; discriminate Hc. }
       intros Hnot; exfalso; apply Hnot.
       unfold NoFenceIWait.
-      apply (AllPorts_init core); [| exact init_regions].
+      apply AllPorts_init; [| exact init_regions].
       intros r y Hy.
       destruct y as [[[ifrq [ifrp [ifw [ifiq [ifia []]]]]] [irq [irp [iwr []]]]] rest].
       cbn in Hy |- *.
@@ -532,10 +530,10 @@ Section RefInitMain.
         dataMem_fifo, dataMem_state, decode_toAluFifo.
       cbn [g_d2aFo ghost0].
       pose proof (proj2 Hdm) as Hdst; cbn in Hdst; rewrite (proj1 Hdst).
-      rewrite (InitStateConsistent_fifo_to_list core dataMemCapacity MemFenceReq _ (proj1 (proj1 Hdm))).
-      rewrite (InitStateConsistent_fifo_to_list core decodeCapacity DecodeToAluEntry _ (proj1 (proj1 (proj2 Hd)))).
-      rewrite (InitStateConsistent_extractMulDivEntries core mulCapacity divCapacity mulStages divStages mulDivMode
-                 _ (InitStateConsistent_impl_mulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      rewrite (InitStateConsistent_fifo_to_list dataMemCapacity MemFenceReq _ (proj1 (proj1 Hdm))).
+      rewrite (InitStateConsistent_fifo_to_list decodeCapacity DecodeToAluEntry _ (proj1 (proj1 (proj2 Hd)))).
+      rewrite (InitStateConsistent_extractMulDivEntries mulCapacity divCapacity mulStages divStages mulDivMode
+                 _ (InitStateConsistent_impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1 H1)).
       cbv zeta.
       change (dmLoadRp (getDefault DataMemState)) with false.
@@ -549,10 +547,10 @@ Section RefInitMain.
     - (* FrontRel *)
       unfold FrontRel, iD2a, iInstBuf, iFetchBuf, iDecode, iFetch, decode_toAluFifo, fetch_instFifo,
         fetch_fetchBufFifo.
-      rewrite (InitStateConsistent_fifo_to_list core decodeCapacity DecodeToAluEntry _ (proj1 (proj1 (proj2 Hd)))).
-      rewrite (InitStateConsistent_fifo_to_list core instCapacity AssembledInst _
+      rewrite (InitStateConsistent_fifo_to_list decodeCapacity DecodeToAluEntry _ (proj1 (proj1 (proj2 Hd)))).
+      rewrite (InitStateConsistent_fifo_to_list instCapacity AssembledInst _
                  (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 Hf))))))))).
-      rewrite (InitStateConsistent_fifo_to_list core fetchCapacity FetchBufEntry _
+      rewrite (InitStateConsistent_fifo_to_list fetchCapacity FetchBufEntry _
                  (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 Hf)))))))).
       split; [exists [], []; split; [reflexivity | split; constructor] |].
       split; [exists [], []; split; [reflexivity | split; constructor] |].
@@ -562,12 +560,12 @@ Section RefInitMain.
       split.
       + unfold liveInsts; cbn [combine filter map app g_d2aFo ghost0].
         unfold iD2a, iInstBuf, iDecode, iFetch, decode_toAluFifo, fetch_instFifo.
-        rewrite (InitStateConsistent_fifo_to_list core decodeCapacity DecodeToAluEntry _ (proj1 (proj1 (proj2 Hd)))).
-        rewrite (InitStateConsistent_fifo_to_list core instCapacity AssembledInst _
+        rewrite (InitStateConsistent_fifo_to_list decodeCapacity DecodeToAluEntry _ (proj1 (proj1 (proj2 Hd)))).
+        rewrite (InitStateConsistent_fifo_to_list instCapacity AssembledInst _
                    (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 Hf))))))))).
         unfold LiveChain; cbn [LiveChainG combine filter map app].
         unfold FrontierRel, iFetchBuf, iFetch, fetch_fetchBufFifo.
-        rewrite (InitStateConsistent_fifo_to_list core fetchCapacity FetchBufEntry _
+        rewrite (InitStateConsistent_fifo_to_list fetchCapacity FetchBufEntry _
                    (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 Hf)))))))).
         cbn [filter FbChain].
         split; [exact I |]; split; [constructor |].
@@ -576,13 +574,13 @@ Section RefInitMain.
         change (optValid (getDefault (Option StraddleHalf))) with false.
         cbv iota beta.
         unfold iFetchPc, iFetch, fetch_pc, iPcc, iRf.
-        rewrite (proj1 Hf), (readPcc_init_addr core pcAddrInit _ init_rf).
+        rewrite (proj1 Hf), (readPcc_init_addr pcAddrInit _ init_rf).
         reflexivity.
       + unfold FetchRespRel.
-        apply (AllPorts_init core); [| exact init_regions].
+        apply AllPorts_init; [| exact init_regions].
         intros r y Hy.
         unfold fbInRegion, iFetchBuf, iFetch, fetch_fetchBufFifo.
-        rewrite (InitStateConsistent_fifo_to_list core fetchCapacity FetchBufEntry _
+        rewrite (InitStateConsistent_fifo_to_list fetchCapacity FetchBufEntry _
                    (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 Hf)))))))).
         destruct y as [[[ifrq [ifrp [ifw [ifiq [ifia []]]]]] [irq [irp [iwr []]]]]
                        [[frdy [fval [frpr [frd []]]]] [rqr [wrr [rpv [rpr [prq []]]]]]]].
@@ -594,24 +592,24 @@ Section RefInitMain.
         intros Hc; discriminate Hc.
     - (* WfRel *)
       unfold WfRel, iFetch, iDecode, iDm.
-      split; [exact (InitStateConsistent_fifo_wf core fetchCapacity FetchBufEntry _
+      split; [exact (InitStateConsistent_fifo_wf fetchCapacity FetchBufEntry _
                        (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 Hf)))))))) |].
-      split; [exact (InitStateConsistent_fifo_wf core instCapacity AssembledInst _
+      split; [exact (InitStateConsistent_fifo_wf instCapacity AssembledInst _
                        (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 Hf))))))))) |].
-      split; [exact (InitStateConsistent_fifo_wf core decodeCapacity DecodeToAluEntry _ (proj1 (proj1 (proj2 Hd)))) |].
-      split; [exact (InitStateConsistent_fifo_wf core dataMemCapacity MemFenceReq _ (proj1 (proj1 Hdm))) |].
-      apply (AllPorts_init core); [| exact init_regions].
+      split; [exact (InitStateConsistent_fifo_wf decodeCapacity DecodeToAluEntry _ (proj1 (proj1 (proj2 Hd)))) |].
+      split; [exact (InitStateConsistent_fifo_wf dataMemCapacity MemFenceReq _ (proj1 (proj1 Hdm))) |].
+      apply AllPorts_init; [| exact init_regions].
       intros r y Hy; split.
-      + exact (InitStateConsistent_ImplExternalRegionHandshakeInv core r y Hy).
-      + exact (InitStateConsistent_RegionFenceICountInv core r y.(Fst) (proj1 Hy)).
+      + exact (InitStateConsistent_ImplExternalRegionHandshakeInv r y Hy).
+      + exact (InitStateConsistent_RegionFenceICountInv r y.(Fst) (proj1 Hy)).
     - (* RevokerRel: the revoker starts Idle and no access is in flight *)
-      pose proof (proj1 (InitStateConsistent_regionStateAt (implMemRegionTree core) (length pre) implRegions (implRevRegion core revBase revPfB revPfA) (nth_error_app_cons_len pre (implRevRegion core revBase revPfB revPfA) post) _ init_regions))
+      pose proof (proj1 (InitStateConsistent_regionStateAt implMemRegionTree (length pre) implRegions (implRevRegion revBase revPfB revPfA) (nth_error_app_cons_len pre (implRevRegion revBase revPfB revPfA) post) _ init_regions))
         as Hrev.
       unfold RevokerRel, RevAccRel; cbn [g_acc ghost0].
       unfold iRevPhase, iRev, implRevState, iRegions, iMem.
-      set (xi := (regionStateAt (implMemRegionTree core) (length pre) implRegions
-                    (implRevRegion core revBase revPfB revPfA)
-                    (nth_error_app_cons_len pre (implRevRegion core revBase revPfB revPfA) post)
+      set (xi := (regionStateAt implMemRegionTree (length pre) implRegions
+                    (implRevRegion revBase revPfB revPfA)
+                    (nth_error_app_cons_len pre (implRevRegion revBase revPfB revPfA) post)
                     IMEM.(Fst)).(Fst)) in *.
       clearbody xi.
       destruct xi as [b [t [c [ep [ist [irq [sc [st [ph [cap [bs [hit []]]]]]]]]]]]].

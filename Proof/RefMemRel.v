@@ -47,35 +47,34 @@ Local Open Scope guru_scope.
  *    - revoker: the spec's 8 registers are the projection of the impl's 12,
  *      except for `scanAddr` (`RevOff`). *)
 
-Local Abbreviation TS t := (TreeState DomainElemState t).
+Local Abbreviation TS t := (TreeState ElemState t).
 
 (* --- 1. Ordinary Positions --- *)
 
 Section RegionRel.
-  Variable core : string.
   (* Positions handled through their instances *)
   Variables clintPos plicPos : nat.
 
   (* ExternalMem: spec part `x`, impl region `y` *)
   Definition ExtRel (r : MemRegion)
-    (x : TS (externalMemRegionTree core r)) (y : TS (implExternalMemRegionTree core r)) : Prop :=
-    x.(Snd).(Snd).(Snd).(Fst) = implAccWrites core r y /\
+    (x : TS (externalMemRegionTree r)) (y : TS (implExternalMemRegionTree r)) : Prop :=
+    x.(Snd).(Snd).(Snd).(Fst) = implAccWrites r y /\
     x.(Fst).(Snd).(Snd).(Fst) = y.(Fst).(Fst).(Snd).(Snd).(Fst) /\
     length x.(Fst).(Snd).(Snd).(Snd).(Fst) = length y.(Fst).(Fst).(Snd).(Snd).(Snd).(Fst) /\
     count_true x.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst) = count_true y.(Fst).(Fst).(Snd).(Snd).(Snd).(Snd).(Fst).
 
   Definition RegionRelAt (i : nat) (r : MemRegion)
-    : TS (memRegionTree core r) -> TS (implMemRegionTree core r) -> Prop :=
+    : TS (memRegionTree r) -> TS (implMemRegionTree r) -> Prop :=
     match r.(regionKind) as k
-      return TS (memRegionKindTree core r k) -> TS (implMemRegionKindTree core r k) -> Prop
+      return TS (memRegionKindTree r k) -> TS (implMemRegionKindTree r k) -> Prop
     with
     | ExternalMem => fun x y => ExtRel r x y
     | CustomMem _ _ _ _ => fun x y => i = clintPos \/ i = plicPos \/ x = y.(Fst)
     end.
 
   Fixpoint MemRelPost (i : nat) (l : list MemRegion)
-    : TS (specMemTree core l) -> TS (implRegionsTree core l) -> Prop :=
-    match l as l0 return TS (specMemTree core l0) -> TS (implRegionsTree core l0) -> Prop with
+    : TS (specMemTree l) -> TS (implRegionsTree l) -> Prop :=
+    match l as l0 return TS (specMemTree l0) -> TS (implRegionsTree l0) -> Prop with
     | [] => fun _ _ => True
     | r :: l' => fun ms mi =>
         RegionRelAt i r ms.(Fst) mi.(Fst) /\ MemRelPost (S i) l' ms.(Snd).(Fst) mi.(Snd).(Fst)
@@ -83,9 +82,9 @@ Section RegionRel.
 
   (* The position `length l` (the revoker) is skipped *)
   Fixpoint MemRelPre (i : nat) (l : list MemRegion) (sRev iRev : MemRegion) (post : list MemRegion)
-    : TS (specMemTree core (l ++ sRev :: post)) -> TS (implRegionsTree core (l ++ iRev :: post)) -> Prop :=
+    : TS (specMemTree (l ++ sRev :: post)) -> TS (implRegionsTree (l ++ iRev :: post)) -> Prop :=
     match l as l0
-      return TS (specMemTree core (l0 ++ sRev :: post)) -> TS (implRegionsTree core (l0 ++ iRev :: post)) -> Prop
+      return TS (specMemTree (l0 ++ sRev :: post)) -> TS (implRegionsTree (l0 ++ iRev :: post)) -> Prop
     with
     | [] => fun ms mi => MemRelPost (S i) post ms.(Snd).(Fst) mi.(Snd).(Fst)
     | r :: l' => fun ms mi =>
@@ -109,10 +108,9 @@ Definition revOffAddr (o : RevOff) (sa : bits TagAddrWidth) : bits TagAddrWidth 
   end.
 
 Section SpecialRegions.
-  Variable core : string.
 
   (* CLINT: [ mtime; mtimecmp; mtip; sampledMtip ] *)
-  Local Abbreviation ClintS := (TS (Node "clint" (clintChildren core))).
+  Local Abbreviation ClintS := (TS (Node "clint" clintChildren)).
 
   Definition clintSampled (x : ClintS) : bool := x.(Snd).(Snd).(Snd).(Fst).
   Definition clintMtip (x : ClintS) : bool := x.(Snd).(Snd).(Fst).
@@ -129,7 +127,7 @@ Section SpecialRegions.
     clintSampled xi = true -> clintMtip xi = true.
 
   (* PLIC: [ priorities; pending; enables; threshold; claim; meip; in_service; UartIrq ] *)
-  Local Abbreviation PlicS n := (TS (plicTree core n)).
+  Local Abbreviation PlicS n := (TS (plicTree n)).
 
   Definition plicMeipOf {n} (x : PlicS n) : bool := x.(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).
   Definition plicClaimOf {n} (x : PlicS n) : bits Xlen := x.(Snd).(Snd).(Snd).(Snd).(Fst).
@@ -152,8 +150,8 @@ Section SpecialRegions.
     plicMeipOf xi = true -> plicClaimOf xi <> Zmod.zero.
 
   (* Revoker: 8 architectural registers (spec) vs 8 + 4 (impl) *)
-  Local Abbreviation RevS := (TS (Node "revoker" (revokerChildren core []))).
-  Local Abbreviation RevI := (TS (implRevokerTree core)).
+  Local Abbreviation RevS := (TS (Node "revoker" (revokerChildren []))).
+  Local Abbreviation RevI := (TS implRevokerTree).
 
   Definition revScanAddr (x : RevS) : bits TagAddrWidth := x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).
 
@@ -163,60 +161,59 @@ Section SpecialRegions.
      (a ,, (x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,, tt)))))))).
 
   Definition RevRel (o : RevOff) (xs : RevS) (xi : RevI) : Prop :=
-    projImplRevokerArchState core xi = revWithScanAddr (revOffAddr o (revScanAddr xs)) xs.
+    projImplRevokerArchState xi = revWithScanAddr (revOffAddr o (revScanAddr xs)) xs.
 
 End SpecialRegions.
 
 (* --- 3. The Memory Relation over the Two Region Lists --- *)
 
 Section MemRelLists.
-  Variable core : string.
   Variables pre post : list MemRegion.
   Variable revBase : Z.
   Variable revPfB : Is_true ((0 <=? revBase) && (revBase + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z.
   Variable revPfA : Is_true (revBase mod (2 ^ LgLineBytes) =? 0)%Z.
 
-  Local Abbreviation specRegions := (specRegionsOf core pre post revBase revPfB revPfA).
-  Local Abbreviation implRegions := (implRegionsOf core pre post revBase revPfB revPfA).
-  Local Abbreviation sRev := (specRevRegion core revBase revPfB revPfA).
-  Local Abbreviation iRev := (implRevRegion core revBase revPfB revPfA).
+  Local Abbreviation specRegions := (specRegionsOf pre post revBase revPfB revPfA).
+  Local Abbreviation implRegions := (implRegionsOf pre post revBase revPfB revPfA).
+  Local Abbreviation sRev := (specRevRegion revBase revPfB revPfA).
+  Local Abbreviation iRev := (implRevRegion revBase revPfB revPfA).
 
-  Variable clintS : @ClintInstance core specRegions.
-  Variable clint : @ClintInstance core implRegions.
-  Variable plicS : @PlicInstance core (S (S (length (collectIrqActions core specRegions)))) specRegions.
-  Variable plic : @PlicInstance core (S (S (length (collectIrqActions core implRegions)))) implRegions.
+  Variable clintS : @ClintInstance specRegions.
+  Variable clint : @ClintInstance implRegions.
+  Variable plicS : @PlicInstance (S (S (length (collectIrqActions specRegions)))) specRegions.
+  Variable plic : @PlicInstance (S (S (length (collectIrqActions implRegions)))) implRegions.
 
-  Definition specClintState (ms : TS (specMemTree core specRegions)) : TS (Node "clint" (clintChildren core)) :=
-    regionStateAt (memRegionTree core) clintS.(clintIdx) specRegions (clintRegion clintS) clintS.(pfClint) ms.
+  Definition specClintState (ms : TS (specMemTree specRegions)) : TS (Node "clint" clintChildren) :=
+    regionStateAt memRegionTree clintS.(clintIdx) specRegions (clintRegion clintS) clintS.(pfClint) ms.
 
-  Definition implClintState (mi : TS (implRegionsTree core implRegions)) : TS (Node "clint" (clintChildren core)) :=
-    (regionStateAt (implMemRegionTree core) clint.(clintIdx) implRegions (clintRegion clint) clint.(pfClint) mi).(Fst).
+  Definition implClintState (mi : TS (implRegionsTree implRegions)) : TS (Node "clint" clintChildren) :=
+    (regionStateAt implMemRegionTree clint.(clintIdx) implRegions (clintRegion clint) clint.(pfClint) mi).(Fst).
 
-  Definition specPlicState (ms : TS (specMemTree core specRegions))
-    : TS (plicTree core (S (S (length (collectIrqActions core specRegions))))) :=
-    regionStateAt (memRegionTree core) plicS.(plicIdx) specRegions (plicRegion plicS) plicS.(pfPlic) ms.
+  Definition specPlicState (ms : TS (specMemTree specRegions))
+    : TS (plicTree (S (S (length (collectIrqActions specRegions))))) :=
+    regionStateAt memRegionTree plicS.(plicIdx) specRegions (plicRegion plicS) plicS.(pfPlic) ms.
 
-  Definition implPlicState (mi : TS (implRegionsTree core implRegions))
-    : TS (plicTree core (S (S (length (collectIrqActions core implRegions))))) :=
-    (regionStateAt (implMemRegionTree core) plic.(plicIdx) implRegions (plicRegion plic) plic.(pfPlic) mi).(Fst).
+  Definition implPlicState (mi : TS (implRegionsTree implRegions))
+    : TS (plicTree (S (S (length (collectIrqActions implRegions))))) :=
+    (regionStateAt implMemRegionTree plic.(plicIdx) implRegions (plicRegion plic) plic.(pfPlic) mi).(Fst).
 
-  Definition specRevState (ms : TS (specMemTree core specRegions)) : TS (Node "revoker" (revokerChildren core [])) :=
-    regionStateAt (memRegionTree core) (length pre) specRegions sRev
+  Definition specRevState (ms : TS (specMemTree specRegions)) : TS (Node "revoker" (revokerChildren [])) :=
+    regionStateAt memRegionTree (length pre) specRegions sRev
       (nth_error_app_cons_len pre sRev post) ms.
 
-  Definition implRevState (mi : TS (implRegionsTree core implRegions)) : TS (implRevokerTree core) :=
-    (regionStateAt (implMemRegionTree core) (length pre) implRegions iRev
+  Definition implRevState (mi : TS (implRegionsTree implRegions)) : TS implRevokerTree :=
+    (regionStateAt implMemRegionTree (length pre) implRegions iRev
        (nth_error_app_cons_len pre iRev post) mi).(Fst).
 
   Definition MemRel (revOff : RevOff)
-    (ms : TS (specMemTree core specRegions)) (mi : TS (implRegionsTree core implRegions)) : Prop :=
-    MemRelPre core clintS.(clintIdx) plicS.(plicIdx) 0 pre sRev iRev post ms mi /\
-    ClintRel core (specClintState ms) (implClintState mi) /\
-    PlicRel core _ _ (specPlicState ms) (implPlicState mi) /\
-    RevRel core revOff (specRevState ms) (implRevState mi).
+    (ms : TS (specMemTree specRegions)) (mi : TS (implRegionsTree implRegions)) : Prop :=
+    MemRelPre clintS.(clintIdx) plicS.(plicIdx) 0 pre sRev iRev post ms mi /\
+    ClintRel (specClintState ms) (implClintState mi) /\
+    PlicRel _ _ (specPlicState ms) (implPlicState mi) /\
+    RevRel revOff (specRevState ms) (implRevState mi).
 
   (* Impl-only facts about the devices *)
-  Definition DevInv (mi : TS (implRegionsTree core implRegions)) : Prop :=
-    ClintInv core (implClintState mi) /\ PlicInv core (implPlicState mi).
+  Definition DevInv (mi : TS (implRegionsTree implRegions)) : Prop :=
+    ClintInv (implClintState mi) /\ PlicInv (implPlicState mi).
 
 End MemRelLists.

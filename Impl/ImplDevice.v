@@ -32,7 +32,7 @@ Local Open Scope guru_scope.
  * =========================================================================== *)
 
 Record MemIfc {ty : Kind -> Type} := {
-  memTree : Tree DomainElem ;
+  memTree : Tree Elem ;
 
   (* 1. Instruction Memory Channel *)
   mem_readInstRq   : ty Addr -> Action ty memTree Bool ;
@@ -136,24 +136,23 @@ Definition memExtractFetchPacket {ty : Kind -> Type} (rp : ty LineReadRp) : Expr
   FromBit FetchPacket (ToBit (##rp`"data")).
 
 Section ImplDevice.
-  Variable dom : string.
 
-  Definition implExternalMemFetchTree : Tree DomainElem :=
+  Definition implExternalMemFetchTree : Tree Elem :=
     Node "fetch"
-      [ Leaf "lineReadRqReady" (dom, ERecv Bool) ;
-        Leaf "lineReadRpValid" (dom, ERecv Bool) ;
-        Leaf "lineReadRpReady" (dom, ESend (Bit 0)) ;
-        Leaf "readRp"          (dom, EReg (Build_Reg (Option LineReadRp) (Some (getDefault _)) false)) ].
+      [ Leaf "lineReadRqReady" (ERecv Bool) ;
+        Leaf "lineReadRpValid" (ERecv Bool) ;
+        Leaf "lineReadRpReady" (ESend (Bit 0)) ;
+        Leaf "readRp"          (EReg (Build_Reg (Option LineReadRp) (Some (getDefault _)))) ].
 
-  Definition implExternalMemExtraChildren : list (Tree DomainElem) :=
+  Definition implExternalMemExtraChildren : list (Tree Elem) :=
     [ implExternalMemFetchTree ;
-      Leaf "lineReadRqReady"  (dom, ERecv Bool) ;
-      Leaf "lineWriteRqReady" (dom, ERecv Bool) ;
-      Leaf "lineReadRpValid"  (dom, ERecv Bool) ;
-      Leaf "lineReadRpReady"  (dom, ESend (Bit 0)) ;
-      Leaf "portRq"           (dom, EReg (Build_Reg (Option PortRq) (Some (getDefault _)) false)) ].
+      Leaf "lineReadRqReady"  (ERecv Bool) ;
+      Leaf "lineWriteRqReady" (ERecv Bool) ;
+      Leaf "lineReadRpValid"  (ERecv Bool) ;
+      Leaf "lineReadRpReady"  (ESend (Bit 0)) ;
+      Leaf "portRq"           (EReg (Build_Reg (Option PortRq) (Some (getDefault _)))) ].
 
-  Definition implMemRegionExtraChildren (r : MemRegion) (k : RegionKind r.(regionName)) : list (Tree DomainElem) :=
+  Definition implMemRegionExtraChildren (r : MemRegion) (k : RegionKind r.(regionName)) : list (Tree Elem) :=
     match k with
     | ExternalMem => implExternalMemExtraChildren
     | CustomMem _ _ _ _ => []
@@ -161,22 +160,22 @@ Section ImplDevice.
 
   Arguments implMemRegionExtraChildren r k : clear implicits.
 
-  Definition implMemRegionKindTree (r : MemRegion) (k : RegionKind r.(regionName)) : Tree DomainElem :=
-    Node r.(regionName) (memRegionKindTree dom r k :: implMemRegionExtraChildren r k).
+  Definition implMemRegionKindTree (r : MemRegion) (k : RegionKind r.(regionName)) : Tree Elem :=
+    Node r.(regionName) (memRegionKindTree r k :: implMemRegionExtraChildren r k).
 
   Arguments implMemRegionKindTree r k : clear implicits.
 
-  Definition implExternalMemRegionTree (r : MemRegion) : Tree DomainElem :=
+  Definition implExternalMemRegionTree (r : MemRegion) : Tree Elem :=
     implMemRegionKindTree r ExternalMem.
 
-  Definition implCustomMemRegionTree (r : MemRegion) (children : list (Tree DomainElem)) : Tree DomainElem :=
+  Definition implCustomMemRegionTree (r : MemRegion) (children : list (Tree Elem)) : Tree Elem :=
     Node r.(regionName) [ customMemRegionTree r children ].
 
-  Definition implMemRegionTree (r : MemRegion) : Tree DomainElem :=
+  Definition implMemRegionTree (r : MemRegion) : Tree Elem :=
     implMemRegionKindTree r r.(regionKind).
 
   Definition liftToImplRegion {ty : Kind -> Type} (r : MemRegion) {k : Kind}
-    (act : Action ty (memRegionTree dom r) k) : Action ty (implMemRegionTree r) k :=
+    (act : Action ty (memRegionTree r) k) : Action ty (implMemRegionTree r) k :=
     liftAction child0Path act.
 
   Arguments liftToImplRegion {ty r k} act.
@@ -227,7 +226,7 @@ Section ImplDevice.
       If (Not (##readRp`"valid")) Then (
         LetA valid : Bool <- liftAction fetchPath (Recv "valid" pFetchLineReadRpValid (fun v => Return #v)) ;
         If #valid Then (
-          LetA rp : LineReadRp <- liftAction child0Path (@externalFetchLineReadRp dom r ty) ;
+          LetA rp : LineReadRp <- liftAction child0Path (@externalFetchLineReadRp r ty) ;
           liftAction fetchPath (
             Act (Send pFetchLineReadRpReady ($0 : Expr ty (Bit 0)) Retv) ;
             WriteReg pExtFetchReadRp (mkSome #rp) Retv)
@@ -265,7 +264,7 @@ Section ImplDevice.
       Recv "valid" pLineReadRpValid (fun valid =>
       LetIf rpOpt : Option LineReadRp <-
         If #valid Then (
-          LetA rp : LineReadRp <- liftAction child0Path (@externalLineReadRp dom r ty) ;
+          LetA rp : LineReadRp <- liftAction child0Path (@externalLineReadRp r ty) ;
           Act (Send pLineReadRpReady ($0 : Expr ty (Bit 0)) Retv) ;
           Return (mkSome #rp)
         ) ;
@@ -324,7 +323,7 @@ Section ImplDevice.
 
   Section ImplCustomMemRegionActions.
     Variable r : MemRegion.
-    Variable children : list (Tree DomainElem).
+    Variable children : list (Tree Elem).
     Variable readAction : forall ty, ty Addr ->
                           ty (Array LineBytes Bool) ->
                           Action ty (customMemRegionTree r children) (Array LineBytes (Bit 8)).
@@ -334,7 +333,7 @@ Section ImplDevice.
                            Action ty (customMemRegionTree r children) (Bit 0).
     Variable ty : Kind -> Type.
 
-    Local Definition tImplCust : Tree DomainElem :=
+    Local Definition tImplCust : Tree Elem :=
       implCustomMemRegionTree r children.
 
     (* The device read happens at once; its response goes to the memory's data response buffer *)
@@ -486,13 +485,13 @@ Section ImplDevice.
              (r : MemRegion)
              : list (forall ty, Action ty (implMemRegionTree r) Bool) :=
     map (fun act ty => liftToImplRegion (act ty))
-        (memRegionIrqActions dom r).
+        (memRegionIrqActions r).
 
   Definition implMemRegionFenceIAckActions
              (r : MemRegion)
              : list (forall ty, Action ty (implMemRegionTree r) (Bit 0)) :=
     map (fun act ty => liftToImplRegion (act ty))
-        (memRegionFenceIAckActions dom r).
+        (memRegionFenceIAckActions r).
 
   (* ===========================================================================
    * Composite Implementation Memory Tree & System Routing
@@ -508,7 +507,7 @@ Section ImplDevice.
     (r0 : MemRegion)
     (pf : nth_error regions idx = Some r0)
     {k : Kind}
-    (act : Action ty (memRegionTree dom r0) k)
+    (act : Action ty (memRegionTree r0) k)
     : Action ty (implRegionsTree regions) k :=
     genNthRegionAction implMemRegionTree idx regions r0 pf (liftToImplRegion act).
 
@@ -606,12 +605,12 @@ Section ImplDevice.
 
   (* The memory: the regions, the `state` machine that serves one data request at a time (its
    * requester), and the single data response buffer `readRp` *)
-  Definition implMemTree (regions : list MemRegion) : Tree DomainElem :=
+  Definition implMemTree (regions : list MemRegion) : Tree Elem :=
     Node ""
       [ implRegionsTree regions ;
-        Leaf "state"     (dom, EReg (Build_Reg MemState (Some (getDefault _)) false)) ;
-        Leaf "requester" (dom, EReg (Build_Reg Requester (Some (getDefault _)) false)) ;
-        Leaf "readRp"    (dom, EReg (Build_Reg (Option LineReadRp) (Some (getDefault _)) false)) ].
+        Leaf "state"     (EReg (Build_Reg MemState (Some (getDefault _)))) ;
+        Leaf "requester" (EReg (Build_Reg Requester (Some (getDefault _)))) ;
+        Leaf "readRp"    (EReg (Build_Reg (Option LineReadRp) (Some (getDefault _)))) ].
 
   Definition implNthRegionAction
     {ty : Kind -> Type}
@@ -620,7 +619,7 @@ Section ImplDevice.
     (r0 : MemRegion)
     (pf : nth_error regions idx = Some r0)
     {k : Kind}
-    (act : Action ty (memRegionTree dom r0) k)
+    (act : Action ty (memRegionTree r0) k)
     : Action ty (implMemTree regions) k :=
     liftAction child0Path (implRegionsNthRegionAction idx regions r0 pf act).
 
@@ -640,11 +639,11 @@ Section ImplDevice.
       Variable ty : Kind -> Type.
 
       Local Definition liftRevoker
-        (rev : @RevokerInstance dom (implRevokerExtraChildren dom) regions)
+        (rev : @RevokerInstance implRevokerExtraChildren regions)
         (k : Kind)
-        (a : Action ty (memRegionTree dom (@revokerRegion dom (implRevokerExtraChildren dom) regions rev)) k)
+        (a : Action ty (memRegionTree (@revokerRegion implRevokerExtraChildren regions rev)) k)
         : Action ty implMemTree k :=
-        implNthRegionAction rev.(revokerIdx) regions (@revokerRegion dom (implRevokerExtraChildren dom) regions rev) rev.(pfRevoker) a.
+        implNthRegionAction rev.(revokerIdx) regions (@revokerRegion implRevokerExtraChildren regions rev) rev.(pfRevoker) a.
 
       Arguments liftRevoker rev k a : clear implicits.
 
@@ -875,12 +874,12 @@ Section ImplDevice.
         Return #rOpt.
 
       (* 2. Memory Write Channel (with store-address snooping for split-phase revoker) *)
-      Definition implWriteMem (rev : @RevokerInstance dom (implRevokerExtraChildren dom) regions)
+      Definition implWriteMem (rev : @RevokerInstance implRevokerExtraChildren regions)
                               (addr : ty Addr) (stVal : ty FullCapWithTag)
                               (memSize : ty (Bit LgLgNumBytesFullCapSz)) : Action ty implMemTree Bool :=
         LetA rdy : Bool <- implMemWrite addr stVal memSize ;
         If #rdy Then (
-          liftRevoker rev _ (implRevokerSnoopStore dom addr memSize)
+          liftRevoker rev _ (implRevokerSnoopStore addr memSize)
         ) ;
         Return #rdy.
 
@@ -897,11 +896,10 @@ Section ImplDevice.
        *    use the memory between two phases of the revoker. The Idle step waits until no store
        *    is pending, so the revoker moves on (to its next read, or to the epoch bump when the
        *    sweep is done) only after its last write has been accepted. *)
-      Definition implRevokerIdleStep (rev : @RevokerInstance dom (implRevokerExtraChildren dom) regions) : Action ty implMemTree (Bit 0) :=
+      Definition implRevokerIdleStep (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
         LetA noPendingWrite : Bool <- implMemNoPendingWrite ;
         If #noPendingWrite Then (
           @implRevokerIdle
-            dom
             ty
             implMemTree
             (liftRevoker rev)
@@ -909,9 +907,8 @@ Section ImplDevice.
         ) ;
         Retv.
 
-      Definition implRevokerWaitCapRpStep (rev : @RevokerInstance dom (implRevokerExtraChildren dom) regions) : Action ty implMemTree (Bit 0) :=
+      Definition implRevokerWaitCapRpStep (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
         @implRevokerWaitCapRp
-          dom
           ty
           revConfig
           implMemTree
@@ -919,31 +916,28 @@ Section ImplDevice.
           (implMemReadRp ReqRevoker)
           implMemDeqRp.
 
-      Definition implRevokerWaitRevBitRqStep (rev : @RevokerInstance dom (implRevokerExtraChildren dom) regions) : Action ty implMemTree (Bit 0) :=
+      Definition implRevokerWaitRevBitRqStep (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
         @implRevokerWaitRevBitRq
-          dom
           ty
           implMemTree
           (liftRevoker rev)
           (implReadRevBitRqFor ReqRevoker).
 
-      Definition implRevokerWaitRevBitRpStep (rev : @RevokerInstance dom (implRevokerExtraChildren dom) regions) : Action ty implMemTree (Bit 0) :=
+      Definition implRevokerWaitRevBitRpStep (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
         @implRevokerWaitRevBitRp
-          dom
           ty
           implMemTree
           (liftRevoker rev)
           (implGetDeqRevBitRpFor ReqRevoker).
 
-      Definition implRevokerWriteCapStep (rev : @RevokerInstance dom (implRevokerExtraChildren dom) regions) : Action ty implMemTree (Bit 0) :=
+      Definition implRevokerWriteCapStep (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
         @implRevokerWriteCap
-          dom
           ty
           implMemTree
           (liftRevoker rev)
           (fun addr stVal sz => implMemWrite addr stVal sz).
 
-      Definition implRevokerSteps (rev : @RevokerInstance dom (implRevokerExtraChildren dom) regions) : list (Action ty implMemTree (Bit 0)) :=
+      Definition implRevokerSteps (rev : @RevokerInstance implRevokerExtraChildren regions) : list (Action ty implMemTree (Bit 0)) :=
         [ implRevokerIdleStep rev ;
           implRevokerWaitCapRpStep rev ;
           implRevokerWaitRevBitRqStep rev ;
@@ -951,7 +945,7 @@ Section ImplDevice.
           implRevokerWriteCapStep rev ].
 
       (* 5. Top-level MemIfc Instance *)
-      Definition implMemIfc (rev : @RevokerInstance dom (implRevokerExtraChildren dom) regions) : @MemIfc ty := {|
+      Definition implMemIfc (rev : @RevokerInstance implRevokerExtraChildren regions) : @MemIfc ty := {|
         memTree            := implMemTree ;
         mem_readInstRq     := fun addr => liftAction child0Path (implRegionsFetchLineReadRq regions addr) ;
         mem_getInstRp      := fun addr => liftAction child0Path (implRegionsFetchLineReadRp regions addr) ;
@@ -974,17 +968,15 @@ Section ImplDevice.
 
 End ImplDevice.
 
-Arguments implExternalMemFetchTree dom : clear implicits.
-Arguments implExternalMemExtraChildren dom : clear implicits.
-Arguments implMemRegionExtraChildren dom r k : clear implicits.
-Arguments implMemRegionKindTree dom r k : clear implicits.
-Arguments implMemRegionTree dom r : clear implicits.
-Arguments implRegionsChildren dom regions : clear implicits.
-Arguments implRegionsTree dom regions : clear implicits.
-Arguments implMemTree dom regions : clear implicits.
-Arguments implRegionsNthRegionAction {dom ty} idx regions r0 pf {k} act.
-Arguments implNthRegionAction {dom ty} idx regions r0 pf {k} act.
-Arguments implMemIfc dom revConfig regions [ty] rev.
-Arguments liftToImplRegion {dom ty r k} act.
+Arguments implMemRegionExtraChildren r k : clear implicits.
+Arguments implMemRegionKindTree r k : clear implicits.
+Arguments implMemRegionTree r : clear implicits.
+Arguments implRegionsChildren regions : clear implicits.
+Arguments implRegionsTree regions : clear implicits.
+Arguments implMemTree regions : clear implicits.
+Arguments implRegionsNthRegionAction {ty} idx regions r0 pf {k} act.
+Arguments implNthRegionAction {ty} idx regions r0 pf {k} act.
+Arguments implMemIfc revConfig regions [ty] rev.
+Arguments liftToImplRegion {ty r k} act.
 
 

@@ -73,7 +73,7 @@ Definition DecodeToAluEntry := STRUCT_TYPE {
  * =========================================================================== *)
 
 Record FetchIfc {ty : Kind -> Type} := {
-  fetchTree           : Tree DomainElem ;
+  fetchTree           : Tree Elem ;
   fetch_instFirst     : Action ty fetchTree (Option AssembledInst) ;
   fetch_instDeq       : Action ty fetchTree (Bit 0) ;
   fetch_clearStraddle : Action ty fetchTree (Bit 0) ;
@@ -81,27 +81,27 @@ Record FetchIfc {ty : Kind -> Type} := {
 }.
 
 Record DecodeIfc {ty : Kind -> Type} := {
-  decodeTree   : Tree DomainElem ;
+  decodeTree   : Tree Elem ;
   decode_first : Action ty decodeTree (Option DecodeToAluEntry) ;
   decode_deq   : Action ty decodeTree (Bit 0)
 }.
 
 Record ExecuteIfc {ty : Kind -> Type} := {
-  executeTree             : Tree DomainElem ;
+  executeTree             : Tree Elem ;
   execute_readExecEpoch   : Action ty executeTree Epoch ;
   execute_readFenceIPend  : Action ty executeTree Bool ;
   execute_clearFenceIPend : Action ty executeTree (Bit 0)
 }.
 
 Record DataMemIfc {ty : Kind -> Type} := {
-  dataMemTree     : Tree DomainElem ;
+  dataMemTree     : Tree Elem ;
   dataMem_isEmpty : Action ty dataMemTree Bool ;
   dataMem_isFull  : Action ty dataMemTree Bool ;
   dataMem_enq     : ty (Bit RegIdxSzReal) -> ty Addr -> ty MemFenceUnion -> Action ty dataMemTree (Bit 0)
 }.
 
 Record MulDivIfc {ty : Kind -> Type} := {
-  mulDivTree       : Tree DomainElem ;
+  mulDivTree       : Tree Elem ;
   mulDiv_isFullMul : Action ty mulDivTree Bool ;
   mulDiv_isFullDiv : Action ty mulDivTree Bool ;
   mulDiv_enqMul    : ty (Bit RegIdxSzReal) -> ty Addr -> ty MulOp -> Action ty mulDivTree (Bit 0) ;
@@ -113,16 +113,15 @@ Record MulDivIfc {ty : Kind -> Type} := {
  * =========================================================================== *)
 
 Section ImplCommon.
-  Variable dom : string.
 
   (* 1. Scoreboard (waitBits) *)
-  Definition gprWaitLeaves : list (Tree DomainElem) :=
+  Definition gprWaitLeaves : list (Tree Elem) :=
     map (fun '(_, idx) =>
       Leaf ("waitBit_" ++ hex_string_of_Z idx)%string
-           (dom, EReg (Build_Reg Bool (Some false) false))
+           (EReg (Build_Reg Bool (Some false)))
     ) (enumerate (repeat tt (Z.to_nat NumRegs))).
 
-  Definition waitBitsTree : Tree DomainElem :=
+  Definition waitBitsTree : Tree Elem :=
     Node "" [
       Node "gprs" gprWaitLeaves
     ].
@@ -150,7 +149,7 @@ Section ImplCommon.
     Retv.
 
   (* 2. Core Tree *)
-  Definition coreTree (rfTree bpTree memTree fetchTree decodeTree executeTree dataMemTree mulDivTree : Tree DomainElem) : Tree DomainElem :=
+  Definition coreTree (rfTree bpTree memTree fetchTree decodeTree executeTree dataMemTree mulDivTree : Tree Elem) : Tree Elem :=
     Node "core" [
       Node "rf"       [ rfTree ] ;
       Node "waitBits" [ waitBitsTree ] ;

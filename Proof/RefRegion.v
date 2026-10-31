@@ -38,10 +38,10 @@ Local Open Scope guru_scope.
  * exactly "run the action on the region's state" (`evalActionPropGen_genNthRegionAction`). *)
 
 Section RegionAt.
-  Variable regionTree : MemRegion -> Tree DomainElem.
+  Variable regionTree : MemRegion -> Tree Elem.
 
-  Local Abbreviation RS regions := (TreeState DomainElemState (regionsTree regionTree regions)).
-  Local Abbreviation RgS r := (TreeState DomainElemState (regionTree r)).
+  Local Abbreviation RS regions := (TreeState ElemState (regionsTree regionTree regions)).
+  Local Abbreviation RgS r := (TreeState ElemState (regionTree r)).
 
   Fixpoint regionStateAt (idx : nat) (regions : list MemRegion) (r0 : MemRegion) {struct regions}
     : nth_error regions idx = Some r0 -> RS regions -> RgS r0 :=

@@ -37,7 +37,7 @@ Local Open Scope guru_scope.
  * `SimFetchDecode.evalActionPropGen_fetchInstDeq`, run `fifo_eval` (goal) or
  * `fifo_eval in H` (section 5), or rewrite with `evalActionPropGen_enq_iff` /
  * `_deq_iff` / `_first_iff` / `_isFull_iff` / `_isEmpty_iff` / `_clear_iff`
- * giving `dom cap k` explicitly (plain `rewrite` without them fails there).
+ * giving `cap k` explicitly (plain `rewrite` without them fails there).
  * Then describe the new state with `fifo_to_list_enq` / `fifo_to_list_deq` /
  * `fifo_to_list_clear`, and keep the invariant `fifo_wf` with `fifo_wf_enq` /
  * `fifo_wf_deq` / `fifo_wf_clear` (initially: `InitStateConsistent_fifo_wf`). *)
@@ -102,18 +102,18 @@ Proof. intros A [| x l] [| n]; reflexivity. Qed.
  * 2. Generic register-list helpers (any tree)
  * --------------------------------------------------------------------------- *)
 
-Definition readRegsAll {t : Tree DomainElem} {kk : Kind}
-  (ps : list (RegOfKind (t := t) kk)) (s : TreeState DomainElemState t) : list (type kk) :=
+Definition readRegsAll {t : Tree Elem} {kk : Kind}
+  (ps : list (RegOfKind (t := t) kk)) (s : TreeState ElemState t) : list (type kk) :=
   map (fun rk => readRegOfKind rk s) ps.
 
-Lemma readRegsAll_cons : forall {t : Tree DomainElem} {kk : Kind}
-  (r : RegOfKind (t := t) kk) (ps : list (RegOfKind (t := t) kk)) (s : TreeState DomainElemState t),
+Lemma readRegsAll_cons : forall {t : Tree Elem} {kk : Kind}
+  (r : RegOfKind (t := t) kk) (ps : list (RegOfKind (t := t) kk)) (s : TreeState ElemState t),
   readRegsAll (r :: ps) s = readRegOfKind r s :: readRegsAll ps s.
 Proof. reflexivity. Qed.
 
 Lemma readRegsAll_writeRegOfKind_other :
-  forall {t : Tree DomainElem} {k1 k2 : Kind} (r : RegOfKind (t := t) k2) (v : type k2)
-         (ps : list (RegOfKind (t := t) k1)) (s : TreeState DomainElemState t),
+  forall {t : Tree Elem} {k1 k2 : Kind} (r : RegOfKind (t := t) k2) (v : type k2)
+         (ps : list (RegOfKind (t := t) k1)) (s : TreeState ElemState t),
     Forall (fun rk' : RegOfKind (t := t) k1 => rk'.(rk_path).(regPath) <> r.(rk_path).(regPath)) ps ->
     readRegsAll ps (writeRegOfKind r v s) = readRegsAll ps s.
 Proof.
@@ -124,9 +124,9 @@ Proof.
 Qed.
 
 Lemma readRegsAll_child0_ext :
-  forall {name : string} {c0 : Tree DomainElem} {cs : list (Tree DomainElem)} {kk : Kind}
+  forall {name : string} {c0 : Tree Elem} {cs : list (Tree Elem)} {kk : Kind}
          (ps : list (RegOfKind (t := Node name (c0 :: cs)) kk))
-         (s1 s2 : TreeState DomainElemState (Node name (c0 :: cs))),
+         (s1 s2 : TreeState ElemState (Node name (c0 :: cs))),
     forallb is_child0_reg ps = true -> s1.(Fst) = s2.(Fst) ->
     readRegsAll ps s1 = readRegsAll ps s2.
 Proof.
@@ -139,9 +139,9 @@ Qed.
 
 (* Reading all registers after `writeRegsList` (evaluated). *)
 Lemma readRegsAll_evalWriteRegsListHelper :
-  forall {t : Tree DomainElem} {kk : Kind} {sz : Z}
+  forall {t : Tree Elem} {kk : Kind} {sz : Z}
          (ps : list (RegOfKind (t := t) kk)) (curr : nat) (idx : bits sz) (v : type kk)
-         (s : TreeState DomainElemState t),
+         (s : TreeState ElemState t),
     NoDup (map (fun r : RegOfKind (t := t) kk => r.(rk_path).(regPath)) ps) ->
     Z.of_nat curr <= Zmod.unsigned idx ->
     Z.of_nat (curr + Datatypes.length ps) <= 2 ^ sz ->
@@ -175,9 +175,9 @@ Proof.
 Qed.
 
 (* Evaluated effect of `shiftElems`. *)
-Fixpoint evalShiftRegs {t : Tree DomainElem} {kk : Kind}
-  (ps : list (RegOfKind (t := t) kk)) (s : TreeState DomainElemState t)
-  : TreeState DomainElemState t :=
+Fixpoint evalShiftRegs {t : Tree Elem} {kk : Kind}
+  (ps : list (RegOfKind (t := t) kk)) (s : TreeState ElemState t)
+  : TreeState ElemState t :=
   match ps with
   | [] => s
   | [_] => s
@@ -185,16 +185,16 @@ Fixpoint evalShiftRegs {t : Tree DomainElem} {kk : Kind}
       evalShiftRegs rest (writeRegOfKind rkCurr (readRegOfKind rkNext s) s)
   end.
 
-Lemma evalShiftRegs_cons2 : forall {t : Tree DomainElem} {kk : Kind}
+Lemma evalShiftRegs_cons2 : forall {t : Tree Elem} {kk : Kind}
   (r1 r2 : RegOfKind (t := t) kk) (ps : list (RegOfKind (t := t) kk))
-  (s : TreeState DomainElemState t),
+  (s : TreeState ElemState t),
   evalShiftRegs (r1 :: r2 :: ps) s =
   evalShiftRegs (r2 :: ps) (writeRegOfKind r1 (readRegOfKind r2 s) s).
 Proof. reflexivity. Qed.
 
 Lemma readRegOfKind_evalShiftRegs_other :
-  forall {t : Tree DomainElem} {k1 k2 : Kind} (rk : RegOfKind (t := t) k1)
-         (ps : list (RegOfKind (t := t) k2)) (s : TreeState DomainElemState t),
+  forall {t : Tree Elem} {k1 k2 : Kind} (rk : RegOfKind (t := t) k1)
+         (ps : list (RegOfKind (t := t) k2)) (s : TreeState ElemState t),
     Forall (fun rk' : RegOfKind (t := t) k2 => rk.(rk_path).(regPath) <> rk'.(rk_path).(regPath)) ps ->
     readRegOfKind rk (evalShiftRegs ps s) = readRegOfKind rk s.
 Proof.
@@ -206,9 +206,9 @@ Proof.
 Qed.
 
 Lemma evalShiftRegs_child0_Snd :
-  forall {name : string} {c0 : Tree DomainElem} {cs : list (Tree DomainElem)} {kk : Kind}
+  forall {name : string} {c0 : Tree Elem} {cs : list (Tree Elem)} {kk : Kind}
          (ps : list (RegOfKind (t := Node name (c0 :: cs)) kk))
-         (s : TreeState DomainElemState (Node name (c0 :: cs))),
+         (s : TreeState ElemState (Node name (c0 :: cs))),
     forallb is_child0_reg ps = true ->
     (evalShiftRegs ps s).(Snd) = s.(Snd).
 Proof.
@@ -220,8 +220,8 @@ Proof.
 Qed.
 
 Lemma readRegsAll_evalShiftRegs :
-  forall {t : Tree DomainElem} {kk : Kind} (ps : list (RegOfKind (t := t) kk))
-         (s : TreeState DomainElemState t),
+  forall {t : Tree Elem} {kk : Kind} (ps : list (RegOfKind (t := t) kk))
+         (s : TreeState ElemState t),
     NoDup (map (fun r : RegOfKind (t := t) kk => r.(rk_path).(regPath)) ps) ->
     readRegsAll ps (evalShiftRegs ps s) = fifo_shiftList (readRegsAll ps s).
 Proof.
@@ -271,7 +271,7 @@ Qed.
  * --------------------------------------------------------------------------- *)
 
 Lemma length_getTreeRegsOfKind_cons : forall (kk : Kind) (name : string)
-  (x : Tree DomainElem) (xs : list (Tree DomainElem)),
+  (x : Tree Elem) (xs : list (Tree Elem)),
   Datatypes.length (getTreeRegsOfKind kk (Node name (x :: xs))) =
   (Datatypes.length (getTreeRegsOfKind kk x) +
    Datatypes.length (getTreeRegsOfKind kk (Node name xs)))%nat.
@@ -285,26 +285,26 @@ Lemma length_dep_if_true : forall {A : Type} (b : bool)
   Datatypes.length ((if b as b0 return (b = b0 -> list A) then f1 else f2) eq_refl) = 1%nat.
 Proof. intros A [|] f1 f2 Hb H1; [apply H1 | discriminate Hb]. Qed.
 
-Lemma length_getTreeRegsOfKind_leaf : forall (kk : Kind) (name d : string) (r : Reg),
-  regKind r = kk -> Datatypes.length (getTreeRegsOfKind kk (Leaf name (d, EReg r))) = 1%nat.
+Lemma length_getTreeRegsOfKind_leaf : forall (kk : Kind) (name : string) (r : Reg),
+  regKind r = kk -> Datatypes.length (getTreeRegsOfKind kk (Leaf name (EReg r))) = 1%nat.
 Proof.
-  intros kk name d r Hr. cbn [getTreeRegsOfKind].
+  intros kk name r Hr. cbn [getTreeRegsOfKind].
   apply length_dep_if_true.
   - subst kk. apply Kind_eqb_refl.
   - intros pf. reflexivity.
 Qed.
 
-Lemma length_getTreeRegsOfKind_seq : forall (d : string) (kk : Kind) (name : string)
+Lemma length_getTreeRegsOfKind_seq : forall (kk : Kind) (name : string)
   (g : nat -> string) (n start : nat),
   Datatypes.length
     (getTreeRegsOfKind kk
-       (Node name (map (fun idx => Leaf (g idx) (d, EReg (Build_Reg kk None false))) (seq start n)))) = n.
+       (Node name (map (fun idx => Leaf (g idx) (EReg (Build_Reg kk None))) (seq start n)))) = n.
 Proof.
-  intros d kk name g n. induction n as [| n IH]; intros start.
+  intros kk name g n. induction n as [| n IH]; intros start.
   - reflexivity.
   - cbn [seq map].
     rewrite length_getTreeRegsOfKind_cons,
-      (length_getTreeRegsOfKind_leaf kk (g start) d (Build_Reg kk None false) eq_refl), IH.
+      (length_getTreeRegsOfKind_leaf kk (g start) (Build_Reg kk None) eq_refl), IH.
     reflexivity.
 Qed.
 
@@ -313,14 +313,13 @@ Qed.
  * --------------------------------------------------------------------------- *)
 
 Section FifoGen.
-  Variable dom : string.
   Variable cap : nat.
   Variable k : Kind.
 
-  Local Abbreviation FT := (ShiftFifo.fifoTree dom cap k).
-  Local Abbreviation FState := (TreeState DomainElemState (ShiftFifo.fifoTree dom cap k)).
+  Local Abbreviation FT := (ShiftFifo.fifoTree cap k).
+  Local Abbreviation FState := (TreeState ElemState (ShiftFifo.fifoTree cap k)).
   Local Abbreviation W := (Z.log2_up (Z.of_nat (cap + 1))).
-  Local Abbreviation EPaths := (ShiftFifo.elemPathsWithKind dom cap k).
+  Local Abbreviation EPaths := (ShiftFifo.elemPathsWithKind cap k).
 
   (* Well-formedness: size <= capacity. *)
   Definition fifo_wf (f : FState) : Prop :=
@@ -348,14 +347,14 @@ Section FifoGen.
   Lemma length_elemPaths : Datatypes.length EPaths = cap.
   Proof.
     unfold ShiftFifo.elemPathsWithKind. rewrite length_map.
-    exact (length_getTreeRegsOfKind_seq dom k "elems"
+    exact (length_getTreeRegsOfKind_seq k "elems"
              (fun idx => ("elem_" ++ hex_string_of_Z (Z.of_nat idx))%string) cap 0).
   Qed.
 
   Lemma elemPaths_all_child0 : forallb is_child0_reg EPaths = true.
   Proof.
     unfold ShiftFifo.elemPathsWithKind.
-    generalize (getTreeRegsOfKind k (getNode (ShiftFifo.np_elems dom cap k))).
+    generalize (getTreeRegsOfKind k (getNode (ShiftFifo.np_elems cap k))).
     intros l. induction l as [| x l IH]; [reflexivity |].
     cbn [map forallb]. rewrite IH. reflexivity.
   Qed.
@@ -364,8 +363,8 @@ Section FifoGen.
     NoDup (map (fun r : RegOfKind (t := FT) k => r.(rk_path).(regPath)) EPaths).
   Proof.
     unfold ShiftFifo.elemPathsWithKind. rewrite map_map.
-    pose proof (NoDup_getTreeRegsOfKind k (getNode (ShiftFifo.np_elems dom cap k))) as Hnd.
-    revert Hnd. generalize (getTreeRegsOfKind k (getNode (ShiftFifo.np_elems dom cap k))).
+    pose proof (NoDup_getTreeRegsOfKind k (getNode (ShiftFifo.np_elems cap k))) as Hnd.
+    revert Hnd. generalize (getTreeRegsOfKind k (getNode (ShiftFifo.np_elems cap k))).
     intros l. induction l as [| x l IH]; intros Hnd; [constructor |].
     cbn [map] in Hnd |- *. apply NoDup_cons_iff in Hnd as [Hnin Hnd'].
     constructor; [| exact (IH Hnd')].
@@ -543,17 +542,17 @@ Section FifoGen.
   (* ----- raw evaluation of the actions ----- *)
 
   Lemma evalActionPropGen_isFull_raw : forall env (f : FState) P,
-    evalActionPropGen env (@ShiftFifo.isFull dom cap k type) f P <->
+    evalActionPropGen env (@ShiftFifo.isFull cap k type) f P <->
     P f (Zmod.eqb (fifo_size f) (Zmod.of_Z _ (Z.of_nat cap))).
   Proof. intros env f P. reflexivity. Qed.
 
   Lemma evalActionPropGen_isEmpty_raw : forall env (f : FState) P,
-    evalActionPropGen env (@ShiftFifo.isEmpty dom cap k type) f P <->
+    evalActionPropGen env (@ShiftFifo.isEmpty cap k type) f P <->
     P f (Zmod.eqb (fifo_size f) Zmod.zero).
   Proof. intros env f P. reflexivity. Qed.
 
   Lemma evalActionPropGen_enq_raw : forall env (v : type k) (f : FState) P,
-    evalActionPropGen env (@ShiftFifo.enq dom cap k type v) f P <->
+    evalActionPropGen env (@ShiftFifo.enq cap k type v) f P <->
     (if negb (Zmod.eqb (fifo_size f) (Zmod.of_Z _ (Z.of_nat cap)))
      then evalActionPropGen env
             (writeRegsList EPaths (Var type (Bit W) (fifo_size f)) (Var type k v))
@@ -563,9 +562,9 @@ Section FifoGen.
   Proof. intros env v f P. reflexivity. Qed.
 
   Lemma evalActionPropGen_deq_raw : forall env (f : FState) P,
-    evalActionPropGen env (@ShiftFifo.deq dom cap k type) f P <->
+    evalActionPropGen env (@ShiftFifo.deq cap k type) f P <->
     (if negb (Zmod.eqb (fifo_size f) Zmod.zero)
-     then evalActionPropGen env (@ShiftFifo.shiftElems dom cap k type EPaths)
+     then evalActionPropGen env (@ShiftFifo.shiftElems cap k type EPaths)
             (fifoSetSize f (fifoDecSize (fifo_size f)))
             (fun s _ => P s Zmod.zero)
      else P f Zmod.zero).
@@ -573,8 +572,8 @@ Section FifoGen.
 
   Lemma evalActionPropGen_shiftElems_step : forall env (rk1 rk2 : RegOfKind (t := FT) k)
     (ps : list (RegOfKind (t := FT) k)) (s : FState) P,
-    evalActionPropGen env (@ShiftFifo.shiftElems dom cap k type (rk1 :: rk2 :: ps)) s P <->
-    evalActionPropGen env (@ShiftFifo.shiftElems dom cap k type (rk2 :: ps))
+    evalActionPropGen env (@ShiftFifo.shiftElems cap k type (rk1 :: rk2 :: ps)) s P <->
+    evalActionPropGen env (@ShiftFifo.shiftElems cap k type (rk2 :: ps))
       (writeTreeState FT s rk1.(rk_path).(regPath)
          (castStateRegInv rk1.(rk_path)
             (evalExpr (eq_rect k (Expr type) (Var type k (readRegOfKind rk2 s)) _
@@ -582,7 +581,7 @@ Section FifoGen.
   Proof. intros env rk1 rk2 ps s P. reflexivity. Qed.
 
   Lemma evalActionPropGen_shiftElems : forall env (ps : list (RegOfKind (t := FT) k)) (s : FState) P,
-    evalActionPropGen env (@ShiftFifo.shiftElems dom cap k type ps) s P <->
+    evalActionPropGen env (@ShiftFifo.shiftElems cap k type ps) s P <->
     P (evalShiftRegs ps s) Zmod.zero.
   Proof.
     intros env ps. induction ps as [| rk1 ps IH]; intros s P; [reflexivity |].
@@ -594,7 +593,7 @@ Section FifoGen.
   (* ----- main evalActionPropGen lemmas ----- *)
 
   Lemma evalActionPropGen_enq_iff : forall env (v : type k) (f : FState) P,
-    evalActionPropGen env (@ShiftFifo.enq dom cap k type v) f P <->
+    evalActionPropGen env (@ShiftFifo.enq cap k type v) f P <->
     P (fifoEnqState f v) Zmod.zero.
   Proof.
     intros env v f P. rewrite evalActionPropGen_enq_raw.
@@ -606,7 +605,7 @@ Section FifoGen.
   Qed.
 
   Lemma evalActionPropGen_deq_iff : forall env (f : FState) P,
-    evalActionPropGen env (@ShiftFifo.deq dom cap k type) f P <->
+    evalActionPropGen env (@ShiftFifo.deq cap k type) f P <->
     P (fifoDeqState f) Zmod.zero.
   Proof.
     intros env f P. rewrite evalActionPropGen_deq_raw.
@@ -618,15 +617,15 @@ Section FifoGen.
   Qed.
 
   Lemma evalActionPropGen_first_iff : forall env (f : FState) P,
-    evalActionPropGen env (@ShiftFifo.first dom cap k type) f P <-> P f (fifoFirstVal f).
+    evalActionPropGen env (@ShiftFifo.first cap k type) f P <-> P f (fifoFirstVal f).
   Proof.
     intros env f P.
     unfold fifoFirstVal, fifo_elems_all, ShiftFifo.first.
-    destruct (ShiftFifo.elemPathsWithKind dom cap k) as [| rk0 rest]; reflexivity.
+    destruct (ShiftFifo.elemPathsWithKind cap k) as [| rk0 rest]; reflexivity.
   Qed.
 
   Lemma evalActionPropGen_isFull_iff : forall env (f : FState) P, fifo_wf f ->
-    (evalActionPropGen env (@ShiftFifo.isFull dom cap k type) f P <->
+    (evalActionPropGen env (@ShiftFifo.isFull cap k type) f P <->
      P f (Nat.eqb (Datatypes.length (fifo_to_list f)) cap)).
   Proof.
     intros env f P Hwf.
@@ -635,7 +634,7 @@ Section FifoGen.
   Qed.
 
   Lemma evalActionPropGen_isEmpty_iff : forall env (f : FState) P, fifo_wf f ->
-    (evalActionPropGen env (@ShiftFifo.isEmpty dom cap k type) f P <->
+    (evalActionPropGen env (@ShiftFifo.isEmpty cap k type) f P <->
      P f (match fifo_to_list f with [] => true | _ => false end)).
   Proof.
     intros env f P Hwf.
@@ -739,7 +738,7 @@ Section FifoGen.
   Lemma InitStateConsistent_fifo_wf : forall f : FState, InitStateConsistent FT f -> fifo_wf f.
   Proof.
     intros f Hinit. unfold fifo_wf.
-    rewrite (InitStateConsistent_fifo_size dom cap k f Hinit), Zmod.unsigned_0. lia.
+    rewrite (InitStateConsistent_fifo_size cap k f Hinit), Zmod.unsigned_0. lia.
   Qed.
 
   Lemma length_fifo_to_list_le : forall f : FState, fifo_wf f ->
@@ -751,7 +750,7 @@ Section FifoGen.
   Definition fifoClearState (f : FState) : FState := fifoSetSize f (Zmod.of_Z _ 0).
 
   Lemma evalActionPropGen_clear_iff : forall env (f : FState) P,
-    evalActionPropGen env (@ShiftFifo.clear dom cap k type) f P <-> P (fifoClearState f) Zmod.zero.
+    evalActionPropGen env (@ShiftFifo.clear cap k type) f P <-> P (fifoClearState f) Zmod.zero.
   Proof. intros env f P. reflexivity. Qed.
 
   Lemma fifo_to_list_clear : forall f : FState, fifo_to_list (fifoClearState f) = [].
@@ -767,13 +766,13 @@ Section FifoGen.
   Qed.
 End FifoGen.
 
-Arguments fifo_wf {dom cap k} f.
-Arguments fifoSetSize {dom cap k} f sz.
+Arguments fifo_wf {cap k} f.
+Arguments fifoSetSize {cap k} f sz.
 Arguments fifoDecSize {cap} sz.
-Arguments fifoEnqState {dom cap k} f v.
-Arguments fifoDeqState {dom cap k} f.
-Arguments fifoFirstVal {dom cap k} f.
-Arguments fifoClearState {dom cap k} f.
+Arguments fifoEnqState {cap k} f v.
+Arguments fifoDeqState {cap k} f.
+Arguments fifoFirstVal {cap k} f.
+Arguments fifoClearState {cap k} f.
 
 (* ---------------------------------------------------------------------------
  * 5. `fifo_eval`: rewrite ShiftFifo action evaluations with the lemmas above
@@ -782,13 +781,13 @@ Arguments fifoClearState {dom cap k} f.
  * `SimFetchDecode.evalActionPropGen_fetchInstDeq`) leave goals whose implicit
  * tree argument of `evalActionPropGen` is `getNode np`.  A plain
  * `rewrite evalActionPropGen_deq_iff` cannot unify that with
- * `ShiftFifo.fifoTree ?dom ?cap ?k` ("Found no subterm matching"), so give
- * `dom cap k` explicitly, e.g. `rewrite (evalActionPropGen_deq_iff dom cap k)`.
+ * `ShiftFifo.fifoTree ?cap ?k` ("Found no subterm matching"), so give
+ * `cap k` explicitly, e.g. `rewrite (evalActionPropGen_deq_iff cap k)`.
  * `fifo_eval` (goal) and `fifo_eval in H` do this automatically for every
  * enq/deq/first/clear they find.  isFull/isEmpty are rewritten only when a
  * hypothesis `fifo_wf f` for the FIFO state `f` is in context (no side goals
  * are created); otherwise use e.g. `rewrite (evalActionPropGen_isFull_iff
- * dom cap k)` and prove the `fifo_wf` side goal. *)
+ * cap k)` and prove the `fifo_wf` side goal. *)
 
 Ltac fifo_eval_goal_step :=
   match goal with

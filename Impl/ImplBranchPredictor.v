@@ -59,7 +59,7 @@ Section PreDecodeBranch.
 End PreDecodeBranch.
 
 Record NoInstPredIfc {ty : Kind -> Type} := {
-  noInstTree                : Tree DomainElem ;
+  noInstTree                : Tree Elem ;
   noInst_getPred            : ty Addr -> Action ty noInstTree NoInstPredOut ;
   noInst_updByFetch         : ty Addr -> ty (Bit LgFetchParcels) -> ty Bool ->
                               ty Addr -> ty Bool -> ty PreBranchInfo -> ty Bool ->
@@ -68,27 +68,26 @@ Record NoInstPredIfc {ty : Kind -> Type} := {
   noInst_updException       : ty Addr -> Action ty noInstTree (Bit 0)
 }.
 
-Definition bpTree (noInstTree withInstTree : Tree DomainElem) : Tree DomainElem :=
+Definition bpTree (noInstTree withInstTree : Tree Elem) : Tree Elem :=
   Node "" [
     Node "noInst"   [ noInstTree ] ;
     Node "withInst" [ withInstTree ]
   ].
 
-Record WithInstPredIfc (noInstTree : Tree DomainElem) {ty : Kind -> Type} := {
-  withInstTree          : Tree DomainElem ;
+Record WithInstPredIfc (noInstTree : Tree Elem) {ty : Kind -> Type} := {
+  withInstTree          : Tree Elem ;
   withInst_getPred      : ty Addr -> ty Addr -> ty Inst -> ty PreBranchInfo -> Action ty (bpTree noInstTree withInstTree) Addr ;
   withInst_updCf        : ty Addr -> ty CfPayload -> Action ty (bpTree noInstTree withInstTree) (Bit 0) ;
   withInst_updException : ty Addr -> Action ty (bpTree noInstTree withInstTree) (Bit 0)
 }.
 
 Section ImplBranchPredictor.
-  Variable dom : string.
 
   (* =========================================================================
    * Level 1 (NoInst) Predictor Implementation
    * ========================================================================= *)
 
-  Definition implNoInstTree : Tree DomainElem :=
+  Definition implNoInstTree : Tree Elem :=
     Node "" [].
 
   Section NoInstTy.
@@ -137,7 +136,7 @@ Section ImplBranchPredictor.
   Section WithInst.
     Variable noInstIfc : forall ty, @NoInstPredIfc ty.
 
-    Definition implWithInstTree : Tree DomainElem :=
+    Definition implWithInstTree : Tree Elem :=
       Node "" [].
 
     Section WithInstTy.
@@ -210,7 +209,7 @@ Section ImplBranchPredictor.
     End WithInstTy.
   End WithInst.
 
-  Definition implBpTree : Tree DomainElem :=
+  Definition implBpTree : Tree Elem :=
     bpTree implNoInstTree implWithInstTree.
 
 End ImplBranchPredictor.

@@ -28,13 +28,12 @@ Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
 Section ExecuteStage.
-  Variable dom : string.
 
-  Definition implExecuteTree : Tree DomainElem :=
+  Definition implExecuteTree : Tree Elem :=
     Node "" [
-      Leaf "execEpoch"     (dom, EReg (Build_Reg Epoch (Some Zmod.zero) false)) ;
-      Leaf "fenceIPending" (dom, EReg (Build_Reg Bool (Some false) false)) ;
-      Leaf "canProceed"    (dom, EReg (Build_Reg Bool (Some true) false))
+      Leaf "execEpoch"     (EReg (Build_Reg Epoch (Some Zmod.zero))) ;
+      Leaf "fenceIPending" (EReg (Build_Reg Bool (Some false))) ;
+      Leaf "canProceed"    (EReg (Build_Reg Bool (Some true)))
     ].
 
   Definition pExecEpoch : RegPath implExecuteTree :=
@@ -78,7 +77,7 @@ Section ExecuteStage.
   |}.
 
   Variable pcAddrInit : Z.
-  Variable noInstTree : Tree DomainElem.
+  Variable noInstTree : Tree Elem.
   Variable withInstIfc : forall ty, @WithInstPredIfc noInstTree ty.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable fetchIfc : forall ty, @FetchIfc ty.
@@ -88,19 +87,19 @@ Section ExecuteStage.
   Variable ty : Kind -> Type.
   Variable meipAct mtipAct : Action ty (memIfc ty).(memTree) Bool.
 
-  Local Abbreviation rfTree := (rfTree dom pcAddrInit).
+  Local Abbreviation rfTree := (rfTree pcAddrInit).
   Local Abbreviation bpTree := (bpTree noInstTree (withInstIfc ty).(withInstTree)).
   Local Abbreviation memTree := (memIfc ty).(memTree).
   Local Abbreviation fetchTree := (fetchIfc ty).(fetchTree).
   Local Abbreviation decodeTree := (decodeIfc ty).(decodeTree).
   Local Abbreviation dataMemTree := (dataMemIfc ty).(dataMemTree).
   Local Abbreviation mulDivTree := (mulDivIfc ty).(mulDivTree).
-  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree decodeTree implExecuteTree dataMemTree mulDivTree).
-  Local Abbreviation gprPathsWithKind := (gprPathsWithKind dom pcAddrInit).
-  Local Abbreviation isInterruptPending := (isInterruptPending dom pcAddrInit).
-  Local Abbreviation executeInterrupt := (executeInterrupt dom pcAddrInit).
-  Local Abbreviation executeSequential := (executeSequential dom pcAddrInit).
-  Local Abbreviation executeNonSequential := (executeNonSequential dom pcAddrInit).
+  Local Abbreviation coreTree := (coreTree rfTree bpTree memTree fetchTree decodeTree implExecuteTree dataMemTree mulDivTree).
+  Local Abbreviation gprPathsWithKind := (gprPathsWithKind pcAddrInit).
+  Local Abbreviation isInterruptPending := (isInterruptPending pcAddrInit).
+  Local Abbreviation executeInterrupt := (executeInterrupt pcAddrInit).
+  Local Abbreviation executeSequential := (executeSequential pcAddrInit).
+  Local Abbreviation executeNonSequential := (executeNonSequential pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.rf.").
@@ -213,7 +212,7 @@ Section ExecuteStage.
         If (Not (Eq #entryExecEpoch #currExecEpoch)) Then (
           Act (liftAction np_decode (decodeIfc ty).(decode_deq)) ;
           liftAction np_waitBits
-            (@setDstWaitBits dom ty
+            (@setDstWaitBits ty
                writesCd dstIdxReal
                waitFalse)
         ) Else (
@@ -231,7 +230,7 @@ Section ExecuteStage.
               Act (liftAction np_fetch ((fetchIfc ty).(fetch_writeFetchPc) committedNextPc)) ;
 
               liftAction np_waitBits
-                (@setDstWaitBits dom ty
+                (@setDstWaitBits ty
                    writesCd dstIdxReal
                    waitFalse)
             ) ;
@@ -258,7 +257,7 @@ Section ExecuteStage.
                   Retv
                 ) Else (
                   liftAction np_waitBits
-                    (@setDstWaitBits dom ty
+                    (@setDstWaitBits ty
                        writesCd dstIdxReal
                        waitFalse)
                 ) ;
@@ -304,7 +303,7 @@ Section ExecuteStage.
                   liftAction np_dataMem ((dataMemIfc ty).(dataMem_enq) reqDst reqAddr mfOp)
                 ) Else (
                   liftAction np_waitBits
-                    (@setDstWaitBits dom ty
+                    (@setDstWaitBits ty
                        writesCd dstIdxReal
                        waitFalse)
                 ) ;

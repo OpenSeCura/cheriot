@@ -28,13 +28,12 @@ Local Open Scope string_scope.
 Local Open Scope guru_scope.
 
 Section DecodeStage.
-  Variable dom : string.
   Variable capacity : nat.
 
-  Definition implDecodeTree : Tree DomainElem :=
+  Definition implDecodeTree : Tree Elem :=
     Node "" [
-      Leaf "canProceed"      (dom, EReg (Build_Reg Bool (Some true) false)) ;
-      Node "decodeToAluBuf" [ fifoTree dom capacity DecodeToAluEntry ]
+      Leaf "canProceed"      (EReg (Build_Reg Bool (Some true))) ;
+      Node "decodeToAluBuf" [ fifoTree capacity DecodeToAluEntry ]
     ].
 
   Definition pDecodeCanProceed : RegPath implDecodeTree :=
@@ -53,10 +52,10 @@ Section DecodeStage.
     Eval cbn in (getNodePath implDecodeTree ".decodeToAluBuf.fifo").
 
   Definition decodeFirst (ty : Kind -> Type) : Action ty implDecodeTree (Option DecodeToAluEntry) :=
-    liftAction np_decToAluFifo (@first dom capacity DecodeToAluEntry ty).
+    liftAction np_decToAluFifo (@first capacity DecodeToAluEntry ty).
 
   Definition decodeDeq (ty : Kind -> Type) : Action ty implDecodeTree (Bit 0) :=
-    liftAction np_decToAluFifo (@deq dom capacity DecodeToAluEntry ty).
+    liftAction np_decToAluFifo (@deq capacity DecodeToAluEntry ty).
 
   Definition implDecodeIfc (ty : Kind -> Type) : @DecodeIfc ty := {|
     decodeTree   := implDecodeTree ;
@@ -65,20 +64,20 @@ Section DecodeStage.
   |}.
 
   Variable pcAddrInit : Z.
-  Variable bpTree mulDivTree : Tree DomainElem.
+  Variable bpTree mulDivTree : Tree Elem.
   Variable fetchIfc : forall ty, @FetchIfc ty.
   Variable executeIfc : forall ty, @ExecuteIfc ty.
   Variable dataMemIfc : forall ty, @DataMemIfc ty.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable ty : Kind -> Type.
 
-  Local Abbreviation rfTree := (rfTree dom pcAddrInit).
+  Local Abbreviation rfTree := (rfTree pcAddrInit).
   Local Abbreviation memTree := (memIfc ty).(memTree).
   Local Abbreviation fetchTree := (fetchIfc ty).(fetchTree).
   Local Abbreviation executeTree := (executeIfc ty).(executeTree).
   Local Abbreviation dataMemTree := (dataMemIfc ty).(dataMemTree).
-  Local Abbreviation coreTree := (coreTree dom rfTree bpTree memTree fetchTree implDecodeTree executeTree dataMemTree mulDivTree).
-  Local Abbreviation regRead := (regRead dom pcAddrInit).
+  Local Abbreviation coreTree := (coreTree rfTree bpTree memTree fetchTree implDecodeTree executeTree dataMemTree mulDivTree).
+  Local Abbreviation regRead := (regRead pcAddrInit).
 
   Definition np_rf : NodePath coreTree :=
     Eval cbn in (getNodePath coreTree "core.rf.").
@@ -115,7 +114,7 @@ Section DecodeStage.
       Act (liftAction np_decode (@clearDecodeCanProceed ty)) ;
 
       LetA instHead            : Option AssembledInst <- liftAction np_fetch (fetchIfc ty).(fetch_instFirst) ;
-      LetA decodeToAlu_isFull  : Bool                 <- liftAction np_decodeToAluFifo (@isFull dom capacity DecodeToAluEntry ty) ;
+      LetA decodeToAlu_isFull  : Bool                 <- liftAction np_decodeToAluFifo (@isFull capacity DecodeToAluEntry ty) ;
       LetA currExecEpoch       : Epoch                <- liftAction np_execute (executeIfc ty).(execute_readExecEpoch) ;
 
       Let  asmInst          : AssembledInst   <- ##instHead`"data" ;
@@ -133,9 +132,9 @@ Section DecodeStage.
       Let  writesCd         : Bool             <- ##decodeOut`"writesCd" ;
       Let  cdIdx            : Bit RegIdxSzReal <- TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal (getCd inst) ;
 
-      LetA cs1Wait          : Bool <- liftAction np_waitBits (@readGprWaitBit dom ty cs1Idx) ;
-      LetA cs2Wait          : Bool <- liftAction np_waitBits (@readGprWaitBit dom ty cs2Idx) ;
-      LetA cdWait           : Bool <- liftAction np_waitBits (@readGprWaitBit dom ty cdIdx) ;
+      LetA cs1Wait          : Bool <- liftAction np_waitBits (@readGprWaitBit ty cs1Idx) ;
+      LetA cs2Wait          : Bool <- liftAction np_waitBits (@readGprWaitBit ty cs2Idx) ;
+      LetA cdWait           : Bool <- liftAction np_waitBits (@readGprWaitBit ty cdIdx) ;
 
       If (##instHead`"valid") Then (
         (* Wrong-execEpoch instructions are dropped here *)
@@ -156,7 +155,7 @@ Section DecodeStage.
             (* Faulting instructions set random indices to wait, and unset them when the faults are handled *)
             Let waitTrue : Bool <- ConstBool true ;
             Act (liftAction np_waitBits
-                   (@setDstWaitBits dom ty
+                   (@setDstWaitBits ty
                       writesCd cdIdx
                       waitTrue)) ;
 
@@ -165,7 +164,7 @@ Section DecodeStage.
               "predPc"    ::= #predPc ;
               "execEpoch" ::= #currExecEpoch
             } ;
-            liftAction np_decodeToAluFifo (@enq dom capacity DecodeToAluEntry ty d2aEntry)
+            liftAction np_decodeToAluFifo (@enq capacity DecodeToAluEntry ty d2aEntry)
           ) ;
           Retv
         ) ;

@@ -34,26 +34,25 @@ Local Open Scope guru_scope.
  * =========================================================================== *)
 
 Section DataMemTreeHelpers.
-  Variable dom : string.
   Variable capacity : nat.
 
-  Local Abbreviation dmTree := (implDataMemTree dom capacity).
-  Local Abbreviation fTree := (fifoTree dom capacity MemFenceReq).
+  Local Abbreviation dmTree := (implDataMemTree capacity).
+  Local Abbreviation fTree := (fifoTree capacity MemFenceReq).
 
-  Definition dm_inputFifo (dm : TreeState DomainElemState dmTree)
-    : TreeState DomainElemState fTree :=
+  Definition dm_inputFifo (dm : TreeState ElemState dmTree)
+    : TreeState ElemState fTree :=
     dm.(Fst).(Fst).
 
-  Definition dm_state (dm : TreeState DomainElemState dmTree)
+  Definition dm_state (dm : TreeState ElemState dmTree)
     : type DataMemState :=
     dm.(Snd).(Fst).
 
-  Definition dm_withInputFifo (dm : TreeState DomainElemState dmTree)
-    (f : TreeState DomainElemState fTree) : TreeState DomainElemState dmTree :=
+  Definition dm_withInputFifo (dm : TreeState ElemState dmTree)
+    (f : TreeState ElemState fTree) : TreeState ElemState dmTree :=
     ((f ,, dm.(Fst).(Snd)) ,, dm.(Snd)).
 
-  Definition dm_withState (dm : TreeState DomainElemState dmTree)
-    (st : type DataMemState) : TreeState DomainElemState dmTree :=
+  Definition dm_withState (dm : TreeState ElemState dmTree)
+    (st : type DataMemState) : TreeState ElemState dmTree :=
     (dm.(Fst) ,, (st ,, dm.(Snd).(Snd))).
 
   Lemma dm_inputFifo_withInputFifo :
@@ -73,26 +72,26 @@ Section DataMemTreeHelpers.
   Proof. reflexivity. Qed.
 
   Lemma evalActionPropGen_readState :
-    forall {env : Env dmTree} (dm : TreeState DomainElemState dmTree) P,
-      evalActionPropGen env (@readState dom capacity type) dm P <->
+    forall {env : Env dmTree} (dm : TreeState ElemState dmTree) P,
+      evalActionPropGen env (@readState capacity type) dm P <->
       P dm (dm_state dm).
   Proof.
     intros env dm P; reflexivity.
   Qed.
 
   Lemma evalActionPropGen_writeState :
-    forall {env : Env dmTree} (val : type DataMemState) (dm : TreeState DomainElemState dmTree) P,
-      evalActionPropGen env (@writeState dom capacity type val) dm P <->
+    forall {env : Env dmTree} (val : type DataMemState) (dm : TreeState ElemState dmTree) P,
+      evalActionPropGen env (@writeState capacity type val) dm P <->
       P (dm_withState dm val) Zmod.zero.
   Proof.
     intros env val dm P; reflexivity.
   Qed.
 
   Lemma evalActionPropGen_dataMemIsEmpty :
-    forall {env : Env dmTree} (dm : TreeState DomainElemState dmTree) P,
-      evalActionPropGen env (@dataMemIsEmpty dom capacity type) dm P <->
-      evalActionPropGen (subEnv (np_dmInputFifo dom capacity) env dm)
-        (@isEmpty dom capacity MemFenceReq type) (dm_inputFifo dm)
+    forall {env : Env dmTree} (dm : TreeState ElemState dmTree) P,
+      evalActionPropGen env (@dataMemIsEmpty capacity type) dm P <->
+      evalActionPropGen (subEnv (np_dmInputFifo capacity) env dm)
+        (@isEmpty capacity MemFenceReq type) (dm_inputFifo dm)
         (fun f' inEmpty =>
            P (dm_withInputFifo dm f')
              (andb inEmpty (Zmod.eqb ((dm_state dm).(Snd)) Zmod.zero))).
@@ -100,39 +99,39 @@ Section DataMemTreeHelpers.
     intros env dm P.
     unfold dataMemIsEmpty.
     cbn [evalActionPropGen].
-    rewrite (evalActionPropGen_liftAction (np_dmInputFifo dom capacity)).
+    rewrite (evalActionPropGen_liftAction (np_dmInputFifo capacity)).
     eapply evalActionPropGen_ext; intros f' inEmpty.
     cbn [evalActionPropGen evalExpr].
     reflexivity.
   Qed.
 
   Lemma evalActionPropGen_dataMemIsFull :
-    forall {env : Env dmTree} (dm : TreeState DomainElemState dmTree) P,
-      evalActionPropGen env (@dataMemIsFull dom capacity type) dm P <->
-      evalActionPropGen (subEnv (np_dmInputFifo dom capacity) env dm)
-        (@isFull dom capacity MemFenceReq type) (dm_inputFifo dm)
+    forall {env : Env dmTree} (dm : TreeState ElemState dmTree) P,
+      evalActionPropGen env (@dataMemIsFull capacity type) dm P <->
+      evalActionPropGen (subEnv (np_dmInputFifo capacity) env dm)
+        (@isFull capacity MemFenceReq type) (dm_inputFifo dm)
         (fun f' res => P (dm_withInputFifo dm f') res).
   Proof.
     intros env dm P.
     unfold dataMemIsFull.
-    rewrite (evalActionPropGen_liftAction (np_dmInputFifo dom capacity)).
+    rewrite (evalActionPropGen_liftAction (np_dmInputFifo capacity)).
     reflexivity.
   Qed.
 
   Lemma evalActionPropGen_dataMemEnq :
     forall {env : Env dmTree}
            (dstIdx : bits RegIdxSzReal) (addr : type Addr) (op : type MemFenceUnion)
-           (dm : TreeState DomainElemState dmTree) P,
-      evalActionPropGen env (@dataMemEnq dom capacity type dstIdx addr op) dm P <->
+           (dm : TreeState ElemState dmTree) P,
+      evalActionPropGen env (@dataMemEnq capacity type dstIdx addr op) dm P <->
       let req : type MemFenceReq := (dstIdx ,, (addr ,, (op ,, tt))) in
-      evalActionPropGen (subEnv (np_dmInputFifo dom capacity) env dm)
-        (@enq dom capacity MemFenceReq type req) (dm_inputFifo dm)
+      evalActionPropGen (subEnv (np_dmInputFifo capacity) env dm)
+        (@enq capacity MemFenceReq type req) (dm_inputFifo dm)
         (fun f' res => P (dm_withInputFifo dm f') res).
   Proof.
     intros env dstIdx addr op dm P.
     unfold dataMemEnq.
     cbn [evalActionPropGen evalExpr].
-    rewrite (evalActionPropGen_liftAction (np_dmInputFifo dom capacity)).
+    rewrite (evalActionPropGen_liftAction (np_dmInputFifo capacity)).
     reflexivity.
   Qed.
 
@@ -143,64 +142,63 @@ End DataMemTreeHelpers.
  * =========================================================================== *)
 
 Section DataMemCoreLemmas.
-  Variable dom : string.
   Variable capacity : nat.
   Variable pcAddrInit : Z.
-  Variable bpT fetchT decodeT mulDivT : Tree DomainElem.
+  Variable bpT fetchT decodeT mulDivT : Tree Elem.
   Variable executeIfc : forall ty, @ExecuteIfc ty.
   Variable memIfc : forall ty, @MemIfc ty.
 
-  Local Abbreviation rTree := (rfTree dom pcAddrInit).
+  Local Abbreviation rTree := (rfTree pcAddrInit).
   Local Abbreviation mTree := (memIfc type).(memTree).
   Local Abbreviation eTree := (executeIfc type).(executeTree).
-  Local Abbreviation dmTree := (implDataMemTree dom capacity).
-  Local Abbreviation cTree := (coreTree dom rTree bpT mTree fetchT decodeT eTree dmTree mulDivT).
+  Local Abbreviation dmTree := (implDataMemTree capacity).
+  Local Abbreviation cTree := (coreTree rTree bpT mTree fetchT decodeT eTree dmTree mulDivT).
 
   Local Opaque gprPathsWithKind gprWaitPathsWithKind liftAction writeRegsList readRegsList.
 
-  Definition dmCore_rf (c : TreeState DomainElemState cTree) : TreeState DomainElemState rTree :=
+  Definition dmCore_rf (c : TreeState ElemState cTree) : TreeState ElemState rTree :=
     c.(Fst).(Fst).
 
-  Definition dmCore_waitBits (c : TreeState DomainElemState cTree) : TreeState DomainElemState (waitBitsTree dom) :=
+  Definition dmCore_waitBits (c : TreeState ElemState cTree) : TreeState ElemState waitBitsTree :=
     c.(Snd).(Fst).(Fst).
 
-  Definition dmCore_bp (c : TreeState DomainElemState cTree) : TreeState DomainElemState bpT :=
+  Definition dmCore_bp (c : TreeState ElemState cTree) : TreeState ElemState bpT :=
     c.(Snd).(Snd).(Fst).(Fst).
 
-  Definition dmCore_mem (c : TreeState DomainElemState cTree) : TreeState DomainElemState mTree :=
+  Definition dmCore_mem (c : TreeState ElemState cTree) : TreeState ElemState mTree :=
     c.(Snd).(Snd).(Snd).(Fst).(Fst).
 
-  Definition dmCore_fetch (c : TreeState DomainElemState cTree) : TreeState DomainElemState fetchT :=
+  Definition dmCore_fetch (c : TreeState ElemState cTree) : TreeState ElemState fetchT :=
     c.(Snd).(Snd).(Snd).(Snd).(Fst).(Fst).
 
-  Definition dmCore_decode (c : TreeState DomainElemState cTree) : TreeState DomainElemState decodeT :=
+  Definition dmCore_decode (c : TreeState ElemState cTree) : TreeState ElemState decodeT :=
     c.(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).(Fst).
 
-  Definition dmCore_execute (c : TreeState DomainElemState cTree) : TreeState DomainElemState eTree :=
+  Definition dmCore_execute (c : TreeState ElemState cTree) : TreeState ElemState eTree :=
     c.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).(Fst).
 
-  Definition dmCore_dataMem (c : TreeState DomainElemState cTree) : TreeState DomainElemState dmTree :=
+  Definition dmCore_dataMem (c : TreeState ElemState cTree) : TreeState ElemState dmTree :=
     c.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).(Fst).
 
-  Definition dmCore_mulDiv (c : TreeState DomainElemState cTree) : TreeState DomainElemState mulDivT :=
+  Definition dmCore_mulDiv (c : TreeState ElemState cTree) : TreeState ElemState mulDivT :=
     c.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).(Fst).
 
   Definition evalCommitWb
     (dstIdx : bits RegIdxSzReal) (dstVal : type FullECapWithTag)
-    (c : TreeState DomainElemState cTree) : TreeState DomainElemState cTree :=
+    (c : TreeState ElemState cTree) : TreeState ElemState cTree :=
     if negb (Zmod.eqb dstIdx Zmod.zero)
     then
-      ((evalWriteRegsList (gprPathsWithKind dom pcAddrInit) dstIdx dstVal (dmCore_rf c) ,, c.(Fst).(Snd)) ,,
-       ((evalWriteRegsList (gprWaitPathsWithKind dom) dstIdx false (dmCore_waitBits c) ,, c.(Snd).(Fst).(Snd)) ,,
+      ((evalWriteRegsList (gprPathsWithKind pcAddrInit) dstIdx dstVal (dmCore_rf c) ,, c.(Fst).(Snd)) ,,
+       ((evalWriteRegsList gprWaitPathsWithKind dstIdx false (dmCore_waitBits c) ,, c.(Snd).(Fst).(Snd)) ,,
         c.(Snd).(Snd)))
     else c.
 
   Lemma evalActionPropGen_commitWb :
     forall {env : Env cTree}
            (dstIdx : bits RegIdxSzReal) (dstVal : type FullECapWithTag)
-           (c : TreeState DomainElemState cTree) P,
+           (c : TreeState ElemState cTree) P,
       evalActionPropGen env
-        (@ImplDataMem.commitWb dom capacity pcAddrInit bpT fetchT decodeT mulDivT
+        (@ImplDataMem.commitWb capacity pcAddrInit bpT fetchT decodeT mulDivT
                                executeIfc memIfc type dstIdx dstVal) c P <->
       P (evalCommitWb dstIdx dstVal c) Zmod.zero.
   Proof.
@@ -210,15 +208,15 @@ Section DataMemCoreLemmas.
     destruct (negb (Zmod.eqb dstIdx Zmod.zero)) eqn:Hnz.
     - cbn [evalActionPropGen evalExpr].
       rewrite (evalActionPropGen_liftAction
-                 (@ImplDataMem.np_rf dom capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)).
-      rewrite (evalActionPropGen_writeRegsList (gprPathsWithKind dom pcAddrInit)
+                 (@ImplDataMem.np_rf capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)).
+      rewrite (evalActionPropGen_writeRegsList (gprPathsWithKind pcAddrInit)
                  (Var type (Bit RegIdxSzReal) dstIdx)
                  (Var type FullECapWithTag dstVal)).
       cbn [evalActionPropGen evalExpr].
       rewrite (evalActionPropGen_liftAction
-                 (@ImplDataMem.np_waitBits dom capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)).
+                 (@ImplDataMem.np_waitBits capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)).
       unfold writeGprWaitBit.
-      rewrite (evalActionPropGen_writeRegsList (gprWaitPathsWithKind dom)
+      rewrite (evalActionPropGen_writeRegsList gprWaitPathsWithKind
                  (Var type (Bit RegIdxSzReal) dstIdx)
                  (Var type Bool false)).
       cbn [evalActionPropGen evalExpr].
@@ -227,7 +225,7 @@ Section DataMemCoreLemmas.
   Qed.
 
   Lemma evalCommitWb_frame :
-    forall dstIdx dstVal (c : TreeState DomainElemState cTree),
+    forall dstIdx dstVal (c : TreeState ElemState cTree),
       let c' := evalCommitWb dstIdx dstVal c in
       dmCore_bp c' = dmCore_bp c /\
       dmCore_mem c' = dmCore_mem c /\
@@ -244,9 +242,9 @@ Section DataMemCoreLemmas.
 
   Theorem issueRevRq_core_frame :
     forall {env : Env cTree}
-           (c c' : TreeState DomainElemState cTree) (res : type (Bit 0)),
+           (c c' : TreeState ElemState cTree) (res : type (Bit 0)),
       SemAction env
-        (@issueRevRq dom capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)
+        (@issueRevRq capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)
         c c' res ->
       dmCore_rf c' = dmCore_rf c /\
       dmCore_waitBits c' = dmCore_waitBits c /\
@@ -255,27 +253,27 @@ Section DataMemCoreLemmas.
       dmCore_decode c' = dmCore_decode c /\
       dmCore_execute c' = dmCore_execute c /\
       dmCore_mulDiv c' = dmCore_mulDiv c /\
-      dm_inputFifo dom capacity (dmCore_dataMem c') = dm_inputFifo dom capacity (dmCore_dataMem c).
+      dm_inputFifo capacity (dmCore_dataMem c') = dm_inputFifo capacity (dmCore_dataMem c).
   Proof.
     intros env c c' res Hsem.
     rewrite SemAction_iff_evalActionPropGen in Hsem.
     unfold issueRevRq in Hsem.
     cbn [evalActionPropGen] in Hsem.
     rewrite (evalActionPropGen_liftAction
-               (@ImplDataMem.np_dataMem dom capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)) in Hsem.
+               (@ImplDataMem.np_dataMem capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)) in Hsem.
     cbn [evalActionPropGen readState] in Hsem.
     lazymatch type of Hsem with
     | context[if ?b then _ else _] => destruct b
     end.
     - cbn [evalActionPropGen] in Hsem.
       rewrite (evalActionPropGen_liftAction
-                 (@ImplDataMem.np_mem dom capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)) in Hsem.
+                 (@ImplDataMem.np_mem capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)) in Hsem.
       destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [sm' [accepted [_ Hrest]]].
       cbn [evalActionPropGen evalExpr] in Hrest.
       destruct accepted.
       + cbn [evalActionPropGen] in Hrest.
         rewrite (evalActionPropGen_liftAction
-                   (@ImplDataMem.np_dataMem dom capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)) in Hrest.
+                   (@ImplDataMem.np_dataMem capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)) in Hrest.
         cbn [evalActionPropGen writeState] in Hrest.
         destruct Hrest as [<- _]; repeat split; reflexivity.
       + cbn [evalActionPropGen] in Hrest.
@@ -286,30 +284,30 @@ Section DataMemCoreLemmas.
 
   Theorem revRpAndWriteBack_core_frame :
     forall {env : Env cTree}
-           (c c' : TreeState DomainElemState cTree) (res : type (Bit 0)),
+           (c c' : TreeState ElemState cTree) (res : type (Bit 0)),
       SemAction env
-        (@revRpAndWriteBack dom capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)
+        (@revRpAndWriteBack capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)
         c c' res ->
       dmCore_bp c' = dmCore_bp c /\
       dmCore_fetch c' = dmCore_fetch c /\
       dmCore_decode c' = dmCore_decode c /\
       dmCore_execute c' = dmCore_execute c /\
       dmCore_mulDiv c' = dmCore_mulDiv c /\
-      dm_inputFifo dom capacity (dmCore_dataMem c') = dm_inputFifo dom capacity (dmCore_dataMem c).
+      dm_inputFifo capacity (dmCore_dataMem c') = dm_inputFifo capacity (dmCore_dataMem c).
   Proof.
     intros env c c' res Hsem.
     rewrite SemAction_iff_evalActionPropGen in Hsem.
     unfold revRpAndWriteBack in Hsem.
     cbn [evalActionPropGen] in Hsem.
     rewrite (evalActionPropGen_liftAction
-               (@ImplDataMem.np_dataMem dom capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)) in Hsem.
+               (@ImplDataMem.np_dataMem capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)) in Hsem.
     cbn [evalActionPropGen readState] in Hsem.
     lazymatch type of Hsem with
     | context[if ?b then _ else _] => destruct b
     end.
     - cbn [evalActionPropGen] in Hsem.
       rewrite (evalActionPropGen_liftAction
-                 (@ImplDataMem.np_mem dom capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)) in Hsem.
+                 (@ImplDataMem.np_mem capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)) in Hsem.
       destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [sm' [revBitOpt [_ Hrest]]].
       cbn [evalActionPropGen evalExpr readDiffTuple finNum Fst Snd] in Hrest.
       destruct (revBitOpt.(Snd).(Fst)).
@@ -319,7 +317,7 @@ Section DataMemCoreLemmas.
         rewrite evalActionPropGen_commitWb in Hrest.
         cbn [evalActionPropGen] in Hrest.
         rewrite (evalActionPropGen_liftAction
-                   (@ImplDataMem.np_dataMem dom capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)) in Hrest.
+                   (@ImplDataMem.np_dataMem capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)) in Hrest.
         cbn [evalActionPropGen writeState] in Hrest.
         destruct Hrest as [<- _].
         unfold evalCommitWb.
@@ -337,47 +335,46 @@ End DataMemCoreLemmas.
  * =========================================================================== *)
 
 Section DataMemStageSimulation.
-  Variable core : string.
   Variable pcAddrInit : Z.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
   Variable config : RevConfig.
   Variable regions : list MemRegion.
-  Variable clint : @ClintInstance core regions.
-  Variable rev : @RevokerInstance core (implRevokerExtraChildren core) regions.
-  Variable revSpec : @RevokerInstance core [] regions.
-  Variable plic : @PlicInstance core (S (S (length (collectIrqActions core regions)))) regions.
+  Variable clint : @ClintInstance regions.
+  Variable rev : @RevokerInstance implRevokerExtraChildren regions.
+  Variable revSpec : @RevokerInstance [] regions.
+  Variable plic : @PlicInstance (S (S (length (collectIrqActions regions)))) regions.
 
-  Local Abbreviation sTree := (SpecTree core pcAddrInit regions).
+  Local Abbreviation sTree := (SpecTree pcAddrInit regions).
   Local Abbreviation iTree :=
-    (ImplTree core pcAddrInit fetchCapacity instCapacity decodeCapacity
+    (ImplTree pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
               mulDivMode config regions).
-  Local Abbreviation SState := (SpecState core pcAddrInit regions).
+  Local Abbreviation SState := (SpecState pcAddrInit regions).
   Local Abbreviation IState :=
-    (ImplState core pcAddrInit fetchCapacity instCapacity decodeCapacity
+    (ImplState pcAddrInit fetchCapacity instCapacity decodeCapacity
                dataMemCapacity mulCapacity divCapacity mulStages divStages
                mulDivMode config regions).
-  Local Abbreviation specMod := (@spec core pcAddrInit config regions clint revSpec plic).
+  Local Abbreviation specMod := (@spec pcAddrInit config regions clint revSpec plic).
   Local Abbreviation cRel :=
-    (CoreStateRel core pcAddrInit fetchCapacity instCapacity decodeCapacity
+    (CoreStateRel pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions).
   Local Abbreviation sRel :=
-    (stateRel core pcAddrInit fetchCapacity instCapacity decodeCapacity
+    (stateRel pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
               mulDivMode config regions).
 
-  Local Abbreviation rTree := (RfTree core pcAddrInit).
+  Local Abbreviation rTree := (RfTree pcAddrInit).
   Local Abbreviation bpT := BpTree.
-  Local Abbreviation mTree := (ImplMemSubTree core regions).
-  Local Abbreviation fTree := (FetchTree core pcAddrInit fetchCapacity instCapacity).
-  Local Abbreviation decTree := (DecodeTree core decodeCapacity).
-  Local Abbreviation eTree := (ExecuteTree core).
-  Local Abbreviation dmTree := (DataMemTree core dataMemCapacity).
-  Local Abbreviation mdTree := (MulDivSubTree core mulCapacity divCapacity mulStages divStages mulDivMode).
-  Local Abbreviation cTree := (coreTree core rTree bpT mTree fTree decTree eTree dmTree mdTree).
+  Local Abbreviation mTree := (ImplMemSubTree regions).
+  Local Abbreviation fTree := (FetchTree pcAddrInit fetchCapacity instCapacity).
+  Local Abbreviation decTree := (DecodeTree decodeCapacity).
+  Local Abbreviation eTree := ExecuteTree.
+  Local Abbreviation dmTree := (DataMemTree dataMemCapacity).
+  Local Abbreviation mdTree := (MulDivSubTree mulCapacity divCapacity mulStages divStages mulDivMode).
+  Local Abbreviation cTree := (coreTree rTree bpT mTree fTree decTree eTree dmTree mdTree).
 
   Local Opaque gprPathsWithKind gprWaitPathsWithKind liftAction writeRegsList readRegsList.
 
@@ -385,10 +382,10 @@ Section DataMemStageSimulation.
 
   Lemma GhostList_cons_inv_local :
     forall rf0 wm0 req reqs rf2 wm2,
-      GhostList core pcAddrInit rf0 wm0 (req :: reqs) rf2 wm2 ->
+      GhostList pcAddrInit rf0 wm0 (req :: reqs) rf2 wm2 ->
       exists rf1 wm1,
-        GhostStep core pcAddrInit rf0 rf1 wm0 wm1 req /\
-        GhostList core pcAddrInit rf1 wm1 reqs rf2 wm2.
+        GhostStep pcAddrInit rf0 rf1 wm0 wm1 req /\
+        GhostList pcAddrInit rf1 wm1 reqs rf2 wm2.
   Proof.
     intros rf0 wm0 req reqs rf2 wm2 Hgl.
     inversion Hgl; subst.
@@ -396,11 +393,11 @@ Section DataMemStageSimulation.
   Qed.
 
   Lemma DataMemInFlightRel_LoadRq_inv_local :
-    forall (sdm : DataMemSubState core dataMemCapacity)
-           (rf_spec rf_after : RfState core pcAddrInit)
+    forall (sdm : DataMemSubState dataMemCapacity)
+           (rf_spec rf_after : RfState pcAddrInit)
            (wm0 wm_after : bits RegIdxSzReal -> bool),
-      isDataMemLoadRq core dataMemCapacity sdm = true ->
-      DataMemInFlightRel core pcAddrInit dataMemCapacity sdm rf_spec rf_after wm0 wm_after ->
+      isDataMemLoadRq dataMemCapacity sdm = true ->
+      DataMemInFlightRel pcAddrInit dataMemCapacity sdm rf_spec rf_after wm0 wm_after ->
       rf_after = rf_spec /\ wm_after = wm0.
   Proof.
     intros sdm rf_spec rf_after wm0 wm_after Hrq Hrel.
@@ -408,30 +405,30 @@ Section DataMemStageSimulation.
   Qed.
 
   Lemma DataMemInFlightRel_NotLoadRq_inv_local :
-    forall (sdm : DataMemSubState core dataMemCapacity)
-           (rf_spec rf_after : RfState core pcAddrInit)
+    forall (sdm : DataMemSubState dataMemCapacity)
+           (rf_spec rf_after : RfState pcAddrInit)
            (wm0 wm_after : bits RegIdxSzReal -> bool),
-      isDataMemLoadRq core dataMemCapacity sdm = false ->
-      DataMemInFlightRel core pcAddrInit dataMemCapacity sdm rf_spec rf_after wm0 wm_after ->
-      exists req, GhostStep core pcAddrInit rf_spec rf_after wm0 wm_after req.
+      isDataMemLoadRq dataMemCapacity sdm = false ->
+      DataMemInFlightRel pcAddrInit dataMemCapacity sdm rf_spec rf_after wm0 wm_after ->
+      exists req, GhostStep pcAddrInit rf_spec rf_after wm0 wm_after req.
   Proof.
     intros sdm rf_spec rf_after wm0 wm_after Hrq Hrel.
     unfold DataMemInFlightRel in Hrel; rewrite Hrq in Hrel; exact Hrel.
   Qed.
 
   Theorem GhostList_drain_to_inflight_local :
-    forall (sdm sdm' : DataMemSubState core dataMemCapacity)
-           (rf_spec rf_after rf_impl : RfState core pcAddrInit)
+    forall (sdm sdm' : DataMemSubState dataMemCapacity)
+           (rf_spec rf_after rf_impl : RfState pcAddrInit)
            (wm0 wm_after wm_impl : bits RegIdxSzReal -> bool)
            (req : type MemFenceReq) (reqs : list (type MemFenceReq)),
-      isDataMemLoadRq core dataMemCapacity sdm = true ->
-      isDataMemLoadRq core dataMemCapacity sdm' = false ->
-      DataMemInFlightRel core pcAddrInit dataMemCapacity sdm rf_spec rf_after wm0 wm_after ->
-      GhostList core pcAddrInit rf_after wm_after (req :: reqs) rf_impl wm_impl ->
+      isDataMemLoadRq dataMemCapacity sdm = true ->
+      isDataMemLoadRq dataMemCapacity sdm' = false ->
+      DataMemInFlightRel pcAddrInit dataMemCapacity sdm rf_spec rf_after wm0 wm_after ->
+      GhostList pcAddrInit rf_after wm_after (req :: reqs) rf_impl wm_impl ->
       exists rf_after' wm_after',
-        GhostStep core pcAddrInit rf_spec rf_after' wm0 wm_after' req /\
-        DataMemInFlightRel core pcAddrInit dataMemCapacity sdm' rf_spec rf_after' wm0 wm_after' /\
-        GhostList core pcAddrInit rf_after' wm_after' reqs rf_impl wm_impl.
+        GhostStep pcAddrInit rf_spec rf_after' wm0 wm_after' req /\
+        DataMemInFlightRel pcAddrInit dataMemCapacity sdm' rf_spec rf_after' wm0 wm_after' /\
+        GhostList pcAddrInit rf_after' wm_after' reqs rf_impl wm_impl.
   Proof.
     intros sdm sdm' rf_spec rf_after rf_impl wm0 wm_after wm_impl req reqs Hrq HnotRq Hrel Hgl.
     destruct (DataMemInFlightRel_LoadRq_inv_local sdm rf_spec rf_after wm0 wm_after Hrq Hrel) as [-> ->].
@@ -448,13 +445,13 @@ Section DataMemStageSimulation.
     forall (executeIfc : forall ty, @ExecuteIfc ty)
            (memIfc : forall ty, @MemIfc ty)
            dstIdx dstVal
-           (c : TreeState DomainElemState
-                  (coreTree core rTree bpT (memIfc type).(memTree) fTree decTree
+           (c : TreeState ElemState
+                  (coreTree rTree bpT (memIfc type).(memTree) fTree decTree
                             (executeIfc type).(executeTree) dmTree mdTree)),
-      dmCore_rf core dataMemCapacity pcAddrInit bpT fTree decTree mdTree executeIfc memIfc
-        (evalCommitWb core dataMemCapacity pcAddrInit bpT fTree decTree mdTree executeIfc memIfc dstIdx dstVal c) =
-      writeGprVal core pcAddrInit dstIdx dstVal
-        (dmCore_rf core dataMemCapacity pcAddrInit bpT fTree decTree mdTree executeIfc memIfc c).
+      dmCore_rf dataMemCapacity pcAddrInit bpT fTree decTree mdTree executeIfc memIfc
+        (evalCommitWb dataMemCapacity pcAddrInit bpT fTree decTree mdTree executeIfc memIfc dstIdx dstVal c) =
+      writeGprVal pcAddrInit dstIdx dstVal
+        (dmCore_rf dataMemCapacity pcAddrInit bpT fTree decTree mdTree executeIfc memIfc c).
   Proof.
     intros executeIfc memIfc dstIdx dstVal c.
     unfold evalCommitWb, writeGprVal.
@@ -466,57 +463,57 @@ Section DataMemStageSimulation.
            (s1 s1' : IState) (v : type k),
       SemAction env1
         (liftAction
-           (@Impl.np_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+           (@Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
               mulDivMode config regions)
            act)
         s1 s1' v ->
-      impl_rf core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_rf pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
               mulDivMode config regions s1' =
-        impl_rf core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_rf pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1 /\
-      impl_waitBits core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_waitBits pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1' =
-        impl_waitBits core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_waitBits pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1 /\
-      impl_bp core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_bp pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
               mulDivMode config regions s1' =
-        impl_bp core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_bp pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1 /\
-      impl_fetch core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
                  mulDivMode config regions s1' =
-        impl_fetch core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1 /\
-      impl_decode core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        impl_decode core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1 /\
-      impl_execute core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1' =
-        impl_execute core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1 /\
-      impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1' =
-        impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1 /\
-      impl_mulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        impl_mulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1.
   Proof.
@@ -531,38 +528,38 @@ Section DataMemStageSimulation.
     forall {env1 : Env iTree}
            (act : Action type iTree (Bit 0)) (s1 s1' : IState) (v : bits 0),
       In act
-        (@dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        (@dataReadRqs pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
       SemAction env1 act s1 s1' v ->
-      flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1 /\
-      impl_execute core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1' =
-        impl_execute core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1 /\
-      impl_fetch core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
                  mulDivMode config regions s1' =
-        impl_fetch core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1 /\
-      impl_decode core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        impl_decode core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1 /\
-      impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1' =
-        impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1.
   Proof.
@@ -584,38 +581,38 @@ Section DataMemStageSimulation.
     forall {env1 : Env iTree}
            (act : Action type iTree (Bit 0)) (s1 s1' : IState) (v : bits 0),
       In act
-        (@dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        (@dataReadRps pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
       SemAction env1 act s1 s1' v ->
-      flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1 /\
-      impl_execute core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1' =
-        impl_execute core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1 /\
-      impl_fetch core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
                  mulDivMode config regions s1' =
-        impl_fetch core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1 /\
-      impl_decode core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        impl_decode core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1 /\
-      impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1' =
-        impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1.
   Proof.
@@ -637,38 +634,38 @@ Section DataMemStageSimulation.
     forall {env1 : Env iTree}
            (act : Action type iTree (Bit 0)) (s1 s1' : IState) (v : bits 0),
       In act
-        (@dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        (@dataWriteRqs pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
       SemAction env1 act s1 s1' v ->
-      flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1 /\
-      impl_execute core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1' =
-        impl_execute core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1 /\
-      impl_fetch core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
                  mulDivMode config regions s1' =
-        impl_fetch core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1 /\
-      impl_decode core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        impl_decode core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1 /\
-      impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1' =
-        impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1.
   Proof.
@@ -694,42 +691,42 @@ Section DataMemStageSimulation.
     forall {env1 : Env iTree} {env2 : Env sTree}
            (s1 s1' : IState) (s2 : SState) (v : bits 0),
       SemAction env1
-        (@loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity
+        (@loadRqOrStoreOrFenceStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
         s1 s1' v ->
-      flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1 ->
-      impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                dataMemCapacity mulCapacity divCapacity mulStages divStages
                mulDivMode config regions s1' =
-        impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
                  mulDivMode config regions s1 ->
-      impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1' =
-        impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1 ->
-      (FenceIInv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      (FenceIInv pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
                  mulDivMode config regions s1 s2 ->
-       FenceIInv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+       FenceIInv pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
                  mulDivMode config regions s1' s2) ->
       cRel s1 s2 ->
       exists s2' : SState,
-        SemActions env2 (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (specMod type) s2 s2' /\
         cRel s1' s2'.
   Proof.
     intros env1 env2 s1 s1' s2 v _ Hflush Hmem Hdm Hfence Hrel.
     exists s2; split.
-    - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
+    - apply (specMod_stutter pcAddrInit config regions clint revSpec plic s2).
     - destruct Hrel as [Hghost HmemRel HfenceInv].
       constructor.
       + rewrite Hdm, Hflush; exact Hghost.
@@ -744,60 +741,60 @@ Section DataMemStageSimulation.
            (s1 s1' : IState) (s2 s2' : SState) (v : bits 0)
            (req : type MemFenceReq) (reqs : list (type MemFenceReq)),
       SemAction env1
-        (@loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity
+        (@loadRqOrStoreOrFenceStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
         s1 s1' v ->
       cRel s1 s2 ->
-      isDataMemLoadRq core dataMemCapacity
-        (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      isDataMemLoadRq dataMemCapacity
+        (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1) = true ->
-      isDataMemLoadRq core dataMemCapacity
-        (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      isDataMemLoadRq dataMemCapacity
+        (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1') = true ->
-      dataMemPendingQueue core dataMemCapacity
-        (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      dataMemPendingQueue dataMemCapacity
+        (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1) = req :: reqs ->
-      dataMemPendingQueue core dataMemCapacity
-        (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      dataMemPendingQueue dataMemCapacity
+        (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1') = reqs ->
-      flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1 ->
       (forall rf1 wm1,
-         GhostStep core pcAddrInit (spec_rf core pcAddrInit regions s2) rf1 (fun _ => false) wm1 req ->
-         spec_rf core pcAddrInit regions s2' = rf1 /\ wm1 = (fun _ => false)) ->
-      SemAction env2 (@specStep core pcAddrInit config regions clint plic type) s2 s2' Zmod.zero ->
-      TreeContentRel (SpecMemSubTree core regions)
-        (projImplMemSpecState core regions
-           (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+         GhostStep pcAddrInit (spec_rf pcAddrInit regions s2) rf1 (fun _ => false) wm1 req ->
+         spec_rf pcAddrInit regions s2' = rf1 /\ wm1 = (fun _ => false)) ->
+      SemAction env2 (@specStep pcAddrInit config regions clint plic type) s2 s2' Zmod.zero ->
+      TreeContentRel (SpecMemSubTree regions)
+        (projImplMemSpecState regions
+           (impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1'))
-        (spec_mem core pcAddrInit regions s2') ->
-      FenceIInv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        (spec_mem pcAddrInit regions s2') ->
+      FenceIInv pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2' ->
       exists mid2 : SState,
-        SemActions env2 (map snd (specMod type)) s2 mid2 /\
+        SemActions env2 (specMod type) s2 mid2 /\
         cRel s1' mid2.
   Proof.
     intros env1 env2 s1 s1' s2 s2' v req reqs _ Hrel Hrq1 Hrq1' Hq1 Hq1' Hflush HstepRf Hspec HmemRel' Hfence'.
     exists s2'; split.
-    - exact (specMod_single_specStep core pcAddrInit config regions clint revSpec plic s2 s2' Hspec).
+    - exact (specMod_single_specStep pcAddrInit config regions clint revSpec plic s2 s2' Hspec).
     - destruct Hrel as [[rf_mid [wm_mid [wm_dm [Hinflight Hgl]]]] _ _].
       destruct (DataMemInFlightRel_LoadRq_inv_local _ _ _ _ _ Hrq1 Hinflight) as [-> ->].
       rewrite Hq1 in Hgl.
       destruct (GhostList_cons_inv_local _ _ req reqs _ _ Hgl) as [rf1 [wm1 [Hgstep HglRest]]].
       destruct (HstepRf rf1 wm1 Hgstep) as [Hrf2' ->].
       constructor.
-      + exists (spec_rf core pcAddrInit regions s2'),
+      + exists (spec_rf pcAddrInit regions s2'),
                (fun _ : bits RegIdxSzReal => false),
                wm_dm.
         split.
@@ -816,55 +813,55 @@ Section DataMemStageSimulation.
            (s1 s1' : IState) (s2 : SState) (v : bits 0)
            (req : type MemFenceReq) (reqs : list (type MemFenceReq)),
       SemAction env1
-        (@loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity
+        (@loadRqOrStoreOrFenceStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
         s1 s1' v ->
       cRel s1 s2 ->
-      isDataMemLoadRq core dataMemCapacity
-        (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      isDataMemLoadRq dataMemCapacity
+        (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1) = true ->
-      isDataMemLoadRq core dataMemCapacity
-        (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      isDataMemLoadRq dataMemCapacity
+        (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1') = false ->
-      dataMemPendingQueue core dataMemCapacity
-        (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      dataMemPendingQueue dataMemCapacity
+        (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1) = req :: reqs ->
-      dataMemPendingQueue core dataMemCapacity
-        (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      dataMemPendingQueue dataMemCapacity
+        (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1') = reqs ->
-      flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1 ->
-      projImplMemSpecState core regions
-        (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      projImplMemSpecState regions
+        (impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1') =
-        projImplMemSpecState core regions
-          (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        projImplMemSpecState regions
+          (impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1) ->
-      FenceIInv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      FenceIInv pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2 ->
       exists s2' : SState,
-        SemActions env2 (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (specMod type) s2 s2' /\
         cRel s1' s2'.
   Proof.
     intros env1 env2 s1 s1' s2 v req reqs _ Hrel Hrq1 HnotRq1' Hq1 Hq1' Hflush HmemProj Hfence'.
     exists s2; split.
-    - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
+    - apply (specMod_stutter pcAddrInit config regions clint revSpec plic s2).
     - destruct Hrel as [[rf_mid [wm_mid [wm_dm [Hinflight Hgl]]]] HmemRel _].
       rewrite Hq1 in Hgl.
       destruct (GhostList_drain_to_inflight_local
-                  _ _ (spec_rf core pcAddrInit regions s2) rf_mid _
+                  _ _ (spec_rf pcAddrInit regions s2) rf_mid _
                   (fun _ => false) wm_mid wm_dm req reqs
                   Hrq1 HnotRq1' Hinflight Hgl)
         as [rf_after' [wm_after' [_ [Hinflight' Hgl']]]].
@@ -885,30 +882,30 @@ Section DataMemStageSimulation.
            (s1 s1' : IState) (s2 : SState) (v : bits 0),
       SemAction env1
         (liftAction
-           (@Impl.np_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+           (@Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
               mulDivMode config regions)
            act)
         s1 s1' v ->
       cRel s1 s2 ->
-      TreeContentRel (SpecMemSubTree core regions)
-        (projImplMemSpecState core regions
-           (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      TreeContentRel (SpecMemSubTree regions)
+        (projImplMemSpecState regions
+           (impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1'))
-        (spec_mem core pcAddrInit regions s2) ->
-      FenceIInv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        (spec_mem pcAddrInit regions s2) ->
+      FenceIInv pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2 ->
       exists s2' : SState,
-        SemActions env2 (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (specMod type) s2 s2' /\
         cRel s1' s2'.
   Proof.
     intros env1 env2 act s1 s1' s2 v Hsem Hrel HmemRel' Hfence'.
     destruct (SemAction_lift_np_mem_core_frame act s1 s1' v Hsem)
       as [Hrf [_ [_ [_ [_ [_ [Hdm Hmd]]]]]]].
     exists s2; split.
-    - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
+    - apply (specMod_stutter pcAddrInit config regions clint revSpec plic s2).
     - destruct Hrel as [Hghost _ _].
       constructor.
       + unfold flushMulDiv; rewrite Hdm, Hrf, Hmd; exact Hghost.
@@ -922,40 +919,40 @@ Section DataMemStageSimulation.
     forall {env1 : Env iTree}
            (s1 s1' : IState) (v : bits 0),
       SemAction env1
-        (@issueRevRqStage core pcAddrInit fetchCapacity instCapacity
+        (@issueRevRqStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
         s1 s1' v ->
-      flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1 /\
-      impl_execute core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1' =
-        impl_execute core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1 /\
-      impl_fetch core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
                  mulDivMode config regions s1' =
-        impl_fetch core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1 /\
-      impl_decode core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        impl_decode core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1 /\
-      dataMemPendingQueue core dataMemCapacity
-        (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      dataMemPendingQueue dataMemCapacity
+        (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1') =
-        dataMemPendingQueue core dataMemCapacity
-          (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        dataMemPendingQueue dataMemCapacity
+          (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                         dataMemCapacity mulCapacity divCapacity mulStages divStages
                         mulDivMode config regions s1).
   Proof.
@@ -964,21 +961,21 @@ Section DataMemStageSimulation.
     rewrite SemAction_iff_evalActionPropGen in Hsem.
     rewrite evalActionPropGen_liftAction in Hsem.
     destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [c' [v' [HsemC [<- _]]]].
-    destruct (issueRevRq_core_frame core dataMemCapacity pcAddrInit bpT fTree decTree mdTree
-                (@implExecuteIfc core)
-                (fun ty => @implMemIfc core config regions ty rev)
+    destruct (issueRevRq_core_frame dataMemCapacity pcAddrInit bpT fTree decTree mdTree
+                (@implExecuteIfc)
+                (fun ty => @implMemIfc config regions ty rev)
                 (Fst s1) c' v' HsemC)
       as [Hrf [_ [_ [Hfetch [Hdecode [Hexec [Hmd Hfifo]]]]]]].
     unfold flushMulDiv, dataMemPendingQueue, dataMem_fifo,
            impl_rf, impl_execute, impl_fetch, impl_decode, impl_dataMem, impl_mulDiv.
-    change (impl_core core pcAddrInit fetchCapacity instCapacity decodeCapacity
+    change (impl_core pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions
               (writeSubTreeState
-                 (@Impl.np_core core pcAddrInit fetchCapacity instCapacity decodeCapacity
+                 (@Impl.np_core pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions) s1 c')) with c'.
-    change (impl_core core pcAddrInit fetchCapacity instCapacity decodeCapacity
+    change (impl_core pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1) with (Fst s1).
     unfold dmCore_rf, dmCore_fetch, dmCore_decode, dmCore_execute, dmCore_mulDiv,
@@ -991,40 +988,40 @@ Section DataMemStageSimulation.
     forall {env1 : Env iTree}
            (s1 s1' : IState) (v : bits 0),
       SemAction env1
-        (@revRpAndWriteBackStage core pcAddrInit fetchCapacity instCapacity
+        (@revRpAndWriteBackStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
         s1 s1' v ->
-      impl_execute core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1' =
-        impl_execute core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1 /\
-      impl_fetch core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
                  mulDivMode config regions s1' =
-        impl_fetch core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
                    mulDivMode config regions s1 /\
-      impl_decode core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        impl_decode core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1 /\
-      impl_mulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        impl_mulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1 /\
-      dataMemPendingQueue core dataMemCapacity
-        (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      dataMemPendingQueue dataMemCapacity
+        (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1') =
-        dataMemPendingQueue core dataMemCapacity
-          (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        dataMemPendingQueue dataMemCapacity
+          (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                         dataMemCapacity mulCapacity divCapacity mulStages divStages
                         mulDivMode config regions s1).
   Proof.
@@ -1033,21 +1030,21 @@ Section DataMemStageSimulation.
     rewrite SemAction_iff_evalActionPropGen in Hsem.
     rewrite evalActionPropGen_liftAction in Hsem.
     destruct (evalActionPropGen_to_SemAction _ _ _ Hsem) as [c' [v' [HsemC [<- _]]]].
-    destruct (revRpAndWriteBack_core_frame core dataMemCapacity pcAddrInit bpT fTree decTree mdTree
-                (@implExecuteIfc core)
-                (fun ty => @implMemIfc core config regions ty rev)
+    destruct (revRpAndWriteBack_core_frame dataMemCapacity pcAddrInit bpT fTree decTree mdTree
+                (@implExecuteIfc)
+                (fun ty => @implMemIfc config regions ty rev)
                 (Fst s1) c' v' HsemC)
       as [_ [Hfetch [Hdecode [Hexec [Hmd Hfifo]]]]].
     unfold dataMemPendingQueue, dataMem_fifo,
            impl_execute, impl_fetch, impl_decode, impl_dataMem, impl_mulDiv.
-    change (impl_core core pcAddrInit fetchCapacity instCapacity decodeCapacity
+    change (impl_core pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions
               (writeSubTreeState
-                 (@Impl.np_core core pcAddrInit fetchCapacity instCapacity decodeCapacity
+                 (@Impl.np_core pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions) s1 c')) with c'.
-    change (impl_core core pcAddrInit fetchCapacity instCapacity decodeCapacity
+    change (impl_core pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1) with (Fst s1).
     unfold dmCore_fetch, dmCore_decode, dmCore_execute, dmCore_mulDiv,
@@ -1063,44 +1060,44 @@ Section DataMemStageSimulation.
     forall {env2 : Env sTree}
            (s1 s1' : IState) (s2 : SState),
       cRel s1 s2 ->
-      isDataMemLoadRq core dataMemCapacity
-        (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      isDataMemLoadRq dataMemCapacity
+        (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1') =
-        isDataMemLoadRq core dataMemCapacity
-          (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        isDataMemLoadRq dataMemCapacity
+          (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                         dataMemCapacity mulCapacity divCapacity mulStages divStages
                         mulDivMode config regions s1) ->
-      dataMemPendingQueue core dataMemCapacity
-        (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      dataMemPendingQueue dataMemCapacity
+        (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1') =
-        dataMemPendingQueue core dataMemCapacity
-          (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        dataMemPendingQueue dataMemCapacity
+          (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                         dataMemCapacity mulCapacity divCapacity mulStages divStages
                         mulDivMode config regions s1) ->
-      flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
                     mulDivMode config regions s1 ->
-      TreeContentRel (SpecMemSubTree core regions)
-        (projImplMemSpecState core regions
-           (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      TreeContentRel (SpecMemSubTree regions)
+        (projImplMemSpecState regions
+           (impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1'))
-        (spec_mem core pcAddrInit regions s2) ->
-      FenceIInv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        (spec_mem pcAddrInit regions s2) ->
+      FenceIInv pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2 ->
       exists s2' : SState,
-        SemActions env2 (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (specMod type) s2 s2' /\
         cRel s1' s2'.
   Proof.
     intros env2 s1 s1' s2 Hrel Hrq' Hq' Hflush' HmemRel' Hfence'.
     exists s2; split.
-    - apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2).
+    - apply (specMod_stutter pcAddrInit config regions clint revSpec plic s2).
     - destruct Hrel as [[rf_mid [wm_mid [wm_dm [Hinflight Hgl]]]] _ _].
       constructor.
       + exists rf_mid, wm_mid, wm_dm.
@@ -1127,78 +1124,78 @@ Section DataMemStageSimulation.
            (s1 s1' : IState) (s2 s2' : SState)
            (dstIdx : bits RegIdxSzReal) (dstVal : type FullECapWithTag),
       cRel s1 s2 ->
-      isDataMemLoadRq core dataMemCapacity
-        (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      isDataMemLoadRq dataMemCapacity
+        (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1) = false ->
-      isDataMemLoadRq core dataMemCapacity
-        (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      isDataMemLoadRq dataMemCapacity
+        (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1') = true ->
-      dataMemPendingQueue core dataMemCapacity
-        (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      dataMemPendingQueue dataMemCapacity
+        (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
                       mulDivMode config regions s1') =
-        dataMemPendingQueue core dataMemCapacity
-          (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        dataMemPendingQueue dataMemCapacity
+          (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                         dataMemCapacity mulCapacity divCapacity mulStages divStages
                         mulDivMode config regions s1) ->
-      flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
                   mulDivMode config regions s1' =
-        writeGprVal core pcAddrInit dstIdx dstVal
-          (flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        writeGprVal pcAddrInit dstIdx dstVal
+          (flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                        dataMemCapacity mulCapacity divCapacity mulStages divStages
                        mulDivMode config regions s1) ->
       (forall rf_mid wm_mid wm_dm req,
-         GhostStep core pcAddrInit (spec_rf core pcAddrInit regions s2) rf_mid (fun _ => false) wm_mid req ->
-         GhostList core pcAddrInit rf_mid wm_mid
-           (dataMemPendingQueue core dataMemCapacity
-              (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+         GhostStep pcAddrInit (spec_rf pcAddrInit regions s2) rf_mid (fun _ => false) wm_mid req ->
+         GhostList pcAddrInit rf_mid wm_mid
+           (dataMemPendingQueue dataMemCapacity
+              (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                             dataMemCapacity mulCapacity divCapacity mulStages divStages
                             mulDivMode config regions s1))
-           (flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+           (flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                         dataMemCapacity mulCapacity divCapacity mulStages divStages
                         mulDivMode config regions s1)
            wm_dm ->
-         spec_rf core pcAddrInit regions s2' = writeGprVal core pcAddrInit dstIdx dstVal rf_mid /\
+         spec_rf pcAddrInit regions s2' = writeGprVal pcAddrInit dstIdx dstVal rf_mid /\
          exists wm_dm',
-           GhostList core pcAddrInit
-             (writeGprVal core pcAddrInit dstIdx dstVal rf_mid)
+           GhostList pcAddrInit
+             (writeGprVal pcAddrInit dstIdx dstVal rf_mid)
              (fun _ => false)
-             (dataMemPendingQueue core dataMemCapacity
-                (impl_dataMem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+             (dataMemPendingQueue dataMemCapacity
+                (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                               dataMemCapacity mulCapacity divCapacity mulStages divStages
                               mulDivMode config regions s1))
-             (writeGprVal core pcAddrInit dstIdx dstVal
-                (flushMulDiv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+             (writeGprVal pcAddrInit dstIdx dstVal
+                (flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                              dataMemCapacity mulCapacity divCapacity mulStages divStages
                              mulDivMode config regions s1))
              wm_dm') ->
-      SemAction env2 (@specStep core pcAddrInit config regions clint plic type) s2 s2' Zmod.zero ->
-      TreeContentRel (SpecMemSubTree core regions)
-        (projImplMemSpecState core regions
-           (impl_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity
+      SemAction env2 (@specStep pcAddrInit config regions clint plic type) s2 s2' Zmod.zero ->
+      TreeContentRel (SpecMemSubTree regions)
+        (projImplMemSpecState regions
+           (impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
                      mulDivMode config regions s1'))
-        (spec_mem core pcAddrInit regions s2') ->
-      FenceIInv core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        (spec_mem pcAddrInit regions s2') ->
+      FenceIInv pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
                 mulDivMode config regions s1' s2' ->
       exists mid2 : SState,
-        SemActions env2 (map snd (specMod type)) s2 mid2 /\
+        SemActions env2 (specMod type) s2 mid2 /\
         cRel s1' mid2.
   Proof.
     intros env2 s1 s1' s2 s2' dstIdx dstVal Hrel HnotRq1 Hrq1' Hq' Hflush' Hcomm Hspec HmemRel' Hfence'.
     exists s2'; split.
-    - exact (specMod_single_specStep core pcAddrInit config regions clint revSpec plic s2 s2' Hspec).
+    - exact (specMod_single_specStep pcAddrInit config regions clint revSpec plic s2 s2' Hspec).
     - destruct Hrel as [[rf_mid [wm_mid [wm_dm [Hinflight Hgl]]]] _ _].
       destruct (DataMemInFlightRel_NotLoadRq_inv_local _ _ _ _ _ HnotRq1 Hinflight)
         as [req Hgstep].
       destruct (Hcomm rf_mid wm_mid wm_dm req Hgstep Hgl)
         as [Hrf2' [wm_dm' Hgl']].
       constructor.
-      + exists (spec_rf core pcAddrInit regions s2'),
+      + exists (spec_rf pcAddrInit regions s2'),
                (fun _ : bits RegIdxSzReal => false),
                wm_dm'.
         split.
@@ -1214,18 +1211,18 @@ Section DataMemStageSimulation.
     forall {env1 : Env iTree} {env2 : Env sTree}
            (s1 s1' : IState) (s2 : SState) (v : bits 0),
       SemAction env1
-        (@loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity
+        (@loadRqOrStoreOrFenceStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
         s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions env2 (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (specMod type) s2 s2' /\
         sRel s1' s2'.
   Proof.
     intros env1 env2 s1 s1' s2 v _ Hrel.
-    exists s2; split; [apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2) |].
-    exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
+    exists s2; split; [apply (specMod_stutter pcAddrInit config regions clint revSpec plic s2) |].
+    exact (stateRel_step_stutter pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
              mulDivMode config regions s1 s1' s2 Hrel).
   Qed.
@@ -1234,13 +1231,13 @@ Section DataMemStageSimulation.
     forall {env1 : Env iTree} {env2 : Env sTree}
            (s1 s1' : IState) (s2 : SState) (v : bits 0),
       SemAction env1
-        (@loadRqOrStoreOrFenceStage core pcAddrInit fetchCapacity instCapacity
+        (@loadRqOrStoreOrFenceStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
         s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions env2 (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (specMod type) s2 s2' /\
         sRel s1' s2'.
   Proof.
     intros env1 env2; exact sim_loadRqOrStoreOrFenceStage_stateRel.
@@ -1250,18 +1247,18 @@ Section DataMemStageSimulation.
     forall {env1 : Env iTree} {env2 : Env sTree}
            (s1 s1' : IState) (s2 : SState) (v : bits 0),
       SemAction env1
-        (@loadRpAndIssueRevRqStage core pcAddrInit fetchCapacity instCapacity
+        (@loadRpAndIssueRevRqStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
         s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions env2 (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (specMod type) s2 s2' /\
         sRel s1' s2'.
   Proof.
     intros env1 env2 s1 s1' s2 v _ Hrel.
-    exists s2; split; [apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2) |].
-    exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
+    exists s2; split; [apply (specMod_stutter pcAddrInit config regions clint revSpec plic s2) |].
+    exact (stateRel_step_stutter pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
              mulDivMode config regions s1 s1' s2 Hrel).
   Qed.
@@ -1270,18 +1267,18 @@ Section DataMemStageSimulation.
     forall {env1 : Env iTree} {env2 : Env sTree}
            (s1 s1' : IState) (s2 : SState) (v : bits 0),
       SemAction env1
-        (@revRpAndWriteBackStage core pcAddrInit fetchCapacity instCapacity
+        (@revRpAndWriteBackStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions rev type)
         s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions env2 (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (specMod type) s2 s2' /\
         sRel s1' s2'.
   Proof.
     intros env1 env2 s1 s1' s2 v _ Hrel.
-    exists s2; split; [apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2) |].
-    exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
+    exists s2; split; [apply (specMod_stutter pcAddrInit config regions clint revSpec plic s2) |].
+    exact (stateRel_step_stutter pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
              mulDivMode config regions s1 s1' s2 Hrel).
   Qed.
@@ -1291,18 +1288,18 @@ Section DataMemStageSimulation.
            (act : Action type iTree (Bit 0))
            (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act
-        (@dataWriteRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        (@dataWriteRqs pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
       SemAction env1 act s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions env2 (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (specMod type) s2 s2' /\
         sRel s1' s2'.
   Proof.
     intros env1 env2 act s1 s1' s2 v _ _ Hrel.
-    exists s2; split; [apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2) |].
-    exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
+    exists s2; split; [apply (specMod_stutter pcAddrInit config regions clint revSpec plic s2) |].
+    exact (stateRel_step_stutter pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
              mulDivMode config regions s1 s1' s2 Hrel).
   Qed.
@@ -1312,18 +1309,18 @@ Section DataMemStageSimulation.
            (act : Action type iTree (Bit 0))
            (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act
-        (@dataReadRqs core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        (@dataReadRqs pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
       SemAction env1 act s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions env2 (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (specMod type) s2 s2' /\
         sRel s1' s2'.
   Proof.
     intros env1 env2 act s1 s1' s2 v _ _ Hrel.
-    exists s2; split; [apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2) |].
-    exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
+    exists s2; split; [apply (specMod_stutter pcAddrInit config regions clint revSpec plic s2) |].
+    exact (stateRel_step_stutter pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
              mulDivMode config regions s1 s1' s2 Hrel).
   Qed.
@@ -1333,18 +1330,18 @@ Section DataMemStageSimulation.
            (act : Action type iTree (Bit 0))
            (s1 s1' : IState) (s2 : SState) (v : bits 0),
       In act
-        (@dataReadRps core pcAddrInit fetchCapacity instCapacity decodeCapacity
+        (@dataReadRps pcAddrInit fetchCapacity instCapacity decodeCapacity
            dataMemCapacity mulCapacity divCapacity mulStages divStages
            mulDivMode config regions type) ->
       SemAction env1 act s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
-        SemActions env2 (map snd (specMod type)) s2 s2' /\
+        SemActions env2 (specMod type) s2 s2' /\
         sRel s1' s2'.
   Proof.
     intros env1 env2 act s1 s1' s2 v _ _ Hrel.
-    exists s2; split; [apply (specMod_stutter core pcAddrInit config regions clint revSpec plic s2) |].
-    exact (stateRel_step_stutter core pcAddrInit fetchCapacity instCapacity
+    exists s2; split; [apply (specMod_stutter pcAddrInit config regions clint revSpec plic s2) |].
+    exact (stateRel_step_stutter pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
              mulDivMode config regions s1 s1' s2 Hrel).
   Qed.

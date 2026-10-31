@@ -34,8 +34,8 @@ module Tb();
   endclass
 
   top top_inst (
-    .clk_default(clk_core),
-    .rst_n_default(rst_n_core)
+    .clk(clk_core),
+    .rst_n(rst_n_core)
   );
 
   always_ff @(posedge clk_core or negedge rst_n_core) begin

@@ -33,7 +33,7 @@ Import ListNotations.
  * rule), assumed for every step taken from a state reachable from the start. *)
 
 Section RunSim.
-  Variables t1 t2 : Tree DomainElem.
+  Variables t1 t2 : Tree Elem.
   Variable env1 : Env t1.
   Variables O P : Type.
   Variable env2 : O -> Env t2.
@@ -46,8 +46,8 @@ Section RunSim.
 
   Variable ls1 : list (Action type t1 (Bit 0)).
   Variable ls2 : list (Action type t2 (Bit 0)).
-  Variable R : P -> TreeState DomainElemState t1 -> TreeState DomainElemState t2 -> Prop.
-  Variable Step : TreeState DomainElemState t1 -> TreeState DomainElemState t1 -> Prop.
+  Variable R : P -> TreeState ElemState t1 -> TreeState ElemState t2 -> Prop.
+  Variable Step : TreeState ElemState t1 -> TreeState ElemState t1 -> Prop.
 
   (* Per-action obligation: one impl step is matched by spec steps that are valid
    * for every oracle agreeing with the (possibly extended) prefix. *)

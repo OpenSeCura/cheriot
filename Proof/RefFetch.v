@@ -40,19 +40,15 @@ Local Open Scope guru_scope.
  * ack (`LineAllowed_fetchViewExt`). *)
 
 Section LineAllowed.
-  Variable core : string.
   Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
 
-  Local Abbreviation memRegionTree := (memRegionTree core).
-  Local Abbreviation memRegionKindTree := (memRegionKindTree core).
-  Local Abbreviation specMemTree := (specMemTree core).
 
   (* --- 1. Per-Region and Whole-Memory Predicates --- *)
 
   Definition RegionLineAllowed (r : MemRegion) (fwc : nat -> nat)
-    : TreeState DomainElemState (memRegionTree r) -> bits AddrSz -> type LineReadRp -> Prop :=
+    : TreeState ElemState (memRegionTree r) -> bits AddrSz -> type LineReadRp -> Prop :=
     match r.(regionKind) as k
-      return TreeState DomainElemState (memRegionKindTree r k) -> bits AddrSz -> type LineReadRp -> Prop
+      return TreeState ElemState (memRegionKindTree r k) -> bits AddrSz -> type LineReadRp -> Prop
     with
     | ExternalMem => fun sr L rp =>
         EnvFetchLineReadRpAt (initLine r) fwc
@@ -62,9 +58,9 @@ Section LineAllowed.
 
   (* The router answers a line no region owns with the default response *)
   Fixpoint LineAllowed (fwcs : nat -> nat -> nat) (regions : list MemRegion)
-    : TreeState DomainElemState (specMemTree regions) -> bits AddrSz -> type LineReadRp -> Prop :=
+    : TreeState ElemState (specMemTree regions) -> bits AddrSz -> type LineReadRp -> Prop :=
     match regions as rs
-      return TreeState DomainElemState (specMemTree rs) -> bits AddrSz -> type LineReadRp -> Prop
+      return TreeState ElemState (specMemTree rs) -> bits AddrSz -> type LineReadRp -> Prop
     with
     | [] => fun _ _ rp => rp = getDefault LineReadRp
     | r :: rs => fun m L rp =>
@@ -78,10 +74,10 @@ Section LineAllowed.
   (* Region state `sr'` extends `sr` as far as fetches can tell: same ack count, and
    * the writes of `sr` with newer writes in front. *)
   Definition RegionFetchViewExt (r : MemRegion)
-    : TreeState DomainElemState (memRegionTree r) -> TreeState DomainElemState (memRegionTree r) -> Prop :=
+    : TreeState ElemState (memRegionTree r) -> TreeState ElemState (memRegionTree r) -> Prop :=
     match r.(regionKind) as k
-      return TreeState DomainElemState (memRegionKindTree r k) ->
-             TreeState DomainElemState (memRegionKindTree r k) -> Prop
+      return TreeState ElemState (memRegionKindTree r k) ->
+             TreeState ElemState (memRegionKindTree r k) -> Prop
     with
     | ExternalMem => fun sr sr' =>
         count_true sr'.(Fst).(Snd).(Snd).(Snd).(Snd).(Fst) =
@@ -91,11 +87,11 @@ Section LineAllowed.
     end.
 
   Fixpoint FetchViewExt (regions : list MemRegion)
-    : TreeState DomainElemState (specMemTree regions) ->
-      TreeState DomainElemState (specMemTree regions) -> Prop :=
+    : TreeState ElemState (specMemTree regions) ->
+      TreeState ElemState (specMemTree regions) -> Prop :=
     match regions as rs
-      return TreeState DomainElemState (specMemTree rs) ->
-             TreeState DomainElemState (specMemTree rs) -> Prop
+      return TreeState ElemState (specMemTree rs) ->
+             TreeState ElemState (specMemTree rs) -> Prop
     with
     | [] => fun _ _ => True
     | r :: rs => fun m m' =>
@@ -104,9 +100,9 @@ Section LineAllowed.
 
   (* The write count at the last ack never exceeds the current write count *)
   Definition RegionSnapshotOK (r : MemRegion) (fwc : nat -> nat)
-    : TreeState DomainElemState (memRegionTree r) -> Prop :=
+    : TreeState ElemState (memRegionTree r) -> Prop :=
     match r.(regionKind) as k
-      return TreeState DomainElemState (memRegionKindTree r k) -> Prop
+      return TreeState ElemState (memRegionKindTree r k) -> Prop
     with
     | ExternalMem => fun sr =>
         (length sr.(Snd).(Snd).(Snd).(Fst) >=
@@ -115,8 +111,8 @@ Section LineAllowed.
     end.
 
   Fixpoint SnapshotOK (fwcs : nat -> nat -> nat) (regions : list MemRegion)
-    : TreeState DomainElemState (specMemTree regions) -> Prop :=
-    match regions as rs return TreeState DomainElemState (specMemTree rs) -> Prop with
+    : TreeState ElemState (specMemTree regions) -> Prop :=
+    match regions as rs return TreeState ElemState (specMemTree rs) -> Prop with
     | [] => fun _ => True
     | r :: rs => fun m =>
         RegionSnapshotOK r (fwcs 0%nat) m.(Fst) /\ SnapshotOK (fun i => fwcs (S i)) rs m.(Snd).(Fst)
@@ -201,10 +197,8 @@ End LineAllowed.
  * return `fo`. *)
 
 Section FetchAllowedInst.
-  Variable core : string.
   Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
 
-  Local Abbreviation specMemTree := (specMemTree core).
 
   Definition instSzLg : type (Bit LgLgNumBytesFullCapSz) := evalExpr ($LgNumBytesInstSz : Expr type (Bit LgLgNumBytesFullCapSz)).
 
@@ -281,24 +275,24 @@ Section FetchAllowedInst.
     evalExpr (Ugt (Var type (Bit (AddrSz + 2)) instEnd0) (Var type (Bit (AddrSz + 2)) (pccTopOf pcc))).
 
   Definition FetchAllowedInst (fwcs : nat -> nat -> nat) (regions : list MemRegion)
-    (m : TreeState DomainElemState (specMemTree regions))
+    (m : TreeState ElemState (specMemTree regions))
     (pcc : type FullECapWithTag) (fo : type FetchOut) : Prop :=
     let pc : type Addr := evalExpr (##pcc`"addr") in
     let top := pccTopOf pcc in
     if specPreFault pcc
     then fo = specFetchOutOf pcc Zmod.zero (specPreFaultTopExc pcc)
     else exists rp0 rp1,
-      LineAllowed core initLine fwcs regions m (evalExpr (memLineAddr (Var type Addr pc))) rp0 /\
+      LineAllowed initLine fwcs regions m (evalExpr (memLineAddr (Var type Addr pc))) rp0 /\
       (let raw0 := specWord pc (specPkt pc rp0) in
        andb (specCrosses pc raw0) (negb (specTopExc pc top raw0)) = true ->
-       LineAllowed core initLine fwcs regions m (evalExpr (memNextLineAddr (Var type Addr pc))) rp1) /\
+       LineAllowed initLine fwcs regions m (evalExpr (memNextLineAddr (Var type Addr pc))) rp1) /\
       fo = specFetchOutOf pcc (evalLetExpr (@preDecode type (fst (specFetchRd pc top rp0 rp1))))
                           (snd (specFetchRd pc top rp0 rp1)).
 
   Lemma FetchAllowedInst_fetchViewExt :
     forall fwcs regions m m' pcc fo,
-      SnapshotOK core fwcs regions m ->
-      FetchViewExt core regions m m' ->
+      SnapshotOK fwcs regions m ->
+      FetchViewExt regions m m' ->
       FetchAllowedInst fwcs regions m pcc fo ->
       FetchAllowedInst fwcs regions m' pcc fo.
   Proof.
@@ -307,8 +301,8 @@ Section FetchAllowedInst.
     destruct (specPreFault pcc); [exact Hal |].
     destruct Hal as [rp0 [rp1 [H0 [H1 Hfo]]]].
     exists rp0, rp1; split; [| split; [| exact Hfo]].
-    - exact (LineAllowed_fetchViewExt core initLine regions fwcs m m' _ rp0 Hsnap Hext H0).
-    - intros Hc; exact (LineAllowed_fetchViewExt core initLine regions fwcs m m' _ rp1 Hsnap Hext (H1 Hc)).
+    - exact (LineAllowed_fetchViewExt initLine regions fwcs m m' _ rp0 Hsnap Hext H0).
+    - intros Hc; exact (LineAllowed_fetchViewExt initLine regions fwcs m m' _ rp1 Hsnap Hext (H1 Hc)).
   Qed.
 
 End FetchAllowedInst.
