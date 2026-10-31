@@ -1386,6 +1386,76 @@ Section CoreRel.
     - exact Hrev.
   Qed.
 
+  (* A port predicate that reads neither the data requests, their readies, the writes nor
+   * `portRq`: the request ports leave it unchanged *)
+  Definition RqInsensitive (P : forall r, TS (implExternalMemRegionTree core r) -> Prop) : Prop :=
+    forall r (y y' : TS (implExternalMemRegionTree core r)),
+      y'.(Fst).(Fst) = y.(Fst).(Fst) -> y'.(Fst).(Snd).(Snd).(Fst) = y.(Fst).(Snd).(Snd).(Fst) ->
+      y'.(Snd).(Fst) = y.(Snd).(Fst) ->
+      y'.(Snd).(Snd).(Snd).(Snd).(Fst) = y.(Snd).(Snd).(Snd).(Snd).(Fst) ->
+      y'.(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) = y.(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ->
+      P r y' = P r y.
+
+  Local Ltac rqins_tac :=
+    let r0 := fresh "r" in let y0 := fresh "y" in let y1 := fresh "y" in
+    intros r0 y0 y1 Q1 Q2 Q3 Q4 Q5; cbv beta zeta;
+    unfold implFetchAccRqs, ImplExternalRegionHandshakeInv, RegionFenceICountInv;
+    rewrite ?Q1, ?Q2, ?Q3, ?Q4, ?Q5; reflexivity.
+
+  (* `RefRelG_mem_frame` for the request ports: only the port predicates that ignore the data
+   * requests and `portRq` must be unchanged *)
+    Lemma RefRelG_rq_frame :
+    forall g g' (s1 s1' : IState) (s2 s2' : SState) mi' ms',
+      s1' = writeSubTreeState (Impl.np_mem core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions) s1 mi' ->
+      s2' = writeSubTreeState (Spec.np_mem core pcAddrInit specRegions) s2 ms' ->
+      g_chain g' = g_chain g -> g_rf0 g' = g_rf0 g -> g_cnwb g' = g_cnwb g -> g_d2aFo g' = g_d2aFo g ->
+      accTakesHead (g_acc g') = accTakesHead (g_acc g) ->
+      (forall P, RqInsensitive P -> AllPorts P implRegions (iRegions s1') = AllPorts P implRegions (iRegions s1)) ->
+      (forall L, lineContent specRegions (sMem s2') L = lineContent specRegions (sMem s2) L) ->
+      FetchViewExt core specRegions (sMem s2) (sMem s2') ->
+      MemRelC g' s1' s2' -> LatchRel g' s2' -> AccessRel g' s1' s2' -> RevokerRel g' s1' s2' ->
+      RefRelG g s1 s2 -> RefRelG g' s1' s2'.
+  Proof.
+    intros g g' s1 s1' s2 s2' mi' ms' E1 E2 Ech Erf Ecn Ed2a Eacc HP Hlc Hext Hmem Hlat Hacc Hrev H.
+    destruct H as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
+    pose proof (proj2 (proj2 Hm)) as Hsnap.
+    assert (Hrw : forall rc, revWb (sMem s2') rc = revWb (sMem s2) rc)
+      by (intros rc; apply revWb_ext; exact Hlc).
+    assert (Edm : iDmSt s1' = iDmSt s1) by (rewrite E1; reflexivity).
+    constructor.
+    - unfold RfRel in *; rewrite Ech, Erf, Ecn; rewrite E1, E2; exact Hrf.
+    - exact Hmem.
+    - exact Hlat.
+    - unfold ReplayRel in *; rewrite Ech, Erf; intros G1 e G2 rfe Hg Hch.
+      exact (FetchAllowedInst_fetchViewExt core initLine fwcs specRegions _ _ _ _ Hsnap Hext (Hrp G1 e G2 rfe Hg Hch)).
+    - unfold EagerRel in *; rewrite Ech; rewrite E2; exact He.
+    - exact Hacc.
+    - unfold CnwbRel in *; rewrite Ecn; destruct Hc as [Hc1 Hc2]; rewrite Edm, Hrw; exact (conj Hc1 Hc2).
+    - unfold DmQueueRel in *; rewrite Ech, Eacc; rewrite E1; exact Hd.
+    - unfold FenceRel, NoFenceIWait in *; rewrite Ech, HP by rqins_tac; rewrite E1; exact Hf.
+    - unfold ScoreRel in *; rewrite Ed2a; rewrite E1; exact Hs.
+    - unfold FrontRel in *.
+      destruct Hfr as [F1 [F2 [F3 [F4 [F5 [F6 F7]]]]]].
+      split; [rewrite E1; exact F1 |]; split; [rewrite E1; exact F2 |]; split; [rewrite E1; exact F3 |].
+      split; [rewrite E1; exact F4 |]; split; [rewrite E1; exact F5 |].
+      split.
+      + unfold LiveChain, liveInsts in *; rewrite Ed2a.
+        refine (LiveChainG_mono _ _ _ (FrontierRel s1 s2) _ _ _ Hsnap Hext _ _).
+        * intros p Hp; rewrite E1; exact (FrontierRel_mono _ _ _ p Hsnap Hext Hp).
+        * rewrite E1; exact F6.
+      + unfold FetchRespRel in *; rewrite HP by rqins_tac.
+        revert F7; apply AllPorts_impl; intros r y HC; cbv zeta in HC |- *.
+        destruct HC as [C [HC1 [HC2 HC3]]].
+        exists C; split; [rewrite E1; exact HC1 | split; [exact HC2 |]].
+        intros Hv; destruct (HC3 Hv) as [f [E' [HE Hl']]].
+        exists f, E'; split; [rewrite E1; exact HE |].
+        intros Hlive; rewrite E1 in Hlive.
+        exact (LineAllowed_fetchViewExt core initLine specRegions fwcs _ _ _ _ Hsnap Hext (Hl' Hlive)).
+    - unfold WfRel in *; rewrite HP by rqins_tac; rewrite E1; exact Hw.
+    - exact Hrev.
+  Qed.
+
   (* --- 17. The mcycle Tick --- *)
 
   Lemma flushMulDivCaps_incr :
