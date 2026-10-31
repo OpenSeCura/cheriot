@@ -18,6 +18,7 @@ From Stdlib Require Import String List ZArith Zmod Lia Bool.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems HelperLemmas.
 From Cheriot.Proof Require Import TreeLemmas StateRel SimDevices SimFetchDecode SimExecute GhostListLemmas.
 From Cheriot.Proof Require Import RefRel RefRegion RefGhost RefFetch FifoGen RefMemRel RefCoreRel RefFrame RefPeriph RefRevoker RefSpecRead.
+From Cheriot.Proof Require Import RefRevTable.
 From Cheriot.Proof Require Import ImplSpec.
 
 Unset Implicit Arguments.
@@ -40,8 +41,8 @@ Local Open Scope guru_scope.
  * - WaitCapRp and WaitRevBitRp finish a position: when it needs no write the spec takes the
  *   position's step, which only reads memory (`specRevStep_scan`, `scan_commit`); otherwise
  *   the spec stutters, or closes a `RevSpecAhead` offset.
- * The steps assume that the regions are pairwise disjoint (`Hdisj`) and that the rev-table
- * bytes of the capabilities that need a check are ExternalMem (`HrevTab`). *)
+ * The steps assume that the regions are pairwise disjoint (`Hdisj`) and that the whole
+ * revocation table is ExternalMem (`HrevTab`). *)
 
 Local Abbreviation TS t := (TreeState DomainElemState t).
 
@@ -1054,15 +1055,23 @@ Section RevSteps.
 
   (* --- 3f. Committing a Position: the Impl Moves On, the Spec Takes the Position's Step --- *)
 
-  (* The regions are pairwise disjoint, so each line is in at most one region; the rev-table
-   * bytes the sweep reads are ExternalMem *)
+  (* The regions are pairwise disjoint, so each line is in at most one region *)
   Hypothesis Hdisj : Is_true (pairwiseDisjoint specRegions).
 
   Lemma lineUnique_spec : forall L, lineUnique specRegions L.
   Proof. intros L; apply lineUnique_disjoint, Is_true_eq_true; exact Hdisj. Qed.
 
-  Hypothesis HrevTab :
-    forall c, capNeedsCheck config c = true -> lineKind specRegions (lineOf false (revByteAddrOf config (capBase c))) = Some true.
+  (* The whole revocation table is ExternalMem *)
+  Hypothesis HrevTab : Is_true (revTableInExternalMem config specRegions).
+
+  (* So the rev byte the sweep reads for a capability that needs a check is ExternalMem *)
+  Lemma revTab_needsCheck :
+    forall c, capNeedsCheck config c = true ->
+      lineKind specRegions (lineOf false (revByteAddrOf config (capBase c))) = Some true.
+  Proof.
+    intros c Hc; destruct (revByte_needsCheck_inTable config c Hc) as [a [Ha ->]].
+    exact (revTab_line config specRegions (Is_true_eq_true _ Hdisj) (Is_true_eq_true _ HrevTab) a Ha).
+  Qed.
 
   Local Abbreviation PQ := (PortsQuiet core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                               mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
@@ -1471,7 +1480,7 @@ Section RevSteps.
                     b t c e ist ir sa st
                     (specEnvOK_mem core pcAddrInit pre post revBase revPfB revPfA initLine fwcs s2) Hxs Hodd Hnd Hk1
                     (lineUnique_spec _)
-                    (fun _ => ltac:(rewrite (Hmv Hsh); split; [exact (HrevTab sc Hnc) |
+                    (fun _ => ltac:(rewrite (Hmv Hsh); split; [exact (revTab_needsCheck sc Hnc) |
                                       split; [apply lineUnique_spec | rewrite <- Hsb, <- Hrbv; exact Hrb]])))
           as [ms1 [Hfr1 Hsem1]].
         apply (scan_commit g s1 s1' s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh st' ph' ms1

@@ -110,6 +110,18 @@ Record MemRegion := {
     | r :: rs => forallb (disjointBool r) rs && pairwiseDisjoint rs
     end.
 
+  (* The revocation table `[revTableStartAddr, revTableStartAddr + revTableSizeInBytes)` lies
+   * inside one ExternalMem region. That region must end below 2^AddrSz: `isRegionAddr` computes
+   * the end modulo 2^AddrSz, so a region ending at 2^AddrSz matches no address. *)
+  Definition revTableInExternalMem (config : RevConfig) (l : list MemRegion) : bool :=
+    existsb (fun r => match r.(regionKind) with
+                      | ExternalMem => ((r.(regionBase) <=? config.(revTableStartAddr)) &&
+                                        (config.(revTableStartAddr) + config.(revTableSizeInBytes) <=?
+                                           r.(regionBase) + r.(regionSize)) &&
+                                        (r.(regionBase) + r.(regionSize) <? Z.shiftl 1 AddrSz))%Z
+                      | CustomMem _ _ _ _ => false
+                      end) l.
+
   Definition isRegionAddr {ty : Kind -> Type} (r : MemRegion) (addr : Expr ty Addr) : Expr ty Bool :=
     And [ Uge addr $(r.(regionBase)) ; Ult addr $(r.(regionBase) + r.(regionSize)) ].
 

@@ -53,7 +53,9 @@ Definition concreteRevConfig : RevConfig := {|
   heapStartAddr       := RamBase ;
   revTableStartAddr   := RevTableBase ;
   revTableSizeInBytes := RevTableSize ;
-  lgRevGranularity    := LgNumBytesFullCapSz
+  lgRevGranularity    := LgNumBytesFullCapSz ;
+  revTableSizeNonNeg  := I ;
+  lgRevGranularityOK  := I
 |}.
 
 (* ===========================================================================
@@ -103,6 +105,8 @@ Definition concreteRegions : list MemRegion := [
 ].
 
 Definition concreteRegionsDisjoint : Is_true (pairwiseDisjoint concreteRegions) := I.
+
+Definition concreteRevTableInExternalMem : Is_true (revTableInExternalMem concreteRevConfig concreteRegions) := I.
 
 Definition concreteClint : @ClintInstance "core" concreteRegions :=
   @Build_ClintInstance "core" concreteRegions 2%nat ClintBaseAddr I I eq_refl.

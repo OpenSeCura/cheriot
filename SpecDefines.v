@@ -1315,7 +1315,11 @@ Record RevConfig := {
   heapStartAddr        : Z ;
   revTableStartAddr    : Z ;
   revTableSizeInBytes  : Z ;
-  lgRevGranularity     : Z
+  lgRevGranularity     : Z ;
+  (* The table has a nonnegative size, and the bit fields of `computeRevBitAddr` have
+   * nonnegative widths *)
+  revTableSizeNonNeg   : Is_true (0 <=? revTableSizeInBytes)%Z ;
+  lgRevGranularityOK   : Is_true ((0 <=? lgRevGranularity) && (lgRevGranularity + 3 <=? AddrSz + 1))%Z
 }.
 
 Definition heapSize (config : RevConfig) : Z :=
