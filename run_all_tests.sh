@@ -20,9 +20,9 @@ if [ $# -lt 1 ]; then
     exit 1
 fi
 
-CHERIOT_DIR="/Users/muralivi/work/Cherified/cheriot"
-TEST_DIR="/Users/muralivi/work/Cherified/basic-riscv-tests-cheriot/binaries"
-TEST_SUITE="/Users/muralivi/work/Cheriot/cheriot-rtos/tests/build/cheriot/cheriot/release/test-suite"
+CHERIOT_DIR=`pwd`
+TEST_DIR="${CHERIOT_DIR}/../basic-riscv-tests-cheriot/binaries"
+TEST_SUITE="${CHERIOT_DIR}/../../Cheriot/cheriot-rtos/tests/build/cheriot/cheriot/release/test-suite"
 LLVM_DIR="${LLVM_DIR:-$HOME/work/Cheriot/llvm-project/builds/cheriot-llvm}"
 SIM="$1"
 
