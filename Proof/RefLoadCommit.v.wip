@@ -1,0 +1,406 @@
+(*
+ * Copyright 2026 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *)
+
+From Stdlib Require Import String List ZArith Zmod Lia Bool.
+From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems HelperLemmas.
+From Cheriot Require Import SpecDefines SpecDevice SpecFetchDeferred Spec Clint Plic Impl.ImplDevice.
+From Cheriot.Proof Require Import TreeLemmas StateRel SimDevices SimFetchDecode SimExecute GhostListLemmas.
+From Cheriot.Proof Require Import RefRel RefRegion RefGhost RefFetch FifoGen RefMemRel RefCoreRel RefFrame RefPeriph.
+From Cheriot.Proof Require Import RefSpecRead RefSpecFetch RefRevTable RefReplay.
+
+Import ListNotations.
+Local Open Scope Z_scope.
+Local Open Scope string_scope.
+Local Open Scope guru_scope.
+
+Local Abbreviation TS t := (TreeState ElemState t).
+
+(* Milestone 4, the commit of a load (`readRpPorts` at `AccLoad .. (RdOut b)`), spec side:
+ * 1. combinational facts of the load path (`dispatchMemFence`, `dispatchLoadResponse`);
+ * 2. the two line reads of a data access;
+ * 3. `specCompleteLoad`, the deferred part of a load entry and `specStep` for a load entry. *)
+
+Local Strategy expand [defDst defAddr defDm defMd defNextPcc geAluOut geAluIn evalAluOut evalDecode readPcc writePcc
+                       loadCmdOf ldAddr ldPending plSize crossesB lineOf specPkt singleLoadVal secondLoadOf
+                       revByteAddrOf].
+
+(* --- 1. Combinational Facts of the Load Path --- *)
+
+(* Reading back the payload of a union built from a variable *)
+Ltac strip_var u :=
+  lazymatch u with
+  | evalExpr (Var _ _ ?u') => strip_var u'
+  | _ => u
+  end.
+
+Ltac readback :=
+  match goal with |- context [evalExpr (ReadUnionData (Var ?ty ?k ?u) ?i)] =>
+    let w := strip_var u in
+    lazymatch w with evalExpr (BuildUnion _ (Var _ _ ?x)) =>
+      replace (evalExpr (ReadUnionData (Var ty k u) i)) with x
+        by (symmetry; exact (evalExpr_ReadUnionData_BuildUnion _ i (Var _ _ x) eq_refl))
+    end
+  end.
+
+(* Fix the store/load case of the memory operation inside `dispatchMemFence` *)
+Ltac store_case Hs :=
+  match goal with |- context [evalExpr (ReadUnionTag (Var type LoadOrStoreKind ?x) ?j)] =>
+    assert (Hs' : evalExpr (ReadUnionTag (Var type LoadOrStoreKind x) j) = false) by exact Hs;
+    rewrite Hs'; cbv iota
+  end.
+
+(* A union tag test that computes to the other boolean is contradictory *)
+Ltac tag_contra H :=
+  match type of H with
+  | ?L = true => assert (Hc_ : L = false) by reflexivity; rewrite Hc_ in H; discriminate H
+  | ?L = false => assert (Hc_ : L = true) by reflexivity; rewrite Hc_ in H; discriminate H
+  end.
+
+Lemma opLoad_notStore : forall op, opIsLoad op = true -> opIsStore op = false.
+Proof.
+  intros op H; unfold opIsLoad, opIsStore in *; cbv zeta in *.
+  apply andb_prop in H as [Hm Hl]; rewrite Hm; cbn [andb].
+  cbn [evalExpr] in Hl |- *.
+  apply Zmod.eqb_eq in Hl; rewrite Hl; reflexivity.
+Qed.
+
+(* `dispatchMemFence` on a load: a memory action that is not a store *)
+Lemma dispatchMemFence_load :
+  forall d a op, opIsLoad op = true ->
+    evalExpr ((Var type MemFenceAction (evalLetExpr (dispatchMemFence d a op))) `? "Mem") = true /\
+    evalExpr ((Var type MemAction (evalExpr ((Var type MemFenceAction (evalLetExpr (dispatchMemFence d a op))) `! "Mem")))
+                `? "Store") = false.
+Proof.
+  intros d a op H.
+  pose proof (opLoad_notStore op H) as Hs.
+  unfold opIsLoad, opIsStore, opMemPayload, opIsMem in *; cbv zeta in *.
+  apply andb_prop in H as [Hm _]; rewrite Hm in Hs; cbn [andb] in Hs.
+  unfold dispatchMemFence; cbn [evalLetExpr]; rewrite Hm; cbv beta iota.
+  split; [reflexivity |].
+  store_case Hs.
+  readback; reflexivity.
+Qed.
+
+(* The pending load of a load request writes the request's destination *)
+Lemma loadCmdOf_dst : forall q, opIsLoad (mrOp q) = true -> (ldPending (loadCmdOf q)).(Fst) = mrDst q.
+Proof.
+  intros q H.
+  pose proof (opLoad_notStore _ H) as Hs.
+  unfold opIsLoad, opIsStore, opMemPayload, opIsMem in *; cbv zeta in *.
+  apply andb_prop in H as [Hm _]; rewrite Hm in Hs; cbn [andb] in Hs.
+  unfold loadCmdOf; cbv zeta.
+  unfold dispatchMemFence; cbn [evalLetExpr]; rewrite Hm; cbv beta iota.
+  store_case Hs.
+  readback; readback; reflexivity.
+Qed.
+
+(* The outcome of a load response keeps the load's destination; a rev lookup is for a revokable base *)
+Lemma loadOutcome_facts :
+  forall config (pl : type PendingLoad) (v : type FullCapWithTag),
+    (evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v))) `? "RevLookup") = true ->
+       (evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v))) `! "RevLookup")).(Snd).(Fst).(Fst)
+         = pl.(Fst) /\
+       baseRevokable config (rcBase (evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v)))
+                                                 `! "RevLookup"))) = true) /\
+    (evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v))) `? "RevLookup") = false ->
+       (evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v))) `! "Writeback")).(Fst) = pl.(Fst)).
+Proof.
+  intros config pl v.
+  unfold dispatchLoadResponse; cbn [evalLetExpr].
+  match goal with |- context [evalExpr (Var type Bool (evalExpr (Eq ?x ?y)))] =>
+    change (evalExpr (Var type Bool (evalExpr (Eq x y)))) with (evalExpr (Eq x y));
+    destruct (evalExpr (Eq x y)); cbv iota
+  end.
+  - match goal with |- context [evalExpr (Var type Bool (evalExpr (needsRevocationCheck ?c ?e ?tg)))] =>
+      change (evalExpr (Var type Bool (evalExpr (needsRevocationCheck c e tg))))
+        with (evalExpr (needsRevocationCheck c e tg));
+      destruct (evalExpr (needsRevocationCheck c e tg)) eqn:En; cbv iota
+    end.
+    + split.
+      * intros _; readback; split; [reflexivity |].
+        unfold needsRevocationCheck in En; cbn [evalExpr map fold_left] in En.
+        change (evalAndBinary (k:=Bool)) with andb in En.
+        apply andb_prop in En as [_ En].
+        unfold baseRevokable, rcBase; exact En.
+      * intros Hf; tag_contra Hf.
+    + split.
+      * intros Ht; tag_contra Ht.
+      * intros _; readback; reflexivity.
+  - split.
+    + intros Ht; tag_contra Ht.
+    + intros _; readback; reflexivity.
+Qed.
+
+Lemma isNotZero_expr :
+  forall sz (e : Expr type (Bit sz)), evalExpr (isNotZero e) = negb (Zmod.eqb (evalExpr e) Zmod.zero).
+Proof.
+  intros sz e.
+  destruct (Zmod.eqb (evalExpr e) Zmod.zero) eqn:E; cbn [negb].
+  - destruct (evalExpr (isNotZero e)) eqn:F; [| reflexivity].
+    apply (proj1 (isNotZero_true_iff (evalExpr e))) in F; rewrite F in E; discriminate E.
+  - apply (proj2 (isNotZero_true_iff (evalExpr e))); exact E.
+Qed.
+
+(* --- 2. The Two Line Reads of a Data Access --- *)
+
+Section LineReads.
+  Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
+
+  Lemma specMemReadFirstLine_wp :
+    forall (addr : type Addr) (sz : type (Bit LgLgNumBytesFullCapSz)) l fwcs (env : Env (specMemTree l)) ms P,
+      SpecEnvOK initLine l fwcs env ->
+      lineKind l (lineOf false addr) = Some true -> lineUnique l (lineOf false addr) ->
+      (forall ms', ReadFrameS l ms ms' -> P ms' (lineContent initLine l ms (lineOf false addr))) ->
+      evalActionPropGen env (@specMemReadFirstLine type l addr sz) ms P.
+  Proof.
+    intros addr sz l fwcs env ms P Henv Hk Hu HP.
+    unfold specMemReadFirstLine; cbn [evalActionPropGen].
+    apply evalActionPropGen_toAction; cbv beta.
+    exact (specMemLineRead_wp initLine _ _ l fwcs env ms P Henv Hk Hu HP).
+  Qed.
+
+  Lemma specMemReadSecondLine_wp :
+    forall (addr : type Addr) (sz : type (Bit LgLgNumBytesFullCapSz)) l fwcs (env : Env (specMemTree l)) ms P,
+      SpecEnvOK initLine l fwcs env ->
+      lineKind l (lineOf true addr) = Some true -> lineUnique l (lineOf true addr) ->
+      (forall ms', ReadFrameS l ms ms' -> P ms' (lineContent initLine l ms (lineOf true addr))) ->
+      evalActionPropGen env (@specMemReadSecondLine type l addr sz) ms P.
+  Proof.
+    intros addr sz l fwcs env ms P Henv Hk Hu HP.
+    unfold specMemReadSecondLine; cbn [evalActionPropGen].
+    apply evalActionPropGen_toAction; cbv beta.
+    exact (specMemLineRead_wp initLine _ _ l fwcs env ms P Henv Hk Hu HP).
+  Qed.
+End LineReads.
+
+(* --- 3. The Spec Side of a Load Commit --- *)
+
+Section LoadSpec.
+  Variable pcAddrInit : Z.
+  Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
+  Variable mulCapacity divCapacity mulStages divStages : nat.
+  Variable mulDivMode : MulDivMode.
+  Variable config : RevConfig.
+  Variables pre post : list MemRegion.
+  Variable revBase : Z.
+  Variable revPfB : Is_true ((0 <=? revBase) && (revBase + RevokerSizeBytes <=? Z.shiftl 1 AddrSz))%Z.
+  Variable revPfA : Is_true (revBase mod (2 ^ LgLineBytes) =? 0)%Z.
+
+  Local Abbreviation specRegions := (specRegionsOf pre post revBase revPfB revPfA).
+  Local Abbreviation implRegions := (implRegionsOf pre post revBase revPfB revPfA).
+
+  Variable clintS : @ClintInstance specRegions.
+  Variable clint : @ClintInstance implRegions.
+  Variable plicS : @PlicInstance (S (S (length (collectIrqActions specRegions)))) specRegions.
+  Variable plic : @PlicInstance (S (S (length (collectIrqActions implRegions)))) implRegions.
+  Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
+  Variable fwcs : nat -> nat -> nat.
+
+  Hypothesis Hdisj : Is_true (pairwiseDisjoint specRegions).
+  Hypothesis HrevTab : Is_true (revTableInExternalMem config specRegions).
+
+  Local Abbreviation CT := (specCoreTree pcAddrInit specRegions).
+  Local Abbreviation envS := (specEnv pcAddrInit specRegions initLine fwcs).
+  Local Abbreviation specClintStateA := (specClintState pre post revBase revPfB revPfA clintS).
+  Local Abbreviation specPlicStateA := (specPlicState pre post revBase revPfB revPfA plicS).
+  Local Abbreviation mkCoreA := (mkCore pcAddrInit specRegions).
+  Local Abbreviation mkSysA := (mkSys pcAddrInit pre post revBase revPfB revPfA).
+  Local Abbreviation CEOK := (CoreEnvOK pcAddrInit pre post revBase revPfB revPfA initLine fwcs).
+  Local Abbreviation lineContentS := (lineContent initLine specRegions).
+  Local Abbreviation specLoadWbA := (specLoadWb config pre post revBase revPfB revPfA initLine).
+  Local Abbreviation revBitOfA := (revBitOf config pre post revBase revPfB revPfA initLine).
+
+  Lemma lineUnique_specL : forall L, lineUnique specRegions L.
+  Proof. intros L; apply lineUnique_disjoint, Is_true_eq_true, Hdisj. Qed.
+
+  (* The rev byte of a revokable base is in an ExternalMem line *)
+  Lemma revByte_line :
+    forall base, baseRevokable config base = true ->
+      lineKind specRegions (lineOf false (revByteAddrOf config base)) = Some true.
+  Proof.
+    intros base Hb; destruct (lgRevGranularity_bounds config) as [Hg0 Hg1].
+    destruct (revByteAddrOf_inTable config Hg0 Hg1 (revTableSize_nonneg config) base Hb) as [a [Ha Ea]].
+    rewrite Ea.
+    exact (revTab_line config specRegions (Is_true_eq_true _ Hdisj) (Is_true_eq_true _ HrevTab) a Ha).
+  Qed.
+
+  Lemma readRevBit_wp :
+    forall (base : type (Bit (AddrSz + 1))) (env : Env (specMemTree specRegions)) ms P,
+      SpecEnvOK initLine specRegions fwcs env ->
+      lineKind specRegions (lineOf false (revByteAddrOf config base)) = Some true ->
+      (forall ms', ReadFrameS specRegions ms ms' -> P ms' (revBitOfA ms base)) ->
+      evalActionPropGen env (@readRevBit type config specRegions base) ms P.
+  Proof.
+    intros base env ms P Henv Hk HP.
+    unfold readRevBit.
+    apply ev_letL; cbv beta.
+    apply ev_letExp; cbv beta.
+    apply ev_letExp; cbv beta.
+    apply ev_letAction.
+    apply (specMemRead_wp initLine _ _ specRegions fwcs env ms); [exact Henv | exact Hk | apply lineUnique_specL |].
+    intros ms' Hms'; cbv beta.
+    apply ev_letExp; cbv beta.
+    apply ev_letExp; cbv beta.
+    apply ev_return.
+    exact (HP ms' Hms').
+  Qed.
+
+  Lemma specLoadWb_rev :
+    forall m pl v,
+      evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v))) `? "RevLookup") = true ->
+      specLoadWbA m pl v =
+      (let revInfo : type RevCmd :=
+         evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v))) `! "RevLookup") in
+       let pr : type PendingRev := evalExpr (##revInfo`"pendingRev") in
+       let wb := evalLetExpr (dispatchRevResponse pr (revBitOfA m (evalExpr (##revInfo`"base")))) in
+       (evalExpr (##wb`"dstIdx"), evalExpr (##wb`"dstVal"))).
+  Proof. intros m pl v H; unfold specLoadWb; cbv zeta; rewrite H; reflexivity. Qed.
+
+  Lemma specLoadWb_wb :
+    forall m pl v,
+      evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v))) `? "RevLookup") = false ->
+      specLoadWbA m pl v =
+      (let wb : type WbCmd :=
+         evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v))) `! "Writeback") in
+       (evalExpr (##wb`"dstIdx"), evalExpr (##wb`"dstVal"))).
+  Proof. intros m pl v H; unfold specLoadWb; cbv zeta; rewrite H; reflexivity. Qed.
+
+  (* The register write of a completed load is the load's destination *)
+  Lemma specLoadWb_dst : forall m pl v, fst (specLoadWbA m pl v) = pl.(Fst).
+  Proof.
+    intros m pl v.
+    destruct (loadOutcome_facts config pl v) as [Hrev Hwb].
+    destruct (evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v))) `? "RevLookup")) eqn:E.
+    - rewrite (specLoadWb_rev m pl v E); cbv zeta; cbn [fst].
+      destruct (Hrev eq_refl) as [Hd _]; rewrite <- Hd; reflexivity.
+    - rewrite (specLoadWb_wb m pl v E); cbv zeta; cbn [fst].
+      rewrite <- (Hwb eq_refl); reflexivity.
+  Qed.
+
+  (* `specCompleteLoad`: the register write `specLoadWb` (its rev bit read only reads memory) *)
+  Lemma specCompleteLoad_wp :
+    forall (envC : Env CT) rf m sl pl v (Q : TS CT -> Prop),
+      CEOK envC ->
+      (forall m', ReadFrameS specRegions m m' ->
+         Q (mkCoreA (cnwbApply pcAddrInit (Some (specLoadWbA m pl v)) rf) m' sl)) ->
+      evalActionPropGen envC (@specCompleteLoad pcAddrInit config specRegions type pl v) (mkCoreA rf m sl)
+        (fun sc' _ => Q sc').
+  Proof.
+    intros envC rf m sl pl v Q Henv HQ.
+    destruct (loadOutcome_facts config pl v) as [Hrev _].
+    unfold specCompleteLoad.
+    apply ev_letL; cbv beta.
+    destruct (evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v))) `? "RevLookup")) eqn:Erl.
+    - destruct (Hrev eq_refl) as [_ Hb].
+      apply ev_ifElse_true; [exact Erl |].
+      apply ev_letExp; cbv beta.
+      apply ev_letExp; cbv beta.
+      apply ev_letExp; cbv beta.
+      apply core_memAct_wp.
+      apply readRevBit_wp; [apply Henv | apply revByte_line; exact Hb |].
+      intros m1 Hm1; cbv beta.
+      apply ev_letL; cbv beta.
+      pose proof (HQ m1 Hm1) as HQ1.
+      rewrite (specLoadWb_rev m pl v Erl) in HQ1; cbv zeta in HQ1.
+      unfold cnwbApply, writeGprVal in HQ1.
+      match type of HQ1 with context [Zmod.eqb ?D Zmod.zero] => destruct (Zmod.eqb D Zmod.zero) eqn:Hz end.
+      + apply ev_ifElse_false; [rewrite isNotZero_expr, Hz; reflexivity |].
+        repeat (apply ev_return; cbv beta).
+        cbn [negb] in HQ1; exact HQ1.
+      + apply ev_ifElse_true; [rewrite isNotZero_expr, Hz; reflexivity |].
+        apply (proj2 (evalActionPropGen_liftAction _ _ _ _)).
+        apply (proj2 (evalActionPropGen_writeRegsList _ _ _ _ _)); cbv beta.
+        repeat (apply ev_return; cbv beta).
+        cbn [negb] in HQ1; exact HQ1.
+    - apply ev_ifElse_false; [exact Erl |].
+      apply ev_letExp; cbv beta.
+      pose proof (HQ m (ReadFrameS_refl specRegions m)) as HQ1.
+      rewrite (specLoadWb_wb m pl v Erl) in HQ1; cbv zeta in HQ1.
+      unfold cnwbApply, writeGprVal in HQ1.
+      match type of HQ1 with context [Zmod.eqb ?D Zmod.zero] => destruct (Zmod.eqb D Zmod.zero) eqn:Hz end.
+      + apply ev_ifElse_false; [rewrite isNotZero_expr, Hz; reflexivity |].
+        repeat (apply ev_return; cbv beta).
+        cbn [negb] in HQ1; exact HQ1.
+      + apply ev_ifElse_true; [rewrite isNotZero_expr, Hz; reflexivity |].
+        apply (proj2 (evalActionPropGen_liftAction _ _ _ _)).
+        apply (proj2 (evalActionPropGen_writeRegsList _ _ _ _ _)); cbv beta.
+        repeat (apply ev_return; cbv beta).
+        cbn [negb] in HQ1; exact HQ1.
+  Qed.
+
+  Lemma writeSecondLine_wp :
+    forall (env : Env CT) rf m sl (v : Expr type (Option SecondLine)) P,
+      (forall r, P (mkCoreA rf m (evalExpr v)) r) ->
+      evalActionPropGen env (@writeSecondLine pcAddrInit specRegions type v) (mkCoreA rf m sl) P.
+  Proof. intros env rf m sl v P HP; exact (HP _). Qed.
+
+  (* The deferred part of a load entry: the first line is read; a crossing load records its second
+   * line, any other completes (register write `specLoadWb`) *)
+  Lemma deferred_load_wp :
+    forall (envC : Env CT) rfC m sl aluOut execOut (Q : TS CT -> Prop),
+      CEOK envC ->
+      optValid (execDataMem execOut) = true ->
+      opIsLoad (optData (execDataMem execOut)) = true ->
+      lineKind specRegions (lineOf false (ldAddr (loadCmdOf (aluDstIdx aluOut ,, ((aluDstVal aluOut).(Snd).(Snd).(Fst) ,,
+                                                              (optData (execDataMem execOut) ,, tt)))))) = Some true ->
+      (forall m', ReadFrameS specRegions m m' ->
+         let ld := loadCmdOf (aluDstIdx aluOut ,, ((aluDstVal aluOut).(Snd).(Snd).(Fst) ,,
+                                                   (optData (execDataMem execOut) ,, tt))) in
+         let rp0 := lineContentS m (lineOf false (ldAddr ld)) in
+         if crossesB (ldAddr ld) (plSize (ldPending ld))
+         then Q (mkCoreA rfC m' (secondLoadOf ld (specPkt (ldAddr ld) rp0)))
+         else Q (mkCoreA (cnwbApply pcAddrInit (Some (specLoadWbA m (ldPending ld) (singleLoadVal ld rp0))) rfC) m' sl)) ->
+      evalActionPropGen envC
+        (@specExecuteDeferred pcAddrInit config specRegions type
+           (defDst aluOut) (defAddr aluOut) (defDm execOut) (defMd execOut))
+        (mkCoreA rfC m sl) (fun sc' _ => Q sc').
+  Proof.
+    intros envC rfC m sl aluOut execOut Q Henv Hv Hld Hk HQ.
+    destruct (dispatchMemFence_load (defDst aluOut) (defAddr aluOut) (optData (defDm execOut)) Hld) as [Hmem Hst].
+    unfold specExecuteDeferred.
+    apply ev_ifElse_true; [exact Hv |].
+    apply ev_letExp; cbv beta.
+    apply ev_letL; cbv beta.
+    apply ev_ifElse_true; [exact Hmem |].
+    apply ev_letExp; cbv beta.
+    apply ev_ifElse_false; [exact Hst |].
+    do 4 (apply ev_letExp; cbv beta).
+    apply core_memAct_wp.
+    apply (specMemReadFirstLine_wp initLine _ _ specRegions fwcs); [apply Henv | exact Hk | apply lineUnique_specL |].
+    intros m1 Hm1; cbv beta.
+    apply ev_letL; cbv beta.
+    match goal with |- evalActionPropGen _ (IfElse _ ?c _ _ _) _ _ => destruct (evalExpr c) eqn:Ecr end.
+    - apply ev_ifElse_true; [exact Ecr |].
+      pose proof (HQ m1 Hm1) as HQ1; cbv zeta in HQ1.
+      match type of HQ1 with context [if crossesB ?a ?s then _ else _] =>
+        assert (Ecr' : crossesB a s = true) by exact Ecr; rewrite Ecr' in HQ1 end.
+      apply ev_letExp; cbv beta.
+      apply writeSecondLine_wp; intros r; cbv beta.
+      repeat (apply ev_return; cbv beta).
+      exact HQ1.
+    - apply ev_ifElse_false; [exact Ecr |].
+      apply ev_letL; cbv beta.
+      eapply evalActionPropGen_mono; [| apply (specCompleteLoad_wp envC rfC m1 sl _ _ (fun sc => Q sc) Henv)].
+      + intros sc' r HQ'; cbv beta; repeat (apply ev_return; cbv beta); exact HQ'.
+      + intros m2 Hm2; cbv beta.
+        pose proof (HQ m2 (ReadFrameS_trans specRegions _ _ _ Hm1 Hm2)) as HQ2; cbv zeta in HQ2.
+        match type of HQ2 with context [if crossesB ?a ?s then _ else _] =>
+          assert (Ecr' : crossesB a s = false) by exact Ecr; rewrite Ecr' in HQ2 end.
+        rewrite (specLoadWb_ext config pre post revBase revPfB revPfA initLine m m1 _ _
+                   (lineContent_readFrame initLine specRegions m m1 Hm1)).
+        exact HQ2.
+  Qed.
+End LoadSpec.

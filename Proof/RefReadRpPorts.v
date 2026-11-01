@@ -682,7 +682,7 @@ Section ReadRpPorts.
     - unfold ReplayRel in *; rewrite Ech, Erf; exact Hrp.
     - unfold EagerRel in *; rewrite Ech; exact He.
     - exact Hacc.
-    - unfold CnwbRel in *; rewrite Ecn, Edm; exact Hc.
+    - unfold CnwbRel in *; rewrite Ecn, Ech, Eacc, Edm; exact Hc.
     - unfold DmQueueRel in *; rewrite Ech, Eacc; rewrite E1; exact Hd.
     - unfold FenceRel, NoFenceIWait in *; rewrite Ech, HP by (intros; reflexivity); rewrite E1; exact Hf.
     - unfold ScoreRel in *; rewrite Ed2a; rewrite E1; exact Hs.

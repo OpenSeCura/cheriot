@@ -690,11 +690,23 @@ Section CoreRel.
         g_revOff g = RevImplAhead /\ optValid (sSecond s2) = false /\ wrSecond st = false
     end.
 
-  (* The committed load the impl has not written back is dataMem's *)
+  (* whether the head memory entry of the chain has left dataMem's queue *)
+  Definition accTakesHead (a : Access) : bool :=
+    match a with
+    | AccStore _ _ _ (WrPend false) | AccStore _ _ _ (WrStaged false) => true
+    | AccLoad _ _ (RdPend false) | AccLoad _ _ (RdStaged false) | AccLoad _ _ (RdOut false) => true
+    | _ => false
+    end.
+
+  (* The committed load the impl has not written back is dataMem's. Between the two lines of a
+   * crossing load (its entry has left the chain, its value is not committed yet) the chain avoids
+   * the load's destination, as `RfRel` demands of a committed load. *)
   Definition CnwbRel (g : Ghost) (s1 : IState) (s2 : SState) : Prop :=
     (dmLoadRq (iDmSt s1) = true -> g_cnwb g = None) /\
     (dmRevRq (iDmSt s1) = true -> g_cnwb g = Some (revWb (sMem s2) (dmRevRqV (iDmSt s1)))) /\
-    (dmRevRq (iDmSt s1) = true -> baseRevokable (rcBase (dmRevRqV (iDmSt s1))) = true).
+    (dmRevRq (iDmSt s1) = true -> baseRevokable (rcBase (dmRevRqV (iDmSt s1))) = true) /\
+    (dmLoadRp (iDmSt s1) = true -> g_cnwb g = None -> accTakesHead (g_acc g) = false ->
+       ChainAvoids (g_chain g) (ldPending (dmLoadRpV (iDmSt s1))).(Fst)).
 
   (* --- 9b. The Revoker (C8) --- *)
 
@@ -780,14 +792,6 @@ Section CoreRel.
                         | GInst e => match entryReq e with Some q => [q] | None => [] end
                         | GTick => []
                         end) G.
-
-  (* whether the head memory entry of the chain has left dataMem's queue *)
-  Definition accTakesHead (a : Access) : bool :=
-    match a with
-    | AccStore _ _ _ (WrPend false) | AccStore _ _ _ (WrStaged false) => true
-    | AccLoad _ _ (RdPend false) | AccLoad _ _ (RdStaged false) | AccLoad _ _ (RdOut false) => true
-    | _ => false
-    end.
 
   Definition DmQueueRel (g : Ghost) (s1 : IState) : Prop :=
     let reqs := filter (fun q => negb (isPlainFence q)) (chainReqs (g_chain g)) in
@@ -1418,7 +1422,7 @@ Section CoreRel.
       exact (FetchAllowedInst_fetchViewExt initLine fwcs specRegions _ _ _ _ Hsnap Hext (Hrp G1 e G2 rfe Hg Hch)).
     - unfold EagerRel in *; rewrite Ech; rewrite E2; exact He.
     - exact Hacc.
-    - unfold CnwbRel in *; rewrite Ecn; destruct Hc as [Hc1 Hc2]; rewrite Edm, Hrw; exact (conj Hc1 Hc2).
+    - unfold CnwbRel in *; rewrite Ecn, Ech, Eacc; destruct Hc as [Hc1 Hc2]; rewrite Edm, Hrw; exact (conj Hc1 Hc2).
     - unfold DmQueueRel in *; rewrite Ech, Eacc; rewrite E1; exact Hd.
     - unfold FenceRel, NoFenceIWait in *; rewrite Ech, HP; rewrite E1; exact Hf.
     - unfold ScoreRel in *; rewrite Ed2a; rewrite E1; exact Hs.
@@ -1488,7 +1492,7 @@ Section CoreRel.
       exact (FetchAllowedInst_fetchViewExt initLine fwcs specRegions _ _ _ _ Hsnap Hext (Hrp G1 e G2 rfe Hg Hch)).
     - unfold EagerRel in *; rewrite Ech; rewrite E2; exact He.
     - exact Hacc.
-    - unfold CnwbRel in *; rewrite Ecn; destruct Hc as [Hc1 Hc2]; rewrite Edm, Hrw; exact (conj Hc1 Hc2).
+    - unfold CnwbRel in *; rewrite Ecn, Ech, Eacc; destruct Hc as [Hc1 Hc2]; rewrite Edm, Hrw; exact (conj Hc1 Hc2).
     - unfold DmQueueRel in *; rewrite Ech, Eacc; rewrite E1; exact Hd.
     - unfold FenceRel, NoFenceIWait in *; rewrite Ech, HP by rqins_tac; rewrite E1; exact Hf.
     - unfold ScoreRel in *; rewrite Ed2a; rewrite E1; exact Hs.
@@ -1680,7 +1684,10 @@ Section CoreRel.
       right; exists e, (G' ++ [GTick])%list; split; [rewrite HG; reflexivity | exact Hb].
     - eapply AccessRel_ghost with (g := g); [reflexivity | reflexivity | reflexivity | | rewrite E1; exact Ha].
       intros q [e [G' [HG Hq]]]; exists e, (G' ++ [GTick])%list; split; [cbn [g_chain]; rewrite HG; reflexivity | exact Hq].
-    - rewrite E1; exact Hc.
+    - unfold CnwbRel in *; cbn [g_chain g_cnwb g_acc]; rewrite E1.
+      destruct Hc as [C1 [C2 [C3 C4]]]; split; [exact C1 | split; [exact C2 | split; [exact C3 |]]].
+      intros Hlr Hcn Hat; apply ChainAvoids_app; [exact (C4 Hlr Hcn Hat) |].
+      intros e [Hin | []]; discriminate Hin.
     - unfold DmQueueRel in *; cbn [g_chain g_acc]; rewrite chainReqs_snoc_tick; rewrite E1; exact Hd.
     - unfold FenceRel in *; cbn [g_chain].
       destruct Hf as [Hf1 Hf2]; split.
@@ -1732,7 +1739,9 @@ Section CoreRel.
       + intros q [e [G' [HG _]]]; rewrite Hnil in HG; discriminate HG.
       + refine (AccessRel_frame g s1 s1' s2 s2' _ _ _ _ _ _ Hsec _ Ha);
           [intros P | | | | | | intros L; rewrite Hsm]; rewrite ?E1; reflexivity.
-    - rewrite E1, E2; exact Hc.
+    - unfold CnwbRel in *; cbn [g_chain g_cnwb g_acc]; rewrite E1, E2.
+      destruct Hc as [C1 [C2 [C3 _]]]; split; [exact C1 | split; [exact C2 | split; [exact C3 |]]].
+      intros _ _ _ e [].
     - unfold DmQueueRel in *; cbn [g_chain g_acc]; rewrite Hnil in Hd; rewrite E1; exact Hd.
     - unfold FenceRel in *; cbn [g_chain]; rewrite Hnil in Hf; rewrite E1; exact Hf.
     - eapply ScoreRel_tick; [exact E1 | reflexivity | exact Hs].
@@ -1905,10 +1914,11 @@ Section CoreRel.
         destruct (nonBlocking_noMem e q (Hhead e E1) Hq) as [Hm' _].
         rewrite Hm' in Hmq; discriminate Hmq.
       + exact (AccessRel_frame g s1 s1 s2 s2' (fun P => eq_refl) eq_refl eq_refl eq_refl eq_refl eq_refl Esec Hlc Ha).
-    - unfold CnwbRel in *; unfold gPop; cbn [g_cnwb].
-      destruct Hc as [C1 [C2 C3]].
-      split; [exact C1 | split; [| exact C3]].
-      intros Hq; rewrite (revWb_ext (sMem s2) (sMem s2') _ Hlc); exact (C2 Hq).
+    - unfold CnwbRel in *; unfold gPop; cbn [g_cnwb g_chain g_acc].
+      destruct Hc as [C1 [C2 [C3 C4]]].
+      split; [exact C1 | split; [| split; [exact C3 |]]].
+      + intros Hq; rewrite (revWb_ext (sMem s2) (sMem s2') _ Hlc); exact (C2 Hq).
+      + intros Hlr Hcn Hat e Hin; rewrite Hch in C4; exact (C4 Hlr Hcn Hat e (or_intror Hin)).
     - unfold DmQueueRel in *; unfold gPop; cbn [g_chain g_acc]; cbv zeta in *.
       rewrite Hch, (filterReqs_pop it G' Hnb) in Hd; exact Hd.
     - unfold FenceRel in *; unfold gPop; cbn [g_chain].
