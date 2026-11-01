@@ -598,6 +598,10 @@ Section RefInitMain.
                        (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 Hf))))))))) |].
       split; [exact (InitStateConsistent_fifo_wf decodeCapacity DecodeToAluEntry _ (proj1 (proj1 (proj2 Hd)))) |].
       split; [exact (InitStateConsistent_fifo_wf dataMemCapacity MemFenceReq _ (proj1 (proj1 Hdm))) |].
+      split; [exact (MulDivWf_init mulCapacity divCapacity mulStages divStages mulDivMode _
+                       (InitStateConsistent_impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
+                          dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config implRegions
+                          s1 H1)) |].
       apply AllPorts_init; [| exact init_regions].
       intros r y Hy; split.
       + exact (InitStateConsistent_ImplExternalRegionHandshakeInv r y Hy).

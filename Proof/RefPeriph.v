@@ -2621,7 +2621,7 @@ Section Periph.
         * unfold iRev; rewrite Ei1; exact Ir.
         * intros L; rewrite Es2; exact (lineContent_ackFrame initLine _ _ _ HfS L).
         * rewrite Ei1; apply Hfc.
-          unfold WfRel in Hw; destruct Hw as [_ [_ [_ [_ W5]]]].
+          unfold WfRel in Hw; destruct Hw as [_ [_ [_ [_ [_ W5]]]]].
           revert W5; apply AllPorts_impl; intros r y [_ Hy]; exact Hy.
         * unfold MemRelC, MemRel, DevInv; rewrite Ei1, Es2.
           rewrite Sc, Sp, Sr, Ic, Ip, Ir.

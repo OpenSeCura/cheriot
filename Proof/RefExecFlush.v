@@ -25,7 +25,6 @@ From Cheriot.Proof Require Import RefExecAux RefExecFrame RefExecStep RefExecLiv
 Unset Implicit Arguments.
 Unset Strict Implicit.
 Unset Asymmetric Patterns.
-Unset Guard Checking.
 
 Import ListNotations.
 Local Open Scope guru_scope.

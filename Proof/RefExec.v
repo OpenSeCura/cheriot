@@ -289,12 +289,13 @@ Section ExecStageStepOK.
         fetch_instFifo pcAddrInit fetchCapacity instCapacity (iFetchA s1) ->
       fifo_wf (decode_toAluFifo decodeCapacity (iDecodeA s1')) ->
       fifo_wf (dataMem_fifo dataMemCapacity (iDmA s1')) ->
+      MulDivWf mulCapacity divCapacity mulStages divStages mulDivMode (iMdA s1') ->
       iRegionsA s1' = iRegionsA s1 ->
       WfRelA g' s1' s2'.
   Proof.
-    intros g g' s1 s1' s2 s2' [W1 [W2 [_ [_ W5]]]] Efb Eib Hwd Hwm Ereg.
+    intros g g' s1 s1' s2 s2' [W1 [W2 [_ [_ [_ W5]]]]] Efb Eib Hwd Hwm Hmd Ereg.
     unfold WfRel; rewrite Efb, Eib, Ereg.
-    exact (conj W1 (conj W2 (conj Hwd (conj Hwm W5)))).
+    exact (conj W1 (conj W2 (conj Hwd (conj Hwm (conj Hmd W5))))).
   Qed.
 
   Lemma DmQueueRel_snoc_none :
@@ -538,7 +539,7 @@ Section ExecStageStepOK.
     - cbn [evalActionPropGen] in HP |- *; exact (IHHpg env s P HP).
     - rewrite evalActionPropGen_readRegsList in HP |- *; exact (conj eq_refl HP).
     - rewrite evalActionPropGen_writeRegsList in HP |- *.
-      split; [apply readGpr_Fst_ext, updScr_Fst | exact HP].
+      split; [exact (readGpr_Fst_ext pcAddrInit idx _ s (updScr_Fst pcAddrInit (evalExpr i) (evalExpr v) s)) | exact HP].
     - rewrite evalActionPropGen_writeRegsList in HP |- *.
       split; [exact (readGpr_updCsr pcAddrInit idx (evalExpr i) (evalExpr v) s) | exact HP].
     - rewrite evalActionPropGen_writeRegsList in HP |- *.

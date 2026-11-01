@@ -541,9 +541,9 @@ Section FetchRpPorts.
       split; [rewrite E1; exact F4 |]; split; [rewrite E1; exact F5 |].
       split; [rewrite E1; exact F6 | exact Hfr'].
     - unfold WfRel in *.
-      destruct Hw as [W1 [W2 [W3 [W4 _]]]].
+      destruct Hw as [W1 [W2 [W3 [W4 [Wmd _]]]]].
       split; [rewrite E1; exact W1 |]; split; [rewrite E1; exact W2 |]; split; [rewrite E1; exact W3 |].
-      split; [rewrite E1; exact W4 | exact Hhs].
+      split; [rewrite E1; exact W4 | split; [rewrite E1; exact Wmd | exact Hhs]].
     - exact (RevokerRel_frame pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA initLine
                g g s1 s1' s2 s2 eq_refl eq_refl HR (fun L => eq_refl) Hrk).
@@ -621,7 +621,7 @@ Section FetchRpPorts.
         reflexivity.
     - (* the handshake invariant *)
       rewrite Es1, iRegions_write'.
-      unfold WfRel in Hw; destruct Hw as [_ [_ [_ [_ W5]]]].
+      unfold WfRel in Hw; destruct Hw as [_ [_ [_ [_ [_ W5]]]]].
       exact (handshake_fetchRpStep initLine _ _ _ _ Hst W5).
   Qed.
 End FetchRpPorts.

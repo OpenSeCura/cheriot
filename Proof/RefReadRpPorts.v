@@ -577,9 +577,9 @@ Section ReadRpPorts.
       split; [rewrite E1; exact F6 |].
       unfold FetchRespRel in *; rewrite HP by (intros r y; reflexivity); rewrite E1; exact F7.
     - unfold WfRel in *.
-      destruct Hw as [W1 [W2 [W3 [W4 _]]]].
+      destruct Hw as [W1 [W2 [W3 [W4 [Wmd _]]]]].
       split; [rewrite E1; exact W1 |]; split; [rewrite E1; exact W2 |]; split; [rewrite E1; exact W3 |].
-      split; [rewrite E1; exact W4 | exact Hhs].
+      split; [rewrite E1; exact W4 | split; [rewrite E1; exact Wmd | exact Hhs]].
     - exact (RevokerRel_frame pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA initLine
                g g s1 s1' s2 s2 eq_refl eq_refl HR (fun L => eq_refl) Hrk).
@@ -620,7 +620,7 @@ Section ReadRpPorts.
       refine (conj (conj _ (conj Hcl (conj Hpl Hrv))) (conj (conj Hci Hpi) Hsnap)).
       eapply MemRelPre_dataRpStep; [exact I | exact Hst | exact Hpre].
     - rewrite Es1, iRegions_upd.
-      unfold WfRel in Hw; destruct Hw as [_ [_ [_ [_ W5]]]].
+      unfold WfRel in Hw; destruct Hw as [_ [_ [_ [_ [_ W5]]]]].
       exact (handshake_dataRpStep initLine _ _ _ _ _ Hst W5).
   Qed.
 
@@ -693,9 +693,9 @@ Section ReadRpPorts.
       split; [unfold LiveChain, liveInsts in *; rewrite Ed2a, E1; exact F6 |].
       unfold FetchRespRel in *; rewrite HP by (intros; reflexivity); rewrite E1; exact F7.
     - unfold WfRel in *.
-      destruct Hw as [W1 [W2 [W3 [W4 _]]]].
+      destruct Hw as [W1 [W2 [W3 [W4 [Wmd _]]]]].
       split; [rewrite E1; exact W1 |]; split; [rewrite E1; exact W2 |]; split; [rewrite E1; exact W3 |].
-      split; [rewrite E1; exact W4 | exact Hhs].
+      split; [rewrite E1; exact W4 | split; [rewrite E1; exact Wmd | exact Hhs]].
     - exact Hrev.
   Qed.
 
@@ -786,7 +786,7 @@ Section ReadRpPorts.
   Proof.
     intros g s1 s1' s2 mr' x o E1 Hst Hg.
     rewrite E1; change (AllPorts (fun r y => ImplExternalRegionHandshakeInv r y /\ RegionFenceICountInv r y.(Fst)) implRegions mr').
-    destruct Hg as [_ _ _ _ _ _ _ _ _ _ _ Hw _]; unfold WfRel in Hw; destruct Hw as [_ [_ [_ [_ W5]]]].
+    destruct Hg as [_ _ _ _ _ _ _ _ _ _ _ Hw _]; unfold WfRel in Hw; destruct Hw as [_ [_ [_ [_ [_ W5]]]]].
     exact (handshake_dataRpStep initLine _ _ _ _ _ Hst W5).
   Qed.
 

@@ -24,7 +24,6 @@ From Cheriot.Proof Require Import RefRel RefRegion RefGhost RefFetch FifoGen Ref
 Unset Implicit Arguments.
 Unset Strict Implicit.
 Unset Asymmetric Patterns.
-Unset Guard Checking.
 
 Import ListNotations.
 Local Open Scope guru_scope.
@@ -63,18 +62,6 @@ Proof.
   intros pcAddrInit fo rf; reflexivity.
 Qed.
 
-Lemma decWritesCd_nonzero :
-  forall (fo : type FetchOut),
-    decWritesCd fo = true ->
-    Zmod.eqb (instCd (foInst fo)) Zmod.zero = false.
-Proof.
-  intros fo H.
-  unfold decWritesCd in H.
-  apply andb_prop in H as [Hz _].
-  apply isNotZero_true_iff in Hz.
-  exact Hz.
-Qed.
-
 Lemma aluDstIdx_geAluOut :
   forall pcAddrInit (fo : type FetchOut) (pcc : type FullECapWithTag) (rf : RfState pcAddrInit),
     aluDstIdx (evalAluOut pcc (evalRegRead pcAddrInit (evalDecode fo) rf)) = decDst fo.
@@ -82,21 +69,6 @@ Proof.
   intros pcAddrInit fo pcc rf.
   rewrite wrappedAlu_dstIdx, regRead_writesCd, regRead_inst.
   unfold decDst; reflexivity.
-Qed.
-
-Lemma filter_nz_decDst :
-  forall (fo : type FetchOut),
-    filter (fun d => negb (Zmod.eqb d Zmod.zero)) [decDst fo] =
-      if decWritesCd fo then [instCd (foInst fo)] else [].
-Proof.
-  intros fo.
-  unfold decDst.
-  destruct (decWritesCd fo) eqn:Ew.
-  - cbn [filter].
-    change (fo.(Snd).(Fst)) with (foInst fo).
-    rewrite (decWritesCd_nonzero fo Ew); cbn [negb]; reflexivity.
-  - cbn [filter].
-    rewrite Zmod.eqb_refl; cbn [negb]; reflexivity.
 Qed.
 
 (* --- 2. Epoch Arithmetic --- *)

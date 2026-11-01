@@ -994,11 +994,45 @@ Section CoreRel.
 
   (* --- 14. Well-Formedness --- *)
 
+  (* The mulDiv request FIFOs are well-formed. The engines' result FIFOs and the multiplier's stage
+   * FIFOs have capacity 1, so they are well-formed by construction. *)
+  Definition MulDivWf
+    (smd : TS (implMulDivTree mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode)) : Prop :=
+    match mulDivMode as m
+      return TS (implMulDivTree mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages m) -> Prop
+    with
+    | PipelinedMul_IterDiv => fun s => fifo_wf s.(Fst).(Fst) /\ fifo_wf s.(Snd).(Fst).(Fst)
+    | IterMul_SeparateIterDiv => fun s => fifo_wf s.(Fst).(Fst) /\ fifo_wf s.(Snd).(Fst).(Fst)
+    | IterMul_SharedIterDiv => fun s => fifo_wf s.(Fst)
+    end smd.
+
+  Lemma MulDivWf_init :
+    forall smd,
+      InitStateConsistent (implMulDivTree mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode) smd ->
+      MulDivWf smd.
+  Proof.
+    unfold MulDivWf; destruct mulDivMode; intros smd Hinit.
+    - destruct smd as [[mulReqF [[mulPipe [mulDstF []]] []]] [[divReqF [[divIter [divDstF []]] []]] []]].
+      cbn [InitStateConsistent Fst Snd] in Hinit |- *.
+      destruct Hinit as [[HmulReq _] [[HdivReq _] _]].
+      exact (conj (InitStateConsistent_fifo_wf _ _ _ HmulReq) (InitStateConsistent_fifo_wf _ _ _ HdivReq)).
+    - destruct smd as [[mulReqF [[mulIter [mulDstF []]] []]] [[divReqF [[divIter [divDstF []]] []]] []]].
+      cbn [InitStateConsistent Fst Snd] in Hinit |- *.
+      destruct Hinit as [[HmulReq _] [[HdivReq _] _]].
+      exact (conj (InitStateConsistent_fifo_wf _ _ _ HmulReq) (InitStateConsistent_fifo_wf _ _ _ HdivReq)).
+    - destruct smd as [reqF [[sharedIter [dstF []]] []]].
+      cbn [InitStateConsistent Fst Snd] in Hinit |- *.
+      destruct Hinit as [Hreq _].
+      exact (InitStateConsistent_fifo_wf _ _ _ Hreq).
+  Qed.
+
   Definition WfRel (g : Ghost) (s1 : IState) (s2 : SState) : Prop :=
     fifo_wf (fetch_fetchBufFifo pcAddrInit fetchCapacity instCapacity (iFetch s1)) /\
     fifo_wf (fetch_instFifo pcAddrInit fetchCapacity instCapacity (iFetch s1)) /\
     fifo_wf (decode_toAluFifo decodeCapacity (iDecode s1)) /\
     fifo_wf (dataMem_fifo dataMemCapacity (iDm s1)) /\
+    MulDivWf (impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1) /\
     AllPorts (fun r y => ImplExternalRegionHandshakeInv r y /\ RegionFenceICountInv r y.(Fst))
       implRegions (iRegions s1).
 
@@ -1383,9 +1417,9 @@ Section CoreRel.
         rewrite E1 in Hlv; change (fbLive s1 f = true) in Hlv.
         rewrite (Hfb f Hin) in Hlv; discriminate Hlv.
     - unfold WfRel in *.
-      destruct Hw as [W1 [W2 [W3 [W4 W5]]]].
+      destruct Hw as [W1 [W2 [W3 [W4 [Wmd W5]]]]].
       split; [rewrite E1; exact W1 |]; split; [rewrite E1; exact W2 |]; split; [rewrite E1; exact W3 |].
-      split; [rewrite E1; exact W4 |].
+      split; [rewrite E1; exact W4 |]; split; [rewrite E1; exact Wmd |].
       refine (AllPorts_conj (fun r y => ImplExternalRegionHandshakeInv r y) _ _ _ _ Hfc).
       rewrite HP by (intros r y w a; reflexivity).
       revert W5; apply AllPorts_impl; intros r y [Hy _]; exact Hy.

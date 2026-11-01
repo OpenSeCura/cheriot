@@ -25,7 +25,6 @@ From Cheriot.Proof Require Import RefExecAux RefExecFrame.
 Unset Implicit Arguments.
 Unset Strict Implicit.
 Unset Asymmetric Patterns.
-Unset Guard Checking.
 
 Import ListNotations.
 Local Open Scope guru_scope.
@@ -364,7 +363,7 @@ Section ExecStep.
           rewrite ?Erf, ?Efe, ?Eep; exact F6.
       + unfold FetchRespRel, fbInRegion, fbLive, iFetchBuf, iPredEpoch in *;
           rewrite ?Ereg, ?Efe, ?Eep; exact F7.
-    - unfold WfRel in *; rewrite ?Efe, ?Edm, ?Ereg.
+    - unfold WfRel in *; rewrite ?Efe, ?Edm, ?Emd, ?Ereg.
       destruct Hw as [W1 [W2 [_ [W4 W5]]]].
       split; [exact W1 | split; [exact W2 | split; [exact Hwf_dec | split; [exact W4 | exact W5]]]].
     - eapply RevokerRel_frame with (g := g) (s1 := s1) (s2 := s2);
