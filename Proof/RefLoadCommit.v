@@ -15,15 +15,15 @@
  *)
 
 (* Spec side of the load commit (milestone 4), the parts that build. The draft of the rest
- * (dispatchMemFence_load, loadCmdOf_dst, loadOutcome_facts, specLoadWb_dst, specCompleteLoad_wp,
- * deferred_load_wp) is in RefLoadCommit.v.wip, which is not built. *)
+ * (dispatchMemFence_load, loadCmdOf_dst, specCompleteLoad_wp, deferred_load_wp) is in
+ * RefLoadCommit.v.wip, which is not built. *)
 
 From Stdlib Require Import String List ZArith Zmod Lia Bool.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems HelperLemmas.
 From Cheriot Require Import SpecDefines SpecDevice SpecFetchDeferred Spec Clint Plic Impl.ImplDevice.
 From Cheriot.Proof Require Import TreeLemmas StateRel SimDevices SimFetchDecode SimExecute GhostListLemmas.
 From Cheriot.Proof Require Import RefRel RefRegion RefGhost RefFetch FifoGen RefMemRel RefCoreRel RefFrame RefPeriph.
-From Cheriot.Proof Require Import RefSpecRead RefSpecFetch RefRevTable RefReplay.
+From Cheriot.Proof Require Import RefSpecRead RefSpecFetch RefRevTable RefReplay RefExecLive.
 
 Import ListNotations.
 Local Open Scope Z_scope.
@@ -51,11 +51,11 @@ Ltac strip_var u :=
   end.
 
 Ltac readback :=
-  match goal with |- context [evalExpr (ReadUnionData (Var ?ty ?k ?u) ?i)] =>
+  match goal with |- context [evalExpr (@ReadUnionData _ ?ls (Var ?ty ?k ?u) ?i)] =>
     let w := strip_var u in
-    lazymatch w with evalExpr (BuildUnion _ (Var _ _ ?x)) =>
-      replace (evalExpr (ReadUnionData (Var ty k u) i)) with x
-        by (symmetry; exact (evalExpr_ReadUnionData_BuildUnion _ i (Var _ _ x) eq_refl))
+    lazymatch w with evalExpr (BuildUnion _ (Var ?ty2 ?k2 ?x)) =>
+      replace (evalExpr (@ReadUnionData _ ls (Var ty k u) i)) with x
+        by (symmetry; exact (evalExpr_ReadUnionData_BuildUnion ls i (Var ty2 k2 x) eq_refl))
     end
   end.
 
@@ -82,8 +82,42 @@ Proof.
   apply Zmod.eqb_eq in Hl; rewrite Hl; reflexivity.
 Qed.
 
-
-
+(* The outcome of a load response keeps the load's destination; a rev lookup is for a revokable base *)
+Lemma loadOutcome_facts :
+  forall config (pl : type PendingLoad) (v : type FullCapWithTag),
+    (evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v))) `? "RevLookup") = true ->
+       (evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v))) `! "RevLookup")).(Snd).(Fst).(Fst)
+         = pl.(Fst) /\
+       baseRevokable config (rcBase (evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v)))
+                                                 `! "RevLookup"))) = true) /\
+    (evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v))) `? "RevLookup") = false ->
+       (evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v))) `! "Writeback")).(Fst) = pl.(Fst)).
+Proof.
+  intros config pl v.
+  unfold dispatchLoadResponse; cbn [evalLetExpr].
+  match goal with |- context [evalExpr (Var type Bool (evalExpr (Eq ?x ?y)))] =>
+    change (evalExpr (Var type Bool (evalExpr (Eq x y)))) with (evalExpr (Eq x y));
+    destruct (evalExpr (Eq x y)); cbv iota
+  end.
+  - match goal with |- context [evalExpr (Var type Bool (evalExpr (needsRevocationCheck ?c ?e ?tg)))] =>
+      change (evalExpr (Var type Bool (evalExpr (needsRevocationCheck c e tg))))
+        with (evalExpr (needsRevocationCheck c e tg));
+      destruct (evalExpr (needsRevocationCheck c e tg)) eqn:En; cbv iota
+    end.
+    + split.
+      * intros _; readback; split; [reflexivity |].
+        unfold needsRevocationCheck in En; cbn [evalExpr map fold_left] in En.
+        change (evalAndBinary (k:=Bool)) with andb in En.
+        apply andb_prop in En as [_ En].
+        unfold baseRevokable, rcBase; exact En.
+      * intros Hf; tag_contra Hf.
+    + split.
+      * intros Ht; tag_contra Ht.
+      * intros _; readback; reflexivity.
+  - split.
+    + intros Ht; tag_contra Ht.
+    + intros _; readback; reflexivity.
+Qed.
 
 Lemma isNotZero_expr :
   forall sz (e : Expr type (Bit sz)), evalExpr (isNotZero e) = negb (Zmod.eqb (evalExpr e) Zmod.zero).
@@ -219,7 +253,18 @@ Section LoadSpec.
        (evalExpr (##wb`"dstIdx"), evalExpr (##wb`"dstVal"))).
   Proof. intros m pl v H; unfold specLoadWb; cbv zeta; rewrite H; reflexivity. Qed.
 
-
+  (* The register write of a completed load is the load's destination (`loadOutcome_dst`,
+   * RefExecLive.v) *)
+  Lemma specLoadWb_dst : forall m pl v, fst (specLoadWbA m pl v) = pl.(Fst).
+  Proof.
+    intros m pl v.
+    destruct (loadOutcome_dst config pl v) as [Hrev Hwb].
+    destruct (evalExpr ((Var type LoadOutcome (evalLetExpr (dispatchLoadResponse config pl v))) `? "RevLookup")) eqn:E.
+    - rewrite (specLoadWb_rev m pl v E); cbv zeta; cbn [fst].
+      rewrite <- (Hrev eq_refl); reflexivity.
+    - rewrite (specLoadWb_wb m pl v E); cbv zeta; cbn [fst].
+      rewrite <- (Hwb eq_refl); reflexivity.
+  Qed.
 
   Lemma writeSecondLine_wp :
     forall (env : Env CT) rf m sl (v : Expr type (Option SecondLine)) P,
