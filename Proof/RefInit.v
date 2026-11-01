@@ -400,7 +400,7 @@ Section RefInitMain.
   Proof.
     intros r.
     rewrite (allTreeInitDet_InitState _ _ (eq_refl : allTreeInitDet waitBitsTree = true) init_wb).
-    unfold readWaitBit, evalReadRegsList.
+    unfold readWaitBit.
     assert (Hall : forall (paths : list (RegOfKind (t:=waitBitsTree) Bool)) curr (acc : list (type Bool)),
                (forall rk, In rk paths -> readRegOfKind rk (InitState waitBitsTree) = false) ->
                Forall (fun b => b = false) acc ->

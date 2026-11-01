@@ -393,13 +393,13 @@ Section StateProjections.
   Definition dataMem_state (sdm : DataMemSubState) : type DataMemState :=
     sdm.(Snd).(Fst).
 
-  (* 5. Scoreboard WaitBits (`waitBitsTree`) *)
+  (* 5. Scoreboard WaitBits (`waitBitsTree`; x0 has no bit: the accessors start at index 1) *)
   Definition readWaitBit (idx : bits RegIdxSzReal) (wb : WaitBitsState) : bool :=
-    evalReadRegsList gprWaitPathsWithKind idx wb.
+    evalReadRegsListHelper 1%nat nil gprWaitPathsWithKind idx wb.
 
   Definition writeWaitBit (idx : bits RegIdxSzReal) (val : bool) (wb : WaitBitsState)
     : WaitBitsState :=
-    evalWriteRegsList gprWaitPathsWithKind idx val wb.
+    evalWriteRegsListHelper 1%nat gprWaitPathsWithKind idx val wb.
 
   Definition waitBitsMask (wb : WaitBitsState) (idx : bits RegIdxSzReal) : bool :=
     readWaitBit idx wb.

@@ -21,6 +21,7 @@ From Cheriot Require Import Impl ImplCommon ImplDevice ImplRevoker ImplFetch Imp
 From Cheriot.Proof Require Import TreeLemmas StateRel DecodeFacts SimDevices SimFetchDecode SimExecute GhostListLemmas.
 From Cheriot.Proof Require Import RefRel RefRegion RefGhost RefFetch FifoGen RefMemRel RefCoreRel RefFrame RefPeriph RefRevoker RefSpecRead RefSpecFetch RefReplay.
 From Cheriot.Proof Require Import RefExecAux RefExecFrame.
+From Stdlib Require Import Permutation.
 
 Unset Implicit Arguments.
 Unset Strict Implicit.
@@ -247,7 +248,7 @@ Section ExecStep.
     assert (Edlive : forall x, daLiveA s1' x = daLiveA s1 x)
       by (intros x; unfold daLive; rewrite Eep; reflexivity).
     destruct Hg as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
-    destruct Hs as [Hnd [Hwb [Hlen Hreg]]].
+    pose proof Hs as Hsc; destruct Hs as [Hnd [Hwb [Hlen Hreg]]].
     rewrite Ed2a in Hlen.
     destruct (g_d2aFo pcAddrInit g) as [| fo0 fo_tail] eqn:Efo; [cbn [length] in Hlen; discriminate Hlen |].
     cbn [length] in Hlen; injection Hlen as Hlen'.
@@ -280,57 +281,22 @@ Section ExecStep.
         unfold NoLive in *; rewrite Ed2a'.
         split; [eapply Forall_impl; [intros y2 Hy2; rewrite Edlive; exact Hy2 | exact Hnl1'] |].
         unfold aiLive, fbLive, iInstBuf, iFetchBuf, iPredEpoch in *; rewrite Efe, Eep; split; [exact Hnl2 | exact Hnl3].
-    - (* ScoreRel *)
-      unfold ScoreRel; cbn [g_d2aFo]; rewrite Eow, Ed2a', Efl.
+    - (* ScoreRel: the stale head's register is cleared *)
       rewrite Ed2a in Hnd, Hwb.
-      split.
-      + (* NoDup (olderWritersA s1 ++ d2aWriters d2a_tail) *)
-        unfold d2aWriters in Hnd |- *; cbn [filter] in Hnd.
-        destruct (aluInWritesCd (daAluIn j)) eqn:Ew; [| exact Hnd].
-        cbn [map] in Hnd.
-        rewrite NoDup_app_iff in Hnd; destruct Hnd as [Ho [Hdup Hdisj]].
-        inversion Hdup as [| ? ? Hnin H2]; subst.
-        rewrite NoDup_app_iff; split; [exact Ho | split; [exact H2 |]].
-        intros u Hu Hin; exact (Hdisj u Hu (or_intror Hin)).
-      + split.
-        * (* Wait-bit characterization after `evalSetDstWaitBits` *)
-          intros r; rewrite Ewb'.
-          change (readWaitBit r) with (evalReadWaitBit r) in *.
-          rewrite evalReadWaitBit_setDst_false.
-          unfold d2aWriters in Hwb |- *; cbn [filter] in Hwb.
-          destruct (aluInWritesCd (daAluIn j)) eqn:Ew; cbn [andb].
-          -- cbn [map] in Hwb.
-             destruct (Zmod.eqb r (aluInCd (daAluIn j))) eqn:Eq.
-             ++ apply Zmod.eqb_eq in Eq; subst r.
-                split; [intros Hfalse; discriminate Hfalse |].
-                intros Hin; exfalso.
-                unfold d2aWriters in Hnd; cbn [filter] in Hnd; rewrite Ew in Hnd; cbn [map] in Hnd.
-                rewrite NoDup_app_iff in Hnd; destruct Hnd as [_ [Hdup Hdisj]].
-                inversion Hdup as [| ? ? Hnin _]; subst.
-                apply in_app_or in Hin as [Hin | Hin].
-                ** exact (Hdisj _ Hin (or_introl eq_refl)).
-                ** exact (Hnin Hin).
-             ++ rewrite Hwb, !in_app_iff; cbn [In].
-                assert (Hneq : aluInCd (daAluIn j) <> r).
-                { intros Heq; subst r; rewrite Zmod.eqb_refl in Eq; discriminate Eq. }
-                tauto.
-          -- rewrite Hwb; reflexivity.
-        * split; [exact Hlen' |].
-          (* Live entries in `d2a_tail` *)
-          intros l1 j2 l2 fo Hl1 Hnth Hlv2.
-          rewrite Edlive in Hlv2.
-          assert (Hl1_s1 : iD2aA s1 = ((j :: l1) ++ j2 :: l2)%list)
-            by (rewrite Ed2a, Hl1; reflexivity).
-          assert (Hnth_s1 : nth_error (fo0 :: fo_tail) (length (j :: l1)) = Some fo)
-            by exact Hnth.
-          destruct (Hreg (j :: l1) j2 l2 fo Hl1_s1 Hnth_s1 Hlv2) as [Hrr2 [Hcs1_2 Hcs2_2]].
-          split; [exact Hrr2 |].
-          assert (Hsub : forall d, In d (olderWritersA s1 ++ d2aWriters l1)%list ->
-                                   In d (olderWritersA s1 ++ d2aWriters (j :: l1))%list).
-          { intros d Hin; apply in_app_or in Hin as [Hin | Hin]; apply in_or_app; [left; exact Hin | right].
-            unfold d2aWriters in *; cbn [filter].
-            destruct (aluInWritesCd (daAluIn j)); [right; exact Hin | exact Hin]. }
-          split; intros d Hin; [exact (Hcs1_2 d (Hsub d Hin)) | exact (Hcs2_2 d (Hsub d Hin))].
+      apply (ScoreRel_pop pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+               mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
+               g g' s1 s1' j d2a_tail fo0 fo_tail
+               (if Zmod.eqb (d2aDst j) Zmod.zero then [] else [d2aDst j]) Hsc Ed2a Efo Ed2a' eq_refl).
+      + rewrite Eow, d2aWriters_cons.
+        apply Permutation_app_head, Permutation_app_comm.
+      + rewrite Eow, Ewb'.
+        exact (waitBits_clear_head (iWbA s1) (olderWritersA s1) j d2a_tail
+                 (olderWriters_nz pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                    mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1)
+                 Hnd Hwb).
+      + intros r Hr; rewrite Eow in Hr; apply in_or_app; left; exact Hr.
+      + intros x _ Hx; rewrite Edlive in Hx; exact Hx.
+      + intros l1 j2 l2 fo _ _ _ _ _; rewrite Efl; reflexivity.
     - (* FrontRel: `liveInsts g' s1' = liveInsts g s1` because `daLive s1 j = false`! *)
       unfold FrontRel in *; destruct Hfr as [F1 [F2 [F3 [F4 [F5 [F6 F7]]]]]].
       rewrite Ed2a in F1, F4, F5.
@@ -357,8 +323,9 @@ Section ExecStep.
         { unfold liveInsts; cbn [g_d2aFo]; rewrite Ed2a, Ed2a', Efo.
           unfold iInstBuf, aiLive in *; rewrite ?Efe, ?Eep.
           cbn [combine filter fst]; rewrite Hstale.
-          f_equal; f_equal.
-          apply filter_ext; intros y5; apply Edlive. }
+          rewrite (filter_ext (fun jf => daLiveA s1' (fst jf)) (fun jf => daLiveA s1 (fst jf))
+                     (fun jf => Edlive (fst jf))).
+          reflexivity. }
         rewrite Elive.
         unfold LiveChain, FrontierRel, fbLive, iPcc, iFetchPc, iPredEpoch, iCurParcel, iStraddle, iFetchBuf in *;
           rewrite ?Erf, ?Efe, ?Eep; exact F6.

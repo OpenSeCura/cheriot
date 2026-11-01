@@ -856,9 +856,15 @@ Section CoreRel.
                   (impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                      mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1)))%list.
 
-  Definition d2aWriters (l : list (type DecodeToAluEntry)) : list (bits RegIdxSzReal) :=
-    map (fun j => aluInCd (daAluIn j)) (filter (fun j => aluInWritesCd (daAluIn j)) l).
+  (* the register a decode-to-ALU entry writes (0: none); it is the ALU's `dstIdx` *)
+  Definition d2aDst (j : type DecodeToAluEntry) : bits RegIdxSzReal :=
+    if aluInWritesCd (daAluIn j) then aluInCd (daAluIn j) else Zmod.zero.
 
+  (* x0 is never tracked: it has no wait bit (ImplCommon.v) *)
+  Definition d2aWriters (l : list (type DecodeToAluEntry)) : list (bits RegIdxSzReal) :=
+    filter (fun d => negb (Zmod.eqb d Zmod.zero)) (map d2aDst l).
+
+  (* a register's wait bit is set exactly when a writer of it is pending (no stuck bits) *)
   Definition ScoreRel (g : Ghost) (s1 : IState) : Prop :=
     let W := (olderWriters s1 ++ d2aWriters (iD2a s1))%list in
     NoDup W /\

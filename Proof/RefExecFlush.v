@@ -21,6 +21,7 @@ From Cheriot Require Import Impl ImplCommon ImplDevice ImplRevoker ImplFetch Imp
 From Cheriot.Proof Require Import TreeLemmas StateRel DecodeFacts SimDevices SimFetchDecode SimExecute GhostListLemmas.
 From Cheriot.Proof Require Import RefRel RefRegion RefGhost RefFetch FifoGen RefMemRel RefCoreRel RefFrame RefPeriph RefRevoker RefSpecRead RefSpecFetch RefReplay.
 From Cheriot.Proof Require Import RefExecAux RefExecFrame RefExecStep RefExecLive.
+From Stdlib Require Import Permutation.
 
 Unset Implicit Arguments.
 Unset Strict Implicit.
@@ -367,36 +368,18 @@ Section ExecFlush.
   Proof.
     intros g g' s1 s1' j d2a_tail fo0 fo_tail [Hnd [Hwb [Hlen _]]]
            Ed2a Efo Ed2a' Efo' Eow Ewb' Hlive_tail.
-    unfold ScoreRel; rewrite Eow, Ed2a', Efo'.
+    unfold ScoreRel; cbv zeta; rewrite Eow, Ed2a', Efo'.
     rewrite Ed2a in Hnd, Hwb, Hlen; rewrite Efo in Hlen; cbn [length] in Hlen; injection Hlen as Hlen'.
     split.
-    - unfold d2aWriters in Hnd |- *; cbn [filter] in Hnd.
-      destruct (aluInWritesCd (daAluIn j)) eqn:Ew; [| exact Hnd].
-      cbn [map] in Hnd; rewrite NoDup_app_iff in Hnd; destruct Hnd as [Ho [Hdup Hdisj']].
-      inversion Hdup as [| ? ? _ H2]; subst.
-      rewrite NoDup_app_iff; split; [exact Ho | split; [exact H2 |]].
-      intros u Hu Hin; exact (Hdisj' u Hu (or_intror Hin)).
+    - pose proof Hnd as Hnd'; rewrite d2aWriters_cons in Hnd'.
+      apply (Permutation_NoDup (Permutation_app_head _ (Permutation_app_comm _ _))) in Hnd'.
+      rewrite app_assoc in Hnd'; exact (NoDup_app_remove_r _ _ Hnd').
     - split.
-      + intros r; rewrite Ewb'.
-        change (readWaitBit r) with (evalReadWaitBit r) in *.
-        rewrite evalReadWaitBit_setDst_false.
-        unfold d2aWriters in Hwb |- *; cbn [filter] in Hwb.
-        destruct (aluInWritesCd (daAluIn j)) eqn:Ew; cbn [andb].
-        * cbn [map] in Hwb.
-          destruct (Zmod.eqb r (aluInCd (daAluIn j))) eqn:Eq.
-          -- apply Zmod.eqb_eq in Eq; subst r.
-             split; [intros Hfalse; discriminate Hfalse |].
-             intros Hin; exfalso.
-             unfold d2aWriters in Hnd; cbn [filter] in Hnd; rewrite Ew in Hnd; cbn [map] in Hnd.
-             rewrite NoDup_app_iff in Hnd; destruct Hnd as [_ [Hdup Hdisj']].
-             inversion Hdup as [| ? ? Hnin _]; subst.
-             apply in_app_or in Hin as [Hin | Hin];
-               [exact (Hdisj' _ Hin (or_introl eq_refl)) | exact (Hnin Hin)].
-          -- rewrite Hwb, !in_app_iff; cbn [In].
-             assert (Hneq : aluInCd (daAluIn j) <> r)
-               by (intros Heq; subst r; rewrite Zmod.eqb_refl in Eq; discriminate Eq).
-             tauto.
-        * rewrite Hwb; reflexivity.
+      + rewrite Ewb'.
+        exact (waitBits_clear_head (iWbA s1) (olderWritersA s1) j d2a_tail
+                 (olderWriters_nz pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                    mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1)
+                 Hnd Hwb).
       + split; [exact Hlen' | rewrite Eow, Ed2a' in Hlive_tail; exact Hlive_tail].
   Qed.
 

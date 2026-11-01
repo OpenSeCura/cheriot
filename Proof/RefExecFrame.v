@@ -21,6 +21,7 @@ From Cheriot Require Import Impl ImplCommon ImplDevice ImplRevoker ImplFetch Imp
 From Cheriot.Proof Require Import TreeLemmas StateRel DecodeFacts SimDevices SimFetchDecode SimExecute GhostListLemmas.
 From Cheriot.Proof Require Import RefRel RefRegion RefGhost RefFetch FifoGen RefMemRel RefCoreRel RefFrame RefPeriph RefSpecRead RefSpecFetch RefReplay.
 From Cheriot.Proof Require Import RefExecAux.
+From Stdlib Require Import Permutation.
 
 Unset Implicit Arguments.
 Unset Strict Implicit.
@@ -73,6 +74,69 @@ Proof.
   apply negb_false_iff in E.
   assert (H' : Zmod.eqb x Zmod.zero = true) by (rewrite <- E; reflexivity).
   apply Zmod.eqb_eq in H'; exact H'.
+Qed.
+
+(* --- 1b. Scoreboard Writer Lists --- *)
+
+Lemma d2aWriters_cons :
+  forall j l, d2aWriters (j :: l) =
+              ((if Zmod.eqb (d2aDst j) Zmod.zero then [] else [d2aDst j]) ++ d2aWriters l)%list.
+Proof.
+  intros j l; unfold d2aWriters; cbn [map filter].
+  destruct (Zmod.eqb (d2aDst j) Zmod.zero); reflexivity.
+Qed.
+
+Lemma d2aWriters_app :
+  forall l1 l2, d2aWriters (l1 ++ l2) = (d2aWriters l1 ++ d2aWriters l2)%list.
+Proof. intros l1 l2; unfold d2aWriters; rewrite map_app, filter_app; reflexivity. Qed.
+
+Lemma d2aWriters_nz : forall l d, In d (d2aWriters l) -> Zmod.eqb d Zmod.zero = false.
+Proof.
+  intros l d Hin; unfold d2aWriters in Hin; apply filter_In in Hin as [_ H].
+  apply negb_true_iff in H; exact H.
+Qed.
+
+(* The ALU's `dstIdx` of a decode-to-ALU entry is the register the scoreboard tracks for it *)
+Lemma d2aDst_aluDstIdx :
+  forall pcc j, aluDstIdx (evalAluOut pcc (daAluIn j)) = d2aDst j.
+Proof. intros pcc j; rewrite wrappedAlu_dstIdx; reflexivity. Qed.
+
+(* Clearing the head entry `j`'s wait bit: a bit is then set exactly for the other pending writers *)
+Lemma waitBits_clear_head :
+  forall (wb : TS waitBitsTree) (ow : list (bits RegIdxSzReal)) j tail,
+    (forall r, In r ow -> Zmod.eqb r Zmod.zero = false) ->
+    NoDup (ow ++ d2aWriters (j :: tail))%list ->
+    (forall r, readWaitBit r wb = true <-> In r (ow ++ d2aWriters (j :: tail))%list) ->
+    forall r,
+      readWaitBit r (evalSetDstWaitBits (aluInWritesCd (daAluIn j)) (aluInCd (daAluIn j)) false wb) = true <->
+      In r (ow ++ d2aWriters tail)%list.
+Proof.
+  intros wb ow j tail Hnzo Hnd Hwb r.
+  specialize (Hwb r).
+  change (readWaitBit r) with (evalReadWaitBit r) in *.
+  rewrite evalReadWaitBit_setDst_false.
+  destruct (andb (aluInWritesCd (daAluIn j)) (Zmod.eqb r (aluInCd (daAluIn j)))) eqn:Ec; cbv beta iota.
+  - (* the head's register: cleared, and no other pending writer has it *)
+    split; [discriminate | intros Hin; exfalso].
+    apply andb_prop in Ec as [Ew Eq]; apply Zmod.eqb_eq in Eq; subst r.
+    assert (Ed : d2aDst j = aluInCd (daAluIn j)) by (unfold d2aDst; rewrite Ew; reflexivity).
+    assert (Hnz : Zmod.eqb (aluInCd (daAluIn j)) Zmod.zero = false).
+    { apply in_app_or in Hin as [H | H]; [exact (Hnzo _ H) | exact (d2aWriters_nz _ _ H)]. }
+    rewrite d2aWriters_cons, Ed, Hnz in Hnd; cbn [app] in Hnd.
+    exact (NoDup_remove_2 _ _ _ Hnd Hin).
+  - (* another register: its bit is unchanged, and it is not the head's *)
+    split; intros Hin.
+    + apply Hwb in Hin; rewrite d2aWriters_cons in Hin.
+      apply in_app_or in Hin as [H | H]; apply in_or_app; [left; exact H |].
+      apply in_app_or in H as [H | H]; [exfalso | right; exact H].
+      destruct (Zmod.eqb (d2aDst j) Zmod.zero) eqn:Ez; [destruct H |].
+      destruct H as [<- | []].
+      unfold d2aDst in Ec, Ez; destruct (aluInWritesCd (daAluIn j)); cbv beta iota in Ec, Ez.
+      * rewrite Zmod.eqb_refl in Ec; discriminate Ec.
+      * rewrite Zmod.eqb_refl in Ez; discriminate Ez.
+    + apply Hwb; rewrite d2aWriters_cons.
+      apply in_app_or in Hin as [H | H]; apply in_or_app; [left; exact H | right].
+      apply in_or_app; right; exact H.
 Qed.
 
 Section ExecFrame.
@@ -350,11 +414,69 @@ Section ExecFrame.
     pose proof (Hin Hd) as Hdin.
     unfold decDst in Heq; destruct (decWritesCd fo) eqn:Ew.
     - subst d; rewrite NoDup_app_iff in Hnd; destruct Hnd as [_ [_ Hdisj]].
-      apply (Hdisj (instCd (foInst fo)) Hdin).
-      rewrite Ed2a; unfold d2aWriters; cbn [filter].
-      rewrite Hrr, regRead_writesCd, Ew; cbn [map].
-      left; unfold aluInCd; rewrite Hrr, regRead_inst; reflexivity.
+      apply (Hdisj _ Hdin).
+      assert (Ej : d2aDst j = instCd fo.(Snd).(Fst)).
+      { unfold d2aDst; rewrite Hrr, regRead_writesCd, Ew; unfold aluInCd; rewrite regRead_inst; reflexivity. }
+      rewrite Ed2a, d2aWriters_cons, Ej, Hd; left; reflexivity.
     - subst d; rewrite Zmod.eqb_refl in Hd; discriminate Hd.
+  Qed.
+
+  Local Abbreviation ScoreRelA :=
+    (ScoreRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+              mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+  Local Abbreviation daLiveA :=
+    (daLive pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+            mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+
+  Lemma olderWriters_nz : forall (s1 : IState) d, In d (olderWritersA s1) -> Zmod.eqb d Zmod.zero = false.
+  Proof.
+    intros s1 d Hin; unfold olderWriters in Hin; apply filter_In in Hin as [_ H].
+    apply negb_true_iff in H; exact H.
+  Qed.
+
+  (* The head `j` of the decode-to-ALU FIFO leaves it: its register is cleared (`rest` holds it)
+   * or moves to the older writers; the live entries behind it read the same registers *)
+  Lemma ScoreRel_pop :
+    forall (g g' : Ghost) (s1 s1' : IState) (j : type DecodeToAluEntry) (tail : list (type DecodeToAluEntry))
+           (fo0 : type FetchOut) (fo_tail : list (type FetchOut)) (rest : list (bits RegIdxSzReal)),
+      ScoreRelA g s1 ->
+      iD2aA s1 = j :: tail ->
+      g_d2aFo pcAddrInit g = fo0 :: fo_tail ->
+      iD2aA s1' = tail ->
+      g_d2aFo pcAddrInit g' = fo_tail ->
+      Permutation (olderWritersA s1 ++ d2aWriters (j :: tail))%list (olderWritersA s1' ++ d2aWriters tail ++ rest)%list ->
+      (forall r, readWaitBit r (iWbA s1') = true <-> In r (olderWritersA s1' ++ d2aWriters tail)%list) ->
+      (forall r, In r (olderWritersA s1') -> In r (olderWritersA s1 ++ d2aWriters [j])%list) ->
+      (forall x, In x tail -> daLiveA s1' x = true -> daLiveA s1 x = true) ->
+      (forall l1 j2 l2 fo,
+         tail = (l1 ++ j2 :: l2)%list ->
+         nth_error fo_tail (length l1) = Some fo ->
+         daLiveA s1' j2 = true ->
+         RegAvoidAll (olderWritersA s1 ++ d2aWriters (j :: l1)) (decCs1 fo) ->
+         RegAvoidAll (olderWritersA s1 ++ d2aWriters (j :: l1)) (decCs2 fo) ->
+         evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1') = evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1)) ->
+      ScoreRelA g' s1'.
+  Proof.
+    intros g g' s1 s1' j tail fo0 fo_tail rest [Hnd [_ [Hlen Hreg]]] Ed2a Efo Ed2a' Efo' Hperm Hwb' Hold Hlv Hrr.
+    unfold ScoreRel; cbv zeta; rewrite Ed2a', Efo'.
+    rewrite Ed2a in Hnd, Hlen; rewrite Efo in Hlen; cbn [length] in Hlen; injection Hlen as Hlen'.
+    split.
+    - apply (Permutation_NoDup Hperm) in Hnd; rewrite app_assoc in Hnd; exact (NoDup_app_remove_r _ _ Hnd).
+    - split; [exact Hwb' |]; split; [exact Hlen' |].
+      intros l1 j2 l2 fo Hl1 Hnth Hlive.
+      assert (Hl1s : iD2aA s1 = ((j :: l1) ++ j2 :: l2)%list) by (rewrite Ed2a, Hl1; reflexivity).
+      assert (Hnths : nth_error (g_d2aFo pcAddrInit g) (length (j :: l1)) = Some fo) by (rewrite Efo; exact Hnth).
+      assert (Hin2 : In j2 tail) by (rewrite Hl1; apply in_or_app; right; left; reflexivity).
+      destruct (Hreg (j :: l1) j2 l2 fo Hl1s Hnths (Hlv j2 Hin2 Hlive)) as [Hrr0 [Hc1 Hc2]].
+      split; [rewrite (Hrr l1 j2 l2 fo Hl1 Hnth Hlive Hc1 Hc2); exact Hrr0 |].
+      assert (Hsub : forall d, In d (olderWritersA s1' ++ d2aWriters l1)%list ->
+                               In d (olderWritersA s1 ++ d2aWriters (j :: l1))%list).
+      { change (j :: l1) with ([j] ++ l1)%list; rewrite d2aWriters_app.
+        intros d Hd; apply in_app_or in Hd as [Hd | Hd].
+        - apply Hold in Hd; apply in_app_or in Hd as [Hd | Hd]; apply in_or_app;
+            [left; exact Hd | right; apply in_or_app; left; exact Hd].
+        - apply in_or_app; right; apply in_or_app; right; exact Hd. }
+      split; intros d Hd; [exact (Hc1 d (Hsub d Hd)) | exact (Hc2 d (Hsub d Hd))].
   Qed.
 
   (* --- 4. Spec Interrupt Latch Catch-Up (`catchup_mtip`, `catchup_meip`, `catchup_latches`) --- *)

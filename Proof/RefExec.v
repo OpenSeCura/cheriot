@@ -21,6 +21,7 @@ From Cheriot Require Import Impl ImplCommon ImplDevice ImplRevoker ImplFetch Imp
 From Cheriot.Proof Require Import TreeLemmas StateRel SimDevices SimFetchDecode SimExecute GhostListLemmas.
 From Cheriot.Proof Require Import RefRel RefRegion RefGhost RefFetch FifoGen RefMemRel RefCoreRel RefFrame RefPeriph RefSpecRead RefSpecFetch RefRevoker RefReplay.
 From Cheriot.Proof Require Export RefExecAux RefExecFrame RefExecStep RefExecLive RefExecFlush RefExecAppend.
+From Stdlib Require Import Permutation.
 
 Unset Implicit Arguments.
 Unset Strict Implicit.
@@ -395,6 +396,8 @@ Section ExecStageStepOK.
     - intros Hc; exfalso; exact (Hc Hnfw).
   Qed.
 
+  (* The head's register moves to the older writers (a load enters dataMem, a mulDiv its request
+   * FIFO): the older writers are a permutation of the old ones and the head's register *)
   Lemma ScoreRel_move_to_older :
     forall (g g' : Ghost) (s1 s1' : IState)
            (j : type DecodeToAluEntry) (d2a_tail : list (type DecodeToAluEntry))
@@ -404,25 +407,33 @@ Section ExecStageStepOK.
       g_d2aFo pcAddrInit g = fo0 :: fo_tail ->
       iD2aA s1' = d2a_tail ->
       g_d2aFo pcAddrInit g' = fo_tail ->
-      aluInWritesCd (daAluIn j) = true ->
-      olderWritersA s1' = (olderWritersA s1 ++ [aluInCd (daAluIn j)])%list ->
+      Permutation (olderWritersA s1') (olderWritersA s1 ++ d2aWriters [j])%list ->
       iWbA s1' = iWbA s1 ->
+      (forall x, In x d2a_tail -> daLiveA s1' x = true -> daLiveA s1 x = true) ->
       (forall l1 j2 l2 fo,
-         iD2aA s1' = (l1 ++ j2 :: l2)%list ->
+         d2a_tail = (l1 ++ j2 :: l2)%list ->
          nth_error fo_tail (length l1) = Some fo ->
          daLiveA s1' j2 = true ->
-         daAluIn j2 = evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1') /\
-         RegAvoidAll (olderWritersA s1' ++ d2aWriters l1) (decCs1 fo) /\
-         RegAvoidAll (olderWritersA s1' ++ d2aWriters l1) (decCs2 fo)) ->
+         RegAvoidAll (olderWritersA s1 ++ d2aWriters (j :: l1)) (decCs1 fo) ->
+         RegAvoidAll (olderWritersA s1 ++ d2aWriters (j :: l1)) (decCs2 fo) ->
+         evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1') = evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1)) ->
       ScoreRelA g' s1'.
   Proof.
-    intros g g' s1 s1' j d2a_tail fo0 fo_tail [Hnd [Hwb [Hlen _]]]
-           Ed2a Efo Ed2a' Efo' Ew Eow' Ewb' Hlive_tail.
-    unfold ScoreRel; rewrite Eow', Ewb', Ed2a', Efo'.
-    rewrite Ed2a in Hnd, Hwb, Hlen; rewrite Efo in Hlen; cbn [length] in Hlen; injection Hlen as Hlen'.
-    unfold d2aWriters in Hnd, Hwb |- *; cbn [filter] in Hnd, Hwb; rewrite Ew in Hnd, Hwb; cbn [map] in Hnd, Hwb.
-    rewrite <- app_assoc; cbn [app].
-    split; [exact Hnd | split; [exact Hwb | split; [exact Hlen' | rewrite <- Eow', <- Ed2a'; exact Hlive_tail]]].
+    intros g g' s1 s1' j d2a_tail fo0 fo_tail Hsc Ed2a Efo Ed2a' Efo' Hperm Ewb' Hlv Hrr.
+    assert (Hperm2 : Permutation (olderWritersA s1 ++ d2aWriters (j :: d2a_tail))%list
+                                 (olderWritersA s1' ++ d2aWriters d2a_tail ++ [])%list).
+    { rewrite app_nil_r; change (j :: d2a_tail) with ([j] ++ d2a_tail)%list; rewrite d2aWriters_app, app_assoc.
+      apply Permutation_app_tail, Permutation_sym; exact Hperm. }
+    apply (ScoreRel_pop pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+             mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
+             g g' s1 s1' j d2a_tail fo0 fo_tail [] Hsc Ed2a Efo Ed2a' Efo' Hperm2); [| | exact Hlv | exact Hrr].
+    - intros r; rewrite Ewb'.
+      destruct Hsc as [_ [Hwb _]]; specialize (Hwb r); rewrite Ed2a in Hwb.
+      rewrite app_nil_r in Hperm2.
+      split; intros Hr.
+      + eapply Permutation_in; [exact Hperm2 | apply Hwb; exact Hr].
+      + apply Hwb; eapply Permutation_in; [exact (Permutation_sym Hperm2) | exact Hr].
+    - intros r Hr; eapply Permutation_in; [exact Hperm | exact Hr].
   Qed.
 
   (* --- 4. Universal Live-Tail `evalRegRead` Preservation Helper --- *)
@@ -681,10 +692,9 @@ Section ExecStageStepOK.
       idx <> aluDstIdx (evalAluOut pcc (daAluIn j)).
   Proof.
     intros ow j l1 pcc idx Havoid Hz Hdstz.
-    rewrite wrappedAlu_dstIdx in Hdstz |- *.
-    destruct (aluInWritesCd (daAluIn j)) eqn:Hw; [| rewrite Zmod.eqb_refl in Hdstz; discriminate Hdstz].
-    apply (Havoid (instCd (aluInInst (daAluIn j)))); [| exact Hdstz | exact Hz].
-    apply in_or_app; right; unfold d2aWriters; cbn [filter]; rewrite Hw; left; reflexivity.
+    rewrite d2aDst_aluDstIdx in Hdstz |- *.
+    apply (Havoid (d2aDst j)); [| exact Hdstz | exact Hz].
+    apply in_or_app; right; rewrite d2aWriters_cons, Hdstz; left; reflexivity.
   Qed.
 
   Lemma evalRegRead_executeNonDeferred_writePcc_other :

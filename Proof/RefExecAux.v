@@ -103,12 +103,38 @@ Proof.
   repeat (constructor; [simpl; intuition congruence |]); constructor.
 Qed.
 
+(* x1 .. x15: one wait leaf per register but x0; with the start index 1 they fill the 4-bit index space *)
+Lemma length_gprWaitPathsWithKind : length gprWaitPathsWithKind = 15%nat.
+Proof. reflexivity. Qed.
+
+Lemma waitPaths_fit : (Z.of_nat (1 + length gprWaitPathsWithKind) <= 2 ^ RegIdxSzReal)%Z.
+Proof. rewrite length_gprWaitPathsWithKind; apply Z.leb_le; reflexivity. Qed.
+
+(* x0 has no wait bit: it always reads false *)
+Lemma evalReadWaitBit_zero :
+  forall (wb : TS waitBitsTree), evalReadWaitBit Zmod.zero wb = false.
+Proof.
+  intros wb; unfold evalReadWaitBit.
+  rewrite (evalReadRegsListHelper_above (sz := RegIdxSzReal) gprWaitPathsWithKind 1%nat nil Zmod.zero wb);
+    [reflexivity | | exact waitPaths_fit].
+  rewrite Zmod.unsigned_0; lia.
+Qed.
+
 Lemma evalReadWaitBit_write_same :
   forall (d : bits RegIdxSzReal) (v : bool) (wb : TS waitBitsTree),
+    Zmod.eqb d Zmod.zero = false ->
     evalReadWaitBit d (evalWriteWaitBit d v wb) = v.
 Proof.
-  intros d v wb; unfold evalReadWaitBit, evalWriteWaitBit.
-  apply (@evalReadRegsList_evalWriteRegsList_same waitBitsTree Bool RegIdxSzReal); reflexivity.
+  intros d v wb Hnz; unfold evalReadWaitBit, evalWriteWaitBit.
+  apply (@evalReadRegsListHelper_evalWriteRegsListHelper_same waitBitsTree Bool RegIdxSzReal);
+    [| exact waitPaths_fit | constructor].
+  rewrite length_gprWaitPathsWithKind.
+  pose proof (Zmod.unsigned_pos_bound d (ltac:(reflexivity) : (0 < 2 ^ RegIdxSzReal)%Z)) as Hb.
+  assert (E16 : (2 ^ RegIdxSzReal = 16)%Z) by reflexivity.
+  assert (Hne : Zmod.to_Z d <> 0%Z).
+  { intros H0; rewrite <- (Zmod.unsigned_0 (2 ^ RegIdxSzReal)) in H0.
+    apply Zmod.unsigned_inj in H0; rewrite H0, Zmod.eqb_refl in Hnz; discriminate Hnz. }
+  lia.
 Qed.
 
 Lemma evalReadWaitBit_write_other :
@@ -117,7 +143,8 @@ Lemma evalReadWaitBit_write_other :
     evalReadWaitBit r (evalWriteWaitBit d v wb) = evalReadWaitBit r wb.
 Proof.
   intros r d v wb Hneq; unfold evalReadWaitBit, evalWriteWaitBit.
-  apply (@evalReadRegsList_evalWriteRegsList_other waitBitsTree Bool RegIdxSzReal); [apply NoDup_gprWaitPathsWithKind | exact Hneq].
+  apply (@evalReadRegsListHelper_evalWriteRegsListHelper_other waitBitsTree Bool RegIdxSzReal);
+    [apply NoDup_gprWaitPathsWithKind | exact Hneq].
 Qed.
 
 Lemma evalReadWaitBit_setDst_false :
@@ -128,7 +155,9 @@ Proof.
   intros [|] d r wb; cbn [evalSetDstWaitBits andb].
   - destruct (Zmod.eqb r d) eqn:Eq.
     + apply Zmod.eqb_eq in Eq; subst r.
-      apply evalReadWaitBit_write_same.
+      destruct (Zmod.eqb d Zmod.zero) eqn:Ez.
+      * apply Zmod.eqb_eq in Ez; subst d; apply evalReadWaitBit_zero.
+      * apply evalReadWaitBit_write_same; exact Ez.
     + apply evalReadWaitBit_write_other.
       intros Heq; subst r; rewrite Zmod.eqb_refl in Eq; discriminate Eq.
   - reflexivity.

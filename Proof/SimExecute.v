@@ -161,12 +161,12 @@ Section ExecuteTreeHelpers.
   (* Wait-bit helpers on `waitBitsTree` *)
   Definition evalReadWaitBit (idx : bits RegIdxSzReal)
     (wb : TreeState ElemState waitBitsTree) : bool :=
-    evalReadRegsList gprWaitPathsWithKind idx wb.
+    evalReadRegsListHelper 1%nat nil gprWaitPathsWithKind idx wb.
 
   Definition evalWriteWaitBit (idx : bits RegIdxSzReal) (val : bool)
     (wb : TreeState ElemState waitBitsTree)
     : TreeState ElemState waitBitsTree :=
-    evalWriteRegsList gprWaitPathsWithKind idx val wb.
+    evalWriteRegsListHelper 1%nat gprWaitPathsWithKind idx val wb.
 
   Definition evalSetDstWaitBits (writesGpr : bool) (gprIdx : bits RegIdxSzReal) (val : bool)
     (wb : TreeState ElemState waitBitsTree)
@@ -183,7 +183,7 @@ Section ExecuteTreeHelpers.
   Proof.
     intros env idx wb P.
     unfold readGprWaitBit, evalReadWaitBit.
-    apply (evalActionPropGen_readRegsList gprWaitPathsWithKind (Var type (Bit RegIdxSzReal) idx)).
+    apply (evalActionPropGen_readRegsListHelper gprWaitPathsWithKind 1%nat nil (Var type (Bit RegIdxSzReal) idx)).
   Qed.
 
   Lemma evalActionPropGen_writeGprWaitBit :
@@ -194,7 +194,7 @@ Section ExecuteTreeHelpers.
   Proof.
     intros env idx val wb P.
     unfold writeGprWaitBit, evalWriteWaitBit.
-    apply (evalActionPropGen_writeRegsList gprWaitPathsWithKind (Var type (Bit RegIdxSzReal) idx) (Var type Bool val)).
+    apply (evalActionPropGen_writeRegsListHelper gprWaitPathsWithKind 1%nat (Var type (Bit RegIdxSzReal) idx) (Var type Bool val)).
   Qed.
 
   Lemma evalActionPropGen_setDstWaitBits :
@@ -667,7 +667,7 @@ Section MulDivCoreLemmas.
                  (@np_mulDiv_waitBits mulCapacity divCapacity mulStages divStages mulDivMode
                                       pcAddrInit bpT memT fetchT decodeT executeT dataMemT)).
       unfold writeGprWaitBit, evalWriteWaitBit.
-      rewrite (evalActionPropGen_writeRegsList gprWaitPathsWithKind
+      rewrite (evalActionPropGen_writeRegsListHelper gprWaitPathsWithKind 1%nat
                  (Var type (Bit RegIdxSzReal) dstIdx)
                  (Var type Bool false)).
       cbn [evalActionPropGen evalExpr].

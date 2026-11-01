@@ -189,7 +189,7 @@ Section DataMemCoreLemmas.
     if negb (Zmod.eqb dstIdx Zmod.zero)
     then
       ((evalWriteRegsList (gprPathsWithKind pcAddrInit) dstIdx dstVal (dmCore_rf c) ,, c.(Fst).(Snd)) ,,
-       ((evalWriteRegsList gprWaitPathsWithKind dstIdx false (dmCore_waitBits c) ,, c.(Snd).(Fst).(Snd)) ,,
+       ((evalWriteRegsListHelper 1%nat gprWaitPathsWithKind dstIdx false (dmCore_waitBits c) ,, c.(Snd).(Fst).(Snd)) ,,
         c.(Snd).(Snd)))
     else c.
 
@@ -216,7 +216,7 @@ Section DataMemCoreLemmas.
       rewrite (evalActionPropGen_liftAction
                  (@ImplDataMem.np_waitBits capacity pcAddrInit bpT fetchT decodeT mulDivT executeIfc memIfc type)).
       unfold writeGprWaitBit.
-      rewrite (evalActionPropGen_writeRegsList gprWaitPathsWithKind
+      rewrite (evalActionPropGen_writeRegsListHelper gprWaitPathsWithKind 1%nat
                  (Var type (Bit RegIdxSzReal) dstIdx)
                  (Var type Bool false)).
       cbn [evalActionPropGen evalExpr].

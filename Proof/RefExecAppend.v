@@ -724,10 +724,9 @@ Section ExecAppend.
         apply in_or_app; right; apply in_or_app; right.
         change (aluOut.(Snd).(Fst)) with (fst (aluOut.(Snd).(Fst), resCap)); apply in_map; exact Hin_md. }
       assert (Hin_dw : In (aluOut.(Snd).(Fst)) (d2aWriters (iD2aA s1))).
-      { rewrite Ed2a; unfold d2aWriters; cbn [filter].
-        change (aluOut.(Snd).(Fst)) with (aluDstIdx aluOut) in *.
-        rewrite Halu, (wrappedAlu_dstIdx (readPcc pcAddrInit (iRfA s1)) (daAluIn j)) in Hz_a |- *.
-        destruct (aluInWritesCd (daAluIn j)); [left; reflexivity | rewrite Zmod.eqb_refl in Hz_a; discriminate Hz_a]. }
+      { change (aluOut.(Snd).(Fst)) with (aluDstIdx aluOut) in *.
+        rewrite Halu, d2aDst_aluDstIdx in Hz_a |- *.
+        rewrite Ed2a, d2aWriters_cons, Hz_a; left; reflexivity. }
       rewrite NoDup_app_iff in Hnd; destruct Hnd as [_ [_ Hdisj_ow]].
       exact (Hdisj_ow _ Hin_ow Hin_dw). }
     pose proof (SemAction_executeNonDeferred_flushMulDivCaps pcAddrInit

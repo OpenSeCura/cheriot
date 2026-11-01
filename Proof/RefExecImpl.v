@@ -423,6 +423,19 @@ Definition execRedirect (aluOut : type AluOutUnion) (execOut : type ExecuteOut) 
   let capChanged      : type Bool                    := evalExpr (And [ #hasCf ; ##cf`"capChanged" ]) in
   evalExpr (Or [ #isExc ; #capChanged ; ##execOut`"isFenceIRq" ; Not (Eq #committedNextPc #predPc) ]).
 
+(* The mulDiv operation of a valid mulDiv output: Mul or Div, and the two payloads *)
+Definition mdIsMul (mdOp : type MulDivUnion) : bool := evalExpr ((Var type MulDivUnion mdOp) `? "Mul").
+Definition mdMulOf (mdOp : type MulDivUnion) : type MulOp := evalExpr ((Var type MulDivUnion mdOp) `! "Mul").
+Definition mdDivOf (mdOp : type MulDivUnion) : type DivOp := evalExpr ((Var type MulDivUnion mdOp) `! "Div").
+
+(* ExecuteOut = { mulDiv; dataMem; cf; isFenceIRq; nextPcc } *)
+Definition execCf (x : type ExecuteOut) : type (Option CfPayload) := x.(Snd).(Snd).(Fst).
+Definition execIsFenceIRq (x : type ExecuteOut) : bool := x.(Snd).(Snd).(Snd).(Fst).
+
+(* The request the stage enqueues into dataMem for ALU output `a` and execute output `x` *)
+Definition execDmReq (a : type AluOutUnion) (x : type ExecuteOut) : type MemFenceReq :=
+  (aluDstIdx a ,, ((aluDstVal a).(Snd).(Snd).(Fst) ,, (optData (execDataMem x) ,, tt))).
+
 (* --- 4. The Branches of the Execute Stage --- *)
 
 Section ExecImpl.
@@ -882,6 +895,147 @@ Section ExecImpl.
     destruct H as [<- _].
     exists rfMid, execOut; split; [exact Hex |].
     repeat split; reflexivity.
+  Qed.
+
+  (* the last action of a block: enqMul / enqDiv, the fetch PC write, fence.i pending, dataMem enq *)
+  Ltac exec_mulLast H :=
+    eapply fw_liftUpdLast in H;
+    [| exact (upd_of_sem _ _ _ (mdEnqMul_sem mulCapacity divCapacity mulStages divStages mulDivMode _ _ _))];
+    cbv beta in H.
+  Ltac exec_divLast H :=
+    eapply fw_liftUpdLast in H;
+    [| exact (upd_of_sem _ _ _ (mdEnqDiv_sem mulCapacity divCapacity mulStages divStages mulDivMode _ _ _))];
+    cbv beta in H.
+  Ltac exec_wrPcLast H :=
+    eapply fw_liftUpdLast in H;
+    [| intros env_ sub_ Q_ HQ_;
+       exact (proj1 (evalActionPropGen_writeFetchPc pcAddrInit fetchCapacity instCapacity _ _ _) HQ_)]; cbv beta in H.
+  Ltac exec_setFipLast H :=
+    eapply fw_liftUpdLast in H;
+    [| intros env_ sub_ Q_ HQ_; exact (proj1 (evalActionPropGen_setFenceIPending _ _) HQ_)]; cbv beta in H.
+  Ltac exec_dmEnqLast H :=
+    eapply fw_liftUpdLast in H;
+    [| intros env_ sub_ Q_ HQ_;
+       apply (proj1 (evalActionPropGen_dataMemEnq dataMemCapacity _ _ _ _ _)) in HQ_; cbv zeta in HQ_;
+       apply (proj1 (evalActionPropGen_enq_iff dataMemCapacity MemFenceReq _ _ _ _)) in HQ_;
+       cbv beta in HQ_; exact HQ_]; cbv beta in H.
+  (* an `If` without `Else` whose condition is false *)
+  Ltac exec_skip H := apply fw_return in H; cbv beta in H.
+
+  (* Sequential: execute, write the PCC with the predicted PC, then the mulDiv enqueue or the
+   * wait-bit clear *)
+  Lemma impl_seq :
+    forall (s1 s1' : IState) (a : type AluOutUnion),
+      SemAction envI STAGE s1 s1' Zmod.zero ->
+      ex_canProceed (iExecA s1) = true ->
+      (stHead s1).(Snd).(Fst) = true ->
+      daLiveA s1 (stHead s1).(Fst) = true ->
+      stInt s1 = false ->
+      a = stAluOut s1 ->
+      aluIsSeq a = true ->
+      seqGuardV (aluIsMul a) (aluIsDiv a) (stMulFull s1) (stDivFull s1) = true ->
+      exists rfMid mdOpt,
+        SemAction defaultEnv (@executeSequential pcAddrInit type (iPccA s1) a) (iRfA s1) rfMid mdOpt /\
+        iRfA s1' = writePcc pcAddrInit (pccWithAddr (iPccA s1) (daPredPc (stJ s1))) rfMid /\
+        iMemA s1' = iMemA s1 /\ iFetchA s1' = iFetchA s1 /\
+        D2AF s1' = fifoDeqState (D2AF s1) /\
+        iDmA s1' = iDmA s1 /\
+        iExecEpochA s1' = iExecEpochA s1 /\ iFenceIPendingA s1' = iFenceIPendingA s1 /\
+        (if optValid mdOpt
+         then iWbA s1' = iWbA s1 /\
+              iMdA s1' = (if mdIsMul (optData mdOpt)
+                          then mdEnqMul mulCapacity divCapacity mulStages divStages mulDivMode
+                                 (aluDstIdx a) (aluDstVal a).(Snd).(Snd).(Fst) (mdMulOf (optData mdOpt)) (iMdA s1)
+                          else mdEnqDiv mulCapacity divCapacity mulStages divStages mulDivMode
+                                 (aluDstIdx a) (aluDstVal a).(Snd).(Snd).(Fst) (mdDivOf (optData mdOpt)) (iMdA s1))
+         else iWbA s1' = stWb s1 /\ iMdA s1' = iMdA s1).
+  Proof.
+    intros s1 s1' a H Hcp Hv Hlive Hint Ha Hseq Hg.
+    exec_prefix H Hcp Hv Hlive.
+    exec_aluEq s1. rewrite <- Ha in Ealu. subst aluOut.
+    apply fw_ifFalse in H; [| exact Hint].
+    apply fw_ifTrue in H; [| exact Hseq].
+    apply fw_ifTrue in H; [| exact Hg].
+    exec_setCp H. exec_deq H.
+    exec_sem H rfMid mdOpt Hex.
+    exec_lets H. exec_pccW H.
+    exists rfMid, mdOpt; split; [exact Hex |].
+    apply fw_ifTF in H; destruct H as [[Hmv H] | [Hmv H]].
+    - assert (Ev : optValid mdOpt = true) by exact Hmv.
+      exec_lets H.
+      apply fw_ifTF in H; destruct H as [[Hmul H] | [Hmul H]].
+      + assert (Em : mdIsMul (optData mdOpt) = true) by exact Hmul.
+        exec_lets H. exec_mulLast H. exec_ret H.
+        destruct H as [<- _]; rewrite Ev, Em; repeat split; reflexivity.
+      + assert (Em : mdIsMul (optData mdOpt) = false) by exact Hmul.
+        exec_lets H. exec_divLast H. exec_ret H.
+        destruct H as [<- _]; rewrite Ev, Em; repeat split; reflexivity.
+    - assert (Ev : optValid mdOpt = false) by exact Hmv.
+      exec_wbLast H. exec_ret H.
+      destruct H as [<- _]; rewrite Ev; repeat split; reflexivity.
+  Qed.
+
+  (* Non-sequential: execute, write the PCC, update the predictor (any update), then the
+   * redirect, the fence.i flag, and the dataMem enqueue or the wait-bit clear *)
+  Lemma impl_nonSeq :
+    forall (s1 s1' : IState) (a : type AluOutUnion),
+      SemAction envI STAGE s1 s1' Zmod.zero ->
+      ex_canProceed (iExecA s1) = true ->
+      (stHead s1).(Snd).(Fst) = true ->
+      daLiveA s1 (stHead s1).(Fst) = true ->
+      stInt s1 = false ->
+      a = stAluOut s1 ->
+      aluIsSeq a = false ->
+      nonSeqGuardV (aluIsMemOrFence a) (stDmFull s1) (aluIsVirtCsr a) (stDmEmpty s1) (stNoWr s1) = true ->
+      exists rfMid execOut,
+        SemAction defaultEnv (@executeNonSequential pcAddrInit type (iPccA s1) (stMeip s1) (stMtip s1) a)
+          (iRfA s1) rfMid execOut /\
+        iRfA s1' = writePcc pcAddrInit (defNextPcc execOut) rfMid /\
+        iMemA s1' = iMemA s1 /\
+        D2AF s1' = fifoDeqState (D2AF s1) /\
+        iMdA s1' = iMdA s1 /\
+        (if execRedirect a execOut (daPredPc (stJ s1))
+         then iExecEpochA s1' = evalExpr (Add [ Var type Epoch (iExecEpochA s1) ; ($1 : Expr type Epoch) ]) /\
+              iFetchA s1' = fetch_withPc pcAddrInit fetchCapacity instCapacity
+                              (fetch_withStraddleOpt pcAddrInit fetchCapacity instCapacity (iFetchA s1)
+                                 (getDefault (Option StraddleHalf)))
+                              (defNextPcc execOut).(Snd).(Snd).(Fst)
+         else iExecEpochA s1' = iExecEpochA s1 /\ iFetchA s1' = iFetchA s1) /\
+        iFenceIPendingA s1' = (if execIsFenceIRq execOut then true else iFenceIPendingA s1) /\
+        (if optValid (execDataMem execOut)
+         then iWbA s1' = iWbA s1 /\
+              iDmA s1' = dm_withInputFifo dataMemCapacity (iDmA s1)
+                           (fifoEnqState (dm_inputFifo dataMemCapacity (iDmA s1)) (execDmReq a execOut))
+         else iWbA s1' = stWb s1 /\ iDmA s1' = iDmA s1).
+  Proof.
+    intros s1 s1' a H Hcp Hv Hlive Hint Ha Hseq Hg.
+    exec_prefix H Hcp Hv Hlive.
+    exec_aluEq s1. rewrite <- Ha in Ealu. subst aluOut.
+    apply fw_ifFalse in H; [| exact Hint].
+    apply fw_ifFalse in H; [| exact Hseq].
+    apply fw_ifTrue in H; [| exact Hg].
+    exec_deq H.
+    exec_sem H rfMid execOut Hex.
+    exec_lets H. exec_pccW H. exec_lets H.
+    apply fw_ifLiftAny in H; destruct H as [bp1 [r1 H]]; cbv beta in H.
+    apply fw_ifLiftAny in H; destruct H as [bp2 [r2 H]]; cbv beta in H.
+    exists rfMid, execOut; split; [exact Hex |].
+    (* the three tests, then the leaves *)
+    apply fw_ifTF in H; destruct H as [[Hred H] | [Hred H]];
+      [exec_lets H; exec_epochW H; exec_clrStr H; exec_wrPcLast H | exec_skip H];
+      apply fw_ifTF in H; destruct H as [[Hfi H] | [Hfi H]];
+      [exec_setFipLast H | exec_skip H | exec_setFipLast H | exec_skip H];
+      exec_lets H;
+      apply fw_ifTF in H; destruct H as [[Hdm H] | [Hdm H]];
+      first [exec_lets H; exec_dmEnqLast H | exec_wbLast H];
+      exec_ret H; destruct H as [<- _];
+      first [assert (Er : execRedirect a execOut (daPredPc (stJ s1)) = true) by exact Hred
+            | assert (Er : execRedirect a execOut (daPredPc (stJ s1)) = false) by exact Hred];
+      first [assert (Ef : execIsFenceIRq execOut = true) by exact Hfi
+            | assert (Ef : execIsFenceIRq execOut = false) by exact Hfi];
+      first [assert (Ed : optValid (execDataMem execOut) = true) by exact Hdm
+            | assert (Ed : optValid (execDataMem execOut) = false) by exact Hdm];
+      rewrite Er, Ef, Ed; repeat split; reflexivity.
   Qed.
 
 End ExecImpl.

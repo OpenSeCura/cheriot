@@ -114,12 +114,13 @@ Record MulDivIfc {ty : Kind -> Type} := {
 
 Section ImplCommon.
 
-  (* 1. Scoreboard (waitBits) *)
+  (* 1. Scoreboard (waitBits).  x0 has no wait bit: the leaves are for x1 .. x(NumRegs - 1), and the
+   * accessors start at index 1, so a read of x0's bit gives false and a write to it is dropped. *)
   Definition gprWaitLeaves : list (Tree Elem) :=
     map (fun '(_, idx) =>
-      Leaf ("waitBit_" ++ hex_string_of_Z idx)%string
+      Leaf ("waitBit_" ++ hex_string_of_Z (idx + 1)%Z)%string
            (EReg (Build_Reg Bool (Some false)))
-    ) (enumerate (repeat tt (Z.to_nat NumRegs))).
+    ) (enumerate (repeat tt (Z.to_nat (NumRegs - 1)%Z))).
 
   Definition waitBitsTree : Tree Elem :=
     Node "" [
@@ -134,11 +135,11 @@ Section ImplCommon.
 
   Definition readGprWaitBit (ty : Kind -> Type) (idx : ty (Bit RegIdxSzReal))
     : Action ty waitBitsTree Bool :=
-    readRegsList gprWaitPathsWithKind #idx.
+    readRegsListHelper 1%nat nil gprWaitPathsWithKind #idx.
 
   Definition writeGprWaitBit (ty : Kind -> Type) (idx : ty (Bit RegIdxSzReal)) (val : ty Bool)
     : Action ty waitBitsTree (Bit 0) :=
-    writeRegsList gprWaitPathsWithKind #idx #val.
+    writeRegsListHelper 1%nat gprWaitPathsWithKind #idx #val.
 
   Definition setDstWaitBits (ty : Kind -> Type)
     (writesGpr : ty Bool) (gprIdx : ty (Bit RegIdxSzReal))
