@@ -1252,6 +1252,34 @@ Proof.
   - exfalso; rewrite Ev in Hv; cbn in Hv; discriminate Hv.
 Qed.
 
+(* ALU fact A2, routing part: the routing's ControlFlow output is the unit applied to the PCC
+ * (the unit is opaque here, so unification stops at its application instead of evaluating it) *)
+Local Strategy opaque [ControlFlow].
+Lemma routing_cf_ok :
+  forall (pcc : type FullECapWithTag) (aluIn : type AluIn),
+    let cfo : type (Option CfPayload) := (evalLetExpr (@AluRouting type pcc aluIn)).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) in
+    cfo.(Snd).(Fst) = true -> CfOK pcc cfo.(Fst).
+Proof.
+  intros pcc aluIn; cbv zeta.
+  Timeout 20 apply cf_unit_ok.
+Qed.
+Local Strategy transparent [ControlFlow].
+
+(* ALU fact A2: a ControlFlow op without capability change keeps the PCC's tag (and ecap for jalr) *)
+Lemma aluFact_A2 :
+  forall pcAddrInit (pcc : type FullECapWithTag) (fo : type FetchOut) (rf : RfState pcAddrInit),
+    let a := evalAluOut pcc (evalRegRead pcAddrInit (evalDecode fo) rf) in
+    aluIsSeq a = false -> aluIsExc a = false -> nsIsCf a = true -> CfOK pcc (nsCf a).
+Proof.
+  intros pcAddrInit pcc fo rf; cbv zeta.
+  unfold evalAluOut; rewrite df_wrappedAlu_unfold.
+  set (ro := evalLetExpr (@AluRouting type pcc (evalLetExpr (@constructAluIn type (evalRegRead pcAddrInit (evalDecode fo) rf))))).
+  intros Hs He Hc.
+  destruct (alu_cf_valid ro Hs He Hc) as [He' [Hd' Hc']].
+  rewrite (alu_cf_payload ro He' Hd' Hc').
+  Timeout 20 exact (routing_cf_ok pcc (evalLetExpr (@constructAluIn type (evalRegRead pcAddrInit (evalDecode fo) rf))) Hc').
+Qed.
+
 Section ExecMain.
   Variable pcAddrInit : Z.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
@@ -2394,5 +2422,15 @@ Section ExecMain.
       SemAction envI STAGE s1 s1' Zmod.zero -> (exists g, RELG g s1 s2) ->
       exists s2', SemActions envS specActs s2 s2' /\ (exists g', RELG g' s1' s2').
   Proof. intros HA2; apply stepOK_exec_of_facts; [exact (aluFact_A1 pcAddrInit) | exact HA2]. Qed.
+
+  (* Milestone 7: the execute stage's StepOK theorem *)
+  Theorem stepOK_aluAndExecuteNonDeferredStage :
+    StepOK pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+           mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
+           clintS clint plicS plic initLine fwcs STAGE.
+  Proof.
+    intros s1 s1' s2 Hsem Hrel.
+    exact (stepOK_exec_of_A2 (aluFact_A2 pcAddrInit) s1 s1' s2 Hsem Hrel).
+  Qed.
 
 End ExecMain.
