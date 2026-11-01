@@ -553,6 +553,705 @@ Proof.
   - subst a; eapply evalRegRead_executeNonDeferred_writePcc_other; [exact Hsem | exact H1 | exact H2].
 Qed.
 
+(* --- Non-Sequential Instructions: Generic Facts (the ALU output is a variable) --- *)
+
+Lemma nonDeferred_of_nonSequential :
+  forall pcAddrInit (env : Env (rfTree pcAddrInit)) pcc meip mtip (aluOut : type AluOutUnion) rf rf' out,
+    evalIsInterruptPending pcAddrInit meip mtip rf = false ->
+    aluIsSeq aluOut = false ->
+    SemAction env (@executeNonSequential pcAddrInit type pcc meip mtip aluOut) rf rf' out ->
+    SemAction env (@executeNonDeferred pcAddrInit type pcc meip mtip aluOut) rf rf' out.
+Proof.
+  intros pcAddrInit env pcc meip mtip aluOut rf rf' out Hint Hns Hex.
+  rewrite SemAction_iff_evalActionPropGen in Hex; rewrite SemAction_iff_evalActionPropGen.
+  exact (proj2 (evalActionPropGen_executeNonDeferred_nonSequential pcAddrInit pcc meip mtip aluOut rf _ Hint Hns) Hex).
+Qed.
+
+(* No mulDiv output: the spec's mulDiv write-back does nothing (whatever the dataMem output) *)
+Lemma specMulDivWb_noMd2 :
+  forall pcAddrInit (aluOut : type AluOutUnion) (execOut : type ExecuteOut) (rf : RfState pcAddrInit),
+    optValid (execMulDiv execOut) = false -> specMulDivWb pcAddrInit aluOut execOut rf = rf.
+Proof.
+  intros pcAddrInit aluOut execOut rf Hmd; unfold specMulDivWb, optValid in *; cbv zeta.
+  destruct ((execDataMem execOut).(Snd).(Fst)); [reflexivity | rewrite Hmd; reflexivity].
+Qed.
+
+(* The non-sequential stall guard: a dataMem op needs room, a virtual CSR read a quiet dataMem *)
+Lemma nonSeqGuard_dm : forall im df iv de nw, nonSeqGuardV im df iv de nw = true -> im = true -> df = false.
+Proof. intros [] [] [] [] []; cbn; intros H E; first [reflexivity | discriminate H | discriminate E]. Qed.
+
+Lemma nonSeqGuard_virt :
+  forall im df iv de nw, nonSeqGuardV im df iv de nw = true -> iv = true -> andb de nw = true.
+Proof. intros [] [] [] [] []; cbn; intros H E; first [reflexivity | discriminate H | discriminate E]. Qed.
+
+Lemma or4_false :
+  forall e1 e2 e3 e4 : Expr type Bool,
+    evalExpr (Or [e1; e2; e3; e4]) = false ->
+    evalExpr e1 = false /\ evalExpr e2 = false /\ evalExpr e3 = false /\ evalExpr e4 = false.
+Proof.
+  intros e1 e2 e3 e4 H.
+  change (orb (orb (orb (orb false (evalExpr e1)) (evalExpr e2)) (evalExpr e3)) (evalExpr e4) = false) in H.
+  destruct (evalExpr e1), (evalExpr e2), (evalExpr e3), (evalExpr e4); cbn in H; try discriminate H.
+  repeat split; reflexivity.
+Qed.
+
+Lemma not_eq_addr : forall u v : type Addr, evalExpr (Not (Eq (Var type Addr u) (Var type Addr v))) = false -> u = v.
+Proof.
+  intros u v H; change (negb (Zmod.eqb u v) = false) in H.
+  apply negb_false_iff, Zmod.eqb_eq in H; exact H.
+Qed.
+
+Lemma andb_true_l_false : forall b c : bool, b = true -> andb b c = false -> c = false.
+Proof. intros b c -> H; exact H. Qed.
+
+(* Without a redirect: no exception, no capability change, no fence.i, and the next address is
+ * the predicted one *)
+Lemma noRedirect_facts :
+  forall (a : type AluOutUnion) (x : type ExecuteOut) (predPc : type Addr),
+    execRedirect a x predPc = false ->
+    aluIsExc a = false /\
+    (optValid (execCf x) = true -> let cf : type CfPayload := optData (execCf x) in evalExpr (##cf`"capChanged") = false) /\
+    execIsFenceIRq x = false /\
+    (execNextPcc x).(Snd).(Snd).(Fst) = predPc.
+Proof.
+  intros a x predPc H; unfold execRedirect in H; cbv zeta in H.
+  apply or4_false in H as [H1 [H2 [H3 H4]]].
+  split; [exact H1 | split; [| split; [exact H3 | exact (not_eq_addr _ _ H4)]]].
+  intros Hv; cbv zeta; apply (andb_true_l_false (optValid (execCf x))); [exact Hv | exact H2].
+Qed.
+
+(* ALU fact A3: an op without exception had no fetch fault (a fault gives the Exception op) *)
+Lemma nonSeq_noFault :
+  forall pcAddrInit (pcc : type FullECapWithTag) (fo : type FetchOut) (rf : RfState pcAddrInit) (a : type AluOutUnion),
+    a = evalAluOut pcc (evalRegRead pcAddrInit (evalDecode fo) rf) -> aluIsExc a = false -> foFault fo = false.
+Proof.
+  intros pcAddrInit pcc fo rf a Ha Hexc.
+  set (pkg := evalRegRead pcAddrInit (evalDecode fo) rf) in Ha.
+  destruct (foFault fo) eqn:Ef; [exfalso | reflexivity].
+  pose proof (wrappedAlu_fetchExc_nonSeq pcc pkg) as T; cbv zeta in T.
+  change (evalLetExpr (@wrappedAlu type pcc pkg)) with (evalAluOut pcc pkg) in T.
+  rewrite <- Ha in T.
+  destruct (T (excAny_or4 _ Ef)) as [_ [T2 T3]].
+  lazymatch type of T2 with ?L2 = true => lazymatch type of T3 with ?L3 = true =>
+    assert (E : aluIsExc a = andb (andb true L2) L3) by reflexivity;
+    rewrite E, T2, T3 in Hexc; cbn in Hexc; discriminate Hexc end end.
+Qed.
+
+(* The stage's reads of a non-sequential op, in its own syntax *)
+Definition nsOp (a : type AluOutUnion) : type NonSequentialUnion :=
+  let aluOp : type AluOpUnion := evalExpr (##a`"Op") in
+  evalExpr (#aluOp `! "NonSequential").
+Definition nsNoExc (a : type AluOutUnion) : type NoExceptionUnion :=
+  let nonSeq : type NonSequentialUnion := nsOp a in
+  evalExpr (#nonSeq `! "NoException").
+Definition nsDm (a : type AluOutUnion) : type MemFenceUnion :=
+  let noExc : type NoExceptionUnion := nsNoExc a in
+  evalExpr (#noExc `! "DataMem").
+
+Lemma memOrFence_of_tags :
+  forall a : type AluOutUnion,
+    aluIsSeq a = false ->
+    evalExpr ((Var type NonSequentialUnion (nsOp a)) `? "Exception") = false ->
+    evalExpr ((Var type NoExceptionUnion (nsNoExc a)) `? "DataMem") = true ->
+    aluIsMemOrFence a = true.
+Proof.
+  intros a Hns Hexc Hdm.
+  assert (Hnsq : evalExpr ((Var type AluOpUnion (evalExpr (##a`"Op"))) `? "NonSequential") = true)
+    by (apply bits1_eqb_0_false_1_true; exact Hns).
+  assert (Hne : evalExpr ((Var type NonSequentialUnion (nsOp a)) `? "NoException") = true)
+    by (apply bits1_eqb_0_false_1_true; exact Hexc).
+  assert (E : aluIsMemOrFence a =
+              andb (andb true (andb (andb true (evalExpr ((Var type AluOpUnion (evalExpr (##a`"Op"))) `? "NonSequential")))
+                                    (evalExpr ((Var type NonSequentialUnion (nsOp a)) `? "NoException"))))
+                   (evalExpr ((Var type NoExceptionUnion (nsNoExc a)) `? "DataMem"))) by reflexivity.
+  rewrite E, Hnsq, Hne, Hdm; reflexivity.
+Qed.
+
+Lemma fenceI_mem : forall op, opIsMem op = true -> opIsFenceI op = false.
+Proof. intros op H; unfold opIsFenceI; rewrite H; reflexivity. Qed.
+
+Lemma fenceI_fence :
+  forall op, opIsMem op = false -> opIsFenceI op = (let f : type FenceOp := opFenceV op in evalExpr (##f`"FenceI")).
+Proof. intros op H; unfold opIsFenceI; rewrite H; reflexivity. Qed.
+
+Lemma allReturns_IfElse_Ret_cond :
+  forall {t : Tree Elem} {k : Kind} (nm : string) (p : Expr type Bool) (tb fb : Action type t k)
+         (Q : type k -> Prop),
+    (evalExpr p = true -> allReturns tb Q) -> (evalExpr p = false -> allReturns fb Q) ->
+    allReturns (IfElse nm p tb fb (fun v => Return (Var type k v))) Q.
+Proof.
+  intros t k nm p tb fb Q Ht Hf; cbn [allReturns].
+  destruct (evalExpr p); [exact (Ht eq_refl) | exact (Hf eq_refl)].
+Qed.
+
+Lemma allReturns_handleTrap_nf :
+  forall pcAddrInit (pcc : type FullECapWithTag) (mc mt : type (Bit Xlen)) (Q : type ExecuteOut -> Prop),
+    (forall r, optValid (execDataMem r) = false -> execIsFenceIRq r = false -> Q r) ->
+    allReturns (@handleTrap pcAddrInit type pcc mc mt) Q.
+Proof.
+  intros pcAddrInit pcc mc mt Q HQ; unfold handleTrap;
+    repeat (lazymatch goal with
+            | |- allReturns (LetAction _ _ _) _ => simple apply allReturns_step_let; intro
+            | |- allReturns (LetExp _ _ _) _ => simple apply allReturns_step_letexp
+            | |- allReturns (IfElse _ _ _ _ (fun v => Return (Var _ _ v))) _ => simple apply allReturns_IfElse_Ret
+            | |- allReturns (IfElse _ _ _ _ _) _ => simple apply allReturns_IfElse_any; intro
+            | |- allReturns (Return _) _ => cbn [allReturns]
+            end);
+    apply HQ; reflexivity.
+Qed.
+
+(* The dataMem output of `executeNonSequential`: only a DataMem op makes a request (its payload),
+ * and fence.i is requested exactly by a fence request with the FenceI flag *)
+Lemma nonSeq_dm :
+  forall pcAddrInit {env : Env (rfTree pcAddrInit)} (pcc : type FullECapWithTag) meip mtip (a : type AluOutUnion)
+         (rf rf' : RfState pcAddrInit) (x : type ExecuteOut),
+    aluIsSeq a = false ->
+    SemAction env (@executeNonSequential pcAddrInit type pcc meip mtip a) rf rf' x ->
+    (optValid (execDataMem x) = true -> aluIsMemOrFence a = true /\ optData (execDataMem x) = nsDm a) /\
+    execIsFenceIRq x = andb (optValid (execDataMem x)) (opIsFenceI (optData (execDataMem x))).
+Proof.
+  intros pcAddrInit env pcc meip mtip a rf rf' x Hns Hsem.
+  refine (allReturns_SemAction _ rf rf' x
+            (fun r => (optValid (execDataMem r) = true -> aluIsMemOrFence a = true /\ optData (execDataMem r) = nsDm a) /\
+                      execIsFenceIRq r = andb (optValid (execDataMem r)) (opIsFenceI (optData (execDataMem r))))
+            _ Hsem).
+  unfold executeNonSequential.
+  do 6 (simple apply allReturns_step_letexp).
+  apply allReturns_IfElse_Ret_cond; intros Hexc.
+  - do 3 (simple apply allReturns_step_letexp).
+    apply allReturns_handleTrap_nf; intros r Hdm Hfi.
+    split; [intros H; rewrite Hdm in H; discriminate H | rewrite Hfi, Hdm; reflexivity].
+  - simple apply allReturns_step_let; intros _.
+    simple apply allReturns_step_let; intros _.
+    simple apply allReturns_step_letexp.
+    apply allReturns_IfElse_Ret_cond; intros Hdmt.
+    + simple apply allReturns_step_letexp.
+      apply allReturns_IfElse_cond; intros Hmem; repeat step_allReturns.
+      * split; [intros _; split; [exact (memOrFence_of_tags a Hns Hexc Hdmt) | reflexivity] |].
+        exact (eq_sym (fenceI_mem _ Hmem)).
+      * split; [intros _; split; [exact (memOrFence_of_tags a Hns Hexc Hdmt) | reflexivity] |].
+        exact (eq_sym (fenceI_fence _ Hmem)).
+    + repeat step_allReturns;
+        (split; [intros H; change (false = true) in H; discriminate H | reflexivity]).
+Qed.
+
+(* The appended entry's request and fence.i flag, from the execute output *)
+Lemma entryReq_exec :
+  forall fo meip mtip (a : type AluOutUnion) (x : type ExecuteOut),
+    optValid (execDataMem x) = true -> entryReq (mkGEntry fo meip mtip a (execDataMem x)) = Some (execDmReq a x).
+Proof. intros fo meip mtip a x Hv; unfold entryReq; cbn [ge_dm ge_aluOut]; rewrite Hv; reflexivity. Qed.
+
+Lemma entryIsFenceI_exec :
+  forall fo meip mtip (a : type AluOutUnion) (x : type ExecuteOut),
+    entryIsFenceI (mkGEntry fo meip mtip a (execDataMem x)) =
+    andb (optValid (execDataMem x)) (opIsFenceI (optData (execDataMem x))).
+Proof.
+  intros fo meip mtip a x; unfold entryIsFenceI, entryReq; cbn [ge_dm ge_aluOut].
+  destruct (optValid (execDataMem x)); reflexivity.
+Qed.
+
+Lemma fip_after : forall (b fip : bool) e, fip = false -> b = entryIsFenceI e -> (if b then true else fip) = entryIsFenceI e.
+Proof. intros b fip e -> ->; destruct (entryIsFenceI e); reflexivity. Qed.
+
+(* --- Non-Sequential Instructions: the Next PCC Without a Redirect --- *)
+
+Definition nsCfScrCsr (a : type AluOutUnion) : type CfScrCsrUnion :=
+  let noExc : type NoExceptionUnion := nsNoExc a in
+  evalExpr (#noExc `! "CfScrCsr").
+Definition nsCf (a : type AluOutUnion) : type CfPayload :=
+  let cfScrCsr : type CfScrCsrUnion := nsCfScrCsr a in
+  evalExpr (#cfScrCsr `! "ControlFlow").
+(* the op is a ControlFlow op (given no exception) *)
+Definition nsIsCf (a : type AluOutUnion) : bool :=
+  let noExc : type NoExceptionUnion := nsNoExc a in
+  let cfScrCsr : type CfScrCsrUnion := nsCfScrCsr a in
+  andb (negb (evalExpr (#noExc `? "DataMem"))) (negb (evalExpr (#cfScrCsr `? "ScrCsr"))).
+
+(* ALU fact A2 (to be proven from the ControlFlow unit): a ControlFlow payload that does not change
+ * the capability keeps the PCC's tag (taken branch, jal) and is a jalr with the PCC's tag and
+ * ecap otherwise (an mret always changes it) *)
+Definition CfOK (pcc : type FullECapWithTag) (cf : type CfPayload) : Prop :=
+  let newPcc : type FullECapWithTag := evalExpr (##cf`"NewPcc") in
+  let cfOp : type CfOp := evalExpr (##cf`"CfOp") in
+  let ao : type ControlFlowAddrOnlyOp := evalExpr (#cfOp `! "ControlFlowAddrOnly") in
+  let ae : type ControlFlowAddrECap := evalExpr (#cfOp `! "ControlFlowAddrECap") in
+  let aeOp : type ControlFlowAddrECapOp := evalExpr (##ae`"op") in
+  evalExpr (##cf`"capChanged") = false ->
+  (evalExpr (#cfOp `? "ControlFlowAddrOnly") = true ->
+     (evalExpr (#ao `? "Branch") = true -> evalExpr (#ao `! "Branch") = true -> newPcc.(Fst) = pcc.(Fst)) /\
+     (evalExpr (#ao `? "Branch") = false -> newPcc.(Fst) = pcc.(Fst))) /\
+  (evalExpr (#cfOp `? "ControlFlowAddrOnly") = false ->
+     evalExpr (#aeOp `? "Cjalr") = true /\ newPcc.(Fst) = pcc.(Fst) /\ newPcc.(Snd).(Fst) = pcc.(Snd).(Fst)).
+
+Lemma getSeqPcc_keep :
+  forall (pcc : type FullECapWithTag) (b : bool),
+    (evalExpr (@Alu.getSeqPcc type pcc b)).(Fst) = pcc.(Fst) /\
+    (evalExpr (@Alu.getSeqPcc type pcc b)).(Snd).(Fst) = pcc.(Snd).(Fst).
+Proof. intros [t [e [ad u]]] b; destruct u; split; reflexivity. Qed.
+
+Lemma exc_of_tags :
+  forall a : type AluOutUnion,
+    aluIsSeq a = false -> evalExpr ((Var type NonSequentialUnion (nsOp a)) `? "Exception") = true -> aluIsExc a = true.
+Proof.
+  intros a Hns Hexc.
+  assert (Hnsq : evalExpr ((Var type AluOpUnion (evalExpr (##a`"Op"))) `? "NonSequential") = true)
+    by (apply bits1_eqb_0_false_1_true; exact Hns).
+  assert (E : aluIsExc a = andb (andb true (evalExpr ((Var type AluOpUnion (evalExpr (##a`"Op"))) `? "NonSequential")))
+                                (evalExpr ((Var type NonSequentialUnion (nsOp a)) `? "Exception"))) by reflexivity.
+  rewrite E, Hnsq, Hexc; reflexivity.
+Qed.
+
+Lemma isCf_of_tags :
+  forall a : type AluOutUnion,
+    evalExpr ((Var type NoExceptionUnion (nsNoExc a)) `? "DataMem") = false ->
+    evalExpr ((Var type CfScrCsrUnion (nsCfScrCsr a)) `? "ScrCsr") = false ->
+    nsIsCf a = true.
+Proof.
+  intros a H1 H2.
+  assert (E : nsIsCf a = andb (negb (evalExpr ((Var type NoExceptionUnion (nsNoExc a)) `? "DataMem")))
+                              (negb (evalExpr ((Var type CfScrCsrUnion (nsCfScrCsr a)) `? "ScrCsr")))) by reflexivity.
+  rewrite E, H1, H2; reflexivity.
+Qed.
+
+(* An mret payload changes the capability (over a variable payload, so the conversion through
+ * the NewPcc update stays cheap) *)
+Lemma mret_contra :
+  forall (pcc : type FullECapWithTag) (cf : type CfPayload) (mePcc : type FullECapWithTag),
+    CfOK pcc cf ->
+    (let cfOp : type CfOp := evalExpr (##cf`"CfOp") in evalExpr (#cfOp `? "ControlFlowAddrOnly") = false) ->
+    (let cfOp : type CfOp := evalExpr (##cf`"CfOp") in
+     let ae : type ControlFlowAddrECap := evalExpr (#cfOp `! "ControlFlowAddrECap") in
+     let aeOp : type ControlFlowAddrECapOp := evalExpr (##ae`"op") in
+     evalExpr (#aeOp `? "Cjalr") = false) ->
+    (let cfo : type CfPayload := evalExpr ((Var type CfPayload cf) `{ "NewPcc" <- Var type FullECapWithTag mePcc }) in
+     evalExpr (##cfo`"capChanged") = false) ->
+    False.
+Proof.
+  intros pcc cf mePcc Hok Hao Hcj Hcc; cbv zeta in Hao, Hcj, Hcc.
+  destruct (proj2 (Hok Hcc) Hao) as [Hcj' _].
+  rewrite Hcj in Hcj'; discriminate Hcj'.
+Qed.
+
+(* Without a redirect the next PCC keeps the PCC's tag and ecap *)
+Lemma nonSeq_pcc :
+  forall pcAddrInit {env : Env (rfTree pcAddrInit)} (pcc : type FullECapWithTag) meip mtip (a : type AluOutUnion)
+         (rf rf' : RfState pcAddrInit) (x : type ExecuteOut) (predPc : type Addr),
+    aluIsSeq a = false ->
+    (nsIsCf a = true -> CfOK pcc (nsCf a)) ->
+    SemAction env (@executeNonSequential pcAddrInit type pcc meip mtip a) rf rf' x ->
+    execRedirect a x predPc = false ->
+    (execNextPcc x).(Fst) = pcc.(Fst) /\ (execNextPcc x).(Snd).(Fst) = pcc.(Snd).(Fst).
+Proof.
+  intros pcAddrInit env pcc meip mtip a rf rf' x predPc Hns Hcf Hsem.
+  refine (allReturns_SemAction _ rf rf' x
+            (fun r => execRedirect a r predPc = false ->
+                      (execNextPcc r).(Fst) = pcc.(Fst) /\ (execNextPcc r).(Snd).(Fst) = pcc.(Snd).(Fst)) _ Hsem).
+  unfold executeNonSequential.
+  do 6 (simple apply allReturns_step_letexp).
+  apply allReturns_IfElse_Ret_cond; intros Hexc.
+  - (* an exception redirects *)
+    do 3 (simple apply allReturns_step_letexp).
+    apply allReturns_handleTrap_nf; intros r _ _ Hr; exfalso.
+    destruct (noRedirect_facts a r predPc Hr) as [Hx _].
+    rewrite (exc_of_tags a Hns Hexc) in Hx; discriminate Hx.
+  - simple apply allReturns_step_let; intros _.
+    simple apply allReturns_step_let; intros _.
+    simple apply allReturns_step_letexp.
+    apply allReturns_IfElse_Ret_cond; intros Hdmt.
+    + repeat step_allReturns; intros _; exact (getSeqPcc_keep pcc a.(Fst)).
+    + simple apply allReturns_step_letexp.
+      apply allReturns_IfElse_Ret_cond; intros Hsc.
+      * repeat step_allReturns; intros _; exact (getSeqPcc_keep pcc a.(Fst)).
+      * pose proof (Hcf (isCf_of_tags a Hdmt Hsc)) as Hok0; pose proof Hok0 as Hok.
+        unfold CfOK in Hok; cbv zeta in Hok.
+        do 3 (simple apply allReturns_step_letexp).
+        simple apply allReturns_step_let; intros ?.
+        simple apply allReturns_IfElse_any; intros _.
+        apply allReturns_IfElse_Ret_cond; intros Hao.
+        -- simple apply allReturns_step_letexp.
+           apply allReturns_IfElse_cond; intros Hbr; repeat step_allReturns; intros Hr;
+             destruct (noRedirect_facts a _ predPc Hr) as [_ [Hcc _]];
+             destruct (proj1 (Hok (Hcc eq_refl)) Hao) as [Hb Hj].
+           ++ match goal with |- context [evalExpr (ITE (Var _ _ ?t) _ _)] => destruct t eqn:Et end.
+              ** split; [exact (Hb Hbr Et) | reflexivity].
+              ** exact (getSeqPcc_keep pcc a.(Fst)).
+           ++ split; [exact (Hj Hbr) | reflexivity].
+        -- do 2 (simple apply allReturns_step_letexp).
+           apply allReturns_IfElse_Ret_cond; intros Hcj.
+           ++ repeat step_allReturns; intros Hr; destruct (noRedirect_facts a _ predPc Hr) as [_ [Hcc _]].
+              destruct (proj2 (Hok (Hcc eq_refl)) Hao) as [_ [Ht He]]; split; [exact Ht | exact He].
+           ++ simple apply allReturns_step_let; intros mePcc.
+              repeat step_allReturns; intros Hr; destruct (noRedirect_facts a _ predPc Hr) as [_ [Hcc _]].
+              exfalso; exact (mret_contra pcc (nsCf a) mePcc Hok0 Hao Hcj (Hcc eq_refl)).
+Qed.
+
+(* Virtual CSR tests. Comparing the stage's `And` shape with an `andb` shape by conversion is
+ * exponential in the depth (12 s at 6 levels), so `virtCsr_eq` first rewrites `And` into `andb`
+ * with `evalExpr_And2` (proven over variables) and then compares equal shapes. *)
+Lemma evalExpr_And2 :
+  forall (x : bool) (y : Expr type Bool), evalExpr (And [Var type Bool x; y]) = andb x (evalExpr y).
+Proof. intros x y; reflexivity. Qed.
+
+Lemma bits1_eqb_0_true_1_false :
+  forall (b : bits 1), Zmod.eqb b (Zmod.of_Z (2 ^ 1) 0) = true -> Zmod.eqb b (Zmod.of_Z (2 ^ 1) 1) = false.
+Proof. intros b Hb; apply Zmod.eqb_eq in Hb; subst b; reflexivity. Qed.
+
+Definition vcScr (a : type AluOutUnion) : type ScrCsrPayload :=
+  let c : type CfScrCsrUnion := nsCfScrCsr a in evalExpr (#c `! "ScrCsr").
+Definition vcDest (a : type AluOutUnion) : type (TaggedUnion ScrCsrIdx) :=
+  let s : type ScrCsrPayload := vcScr a in evalExpr (##s`"SpecialDest").
+
+(* The stage's virtual CSR test is the relation's `isVirtualCsrAluOut` *)
+Lemma virtCsr_eq : forall a : type AluOutUnion, aluIsVirtCsr a = isVirtualCsrAluOut a.
+Proof.
+  intros a; unfold aluIsVirtCsr, isVirtualCsrAluOut; cbv beta zeta.
+  rewrite !evalExpr_And2; reflexivity.
+Qed.
+
+(* A dataMem op is not a virtual CSR read (the NoException tags DataMem and CfScrCsr exclude each
+ * other) *)
+Lemma memOrFence_virt_excl :
+  forall a : type AluOutUnion, aluIsMemOrFence a = true -> aluIsVirtCsr a = false.
+Proof.
+  intros a H.
+  pose (ns := evalExpr ((Var type AluOpUnion (evalExpr (##a`"Op"))) `? "NonSequential")).
+  pose (ne := evalExpr ((Var type NonSequentialUnion (nsOp a)) `? "NoException")).
+  pose (dm := evalExpr ((Var type NoExceptionUnion (nsNoExc a)) `? "DataMem")).
+  pose (cs := evalExpr ((Var type NoExceptionUnion (nsNoExc a)) `? "CfScrCsr")).
+  pose (sc := evalExpr ((Var type CfScrCsrUnion (nsCfScrCsr a)) `? "ScrCsr")).
+  pose (csr := evalExpr ((Var type (TaggedUnion ScrCsrIdx) (vcDest a)) `? "Csr")).
+  pose (v := evalExpr (@csrIdxIsVirtual type (evalExpr ((Var type (TaggedUnion ScrCsrIdx) (vcDest a)) `! "Csr")))).
+  assert (E : aluIsMemOrFence a = andb (andb true (andb (andb true ns) ne)) dm) by reflexivity.
+  assert (Hdm : dm = true) by (rewrite E in H; apply andb_true_iff in H as [_ H]; exact H).
+  assert (Hcs : cs = false) by (apply bits1_eqb_0_true_1_false; exact Hdm).
+  assert (E2 : isVirtualCsrAluOut a = andb (andb (andb (andb (andb ns ne) cs) sc) csr) v) by reflexivity.
+  rewrite virtCsr_eq, E2, Hcs, andb_false_r; reflexivity.
+Qed.
+
+(* ALU fact A1, ALU part: with no exception and a valid dataMem output, the op is the DataMem op
+ * and carries the routing's payload (the op equation by `reflexivity`, then three readbacks) *)
+Lemma alu_dm_payload :
+  forall ro : type AluOut,
+    ro.(Snd).(Snd).(Snd).(Fst).(Snd).(Fst) = false ->
+    ro.(Snd).(Snd).(Snd).(Snd).(Fst).(Snd).(Fst) = true ->
+    nsDm (evalLetExpr (@Alu type ro)) = ro.(Snd).(Snd).(Snd).(Snd).(Fst).(Fst).
+Proof.
+  intros ro He Hd.
+  destruct ro as [isComp [dstIdx [dstValue [[excD [excV []]] [[dmD [dmV []]] [md [cf [sc []]]]]]]]].
+  cbn [Fst Snd] in He, Hd |- *; subst excV dmV.
+  unfold nsDm, nsNoExc, nsOp; cbv zeta.
+  set (A := evalLetExpr (@Alu type _)).
+  assert (Eop : evalExpr (##A`"Op") =
+                evalExpr (UNION (AluOpUnionType, "NonSequential" ::=
+                  Var type NonSequentialUnion (evalExpr (UNION (NonSequentialUnionType, "NoException" ::=
+                    Var type NoExceptionUnion (evalExpr (UNION (NoExceptionUnionType, "DataMem" ::=
+                      Var type MemFenceUnion dmD))))))))) by reflexivity.
+  rewrite Eop; readback; readback; readback; reflexivity.
+Qed.
+
+(* ALU fact A1, ALU part: a DataMem op means no exception and a valid dataMem output *)
+Lemma alu_memOrFence_valid :
+  forall ro : type AluOut,
+    aluIsMemOrFence (evalLetExpr (@Alu type ro)) = true ->
+    ro.(Snd).(Snd).(Snd).(Fst).(Snd).(Fst) = false /\ ro.(Snd).(Snd).(Snd).(Snd).(Fst).(Snd).(Fst) = true.
+Proof.
+  intros ro.
+  destruct ro as [isComp [dstIdx [dstValue [[excD [excV []]] [[dmD [dmV []]] [md [[cfD [cfV []]] [[scD [scV []]] []]]]]]]]].
+  cbn [Fst Snd].
+  destruct excV.
+  - intros H; exfalso; revert H; unfold aluIsMemOrFence; cbv zeta.
+    set (A := evalLetExpr (@Alu type _)).
+    assert (Eop : evalExpr (##A`"Op") =
+                  evalExpr (UNION (AluOpUnionType, "NonSequential" ::=
+                    Var type NonSequentialUnion (evalExpr (UNION (NonSequentialUnionType, "Exception" ::=
+                      Var type ExceptionInfo excD)))))) by reflexivity.
+    rewrite Eop; readback; intros H; tag_contra H.
+  - destruct dmV; [intros _; split; reflexivity | intros H; exfalso; revert H].
+    unfold aluIsMemOrFence; cbv zeta.
+    set (A := evalLetExpr (@Alu type _)).
+    destruct cfV; [| destruct scV].
+    + assert (Eop : evalExpr (##A`"Op") =
+                    evalExpr (UNION (AluOpUnionType, "NonSequential" ::=
+                      Var type NonSequentialUnion (evalExpr (UNION (NonSequentialUnionType, "NoException" ::=
+                        Var type NoExceptionUnion (evalExpr (UNION (NoExceptionUnionType, "CfScrCsr" ::=
+                          Var type CfScrCsrUnion (evalExpr (ITE (Var type Bool true)
+                            (UNION (CfScrCsrType, "ControlFlow" ::= Var type CfPayload cfD))
+                            (UNION (CfScrCsrType, "ScrCsr" ::= Var type ScrCsrPayload scD)))))))))))))
+        by reflexivity.
+      rewrite Eop; readback; readback; intros H; tag_contra H.
+    + assert (Eop : evalExpr (##A`"Op") =
+                    evalExpr (UNION (AluOpUnionType, "NonSequential" ::=
+                      Var type NonSequentialUnion (evalExpr (UNION (NonSequentialUnionType, "NoException" ::=
+                        Var type NoExceptionUnion (evalExpr (UNION (NoExceptionUnionType, "CfScrCsr" ::=
+                          Var type CfScrCsrUnion (evalExpr (ITE (Var type Bool false)
+                            (UNION (CfScrCsrType, "ControlFlow" ::= Var type CfPayload cfD))
+                            (UNION (CfScrCsrType, "ScrCsr" ::= Var type ScrCsrPayload scD)))))))))))))
+        by reflexivity.
+      rewrite Eop; readback; readback; intros H; tag_contra H.
+    + intros H; tag_contra H.
+Qed.
+
+(* ALU fact A1, DataMem part: neither a store nor a fence gives a load payload *)
+Lemma dm_unit_load :
+  forall (isLoad : bool) (cs1Perms cs2Perms : type CapPerms) (instv : type (Bit Xlen)) (storeTag : bool)
+         (storeCap : type Cap) (cs2Addr : type Addr),
+    opIsLoad (evalLetExpr (@DataMem type isLoad false false cs1Perms cs2Perms instv storeTag storeCap cs2Addr)).(Fst) = true.
+Proof.
+  intros isLoad cs1Perms cs2Perms instv storeTag storeCap cs2Addr.
+  pose (M := evalLetExpr (@LoadStore type cs1Perms cs2Perms (evalExpr (@getMemSize type instv))
+                            (evalExpr (FromBit Bool ((Var type (Bit Xlen) instv)`[14:14]))) isLoad false storeTag storeCap cs2Addr)).
+  assert (Ed : (evalLetExpr (@DataMem type isLoad false false cs1Perms cs2Perms instv storeTag storeCap cs2Addr)).(Fst) =
+               evalExpr (UNION (MemFenceType, "Mem" ::= Var type MemPayload M))) by reflexivity.
+  rewrite Ed; unfold opIsLoad, opMemPayload; cbv zeta.
+  readback; reflexivity.
+Qed.
+
+Lemma dm_unit_load' :
+  forall (l s f : bool) (c1 c2 : type CapPerms) (i : type (Bit Xlen)) (t : bool) (cap : type Cap) (a : type Addr),
+    s = false -> f = false -> opIsLoad (evalLetExpr (@DataMem type l s f c1 c2 i t cap a)).(Fst) = true.
+Proof. intros l s f c1 c2 i t cap a -> ->; apply dm_unit_load. Qed.
+
+(* ALU fact A1, ALU and routing parts: the destination index passes through the ALU; the routing
+ * zeroes it unless writesCd; without the store and fence flags the dataMem payload is a load *)
+Lemma alu_dstIdx : forall ro : type AluOut, aluDstIdx (evalLetExpr (@Alu type ro)) = ro.(Snd).(Fst).
+Proof. intros ro; reflexivity. Qed.
+
+Lemma routing_dstIdx :
+  forall (pcc : type FullECapWithTag) (aluIn : type AluIn),
+    aluIn.(Snd).(Snd).(Fst) = false -> (evalLetExpr (@AluRouting type pcc aluIn)).(Snd).(Fst) = Zmod.zero.
+Proof.
+  intros pcc aluIn H.
+  destruct aluIn as [rs [rc [wcd [inst0 [dexc [fexc [cs1 [cs2 [ctrl0 []]]]]]]]]].
+  cbn [Fst Snd] in H; subst wcd; reflexivity.
+Qed.
+
+Lemma routing_dm_load :
+  forall (pcc : type FullECapWithTag) (aluIn : type AluIn),
+    let ctrl : type AluControl := evalExpr (##aluIn`"aluControl") in
+    evalExpr (##ctrl`"Store") = false -> evalExpr (##ctrl`"DataMem_isFence") = false ->
+    opIsLoad ((evalLetExpr (@AluRouting type pcc aluIn)).(Snd).(Snd).(Snd).(Snd).(Fst)).(Fst) = true.
+Proof.
+  intros pcc aluIn; cbv zeta; intros Hs Hf.
+  apply dm_unit_load'; [exact Hs | exact Hf].
+Qed.
+
+(* ALU fact A1, plumbing: constructAluIn and the register read copy the decoder's fields *)
+Lemma constructAluIn_facts :
+  forall pkg : type AluInInstGroup,
+    let aluIn : type AluIn := evalLetExpr (@constructAluIn type pkg) in
+    let ctrl : type AluControl := evalExpr (##aluIn`"aluControl") in
+    let grp : type InstGroup := evalExpr (##pkg`"instGroup") in
+    aluIn.(Snd).(Snd).(Fst) = evalExpr (##pkg`"writesCd") /\
+    evalExpr (##ctrl`"Store") = evalExpr (##grp`"Store") /\
+    evalExpr (##ctrl`"DataMem_isFence") = evalExpr (##grp`"Fence").
+Proof. intros pkg aluIn ctrl grp; split; [| split]; reflexivity. Qed.
+
+Lemma regRead_facts :
+  forall pcAddrInit (rri : type RegReadIn) (rf : RfState pcAddrInit),
+    let pkg : type AluInInstGroup := evalRegRead pcAddrInit rri rf in
+    let dout : type DecodeOut := evalExpr (##rri`"decodeOut") in
+    evalExpr (##pkg`"writesCd") = evalExpr (##dout`"writesCd") /\
+    evalExpr (##pkg`"instGroup") = evalExpr (##dout`"instGroup").
+Proof. intros pcAddrInit rri rf pkg dout; split; reflexivity. Qed.
+
+Lemma bool_wcd :
+  forall nz br st fe ec eb mr : bool,
+    andb (andb true nz) (negb (orb (orb (orb (orb (orb (orb false br) st) fe) ec) eb) mr)) = true ->
+    st = false /\ fe = false.
+Proof. intros [] [] [] [] [] [] []; cbn; intros H; first [discriminate H | split; reflexivity]. Qed.
+
+(* ALU fact A1, decoder part: writesCd excludes stores and fences (Decoder.v line 259) *)
+Lemma decode_writesCd :
+  forall fo : type FetchOut,
+    let rri : type RegReadIn := evalDecode fo in
+    let dout : type DecodeOut := evalExpr (##rri`"decodeOut") in
+    let grp : type InstGroup := evalExpr (##dout`"instGroup") in
+    evalExpr (##dout`"writesCd") = true -> evalExpr (##grp`"Store") = false /\ evalExpr (##grp`"Fence") = false.
+Proof.
+  intros fo rri dout grp H.
+  assert (E : evalExpr (##dout`"writesCd") =
+              andb (andb true (evalExpr (isNotZero (Var type (Bit RegIdxSzReal)
+                     (evalExpr (TruncLsb (RegIdxSz - RegIdxSzReal) RegIdxSzReal
+                        (Var type (Bit RegIdxSz) (evalExpr (@getCd type (evalExpr (##fo`"inst")))))))))))
+                   (negb (orb (orb (orb (orb (orb (orb false (evalExpr (##grp`"Branch"))) (evalExpr (##grp`"Store")))
+                      (evalExpr (##grp`"Fence"))) (evalExpr (##grp`"ECall"))) (evalExpr (##grp`"EBreak")))
+                      (evalExpr (##grp`"Mret"))))) by reflexivity.
+  rewrite E in H; exact (bool_wcd _ _ _ _ _ _ _ H).
+Qed.
+
+(* ALU fact A1: a dataMem request that is not a load has destination 0 (the decoder's writesCd
+ * excludes stores and fences; the routing zeroes the destination unless writesCd) *)
+Lemma aluFact_A1 :
+  forall pcAddrInit (pcc : type FullECapWithTag) (fo : type FetchOut) (rf : RfState pcAddrInit),
+    let a := evalAluOut pcc (evalRegRead pcAddrInit (evalDecode fo) rf) in
+    aluIsMemOrFence a = true -> opIsLoad (nsDm a) = false -> aluDstIdx a = Zmod.zero.
+Proof.
+  intros pcAddrInit pcc fo rf; cbv zeta.
+  unfold evalAluOut; rewrite df_wrappedAlu_unfold.
+  pose proof (regRead_facts pcAddrInit (evalDecode fo) rf) as [Rw Rg]; cbv zeta in Rw, Rg.
+  pose proof (constructAluIn_facts (evalRegRead pcAddrInit (evalDecode fo) rf)) as [Cw [Cs Cf]];
+    cbv zeta in Cw, Cs, Cf.
+  pose proof (decode_writesCd fo) as D; cbv zeta in D.
+  set (ro := evalLetExpr (@AluRouting type pcc (evalLetExpr (@constructAluIn type (evalRegRead pcAddrInit (evalDecode fo) rf))))).
+  intros Hmf Hnl.
+  rewrite alu_dstIdx.
+  destruct (alu_memOrFence_valid ro Hmf) as [He Hd].
+  rewrite (alu_dm_payload ro He Hd) in Hnl.
+  match type of D with ?W = true -> _ =>
+    assert (Hdec : W = true \/ W = false) by (destruct W; [left | right]; reflexivity) end.
+  destruct Hdec as [Ew | Ew].
+  - destruct (D Ew) as [Ds Df]; exfalso.
+    assert (Hl : opIsLoad (ro.(Snd).(Snd).(Snd).(Snd).(Fst)).(Fst) = true).
+    { apply routing_dm_load; [rewrite Cs, Rg; exact Ds | rewrite Cf, Rg; exact Df]. }
+    rewrite Hl in Hnl; discriminate Hnl.
+  - apply routing_dstIdx; rewrite Cw, Rw; exact Ew.
+Qed.
+
+(* ALU fact A2, ALU part: a ControlFlow op (not sequential, no exception) means no exception, no
+ * dataMem output and a valid ControlFlow output, and it carries the routing's payload *)
+Lemma alu_cf_valid :
+  forall ro : type AluOut,
+    let a := evalLetExpr (@Alu type ro) in
+    aluIsSeq a = false -> aluIsExc a = false -> nsIsCf a = true ->
+    ro.(Snd).(Snd).(Snd).(Fst).(Snd).(Fst) = false /\ ro.(Snd).(Snd).(Snd).(Snd).(Fst).(Snd).(Fst) = false /\
+    ro.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).(Snd).(Fst) = true.
+Proof.
+  intros ro; cbv zeta.
+  destruct ro as [isComp [dstIdx [dstValue [[excD [excV []]] [[dmD [dmV []]] [md [[cfD [cfV []]] [[scD [scV []]] []]]]]]]]].
+  cbn [Fst Snd].
+  destruct excV.
+  - intros _ He _; exfalso; revert He; unfold aluIsExc; cbv zeta.
+    set (A := evalLetExpr (@Alu type _)).
+    assert (Eop : evalExpr (##A`"Op") =
+      evalExpr (UNION (AluOpUnionType, "NonSequential" ::= Var type NonSequentialUnion (evalExpr (UNION (NonSequentialUnionType, "Exception" ::= Var type ExceptionInfo excD)))))) by reflexivity.
+    rewrite Eop; readback; intros He; tag_contra He.
+  - destruct dmV.
+    + intros _ _ Hc; exfalso; revert Hc; unfold nsIsCf, nsCfScrCsr, nsNoExc, nsOp; cbv zeta.
+      set (A := evalLetExpr (@Alu type _)).
+    assert (Eop : evalExpr (##A`"Op") =
+      evalExpr (UNION (AluOpUnionType, "NonSequential" ::= Var type NonSequentialUnion (evalExpr (UNION (NonSequentialUnionType, "NoException" ::= Var type NoExceptionUnion (evalExpr (UNION (NoExceptionUnionType, "DataMem" ::= Var type MemFenceUnion dmD))))))))) by reflexivity.
+      rewrite Eop; readback; readback; intros Hc; tag_contra Hc.
+    + destruct cfV; [intros _ _ _; split; [| split]; reflexivity |].
+      destruct scV.
+      * intros _ _ Hc; exfalso; revert Hc; unfold nsIsCf, nsCfScrCsr, nsNoExc, nsOp; cbv zeta.
+        set (A := evalLetExpr (@Alu type _)).
+    assert (Eop : evalExpr (##A`"Op") =
+      evalExpr (UNION (AluOpUnionType, "NonSequential" ::= Var type NonSequentialUnion (evalExpr (UNION (NonSequentialUnionType, "NoException" ::= Var type NoExceptionUnion (evalExpr (UNION (NoExceptionUnionType, "CfScrCsr" ::= Var type CfScrCsrUnion (evalExpr (UNION (CfScrCsrType, "ScrCsr" ::= Var type ScrCsrPayload scD)))))))))))) by reflexivity.
+        rewrite Eop; readback; readback; readback; intros Hc; tag_contra Hc.
+      * intros Hs _ _; exfalso; tag_contra Hs.
+Qed.
+
+Lemma alu_cf_payload :
+  forall ro : type AluOut,
+    ro.(Snd).(Snd).(Snd).(Fst).(Snd).(Fst) = false ->
+    ro.(Snd).(Snd).(Snd).(Snd).(Fst).(Snd).(Fst) = false ->
+    ro.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).(Snd).(Fst) = true ->
+    nsCf (evalLetExpr (@Alu type ro)) = ro.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).(Fst).
+Proof.
+  intros ro He Hd Hc.
+  destruct ro as [isComp [dstIdx [dstValue [[excD [excV []]] [[dmD [dmV []]] [md [[cfD [cfV []]] [sc0 []]]]]]]]].
+  cbn [Fst Snd] in He, Hd, Hc |- *; subst excV dmV cfV.
+  unfold nsCf, nsCfScrCsr, nsNoExc, nsOp; cbv zeta.
+  set (A := evalLetExpr (@Alu type _)).
+    assert (Eop : evalExpr (##A`"Op") =
+      evalExpr (UNION (AluOpUnionType, "NonSequential" ::= Var type NonSequentialUnion (evalExpr (UNION (NonSequentialUnionType, "NoException" ::= Var type NoExceptionUnion (evalExpr (UNION (NoExceptionUnionType, "CfScrCsr" ::= Var type CfScrCsrUnion (evalExpr (UNION (CfScrCsrType, "ControlFlow" ::= Var type CfPayload cfD)))))))))))) by reflexivity.
+  rewrite Eop; readback; readback; readback; readback; reflexivity.
+Qed.
+
+Lemma isEq_true : forall k (x y : type k), @isEq k x y = true -> x = y.
+Proof. intros k x y H; destruct (isEq_BoolSpec x y) as [E | E]; [exact E | discriminate H]. Qed.
+
+(* ALU fact A2, ControlFlow unit: a jalr (no branch, no jal) has the Cjalr AddrECap op *)
+Lemma cf_unit_cjalr :
+  forall (isMret isCond : bool) (addrIn : type Addr) (inBounds cjalrTag : bool) (cjalrEcap : type ECap)
+         (cjalrIntStatus : type (Option Bool)) (pccTag : bool) (pccEcap : type ECap) (instv : type Inst),
+    let cf : type CfPayload := (evalLetExpr (@ControlFlow type isMret false true false isCond addrIn inBounds cjalrTag
+                                  cjalrEcap cjalrIntStatus pccTag pccEcap instv)).(Fst) in
+    let cfOp : type CfOp := evalExpr (##cf`"CfOp") in
+    let ae : type ControlFlowAddrECap := evalExpr (#cfOp `! "ControlFlowAddrECap") in
+    let aeOp : type ControlFlowAddrECapOp := evalExpr (##ae`"op") in
+    evalExpr (#aeOp `? "Cjalr") = true.
+Proof.
+  intros isMret isCond addrIn inBounds cjalrTag cjalrEcap cjalrIntStatus pccTag pccEcap instv.
+  assert (Eop : let cf : type CfPayload := (evalLetExpr (@ControlFlow type isMret false true false isCond addrIn
+                    inBounds cjalrTag cjalrEcap cjalrIntStatus pccTag pccEcap instv)).(Fst) in
+                evalExpr (##cf`"CfOp") = evalExpr (UNION (CfOpType, "ControlFlowAddrECap" ::= Var type ControlFlowAddrECap (evalExpr (STRUCT { "interruptStatus" ::= Var type (Option Bool) cjalrIntStatus ; "op" ::= ITE (Var type Bool true) (UNION (ControlFlowAddrECapOpType, "Cjalr" ::= Var type CjalrOp (evalExpr (STRUCT { "isCall" ::= Eq (@getCd type instv) $Cra ; "isReturn" ::= And [ isZero (@getCd type instv) ; Eq (@getCs1 type instv) $Cra ] })))) (UNION (ControlFlowAddrECapOpType, "Mret" ::= Const type (Bit 0) Zmod.zero)) }))))) by reflexivity.
+  cbv zeta in Eop |- *; rewrite Eop; readback; reflexivity.
+Qed.
+
+(* ALU fact A2, ControlFlow unit: the fields CfOK reads, over variables *)
+Lemma cf_unit_eqs :
+  forall (pcc : type FullECapWithTag) (isMret isCjal isCjalr isBranch isCond : bool) (addrIn : type Addr)
+         (inBounds cjalrTag : bool) (cjalrEcap : type ECap) (cjalrIntStatus : type (Option Bool)) (instv : type Inst),
+    let out := evalLetExpr (@ControlFlow type isMret isCjal isCjalr isBranch isCond addrIn inBounds cjalrTag
+                              cjalrEcap cjalrIntStatus pcc.(Fst) pcc.(Snd).(Fst) instv) in
+    let cf : type CfPayload := out.(Fst) in
+    let newPcc : type FullECapWithTag := evalExpr (##cf`"NewPcc") in
+    let pto : bool := evalExpr (caseDefault (k := Bool)
+                        [ (Or [ Var type Bool isBranch ; Var type Bool isCjal ], Var type Bool inBounds) ;
+                          (Var type Bool isCjalr, Var type Bool cjalrTag) ] (Var type Bool pcc.(Fst))) in
+    let taken : bool := orb (orb (orb false (andb (andb true isBranch) isCond)) isCjal) isCjalr in
+    out.(Snd).(Fst) = orb (orb (orb (orb false isBranch) isCjal) isCjalr) isMret /\
+    newPcc.(Fst) = pto /\ newPcc.(Snd).(Fst) = cjalrEcap /\
+    evalExpr (##cf`"capChanged") =
+      orb (orb (orb false (andb (andb true taken) (negb (@isEq Bool pto pcc.(Fst)))))
+               (andb (andb true isCjalr) (negb (@isEq ECap cjalrEcap pcc.(Snd).(Fst))))) isMret.
+Proof. intros; split; [| split; [| split]]; reflexivity. Qed.
+
+Lemma andb_negb_false : forall b p : bool, b = true -> andb (andb true b) (negb p) = false -> p = true.
+Proof. intros b p -> H; destruct p; [reflexivity | discriminate H]. Qed.
+
+(* `readback` with the payload's kind taken from the union (a constant payload has no inferable kind) *)
+Ltac readback2 :=
+  match goal with |- context [evalExpr (@ReadUnionData _ ?ls (Var ?ty ?k ?u) ?i)] =>
+    let w := strip_var u in
+    lazymatch w with evalExpr (BuildUnion _ (Var ?ty2 ?k2 ?x)) =>
+      replace (evalExpr (@ReadUnionData _ ls (Var ty k u) i)) with x
+        by (symmetry; exact (evalExpr_ReadUnionData_BuildUnion ls i (Var ty2 k2 x) eq_refl))
+    end
+  end.
+
+Ltac cf_taken Ht := intros _; split; [intros _ _ | intros _];
+  apply (isEq_true Bool); exact (andb_negb_false _ _ eq_refl Ht).
+
+(* ALU fact A2, ControlFlow unit: a valid payload satisfies CfOK *)
+Lemma cf_unit_ok :
+  forall (pcc : type FullECapWithTag) (isMret isCjal isCjalr isBranch isCond : bool) (addrIn : type Addr)
+         (inBounds cjalrTag : bool) (cjalrEcap : type ECap) (cjalrIntStatus : type (Option Bool)) (instv : type Inst),
+    let out := evalLetExpr (@ControlFlow type isMret isCjal isCjalr isBranch isCond addrIn inBounds cjalrTag
+                              cjalrEcap cjalrIntStatus pcc.(Fst) pcc.(Snd).(Fst) instv) in
+    out.(Snd).(Fst) = true -> CfOK pcc out.(Fst).
+Proof.
+  intros pcc isMret isCjal isCjalr isBranch isCond addrIn inBounds cjalrTag cjalrEcap cjalrIntStatus instv.
+  destruct (cf_unit_eqs pcc isMret isCjal isCjalr isBranch isCond addrIn inBounds cjalrTag cjalrEcap cjalrIntStatus instv)
+    as [Ev [Et [Ee Ecc]]].
+  cbv zeta in Ev, Et, Ee, Ecc |- *; intros Hv.
+  unfold CfOK; cbv zeta; intros Hcc.
+  rewrite Ecc in Hcc; rewrite Et, Ee.
+  apply orb_false_iff in Hcc as [Hcc Hm]; apply orb_false_iff in Hcc as [Hcc He].
+  apply orb_false_iff in Hcc as [_ Ht].
+  subst isMret.
+  destruct isBranch, isCjal, isCjalr.
+  - destruct isCond; (split; [cf_taken Ht | intros H; exfalso; tag_contra H]).
+  - destruct isCond; (split; [cf_taken Ht | intros H; exfalso; tag_contra H]).
+  - destruct isCond; (split; [cf_taken Ht | intros H; exfalso; tag_contra H]).
+  - destruct isCond; [split; [cf_taken Ht | intros H; exfalso; tag_contra H] |].
+    split; [| intros H; exfalso; tag_contra H].
+    assert (Eop : let cf : type CfPayload := (evalLetExpr (@ControlFlow type false false false true false addrIn
+                      inBounds cjalrTag cjalrEcap cjalrIntStatus pcc.(Fst) pcc.(Snd).(Fst) instv)).(Fst) in
+                  evalExpr (##cf`"CfOp") = evalExpr (UNION (CfOpType, "ControlFlowAddrOnly" ::= Var type ControlFlowAddrOnlyOp (evalExpr (UNION (ControlFlowAddrOnlyOpType, "Branch" ::= Var type Bool false)))))) by reflexivity.
+    cbv zeta in Eop; rewrite Eop; readback; readback2.
+    intros _; split; [intros _ H; discriminate H | intros H; exfalso; tag_contra H].
+  - split; [cf_taken Ht | intros H; exfalso; tag_contra H].
+  - split; [cf_taken Ht | intros H; exfalso; tag_contra H].
+  - split; [intros H; exfalso; tag_contra H |].
+    intros _; split; [exact (cf_unit_cjalr false isCond addrIn inBounds cjalrTag cjalrEcap cjalrIntStatus
+                               pcc.(Fst) pcc.(Snd).(Fst) instv) |].
+    split; [apply (isEq_true Bool); exact (andb_negb_false _ _ eq_refl Ht)
+           | apply (isEq_true ECap); exact (andb_negb_false _ _ eq_refl He)].
+  - exfalso; rewrite Ev in Hv; cbn in Hv; discriminate Hv.
+Qed.
+
 Section ExecMain.
   Variable pcAddrInit : Z.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
@@ -689,6 +1388,15 @@ Section ExecMain.
                                   mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation EXTA md := (extractMulDivEntries mulCapacity divCapacity mulStages divStages mulDivMode md).
   Local Abbreviation MDWF := (MulDivWf mulCapacity divCapacity mulStages divStages mulDivMode).
+  Local Abbreviation DmQueueRelA := (DmQueueRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+  Local Abbreviation FrontRelA := (FrontRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
+                                  initLine fwcs).
+  Local Abbreviation NoLiveA := (NoLive pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+  Local Abbreviation stDmFullA := (stDmFull pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
 
   (* --- 1. Facts the Branches Share --- *)
 
@@ -1199,5 +1907,492 @@ Section ExecMain.
         [exact Hw | rewrite Efe; reflexivity | rewrite Efe; reflexivity | exact Hwf'
         | rewrite Edm; exact W4 | exact Hwf5 | exact Ereg].
   Qed.
+
+  (* --- 6. Non-Sequential Instructions --- *)
+
+  Lemma nonSeq_semF :
+    forall (s1 : IState) (a : type AluOutUnion) (rfMid : RfSt) (x : type ExecuteOut) meip mtip,
+      evalIsInterruptPending pcAddrInit meip mtip (iRfA s1) = false ->
+      aluIsSeq a = false ->
+      (forall d v, In (d, v) (EXTA (iMdA s1)) -> Zmod.eqb d Zmod.zero = false ->
+                   Zmod.eqb (aluDstIdx a) Zmod.zero = false -> d <> aluDstIdx a) ->
+      SemAction defaultEnv (@executeNonSequential pcAddrInit type (iPccA s1) meip mtip a) (iRfA s1) rfMid x ->
+      SemAction defaultEnv (@executeNonDeferred pcAddrInit type (iPccA s1) meip mtip a) (iFlushA s1)
+        (flushMulDivCaps pcAddrInit (EXTA (iMdA s1)) rfMid) x.
+  Proof.
+    intros s1 a rfMid x meip mtip Hint Hns Hneq Hex.
+    rewrite (iFlush_of s1 _ _ eq_refl eq_refl).
+    apply SemAction_executeNonDeferred_flushMulDivCaps; [exact Hneq |].
+    exact (nonDeferred_of_nonSequential pcAddrInit defaultEnv _ meip mtip a (iRfA s1) rfMid x Hint Hns Hex).
+  Qed.
+
+  (* The flushed register file after the step (no mulDiv output; the engine is unchanged) *)
+  Lemma nonSeq_flush :
+    forall (s1 s1' : IState) (a : type AluOutUnion) (rfMid : RfSt) (x : type ExecuteOut),
+      optValid (execMulDiv x) = false ->
+      iRfA s1' = writePcc pcAddrInit (defNextPcc x) rfMid -> iMdA s1' = iMdA s1 ->
+      iFlushA s1' = specMulDivWb pcAddrInit a x
+                      (writePcc pcAddrInit (execNextPcc x) (flushMulDivCaps pcAddrInit (EXTA (iMdA s1)) rfMid)).
+  Proof.
+    intros s1 s1' a rfMid x Hmd Erf Emd.
+    rewrite specMulDivWb_noMd2 by exact Hmd.
+    rewrite (iFlush_of s1' _ _ Erf Emd).
+    symmetry; apply writePcc_flushMulDivCaps.
+  Qed.
+
+  (* A dataMem enqueue: the request joins the queue, the dataMem state is unchanged *)
+  Lemma dm_enq_facts :
+    forall (s1 s1' : IState) q,
+      fifo_wf (dataMem_fifo dataMemCapacity (iDmA s1)) ->
+      stDmFullA s1 = false ->
+      iDmA s1' = dm_withInputFifo dataMemCapacity (iDmA s1) (fifoEnqState (dm_inputFifo dataMemCapacity (iDmA s1)) q) ->
+      iDmBufA s1' = (iDmBufA s1 ++ [q])%list /\ iDmStA s1' = iDmStA s1 /\
+      fifo_wf (dataMem_fifo dataMemCapacity (iDmA s1')).
+  Proof.
+    intros s1 s1' q Hwf Hnf Edm.
+    unfold iDmBuf, iDmSt; rewrite Edm.
+    split; [| split; [reflexivity |]].
+    - exact (fifo_to_list_enq _ _ _ _ Hwf (fifo_notFull_lt _ _ _ Hwf Hnf)).
+    - exact (fifo_wf_enq _ _ _ _ Hwf).
+  Qed.
+
+  (* ... and the older writers gain the request's register if it is a load *)
+  Lemma olderWriters_enq :
+    forall (s1 s1' : IState) q,
+      iDmBufA s1' = (iDmBufA s1 ++ [q])%list -> iDmStA s1' = iDmStA s1 -> iMdA s1' = iMdA s1 ->
+      Permutation (olderWritersA s1')
+        (olderWritersA s1 ++ filter (fun d => negb (Zmod.eqb d Zmod.zero))
+                                   (if opIsLoad (mrOp q) then [mrDst q] else []))%list.
+  Proof.
+    intros s1 s1' q Ebuf Est Emd.
+    unfold olderWriters, dmInFlightDst; cbv zeta.
+    rewrite Ebuf, Est, Emd, <- filter_app; apply Permutation_filter_local.
+    rewrite filter_app, map_app; cbn [filter].
+    destruct (opIsLoad (mrOp q)); cbn [map].
+    - rewrite <- !app_assoc; do 2 apply Permutation_app_head; apply Permutation_app_comm.
+    - rewrite !app_nil_r; apply Permutation_refl.
+  Qed.
+
+  (* The scoreboard after a non-sequential step; `Hlv`/`Hrr` are the live-tail obligations of
+   * `ScoreRel_pop` (no redirect: `rr_step`, same epoch; redirect: the tail is stale) *)
+  Lemma rr_step :
+    forall (s1 s1' : IState) j tail fo_tail (a : type AluOutUnion) (rfM : RfSt) (x : type ExecuteOut) meip mtip,
+      a = evalAluOut (iPccA s1) (daAluIn j) ->
+      SemAction defaultEnv (@executeNonDeferred pcAddrInit type (iPccA s1) meip mtip a) (iFlushA s1) rfM x ->
+      iFlushA s1' = specMulDivWb pcAddrInit a x (writePcc pcAddrInit (execNextPcc x) rfM) ->
+      forall l1 j2 l2 fo,
+        tail = (l1 ++ j2 :: l2)%list -> nth_error fo_tail (length l1) = Some fo -> daLiveA s1' j2 = true ->
+        RegAvoidAll (olderWritersA s1 ++ d2aWriters (j :: l1)) (decCs1 fo) ->
+        RegAvoidAll (olderWritersA s1 ++ d2aWriters (j :: l1)) (decCs2 fo) ->
+        evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1') = evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1).
+  Proof.
+    intros s1 s1' j tail fo_tail a rfM x meip mtip Ha Hsem Efl l1 j2 l2 fo _ _ _ H1 H2; rewrite Efl.
+    exact (regRead_after_step pcAddrInit (iPccA s1) meip mtip a j l1 fo (olderWritersA s1) (iFlushA s1) rfM x
+             Ha Hsem H1 H2).
+  Qed.
+
+  Lemma score_clear :
+    forall g g' (s1 s1' : IState) j tail fo0 fo_tail,
+      ScoreRelA g s1 ->
+      iD2aA s1 = j :: tail -> g_d2aFo pcAddrInit g = fo0 :: fo_tail ->
+      iD2aA s1' = tail -> g_d2aFo pcAddrInit g' = fo_tail ->
+      iDmA s1' = iDmA s1 -> iMdA s1' = iMdA s1 ->
+      iWbA s1' = evalSetDstWaitBits (aluInWritesCd (daAluIn j)) (aluInCd (daAluIn j)) false (iWbA s1) ->
+      (forall y, In y tail -> daLiveA s1' y = true -> daLiveA s1 y = true) ->
+      (forall l1 j2 l2 fo, tail = (l1 ++ j2 :: l2)%list -> nth_error fo_tail (length l1) = Some fo ->
+         daLiveA s1' j2 = true ->
+         RegAvoidAll (olderWritersA s1 ++ d2aWriters (j :: l1)) (decCs1 fo) ->
+         RegAvoidAll (olderWritersA s1 ++ d2aWriters (j :: l1)) (decCs2 fo) ->
+         evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1') = evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1)) ->
+      ScoreRelA g' s1'.
+  Proof.
+    intros g g' s1 s1' j tail fo0 fo_tail Hsc Ed2a Efo Ed2a' Efo' Edm Emd Ewb Hlv Hrr.
+    pose proof (IMPL olderWriters_ext s1 s1' Edm Emd) as Eow.
+    pose proof Hsc as Hsc0; destruct Hsc0 as [Hnd [Hwb _]].
+    rewrite Ed2a in Hnd, Hwb.
+    apply (IMPL ScoreRel_pop g g' s1 s1' j tail fo0 fo_tail
+             (if Zmod.eqb (d2aDst j) Zmod.zero then [] else [d2aDst j]) Hsc Ed2a Efo Ed2a' Efo');
+      [| | | exact Hlv | exact Hrr].
+    - rewrite Eow, d2aWriters_cons; apply Permutation_app_head, Permutation_app_comm.
+    - rewrite Eow, Ewb.
+      exact (waitBits_clear_head (iWbA s1) (olderWritersA s1) j tail (IMPL olderWriters_nz s1) Hnd Hwb).
+    - intros r Hr; rewrite Eow in Hr; apply in_or_app; left; exact Hr.
+  Qed.
+
+  (* A dataMem request keeps the wait bits: a load's register moves to the older writers; any
+   * other request has destination 0 (ALU fact A1) *)
+  Lemma score_dm :
+    forall g g' (s1 s1' : IState) j tail fo0 fo_tail q,
+      ScoreRelA g s1 ->
+      iD2aA s1 = j :: tail -> g_d2aFo pcAddrInit g = fo0 :: fo_tail ->
+      iD2aA s1' = tail -> g_d2aFo pcAddrInit g' = fo_tail ->
+      iDmBufA s1' = (iDmBufA s1 ++ [q])%list -> iDmStA s1' = iDmStA s1 -> iMdA s1' = iMdA s1 ->
+      iWbA s1' = iWbA s1 ->
+      mrDst q = d2aDst j ->
+      (opIsLoad (mrOp q) = false -> d2aDst j = Zmod.zero) ->
+      (forall y, In y tail -> daLiveA s1' y = true -> daLiveA s1 y = true) ->
+      (forall l1 j2 l2 fo, tail = (l1 ++ j2 :: l2)%list -> nth_error fo_tail (length l1) = Some fo ->
+         daLiveA s1' j2 = true ->
+         RegAvoidAll (olderWritersA s1 ++ d2aWriters (j :: l1)) (decCs1 fo) ->
+         RegAvoidAll (olderWritersA s1 ++ d2aWriters (j :: l1)) (decCs2 fo) ->
+         evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1') = evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1)) ->
+      ScoreRelA g' s1'.
+  Proof.
+    intros g g' s1 s1' j tail fo0 fo_tail q Hsc Ed2a Efo Ed2a' Efo' Ebuf Est Emd Ewb Edst Hst Hlv Hrr.
+    apply (IMPL ScoreRel_move_to_older g g' s1 s1' j tail fo0 fo_tail Hsc Ed2a Efo Ed2a' Efo');
+      [| exact Ewb | exact Hlv | exact Hrr].
+    eapply perm_trans; [exact (olderWriters_enq s1 s1' q Ebuf Est Emd) |].
+    apply Permutation_app_head; unfold d2aWriters; cbn [map].
+    destruct (opIsLoad (mrOp q)) eqn:El.
+    - rewrite Edst; apply Permutation_refl.
+    - rewrite (Hst eq_refl); cbn [filter]; rewrite Zmod.eqb_refl; cbn [negb]; apply Permutation_refl.
+  Qed.
+
+  (* Non-sequential, no virtual CSR read: ghost append. ALU facts A1 and A2 are premises until
+   * proven (guide: plan b). *)
+  Lemma exec_nonSeq_append :
+    forall g (s1 s1' : IState) (s2 : SState) (a : type AluOutUnion),
+      RELG g s1 s2 -> SemAction envI STAGE s1 s1' Zmod.zero ->
+      ex_canProceed (iExecA s1) = true -> (stHeadA s1).(Snd).(Fst) = true ->
+      daLiveA s1 (stHeadA s1).(Fst) = true -> stIntA s1 = false ->
+      a = stAluOutA s1 -> aluIsSeq a = false ->
+      nonSeqGuardV (aluIsMemOrFence a) (stDmFullA s1) (aluIsVirtCsr a) (stDmEmptyA s1) (stNoWrA s1) = true ->
+      isVirtualCsrAluOut a = false ->
+      (aluIsMemOrFence a = true -> opIsLoad (nsDm a) = false -> aluDstIdx a = Zmod.zero) ->
+      (aluIsExc a = false -> nsIsCf a = true -> CfOK (iPccA s1) (nsCf a)) ->
+      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' s1' s2'.
+  Proof.
+    intros g s1 s1' s2 a Hg Hsem Hcp Hv Hlive Hint Ha Hns Hgd Hnv HA1 HA2.
+    destruct (IMPL impl_nonSeq clint plic envI s1 s1' a Hsem Hcp Hv Hlive Hint Ha Hns Hgd)
+      as [rfMid [x [Hex [Erf [Emem [Ed2a' [Emd [Hred [Efip Hdmc]]]]]]]]].
+    pose proof (wf_d2a g s1 s2 Hg) as Hwf.
+    pose proof (head_of_valid s1 Hwf Hv) as Ed2a.
+    destruct (d2a_of_deq s1 s1' Hwf Ed2a') as [Ed2a2 Hwf'].
+    assert (Hlive' : daLiveA s1 (stJA s1) = true) by exact Hlive.
+    pose proof Hg as Hg0; destruct Hg0 as [_ Hm _ _ _ Hacc _ Hdq Hf Hs Hfr Hw _].
+    destruct (IMPL live_head_fence_facts clintS clint plicS plic fwcs g s1 s2 (stJA s1) (tl (iD2aA s1)) Hf Hm Ed2a Hlive')
+      as [Hfip _].
+    pose proof Hs as Hs0; destruct Hs0 as [Hnd [_ [Hlen Hreg]]].
+    rewrite Ed2a in Hlen, Hnd.
+    destruct (g_d2aFo pcAddrInit g) as [| fo0 fo_tail] eqn:Efo; [cbn [length] in Hlen; discriminate Hlen |].
+    destruct (Hreg [] (stJA s1) (tl (iD2aA s1)) fo0 Ed2a eq_refl Hlive') as [HaluIn _].
+    assert (Ha1 : a = evalAluOut (iPccA s1) (daAluIn (stJA s1))) by (rewrite Ha; apply stAluOut_eq).
+    assert (Ha2 : a = evalAluOut (iPccA s1) (evalRegRead pcAddrInit (evalDecode fo0) (iFlushA s1)))
+      by (rewrite <- HaluIn; exact Ha1).
+    assert (Ed : aluDstIdx a = d2aDst (stJA s1)) by (rewrite Ha1; apply d2aDst_aluDstIdx).
+    pose proof (eq_trans (eq_sym (stInt_eq s1)) Hint) as Hint1.
+    rewrite (stMeip_eq s1), (stMtip_eq s1) in Hint1, Hex.
+    assert (Hneq : forall d v, In (d, v) (EXTA (iMdA s1)) -> Zmod.eqb d Zmod.zero = false ->
+                     Zmod.eqb (aluDstIdx a) Zmod.zero = false -> d <> aluDstIdx a).
+    { intros d v Hin Hzd Hza Heq; subst d.
+      apply NoDup_app_iff in Hnd as [_ [_ Hdj]]; apply (Hdj (aluDstIdx a)).
+      - unfold olderWriters; apply filter_In; split; [| rewrite Hzd; reflexivity].
+        apply in_or_app; right; apply in_or_app; right.
+        change (aluDstIdx a) with (fst (aluDstIdx a, v)); apply in_map; exact Hin.
+      - rewrite Ed in Hza |- *; rewrite d2aWriters_cons, Hza; left; reflexivity. }
+    pose proof (executeNonSequential_mulDiv_none pcAddrInit _ _ _ _ _ _ _ Hex) as Hmd0.
+    destruct (nonSeq_dm pcAddrInit _ _ _ a _ _ _ Hns Hex) as [Hdm1 Hfi1].
+    pose proof (nonSeq_semF s1 a rfMid x _ _ Hint1 Hns Hneq Hex) as HsemF.
+    pose proof (nonSeq_flush s1 s1' a rfMid x Hmd0 Erf Emd) as Hfl.
+    pose proof (append_ginst s1 s1' fo0 a _ x Ha2 Hnv Hint1 HsemF Hfl) as Hstep.
+    set (e := mkGEntry fo0 (plicMeipOf (iPlicA s1)) (clintSampled (iClintA s1)) a (execDataMem x)) in Hstep.
+    set (g1 := mkGhost pcAddrInit (g_chain pcAddrInit g ++ [GInst e])%list (g_rf0 pcAddrInit g)
+                 (g_cnwb pcAddrInit g) (g_revOff pcAddrInit g) fo_tail (g_acc pcAddrInit g)).
+    assert (Ereg : iRegionsA s1' = iRegionsA s1) by (unfold iRegions; rewrite Emem; reflexivity).
+    assert (Epcc : iPccA s1' = defNextPcc x) by (rewrite (stPcc_eq s1'), Erf; apply readPcc_writePcc).
+    pose proof Hw as Hw0; destruct Hw0 as [_ [_ [_ [W4 [W5 _]]]]].
+    (* the dataMem request: queue, state and scoreboard *)
+    assert (HD : iDmStA s1' = iDmStA s1 /\ DmQueueRelA g1 s1' /\ fifo_wf (dataMem_fifo dataMemCapacity (iDmA s1')) /\
+                 ((forall y, In y (tl (iD2aA s1)) -> daLiveA s1' y = true -> daLiveA s1 y = true) ->
+                  (forall l1 j2 l2 fo, tl (iD2aA s1) = (l1 ++ j2 :: l2)%list -> nth_error fo_tail (length l1) = Some fo ->
+                     daLiveA s1' j2 = true ->
+                     RegAvoidAll (olderWritersA s1 ++ d2aWriters (stJA s1 :: l1)) (decCs1 fo) ->
+                     RegAvoidAll (olderWritersA s1 ++ d2aWriters (stJA s1 :: l1)) (decCs2 fo) ->
+                     evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1') = evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1)) ->
+                  ScoreRelA g1 s1')).
+    { assert (Hdec : optValid (execDataMem x) = true \/ optValid (execDataMem x) = false)
+        by (destruct (optValid (execDataMem x)); [left | right]; reflexivity).
+      destruct Hdec as [Hdv | Hdv]; rewrite Hdv in Hdmc; destruct Hdmc as [Ewb Edm].
+      - destruct (Hdm1 Hdv) as [Hmf Hpay].
+        destruct (dm_enq_facts s1 s1' (execDmReq a x) W4 (nonSeqGuard_dm _ _ _ _ _ Hgd Hmf) Edm) as [Ebuf [Est Hwfd]].
+        split; [exact Est | split; [| split; [exact Hwfd |]]].
+        + apply (IMPL DmQueueRel_snoc_some initLine g g1 s1 s1' s2 e (execDmReq a x) Hdq Hacc eq_refl eq_refl
+                   (entryReq_exec fo0 _ _ a x Hdv) Ebuf).
+        + intros Hlv Hrr.
+          apply (score_dm g g1 s1 s1' (stJA s1) (tl (iD2aA s1)) fo0 fo_tail (execDmReq a x) Hs Ed2a Efo Ed2a2 eq_refl
+                   Ebuf Est Emd Ewb Ed); [| exact Hlv | exact Hrr].
+          intros Hl; rewrite <- Ed; apply HA1; [exact Hmf | rewrite <- Hpay; exact Hl].
+      - split; [unfold iDmSt; rewrite Edm; reflexivity | split; [| split; [rewrite Edm; exact W4 |]]].
+        + apply (IMPL DmQueueRel_snoc_none g g1 s1 s1' e Hdq eq_refl eq_refl Hdv).
+          unfold iDmBuf; rewrite Edm; reflexivity.
+        + intros Hlv Hrr.
+          exact (score_clear g g1 s1 s1' (stJA s1) (tl (iD2aA s1)) fo0 fo_tail Hs Ed2a Efo Ed2a2 eq_refl Edm Emd Ewb
+                   Hlv Hrr). }
+    (* redirect or not: the live tail, the frontend and the fence flag *)
+    assert (HR : (forall y, In y (tl (iD2aA s1)) -> daLiveA s1' y = true -> daLiveA s1 y = true) /\
+                 (forall l1 j2 l2 fo, tl (iD2aA s1) = (l1 ++ j2 :: l2)%list -> nth_error fo_tail (length l1) = Some fo ->
+                    daLiveA s1' j2 = true ->
+                    RegAvoidAll (olderWritersA s1 ++ d2aWriters (stJA s1 :: l1)) (decCs1 fo) ->
+                    RegAvoidAll (olderWritersA s1 ++ d2aWriters (stJA s1 :: l1)) (decCs2 fo) ->
+                    evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1') = evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1)) /\
+                 FrontRelA g1 s1' s2 /\
+                 (entryIsFenceI e = true -> NoLiveA s1' /\ optValid (iStraddleA s1') = false) /\
+                 fetch_fetchBufFifo pcAddrInit fetchCapacity instCapacity (iFetchA s1') =
+                   fetch_fetchBufFifo pcAddrInit fetchCapacity instCapacity (iFetchA s1) /\
+                 fetch_instFifo pcAddrInit fetchCapacity instCapacity (iFetchA s1') =
+                   fetch_instFifo pcAddrInit fetchCapacity instCapacity (iFetchA s1)).
+    { assert (Hdec : execRedirect a x (daPredPc (stJA s1)) = true \/ execRedirect a x (daPredPc (stJA s1)) = false)
+        by (destruct (execRedirect a x (daPredPc (stJA s1))); [left | right]; reflexivity).
+      destruct Hdec as [Hr | Hr]; rewrite Hr in Hred; destruct Hred as [Eep Efe].
+      - assert (Eib : iInstBufA s1' = iInstBufA s1) by (unfold iInstBuf; rewrite Efe; reflexivity).
+        assert (Efb : iFetchBufA s1' = iFetchBufA s1) by (unfold iFetchBuf; rewrite Efe; reflexivity).
+        assert (Estr : optValid (iStraddleA s1') = false) by (unfold iStraddle; rewrite Efe; reflexivity).
+        assert (Efpc : iFetchPcA s1' = (iPccA s1').(Snd).(Snd).(Fst))
+          by (unfold iFetchPc, iPcc; rewrite Efe, Erf, readPcc_writePcc; reflexivity).
+        destruct (IMPL redirect_FrontRel_NoLive initLine fwcs g g1 s1 s1' s2 s2 (stJA s1) (tl (iD2aA s1))
+                    Hfr Ed2a Hlive' Ed2a2 Eib Efb Ereg Eep Estr Efpc) as [Hnl Hfr'].
+        assert (Hstale : forall y, In y (tl (iD2aA s1)) -> daLiveA s1' y = false).
+        { destruct Hnl as [Hnl0 _]; rewrite Ed2a2, Forall_forall in Hnl0; exact Hnl0. }
+        split; [intros y Hin Hy; rewrite (Hstale y Hin) in Hy; discriminate Hy |].
+        split; [intros l1 j2 l2 fo Hl1 _ Hy _ _; exfalso;
+                assert (Hin : In j2 (tl (iD2aA s1))) by (rewrite Hl1; apply in_or_app; right; left; reflexivity);
+                rewrite (Hstale j2 Hin) in Hy; discriminate Hy |].
+        split; [exact Hfr' | split; [intros _; split; [exact Hnl | exact Estr] |]].
+        split; rewrite Efe; reflexivity.
+      - destruct (noRedirect_facts a x _ Hr) as [Hexc [_ [Hfi0 Epc]]].
+        assert (Hnf : foFault fo0 = false) by exact (nonSeq_noFault pcAddrInit _ fo0 _ a Ha2 Hexc).
+        destruct (nonSeq_pcc pcAddrInit _ _ _ a _ _ x _ Hns (HA2 Hexc) Hex Hr) as [Et Ee].
+        split; [intros y _ Hy; unfold daLive in Hy |- *; rewrite Eep in Hy; exact Hy |].
+        split; [exact (rr_step s1 s1' (stJA s1) (tl (iD2aA s1)) fo_tail a _ x _ _ Ha1 HsemF Hfl) |].
+        split.
+        + apply (IMPL FrontRel_step_no_redirect initLine fwcs g g1 s1 s1' s2 (stJA s1) (tl (iD2aA s1)) fo0 fo_tail
+                   Hfr Ed2a Efo Hlive' Hnf Ed2a2 eq_refl Eep);
+            try (unfold iInstBuf, iFetchBuf, iFetchPc, iPredEpoch, iCurParcel, iStraddle; rewrite Efe; reflexivity);
+            try exact Ereg; rewrite Epcc; [exact Et | exact Ee | exact Epc].
+        + split; [| split; rewrite Efe; reflexivity].
+          intros Hfi; exfalso.
+          change (entryIsFenceI (mkGEntry fo0 (plicMeipOf (iPlicA s1)) (clintSampled (iClintA s1)) a (execDataMem x))
+                  = true) in Hfi.
+          rewrite entryIsFenceI_exec, <- Hfi1, Hfi0 in Hfi; discriminate Hfi. }
+    destruct HD as [Hdmst [Hdmq' [Hwfd Hsc']]].
+    destruct HR as [Hlv [Hrr [Hfr' [Hpost [Efb Eib]]]]].
+    apply (IMPL step_append_nonvirt clintS clint plicS plic initLine fwcs Hdisj
+             g s1 s1' s2 (stJA s1) (tl (iD2aA s1)) fo0 fo_tail e g1
+             Hg Ed2a Efo Hlive' eq_refl eq_refl eq_refl Hstep eq_refl Emem Hdmst Hdmq').
+    - apply (IMPL FenceRel_snoc_step clintS clint plicS plic fwcs g g1 s1 s1' s2 (stJA s1) (tl (iD2aA s1)) e
+               Hf Hm Ed2a Hlive' eq_refl Ereg); [| exact Hpost].
+      rewrite Efip; apply fip_after; [exact Hfip |].
+      exact (eq_trans Hfi1 (eq_sym (entryIsFenceI_exec fo0 (plicMeipOf (iPlicA s1)) (clintSampled (iClintA s1)) a x))).
+    - exact (Hsc' Hlv Hrr).
+    - exact Hfr'.
+    - eapply (IMPL WfRel_exec_step);
+        [exact Hw | exact Efb | exact Eib | exact Hwf' | exact Hwfd | rewrite Emd; exact W5 | exact Ereg].
+  Qed.
+
+  (* Non-sequential virtual CSR read: lockstep (dataMem is empty, so the spec catches up first) *)
+  Lemma exec_nonSeq_virt :
+    forall g (s1 s1' : IState) (s2 : SState) (a : type AluOutUnion),
+      RELG g s1 s2 -> SemAction envI STAGE s1 s1' Zmod.zero ->
+      ex_canProceed (iExecA s1) = true -> (stHeadA s1).(Snd).(Fst) = true ->
+      daLiveA s1 (stHeadA s1).(Fst) = true -> stIntA s1 = false ->
+      a = stAluOutA s1 -> aluIsSeq a = false ->
+      nonSeqGuardV (aluIsMemOrFence a) (stDmFullA s1) (aluIsVirtCsr a) (stDmEmptyA s1) (stNoWrA s1) = true ->
+      aluIsVirtCsr a = true ->
+      (aluIsExc a = false -> nsIsCf a = true -> CfOK (iPccA s1) (nsCf a)) ->
+      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' s1' s2'.
+  Proof.
+    intros g s1 s1' s2 a Hg Hsem Hcp Hv Hlive Hint Ha Hns Hgd Hvc HA2.
+    destruct (IMPL impl_nonSeq clint plic envI s1 s1' a Hsem Hcp Hv Hlive Hint Ha Hns Hgd)
+      as [rfMid [x [Hex [Erf [Emem [Ed2a' [Emd [Hred [Efip Hdmc]]]]]]]]].
+    pose proof (wf_d2a g s1 s2 Hg) as Hwf.
+    pose proof (head_of_valid s1 Hwf Hv) as Ed2a.
+    destruct (d2a_of_deq s1 s1' Hwf Ed2a') as [Ed2a2 Hwf'].
+    assert (Hlive' : daLiveA s1 (stJA s1) = true) by exact Hlive.
+    destruct (dm_quiet g s1 s2 Hg (nonSeqGuard_virt _ _ _ _ _ Hgd Hvc)) as [Hbuf [Hlrq [Hms Hnp]]].
+    pose proof Hg as Hg0; destruct Hg0 as [_ Hm _ _ _ _ _ _ Hf Hs _ _ _].
+    destruct (IMPL live_head_fence_facts clintS clint plicS plic fwcs g s1 s2 (stJA s1) (tl (iD2aA s1)) Hf Hm Ed2a Hlive')
+      as [Hfip _].
+    pose proof Hs as Hs0; destruct Hs0 as [Hnd [_ [Hlen Hreg]]].
+    rewrite Ed2a in Hlen, Hnd.
+    destruct (g_d2aFo pcAddrInit g) as [| fo0 fo_tail] eqn:Efo; [cbn [length] in Hlen; discriminate Hlen |].
+    destruct (Hreg [] (stJA s1) (tl (iD2aA s1)) fo0 Ed2a eq_refl Hlive') as [HaluIn _].
+    assert (Ha1 : a = evalAluOut (iPccA s1) (daAluIn (stJA s1))) by (rewrite Ha; apply stAluOut_eq).
+    assert (Ha2 : a = evalAluOut (iPccA s1) (evalRegRead pcAddrInit (evalDecode fo0) (iFlushA s1)))
+      by (rewrite <- HaluIn; exact Ha1).
+    assert (Ha0 : a = evalAluOut (readPcc pcAddrInit (iRfA s1)) (daAluIn (stJA s1)))
+      by (rewrite <- stPcc_eq; exact Ha1).
+    assert (Ed : aluDstIdx a = d2aDst (stJA s1)) by (rewrite Ha1; apply d2aDst_aluDstIdx).
+    pose proof (eq_trans (eq_sym (stInt_eq s1)) Hint) as Hint1.
+    rewrite (stMeip_eq s1), (stMtip_eq s1) in Hint1, Hex.
+    assert (Hneq : forall d v, In (d, v) (EXTA (iMdA s1)) -> Zmod.eqb d Zmod.zero = false ->
+                     Zmod.eqb (aluDstIdx a) Zmod.zero = false -> d <> aluDstIdx a).
+    { intros d v Hin Hzd Hza Heq; subst d.
+      apply NoDup_app_iff in Hnd as [_ [_ Hdj]]; apply (Hdj (aluDstIdx a)).
+      - unfold olderWriters; apply filter_In; split; [| rewrite Hzd; reflexivity].
+        apply in_or_app; right; apply in_or_app; right.
+        change (aluDstIdx a) with (fst (aluDstIdx a, v)); apply in_map; exact Hin.
+      - rewrite Ed in Hza |- *; rewrite d2aWriters_cons, Hza; left; reflexivity. }
+    pose proof (executeNonSequential_mulDiv_none pcAddrInit _ _ _ _ _ _ _ Hex) as Hmd0.
+    destruct (nonSeq_dm pcAddrInit _ _ _ a _ _ _ Hns Hex) as [Hdm1 Hfi1].
+    assert (Hdv : optValid (execDataMem x) = false).
+    { apply not_true_is_false; intros Edv.
+      destruct (Hdm1 Edv) as [Hmf _]; rewrite (memOrFence_virt_excl a Hmf) in Hvc; discriminate Hvc. }
+    rewrite Hdv in Hdmc; destruct Hdmc as [Ewb Edm].
+    pose proof (nonSeq_semF s1 a rfMid x _ _ Hint1 Hns Hneq Hex) as HsemF.
+    pose proof (nonSeq_flush s1 s1' a rfMid x Hmd0 Erf Emd) as Hfl.
+    assert (Ereg : iRegionsA s1' = iRegionsA s1) by (unfold iRegions; rewrite Emem; reflexivity).
+    assert (Epcc : iPccA s1' = defNextPcc x) by (rewrite (stPcc_eq s1'), Erf; apply readPcc_writePcc).
+    pose proof (nonDeferred_of_nonSequential pcAddrInit defaultEnv _ _ _ a _ _ _ Hint1 Hns Hex) as Hnd'.
+    rewrite (stPcc_eq s1) in Hnd'.
+    apply (IMPL step_lockstep_commit clintS clint plicS plic initLine fwcs Hdisj HclintIdx HplicIdx
+             g s1 s1' s2 (stJA s1) (tl (iD2aA s1)) a rfMid x
+             Hg Ed2a Hlive' Hbuf Hlrq Hms Hnp Ha0 Hnd' Hdv Hmd0).
+    - rewrite (iFlush_of s1' _ _ Erf Emd); symmetry; apply writePcc_flushMulDivCaps.
+    - exact Emem.
+    - exact Edm.
+    - exact Emd.
+    - rewrite Efip, Hfi1, Hdv; exact Hfip.
+    - intros g' s2m s2' Hgm Efo' Htf.
+      pose proof Hgm as Hgm0; destruct Hgm0 as [_ Hmm _ _ _ _ _ _ _ _ Hfrm Hwm _].
+      rewrite Efo in Efo'; cbn [tl] in Efo'.
+      assert (HR : (forall y, In y (tl (iD2aA s1)) -> daLiveA s1' y = true -> daLiveA s1 y = true) /\
+                   (forall l1 j2 l2 fo, tl (iD2aA s1) = (l1 ++ j2 :: l2)%list -> nth_error fo_tail (length l1) = Some fo ->
+                      daLiveA s1' j2 = true ->
+                      RegAvoidAll (olderWritersA s1 ++ d2aWriters (stJA s1 :: l1)) (decCs1 fo) ->
+                      RegAvoidAll (olderWritersA s1 ++ d2aWriters (stJA s1 :: l1)) (decCs2 fo) ->
+                      evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1') = evalRegRead pcAddrInit (evalDecode fo) (iFlushA s1)) /\
+                   FrontRelA g' s1' s2' /\
+                   fetch_fetchBufFifo pcAddrInit fetchCapacity instCapacity (iFetchA s1') =
+                     fetch_fetchBufFifo pcAddrInit fetchCapacity instCapacity (iFetchA s1) /\
+                   fetch_instFifo pcAddrInit fetchCapacity instCapacity (iFetchA s1') =
+                     fetch_instFifo pcAddrInit fetchCapacity instCapacity (iFetchA s1)).
+      { assert (Hdec : execRedirect a x (daPredPc (stJA s1)) = true \/ execRedirect a x (daPredPc (stJA s1)) = false)
+          by (destruct (execRedirect a x (daPredPc (stJA s1))); [left | right]; reflexivity).
+        destruct Hdec as [Hr | Hr]; rewrite Hr in Hred; destruct Hred as [Eep Efe].
+        - assert (Eib : iInstBufA s1' = iInstBufA s1) by (unfold iInstBuf; rewrite Efe; reflexivity).
+          assert (Efb : iFetchBufA s1' = iFetchBufA s1) by (unfold iFetchBuf; rewrite Efe; reflexivity).
+          assert (Estr : optValid (iStraddleA s1') = false) by (unfold iStraddle; rewrite Efe; reflexivity).
+          assert (Efpc : iFetchPcA s1' = (iPccA s1').(Snd).(Snd).(Fst))
+            by (unfold iFetchPc, iPcc; rewrite Efe, Erf, readPcc_writePcc; reflexivity).
+          destruct (IMPL redirect_FrontRel_NoLive initLine fwcs g g' s1 s1' s2m s2' (stJA s1) (tl (iD2aA s1))
+                      Hfrm Ed2a Hlive' Ed2a2 Eib Efb Ereg Eep Estr Efpc) as [Hnl Hfr'].
+          assert (Hstale : forall y, In y (tl (iD2aA s1)) -> daLiveA s1' y = false).
+          { destruct Hnl as [Hnl0 _]; rewrite Ed2a2, Forall_forall in Hnl0; exact Hnl0. }
+          split; [intros y Hin Hy; rewrite (Hstale y Hin) in Hy; discriminate Hy |].
+          split; [intros l1 j2 l2 fo Hl1 _ Hy _ _; exfalso;
+                  assert (Hin : In j2 (tl (iD2aA s1))) by (rewrite Hl1; apply in_or_app; right; left; reflexivity);
+                  rewrite (Hstale j2 Hin) in Hy; discriminate Hy |].
+          split; [exact Hfr' |].
+          split; rewrite Efe; reflexivity.
+        - destruct (noRedirect_facts a x _ Hr) as [Hexc [_ [_ Epc]]].
+          assert (Hnf : foFault fo0 = false) by exact (nonSeq_noFault pcAddrInit _ fo0 _ a Ha2 Hexc).
+          destruct (nonSeq_pcc pcAddrInit _ _ _ a _ _ x _ Hns (HA2 Hexc) Hex Hr) as [Et Ee].
+          split; [intros y _ Hy; unfold daLive in Hy |- *; rewrite Eep in Hy; exact Hy |].
+          split; [exact (rr_step s1 s1' (stJA s1) (tl (iD2aA s1)) fo_tail a _ x _ _ Ha1 HsemF Hfl) |].
+          split; [| split; rewrite Efe; reflexivity].
+          apply (IMPL FrontRel_traceFrame initLine fwcs g' s1' s2m s2' (proj2 (proj2 Hmm)) Htf).
+          apply (IMPL FrontRel_step_no_redirect initLine fwcs g g' s1 s1' s2m (stJA s1) (tl (iD2aA s1)) fo0 fo_tail
+                   Hfrm Ed2a Efo Hlive' Hnf Ed2a2 Efo' Eep);
+            try (unfold iInstBuf, iFetchBuf, iFetchPc, iPredEpoch, iCurParcel, iStraddle; rewrite Efe; reflexivity);
+            try exact Ereg; rewrite Epcc; [exact Et | exact Ee | exact Epc]. }
+      destruct HR as [Hlv [Hrr [Hfr' [Efb Eib]]]].
+      split; [| split; [exact Hfr' |]].
+      + exact (score_clear g g' s1 s1' (stJA s1) (tl (iD2aA s1)) fo0 fo_tail Hs Ed2a Efo Ed2a2 Efo' Edm Emd Ewb Hlv Hrr).
+      + eapply (IMPL WfRel_exec_step);
+          [exact Hwm | exact Efb | exact Eib | exact Hwf'
+          | rewrite Edm; destruct Hwm as [_ [_ [_ [W4 _]]]]; exact W4
+          | rewrite Emd; destruct Hwm as [_ [_ [_ [_ [W5 _]]]]]; exact W5 | exact Ereg].
+  Qed.
+
+  (* --- 7. The Whole Stage --- *)
+
+  (* A live head's ALU output is the ALU applied to a decoded instruction *)
+  Lemma liveHead_aluOut :
+    forall g (s1 : IState) (s2 : SState),
+      RELG g s1 s2 -> (stHeadA s1).(Snd).(Fst) = true -> daLiveA s1 (stHeadA s1).(Fst) = true ->
+      exists fo0, stAluOutA s1 = evalAluOut (iPccA s1) (evalRegRead pcAddrInit (evalDecode fo0) (iFlushA s1)).
+  Proof.
+    intros g s1 s2 Hg Hv Hlive.
+    pose proof (wf_d2a g s1 s2 Hg) as Hwf.
+    pose proof (head_of_valid s1 Hwf Hv) as Ed2a.
+    assert (Hlive' : daLiveA s1 (stJA s1) = true) by exact Hlive.
+    pose proof Hg as Hg0; destruct Hg0 as [_ _ _ _ _ _ _ _ _ Hs _ _ _].
+    destruct Hs as [_ [_ [Hlen Hreg]]].
+    rewrite Ed2a in Hlen.
+    destruct (g_d2aFo pcAddrInit g) as [| fo0 fo_tail] eqn:Efo; [cbn [length] in Hlen; discriminate Hlen |].
+    destruct (Hreg [] (stJA s1) (tl (iD2aA s1)) fo0 Ed2a eq_refl Hlive') as [HaluIn _].
+    exists fo0; rewrite <- HaluIn; apply stAluOut_eq.
+  Qed.
+
+  (* Every branch of the stage. The ALU facts A1 and A2 (guide: plan b) are premises, stated for
+   * any decoded instruction; the theorem passes their proofs. *)
+  Lemma exec_step :
+    forall g (s1 s1' : IState) (s2 : SState),
+      RELG g s1 s2 -> SemAction envI STAGE s1 s1' Zmod.zero ->
+      (forall (pcc : type FullECapWithTag) (fo : type FetchOut) (rf : RfState pcAddrInit),
+         let a := evalAluOut pcc (evalRegRead pcAddrInit (evalDecode fo) rf) in
+         aluIsMemOrFence a = true -> opIsLoad (nsDm a) = false -> aluDstIdx a = Zmod.zero) ->
+      (forall (pcc : type FullECapWithTag) (fo : type FetchOut) (rf : RfState pcAddrInit),
+         let a := evalAluOut pcc (evalRegRead pcAddrInit (evalDecode fo) rf) in
+         aluIsSeq a = false -> aluIsExc a = false -> nsIsCf a = true -> CfOK pcc (nsCf a)) ->
+      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' s1' s2'.
+  Proof.
+    intros g s1 s1' s2 Hg Hsem HA1g HA2g.
+    destruct (ex_canProceed (iExecA s1)) eqn:Hcp; [| exact (exec_noCanProceed g s1 s1' s2 Hg Hsem Hcp)].
+    destruct ((stHeadA s1).(Snd).(Fst)) eqn:Hv;
+      [| exact (exec_stutter g s1 s1' s2 Hg (IMPL impl_noHead clint plic envI s1 s1' Hsem Hcp Hv))].
+    destruct (daLiveA s1 (stHeadA s1).(Fst)) eqn:Hlive; [| exact (exec_stale g s1 s1' s2 Hg Hsem Hcp Hv Hlive)].
+    destruct (stIntA s1) eqn:Hint.
+    - destruct (andb (stDmEmptyA s1) (stNoWrA s1)) eqn:Hq.
+      + exact (exec_interrupt g s1 s1' s2 Hg Hsem Hcp Hv Hlive Hint Hq).
+      + exact (exec_stutter g s1 s1' s2 Hg (IMPL impl_intStall clint plic envI s1 s1' Hsem Hcp Hv Hlive Hint Hq)).
+    - destruct (liveHead_aluOut g s1 s2 Hg Hv Hlive) as [fo0 Hfo].
+      pose proof (HA1g (iPccA s1) fo0 (iFlushA s1)) as HA1; pose proof (HA2g (iPccA s1) fo0 (iFlushA s1)) as HA2.
+      cbv zeta in HA1, HA2; rewrite <- Hfo in HA1, HA2.
+      destruct (aluIsSeq (stAluOutA s1)) eqn:Hseq.
+      + destruct (seqGuardV (aluIsMul (stAluOutA s1)) (aluIsDiv (stAluOutA s1)) (stMulFullA s1) (stDivFullA s1)) eqn:Hgd.
+        * exact (exec_seq g s1 s1' s2 _ Hg Hsem Hcp Hv Hlive Hint eq_refl Hseq Hgd).
+        * exact (exec_stutter g s1 s1' s2 Hg
+                   (IMPL impl_seqStall clint plic envI s1 s1' _ Hsem Hcp Hv Hlive Hint eq_refl Hseq Hgd)).
+      + destruct (nonSeqGuardV (aluIsMemOrFence (stAluOutA s1)) (stDmFullA s1) (aluIsVirtCsr (stAluOutA s1))
+                    (stDmEmptyA s1) (stNoWrA s1)) eqn:Hgd.
+        * assert (Hdec : aluIsVirtCsr (stAluOutA s1) = true \/ aluIsVirtCsr (stAluOutA s1) = false)
+            by (destruct (aluIsVirtCsr (stAluOutA s1)); [left | right]; reflexivity).
+          destruct Hdec as [Hvc | Hvc].
+          -- exact (exec_nonSeq_virt g s1 s1' s2 _ Hg Hsem Hcp Hv Hlive Hint eq_refl Hseq Hgd Hvc
+                      (HA2 ltac:(first [exact Hseq | reflexivity]))).
+          -- exact (exec_nonSeq_append g s1 s1' s2 _ Hg Hsem Hcp Hv Hlive Hint eq_refl Hseq Hgd
+                      (eq_trans (eq_sym (virtCsr_eq _)) Hvc) HA1 (HA2 ltac:(first [exact Hseq | reflexivity]))).
+        * exact (exec_stutter g s1 s1' s2 Hg
+                   (IMPL impl_nonSeqStall clint plic envI s1 s1' _ Hsem Hcp Hv Hlive Hint eq_refl Hseq Hgd)).
+  Qed.
+
+  (* The stage's `StepOK` obligation (RefPeriph.v `StepOK` with `REL = RefRel`, unfolded), given the
+   * ALU facts A1 and A2; the theorem is this lemma applied to their proofs. *)
+  Lemma stepOK_exec_of_facts :
+    (forall (pcc : type FullECapWithTag) (fo : type FetchOut) (rf : RfState pcAddrInit),
+       let a := evalAluOut pcc (evalRegRead pcAddrInit (evalDecode fo) rf) in
+       aluIsMemOrFence a = true -> opIsLoad (nsDm a) = false -> aluDstIdx a = Zmod.zero) ->
+    (forall (pcc : type FullECapWithTag) (fo : type FetchOut) (rf : RfState pcAddrInit),
+       let a := evalAluOut pcc (evalRegRead pcAddrInit (evalDecode fo) rf) in
+       aluIsSeq a = false -> aluIsExc a = false -> nsIsCf a = true -> CfOK pcc (nsCf a)) ->
+    forall (s1 s1' : IState) (s2 : SState),
+      SemAction envI STAGE s1 s1' Zmod.zero -> (exists g, RELG g s1 s2) ->
+      exists s2', SemActions envS specActs s2 s2' /\ (exists g', RELG g' s1' s2').
+  Proof.
+    intros HA1 HA2 s1 s1' s2 Hsem [g Hg].
+    destruct (exec_step g s1 s1' s2 Hg Hsem HA1 HA2) as [g' [s2' [Hss Hg']]].
+    exists s2'; split; [exact Hss | exists g'; exact Hg'].
+  Qed.
+
+  (* With A1 proven, only A2 is left *)
+  Lemma stepOK_exec_of_A2 :
+    (forall (pcc : type FullECapWithTag) (fo : type FetchOut) (rf : RfState pcAddrInit),
+       let a := evalAluOut pcc (evalRegRead pcAddrInit (evalDecode fo) rf) in
+       aluIsSeq a = false -> aluIsExc a = false -> nsIsCf a = true -> CfOK pcc (nsCf a)) ->
+    forall (s1 s1' : IState) (s2 : SState),
+      SemAction envI STAGE s1 s1' Zmod.zero -> (exists g, RELG g s1 s2) ->
+      exists s2', SemActions envS specActs s2 s2' /\ (exists g', RELG g' s1' s2').
+  Proof. intros HA2; apply stepOK_exec_of_facts; [exact (aluFact_A1 pcAddrInit) | exact HA2]. Qed.
 
 End ExecMain.
