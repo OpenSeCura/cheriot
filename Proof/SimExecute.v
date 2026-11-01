@@ -619,6 +619,7 @@ Section MulDivCoreLemmas.
   Variable mulCapacity divCapacity : nat.
   Variable mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
+  Variable bp : WithInstPredIfc.
   Variable pcAddrInit : Z.
   Variable bpT memT fetchT decodeT executeT dataMemT : Tree Elem.
 
@@ -820,6 +821,7 @@ Section ExecuteStageSimulation.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
+  Variable bp : WithInstPredIfc.
   Variable config : RevConfig.
   Variable regions : list MemRegion.
   Variable clint : @ClintInstance regions.
@@ -831,24 +833,24 @@ Section ExecuteStageSimulation.
   Local Abbreviation iTree :=
     (ImplTree pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
-              mulDivMode config regions).
+              mulDivMode bp config regions).
   Local Abbreviation SState := (SpecState pcAddrInit regions).
   Local Abbreviation IState :=
     (ImplState pcAddrInit fetchCapacity instCapacity decodeCapacity
                dataMemCapacity mulCapacity divCapacity mulStages divStages
-               mulDivMode config regions).
+               mulDivMode bp config regions).
   Local Abbreviation specMod := (@spec pcAddrInit config regions clint revSpec plic).
   Local Abbreviation cRel :=
     (CoreStateRel pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions).
+                  mulDivMode bp config regions).
   Local Abbreviation sRel :=
     (stateRel pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
-              mulDivMode config regions).
+              mulDivMode bp config regions).
 
   Local Abbreviation rTree := (RfTree pcAddrInit).
-  Local Abbreviation bpT := BpTree.
+  Local Abbreviation bpT := (BpTree bp).
   Local Abbreviation mTree := (ImplMemSubTree regions).
   Local Abbreviation fTree := (FetchTree pcAddrInit fetchCapacity instCapacity).
   Local Abbreviation decTree := (DecodeTree decodeCapacity).
@@ -940,72 +942,72 @@ Section ExecuteStageSimulation.
       SemAction env1
         (@setExecuteCanProceedStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions type)
+           mulDivMode bp config regions type)
         s1 s1' v ->
       v = Zmod.zero /\
       impl_rf pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
-              mulDivMode config regions s1' =
+              mulDivMode bp config regions s1' =
         impl_rf pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
-                mulDivMode config regions s1 /\
+                mulDivMode bp config regions s1 /\
       impl_waitBits pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
-                    mulDivMode config regions s1' =
+                    mulDivMode bp config regions s1' =
         impl_waitBits pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
-                      mulDivMode config regions s1 /\
+                      mulDivMode bp config regions s1 /\
       impl_bp pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
-              mulDivMode config regions s1' =
+              mulDivMode bp config regions s1' =
         impl_bp pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
-                mulDivMode config regions s1 /\
+                mulDivMode bp config regions s1 /\
       impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                dataMemCapacity mulCapacity divCapacity mulStages divStages
-               mulDivMode config regions s1' =
+               mulDivMode bp config regions s1' =
         impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
-                 mulDivMode config regions s1 /\
+                 mulDivMode bp config regions s1 /\
       impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
-                 mulDivMode config regions s1' =
+                 mulDivMode bp config regions s1' =
         impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
-                   mulDivMode config regions s1 /\
+                   mulDivMode bp config regions s1 /\
       impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions s1' =
+                  mulDivMode bp config regions s1' =
         impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
-                    mulDivMode config regions s1 /\
+                    mulDivMode bp config regions s1 /\
       impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
-                   mulDivMode config regions s1' =
+                   mulDivMode bp config regions s1' =
         impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
-                     mulDivMode config regions s1 /\
+                     mulDivMode bp config regions s1 /\
       impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions s1' =
+                  mulDivMode bp config regions s1' =
         impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
-                    mulDivMode config regions s1 /\
+                    mulDivMode bp config regions s1 /\
       exec_epoch (impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                                     dataMemCapacity mulCapacity divCapacity mulStages divStages
-                                    mulDivMode config regions s1') =
+                                    mulDivMode bp config regions s1') =
         exec_epoch (impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                                       dataMemCapacity mulCapacity divCapacity mulStages divStages
-                                      mulDivMode config regions s1) /\
+                                      mulDivMode bp config regions s1) /\
       exec_fenceIPending (impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                                             dataMemCapacity mulCapacity divCapacity mulStages divStages
-                                            mulDivMode config regions s1') =
+                                            mulDivMode bp config regions s1') =
         exec_fenceIPending (impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                                               dataMemCapacity mulCapacity divCapacity mulStages divStages
-                                              mulDivMode config regions s1) /\
+                                              mulDivMode bp config regions s1) /\
       exec_canProceed (impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                                          dataMemCapacity mulCapacity divCapacity mulStages divStages
-                                         mulDivMode config regions s1') = true.
+                                         mulDivMode bp config regions s1') = true.
   Proof.
     intros env1 s1 s1' v Hsem.
     unfold setExecuteCanProceedStage, setExecuteCanProceed in Hsem.
@@ -1013,7 +1015,7 @@ Section ExecuteStageSimulation.
     rewrite (evalActionPropGen_liftAction
                (@Impl.np_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions)) in Hsem.
+                  mulDivMode bp config regions)) in Hsem.
     cbn [evalActionPropGen] in Hsem.
     destruct Hsem as [<- <-].
     repeat split; reflexivity.
@@ -1025,7 +1027,7 @@ Section ExecuteStageSimulation.
       SemAction env1
         (@setExecuteCanProceedStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions type)
+           mulDivMode bp config regions type)
         s1 s1' v ->
       cRel s1 s2 ->
       exists s2' : SState,
@@ -1070,44 +1072,44 @@ Section ExecuteStageSimulation.
       In act
         (@mulDivStageActions pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions type) ->
+           mulDivMode bp config regions type) ->
       SemAction env1 act s1 s1' v ->
       impl_bp pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
-              mulDivMode config regions s1' =
+              mulDivMode bp config regions s1' =
         impl_bp pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
-                mulDivMode config regions s1 /\
+                mulDivMode bp config regions s1 /\
       impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                dataMemCapacity mulCapacity divCapacity mulStages divStages
-               mulDivMode config regions s1' =
+               mulDivMode bp config regions s1' =
         impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
-                 mulDivMode config regions s1 /\
+                 mulDivMode bp config regions s1 /\
       impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
-                 mulDivMode config regions s1' =
+                 mulDivMode bp config regions s1' =
         impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
-                   mulDivMode config regions s1 /\
+                   mulDivMode bp config regions s1 /\
       impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions s1' =
+                  mulDivMode bp config regions s1' =
         impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
-                    mulDivMode config regions s1 /\
+                    mulDivMode bp config regions s1 /\
       impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
-                   mulDivMode config regions s1' =
+                   mulDivMode bp config regions s1' =
         impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
-                     mulDivMode config regions s1 /\
+                     mulDivMode bp config regions s1 /\
       impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
-                   mulDivMode config regions s1' =
+                   mulDivMode bp config regions s1' =
         impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
-                     mulDivMode config regions s1.
+                     mulDivMode bp config regions s1.
   Proof.
     intros env1 act s1 s1' v Hin Hsem.
     unfold mulDivStageActions in Hin.
@@ -1116,7 +1118,7 @@ Section ExecuteStageSimulation.
     rewrite (evalActionPropGen_liftAction
                (@Impl.np_core pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions)) in Hsem.
+                  mulDivMode bp config regions)) in Hsem.
     destruct (evalActionPropGen_to_SemAction cAct _ _ Hsem) as [c' [v' [HsemC [Hs1' _]]]].
     subst s1'.
     exact (mulDivRules_core_frame mulCapacity divCapacity mulStages divStages mulDivMode
@@ -1130,14 +1132,14 @@ Section ExecuteStageSimulation.
       In act
         (@mulDivStageActions pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions type) ->
+           mulDivMode bp config regions type) ->
       SemAction env1 act s1 s1' v ->
       flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions s1' =
+                  mulDivMode bp config regions s1' =
         flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
-                    mulDivMode config regions s1 ->
+                    mulDivMode bp config regions s1 ->
       cRel s1 s2 ->
       exists s2' : SState,
         SemActions env2 (specMod type) s2 s2' /\
@@ -1169,32 +1171,32 @@ Section ExecuteStageSimulation.
       SemAction env1
         (@aluAndExecuteNonDeferredStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions clint rev plic type)
+           mulDivMode bp config regions clint rev plic type)
         s1 s1' v ->
       flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions s1' =
+                  mulDivMode bp config regions s1' =
         flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
-                    mulDivMode config regions s1 ->
+                    mulDivMode bp config regions s1 ->
       impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                dataMemCapacity mulCapacity divCapacity mulStages divStages
-               mulDivMode config regions s1' =
+               mulDivMode bp config regions s1' =
         impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
-                 mulDivMode config regions s1 ->
+                 mulDivMode bp config regions s1 ->
       impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
-                   mulDivMode config regions s1' =
+                   mulDivMode bp config regions s1' =
         impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
-                     mulDivMode config regions s1 ->
+                     mulDivMode bp config regions s1 ->
       (FenceIInv pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
-                 mulDivMode config regions s1 s2 ->
+                 mulDivMode bp config regions s1 s2 ->
        FenceIInv pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
-                 mulDivMode config regions s1' s2) ->
+                 mulDivMode bp config regions s1' s2) ->
       cRel s1 s2 ->
       exists s2' : SState,
         SemActions env2 (specMod type) s2 s2' /\
@@ -1218,32 +1220,32 @@ Section ExecuteStageSimulation.
       SemAction env1
         (@aluAndExecuteNonDeferredStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions clint rev plic type)
+           mulDivMode bp config regions clint rev plic type)
         s1 s1' v ->
       cRel s1 s2 ->
       DataMemEmpty dataMemCapacity
         (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
-                      mulDivMode config regions s1) ->
+                      mulDivMode bp config regions s1) ->
       DataMemEmpty dataMemCapacity
         (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
-                      mulDivMode config regions s1') ->
+                      mulDivMode bp config regions s1') ->
       SemAction env2 (@specStep pcAddrInit config regions clint plic type) s2 s2' Zmod.zero ->
       spec_rf pcAddrInit regions s2' =
         flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
-                    mulDivMode config regions s1' ->
+                    mulDivMode bp config regions s1' ->
       spec_mem pcAddrInit regions s2' = spec_mem pcAddrInit regions s2 ->
       impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                dataMemCapacity mulCapacity divCapacity mulStages divStages
-               mulDivMode config regions s1' =
+               mulDivMode bp config regions s1' =
         impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
-                 mulDivMode config regions s1 ->
+                 mulDivMode bp config regions s1 ->
       FenceIInv pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
-                mulDivMode config regions s1' s2' ->
+                mulDivMode bp config regions s1' s2' ->
       exists mid2 : SState,
         SemActions env2 (specMod type) s2 mid2 /\
         cRel s1' mid2.
@@ -1273,7 +1275,7 @@ Section ExecuteStageSimulation.
       SemAction env1
         (@aluAndExecuteNonDeferredStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions clint rev plic type)
+           mulDivMode bp config regions clint rev plic type)
         s1 s1' v ->
       cRel s1 s2 ->
       (forall wm_dm,
@@ -1281,36 +1283,36 @@ Section ExecuteStageSimulation.
            GhostStep pcAddrInit
              (flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                           dataMemCapacity mulCapacity divCapacity mulStages divStages
-                          mulDivMode config regions s1)
+                          mulDivMode bp config regions s1)
              (flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                           dataMemCapacity mulCapacity divCapacity mulStages divStages
-                          mulDivMode config regions s1')
+                          mulDivMode bp config regions s1')
              wm_dm wm_dm' req) ->
       dataMemPendingQueue dataMemCapacity
         (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
-                      mulDivMode config regions s1') =
+                      mulDivMode bp config regions s1') =
         (dataMemPendingQueue dataMemCapacity
            (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                          dataMemCapacity mulCapacity divCapacity mulStages divStages
-                         mulDivMode config regions s1) ++ [req])%list ->
+                         mulDivMode bp config regions s1) ++ [req])%list ->
       isDataMemLoadRq dataMemCapacity
         (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
-                      mulDivMode config regions s1') =
+                      mulDivMode bp config regions s1') =
         isDataMemLoadRq dataMemCapacity
           (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity
                         dataMemCapacity mulCapacity divCapacity mulStages divStages
-                        mulDivMode config regions s1) ->
+                        mulDivMode bp config regions s1) ->
       impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                dataMemCapacity mulCapacity divCapacity mulStages divStages
-               mulDivMode config regions s1' =
+               mulDivMode bp config regions s1' =
         impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity
                  dataMemCapacity mulCapacity divCapacity mulStages divStages
-                 mulDivMode config regions s1 ->
+                 mulDivMode bp config regions s1 ->
       FenceIInv pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
-                mulDivMode config regions s1' s2 ->
+                mulDivMode bp config regions s1' s2 ->
       exists s2' : SState,
         SemActions env2 (specMod type) s2 s2' /\
         cRel s1' s2'.
@@ -1334,24 +1336,24 @@ Section ExecuteStageSimulation.
     forall (s1 s1' : IState),
       impl_rf pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
-              mulDivMode config regions s1' =
+              mulDivMode bp config regions s1' =
         impl_rf pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
-                mulDivMode config regions s1 ->
+                mulDivMode bp config regions s1 ->
       extractMulDivEntries mulCapacity divCapacity mulStages divStages mulDivMode
         (impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
-                     mulDivMode config regions s1') =
+                     mulDivMode bp config regions s1') =
         extractMulDivEntries mulCapacity divCapacity mulStages divStages mulDivMode
           (impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                        dataMemCapacity mulCapacity divCapacity mulStages divStages
-                       mulDivMode config regions s1) ->
+                       mulDivMode bp config regions s1) ->
       flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions s1' =
+                  mulDivMode bp config regions s1' =
         flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
-                    mulDivMode config regions s1.
+                    mulDivMode bp config regions s1.
   Proof.
     intros s1 s1' Hrf Hentries.
     unfold flushMulDiv, flushMulDivOn.
@@ -1362,26 +1364,26 @@ Section ExecuteStageSimulation.
     forall dstIdx resCap (s1 s1' : IState),
       impl_rf pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
-              mulDivMode config regions s1' =
+              mulDivMode bp config regions s1' =
         writeGprVal pcAddrInit dstIdx resCap
           (impl_rf pcAddrInit fetchCapacity instCapacity decodeCapacity
                    dataMemCapacity mulCapacity divCapacity mulStages divStages
-                   mulDivMode config regions s1) ->
+                   mulDivMode bp config regions s1) ->
       extractMulDivEntries mulCapacity divCapacity mulStages divStages mulDivMode
         (impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                      dataMemCapacity mulCapacity divCapacity mulStages divStages
-                     mulDivMode config regions s1) =
+                     mulDivMode bp config regions s1) =
         (dstIdx, resCap) ::
         extractMulDivEntries mulCapacity divCapacity mulStages divStages mulDivMode
           (impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                        dataMemCapacity mulCapacity divCapacity mulStages divStages
-                       mulDivMode config regions s1') ->
+                       mulDivMode bp config regions s1') ->
       flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages
-                  mulDivMode config regions s1' =
+                  mulDivMode bp config regions s1' =
         flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages
-                    mulDivMode config regions s1.
+                    mulDivMode bp config regions s1.
   Proof.
     intros dstIdx resCap s1 s1' Hrf Hpop.
     unfold flushMulDiv, flushMulDivOn.
@@ -1393,11 +1395,11 @@ Section ExecuteStageSimulation.
       exec_canProceed
         (impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
-                      mulDivMode config regions s1) = false ->
+                      mulDivMode bp config regions s1) = false ->
       SemAction env1
         (@aluAndExecuteNonDeferredStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions clint rev plic type)
+           mulDivMode bp config regions clint rev plic type)
         s1 s1' v ->
       s1' = s1 /\ v = Zmod.zero.
   Proof.
@@ -1423,11 +1425,11 @@ Section ExecuteStageSimulation.
       exec_canProceed
         (impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity
                       dataMemCapacity mulCapacity divCapacity mulStages divStages
-                      mulDivMode config regions s1) = false ->
+                      mulDivMode bp config regions s1) = false ->
       SemAction env1
         (@aluAndExecuteNonDeferredStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions clint rev plic type)
+           mulDivMode bp config regions clint rev plic type)
         s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
@@ -1447,7 +1449,7 @@ Section ExecuteStageSimulation.
       SemAction env1
         (@setExecuteCanProceedStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions type)
+           mulDivMode bp config regions type)
         s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
@@ -1458,7 +1460,7 @@ Section ExecuteStageSimulation.
     exists s2; split; [apply specMod_stutter |].
     exact (stateRel_step_stutter pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-             mulDivMode config regions s1 s1' s2 Hrel).
+             mulDivMode bp config regions s1 s1' s2 Hrel).
   Qed.
 
   Theorem sim_aluAndExecuteNonDeferredStage_stateRel :
@@ -1467,7 +1469,7 @@ Section ExecuteStageSimulation.
       SemAction env1
         (@aluAndExecuteNonDeferredStage pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions clint rev plic type)
+           mulDivMode bp config regions clint rev plic type)
         s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
@@ -1478,7 +1480,7 @@ Section ExecuteStageSimulation.
     exists s2; split; [apply specMod_stutter |].
     exact (stateRel_step_stutter pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-             mulDivMode config regions s1 s1' s2 Hrel).
+             mulDivMode bp config regions s1 s1' s2 Hrel).
   Qed.
 
   Theorem sim_mulDivStageActions_stateRel :
@@ -1488,7 +1490,7 @@ Section ExecuteStageSimulation.
       In act
         (@mulDivStageActions pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions type) ->
+           mulDivMode bp config regions type) ->
       SemAction env1 act s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,
@@ -1499,7 +1501,7 @@ Section ExecuteStageSimulation.
     exists s2; split; [apply specMod_stutter |].
     exact (stateRel_step_stutter pcAddrInit fetchCapacity instCapacity
              decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-             mulDivMode config regions s1 s1' s2 Hrel).
+             mulDivMode bp config regions s1 s1' s2 Hrel).
   Qed.
 
   Theorem sim_mulDivStep_stateRel :
@@ -1509,7 +1511,7 @@ Section ExecuteStageSimulation.
       In act
         (@mulDivStageActions pcAddrInit fetchCapacity instCapacity
            decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages
-           mulDivMode config regions type) ->
+           mulDivMode bp config regions type) ->
       SemAction env1 act s1 s1' v ->
       sRel s1 s2 ->
       exists s2' : SState,

@@ -446,6 +446,7 @@ Section FetchRpPorts.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
+  Variable bp : WithInstPredIfc.
   Variable config : RevConfig.
   Variables pre post : list MemRegion.
   Variable revBase : Z.
@@ -464,31 +465,31 @@ Section FetchRpPorts.
 
   Local Abbreviation IState :=
     (ImplState pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-               mulCapacity divCapacity mulStages divStages mulDivMode config implRegions).
+               mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions).
   Local Abbreviation SState := (SpecState pcAddrInit specRegions).
   Local Abbreviation NPMI := (Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions).
+                                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions).
   Local Abbreviation NPMS := (Spec.np_mem pcAddrInit specRegions).
 
   Local Abbreviation iMemA := (iMem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iRegionsA := (iRegions pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iRevA := (iRev pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation sMemA := (sMem pcAddrInit pre post revBase revPfB revPfA).
 
   Local Abbreviation MEMC := (MemRelC pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
+                                mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
                                 clintS clint plicS plic fwcs).
   Local Abbreviation FRESP := (FetchRespRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
                                  initLine fwcs).
   Local Abbreviation STEPOK := (StepOK pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                  mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
+                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
                                   clintS clint plicS plic initLine fwcs).
   Local Abbreviation RELG := (RefRelG pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
+                                mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
                                 clintS clint plicS plic initLine fwcs).
 
   Local Abbreviation UPD s1 mi' := (writeSubTreeState NPMI s1 (mi' ,, (iMemA s1).(Snd))).
@@ -511,9 +512,9 @@ Section FetchRpPorts.
     intros g s1 s1' s2 mi' E1 HP HR Hmem Hfr' Hhs H.
     destruct H as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     assert (Edm : iDmSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                    mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA s1' =
+                    mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1' =
                   iDmSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                    mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA s1)
+                    mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1)
       by (rewrite E1; reflexivity).
     constructor.
     - rewrite E1; exact Hrf.
@@ -522,7 +523,7 @@ Section FetchRpPorts.
     - exact Hrp.
     - exact He.
     - refine (AccessRel_frame_ports pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA initLine
+                mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA initLine
                 g s1 s1' s2 s2 _ _ _ _ HR _ _ _ Edm eq_refl (fun L => eq_refl) Ha).
       + unfold PortsQuiet; apply HP; fetchins_tac.
       + intros L; unfold PortsReadStaged; apply HP; fetchins_tac.
@@ -545,7 +546,7 @@ Section FetchRpPorts.
       split; [rewrite E1; exact W1 |]; split; [rewrite E1; exact W2 |]; split; [rewrite E1; exact W3 |].
       split; [rewrite E1; exact W4 | split; [rewrite E1; exact Wmd | exact Hhs]].
     - exact (RevokerRel_frame pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-               mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA initLine
+               mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA initLine
                g g s1 s1' s2 s2 eq_refl eq_refl HR (fun L => eq_refl) Hrk).
   Qed.
 
@@ -558,7 +559,7 @@ Section FetchRpPorts.
   Theorem stepOK_fetchLineRpPorts :
     forall act,
       In act (@fetchLineRpPorts pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions type) ->
+                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions type) ->
       STEPOK act.
   Proof.
     intros act Hin s1 s1' s2 Hsem [g Hg].
@@ -568,7 +569,7 @@ Section FetchRpPorts.
     apply SemAction_liftAction_iff in Hm' as [mi' [Hmi' Em]].
     pose proof (fetchRpPorts_step initLine implRegions fwcs f _ _ _ _
                   (implEnvOK_regions pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                     mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
+                     mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
                      initLine fwcs s1 _) Hf Hmi') as Hst.
     change (FetchRpPortStepL initLine fwcs implRegions (iRegionsA s1) mi') in Hst.
     assert (Es1 : s1' = UPD s1 mi') by (rewrite E1, Em; reflexivity).
@@ -601,14 +602,14 @@ Section FetchRpPorts.
       destruct Hfr as [_ [_ [_ [_ [_ [_ F7]]]]]].
       rewrite Es1, iRegions_write'.
       change (AllPorts (FRP (fbInRegion pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                               mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA s1)
+                               mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1)
                           (fbLive pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                             mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA s1)
+                             mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1)
                           (LineAllowed initLine fwcs specRegions (sMemA s2))) implRegions mi').
       change (AllPorts (FRP (fbInRegion pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                               mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA s1)
+                               mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1)
                           (fbLive pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                             mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA s1)
+                             mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1)
                           (LineAllowed initLine fwcs specRegions (sMemA s2))) implRegions (iRegionsA s1)) in F7.
       refine (FRP_fetchRpStep initLine implRegions fwcs _ _ _ _ _ _ _ _ Hst F7).
       + intros L; apply lineUnique_implRegions, Is_true_eq_true; exact Hdisj.

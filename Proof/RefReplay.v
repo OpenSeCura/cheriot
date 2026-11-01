@@ -258,6 +258,7 @@ Section Replay.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
+  Variable bp : WithInstPredIfc.
   Variable config : RevConfig.
   Variables pre post : list MemRegion.
   Variable revBase : Z.
@@ -291,17 +292,17 @@ Section Replay.
   Local Abbreviation specActs := (@spec pcAddrInit config specRegions clintS revSpec plicS type).
   Local Abbreviation IState :=
     (ImplState pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-               mulCapacity divCapacity mulStages divStages mulDivMode config implRegions).
+               mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions).
   Local Abbreviation iRegionsA := (iRegions pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation MEMC := (MemRelC pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
+                                mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
                                 clintS clint plicS plic fwcs).
   Local Abbreviation RELG := (RefRelG pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
+                                mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
                                 clintS clint plicS plic initLine fwcs).
   Local Abbreviation RELNE := (RefRelNE pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                 mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
                                  clintS clint plicS plic initLine fwcs).
 
   (* 3a. Spec states *)

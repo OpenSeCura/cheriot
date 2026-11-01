@@ -1243,6 +1243,7 @@ Section FlushMulDivLemmas.
   Section FlushMulDivOnMode.
     Variable mulCapacity divCapacity mulStages divStages : nat.
     Variable mulDivMode : MulDivMode.
+    Variable bp : WithInstPredIfc.
 
     Local Opaque MulDivSubState extractMulDivEntries.
     Local Strategy opaque [MulDivSubState extractMulDivEntries].

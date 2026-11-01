@@ -440,6 +440,7 @@ Section ExecLive.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
+  Variable bp : WithInstPredIfc.
   Variable config : RevConfig.
   Variables pre post : list MemRegion.
   Variable revBase : Z.
@@ -474,11 +475,11 @@ Section ExecLive.
   Local Abbreviation specActs := (@spec pcAddrInit config specRegions clintS revSpec plicS type).
   Local Abbreviation IState :=
     (ImplState pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-               mulCapacity divCapacity mulStages divStages mulDivMode config implRegions).
+               mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions).
   Local Abbreviation GhostT := (Ghost pcAddrInit).
   Local Abbreviation iDmStA :=
     (iDmSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-       mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
+       mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
 
   Lemma dmLoadRp_in_olderWriters :
     forall (s1 : IState),
@@ -486,7 +487,7 @@ Section ExecLive.
       Zmod.eqb (ldPending (dmLoadRpV (iDmStA s1))).(Fst) Zmod.zero = false ->
       In (ldPending (dmLoadRpV (iDmStA s1))).(Fst)
         (olderWriters pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-           mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA s1).
+           mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1).
   Proof.
     intros s1 Hrp Hnz.
     unfold olderWriters; apply filter_In; split; [| rewrite Hnz; reflexivity].
@@ -524,14 +525,14 @@ Section ExecLive.
   Lemma cnwb_dmInFlightDst :
     forall (g : GhostT) (s1 : IState) (s2 : SState) d v,
       CnwbRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-        mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
+        mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
         initLine g s1 s2 ->
       AccessRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-        mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
+        mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
         initLine g s1 s2 ->
       g_cnwb pcAddrInit g = Some (d, v) ->
       dmInFlightDst pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-        mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA s1 = [d].
+        mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1 = [d].
   Proof.
     intros g s1 s2 d v [Hcn1 [Hcn2 _]] Hacc Hcn.
     unfold dmInFlightDst; cbv zeta.
@@ -578,15 +579,15 @@ Section ExecLive.
   Lemma cnwb_in_olderWriters :
     forall (g : GhostT) (s1 : IState) (s2 : SState) d v,
       CnwbRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-        mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
+        mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
         initLine g s1 s2 ->
       AccessRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-        mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
+        mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
         initLine g s1 s2 ->
       g_cnwb pcAddrInit g = Some (d, v) ->
       Zmod.eqb d Zmod.zero = false ->
       In d (olderWriters pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-              mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA s1).
+              mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1).
   Proof.
     intros g s1 s2 d v Hcnr Hacc Hcn Hnz.
     unfold olderWriters; apply filter_In; split; [| rewrite Hnz; reflexivity].

@@ -1684,6 +1684,7 @@ Section Periph.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
+  Variable bp : WithInstPredIfc.
   Variable config : RevConfig.
   Variables pre post : list MemRegion.
   Variable revBase : Z.
@@ -1703,16 +1704,16 @@ Section Periph.
   Local Abbreviation revSpec := (revSpecOf pre post revBase revPfB revPfA).
   Local Abbreviation ITree :=
     (ImplTree pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-              mulCapacity divCapacity mulStages divStages mulDivMode config implRegions).
+              mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions).
   Local Abbreviation STree := (SpecTree pcAddrInit specRegions).
   Local Abbreviation envI :=
     (implEnv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-             mulCapacity divCapacity mulStages divStages mulDivMode config implRegions initLine fwcs).
+             mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions initLine fwcs).
   Local Abbreviation envS := (specEnv pcAddrInit specRegions initLine fwcs).
   Local Abbreviation specActs := (@spec pcAddrInit config specRegions clintS revSpec plicS type).
   Local Abbreviation REL :=
     (RefRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-            mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
+            mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
             clintS clint plicS plic initLine fwcs).
 
   Definition StepOK (act : Action type ITree (Bit 0)) : Prop :=
@@ -1725,7 +1726,7 @@ Section Periph.
 
   Lemma stepOK_setFetchCanProceed :
     StepOK (@setFetchCanProceedStage pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-              mulCapacity divCapacity mulStages divStages mulDivMode config implRegions type).
+              mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions type).
   Proof.
     intros s1 s1' s2 Hsem [g Hg].
     unfold setFetchCanProceedStage, setFetchCanProceed in Hsem.
@@ -1738,7 +1739,7 @@ Section Periph.
 
   Lemma stepOK_setDecodeCanProceed :
     StepOK (@setDecodeCanProceedStage pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-              mulCapacity divCapacity mulStages divStages mulDivMode config implRegions type).
+              mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions type).
   Proof.
     intros s1 s1' s2 Hsem [g Hg].
     unfold setDecodeCanProceedStage, setDecodeCanProceed in Hsem.
@@ -1751,7 +1752,7 @@ Section Periph.
 
   Lemma stepOK_setExecuteCanProceed :
     StepOK (@setExecuteCanProceedStage pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-              mulCapacity divCapacity mulStages divStages mulDivMode config implRegions type).
+              mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions type).
   Proof.
     intros s1 s1' s2 Hsem [g Hg].
     unfold setExecuteCanProceedStage, setExecuteCanProceed in Hsem.
@@ -1765,7 +1766,7 @@ Section Periph.
   Theorem stepOK_setCanProceedSteps :
     forall act,
       In act (@setCanProceedSteps pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions type) ->
+                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions type) ->
       StepOK act.
   Proof.
     intros act Hin; cbn [setCanProceedSteps In] in Hin.
@@ -1829,12 +1830,12 @@ Section Periph.
   (* --- 3. Device Steps --- *)
 
   Local Abbreviation IREG := (iRegions pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
+                                mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation IMEM := (iMem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA).
+                                mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation SMEM := (sMem pcAddrInit pre post revBase revPfB revPfA).
   Local Abbreviation NPMI := (Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions).
+                                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions).
   Local Abbreviation NPMS := (Spec.np_mem pcAddrInit specRegions).
 
   (* An impl step of the device at position `idx` runs its action on the device state *)
@@ -1879,7 +1880,7 @@ Section Periph.
   (* Sampling MTIP: impl only, the spec stutters (its sampledMtip may lag) *)
   Lemma stepOK_implSampleMtipStep :
     StepOK (@implSampleMtipStep pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-              mulCapacity divCapacity mulStages divStages mulDivMode config implRegions clint type).
+              mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions clint type).
   Proof.
     intros s1 s1' s2 Hsem [g Hg].
     unfold implSampleMtipStep in Hsem.
@@ -1921,7 +1922,7 @@ Section Periph.
   (* Timer tick: lockstep with the spec tick *)
   Lemma stepOK_implTickTimer :
     StepOK (@implTickTimer pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-              mulCapacity divCapacity mulStages divStages mulDivMode config implRegions clint type).
+              mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions clint type).
   Proof.
     intros s1 s1' s2 Hsem [g Hg].
     unfold implTickTimer in Hsem.
@@ -1990,7 +1991,7 @@ Section Periph.
   (* Sampling MEIP: impl only, the spec stutters (its meip may lag) *)
   Lemma stepOK_implPlicSampleMeipStep :
     StepOK (@implPlicSampleMeipStep pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-              mulCapacity divCapacity mulStages divStages mulDivMode config implRegions plic type).
+              mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions plic type).
   Proof.
     intros s1 s1' s2 Hsem [g Hg].
     unfold implPlicSampleMeipStep in Hsem.
@@ -2032,7 +2033,7 @@ Section Periph.
   (* Claim update: lockstep with the spec claim update *)
   Lemma stepOK_implPlicClaimStep :
     StepOK (@implPlicClaimStep pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-              mulCapacity divCapacity mulStages divStages mulDivMode config implRegions plic type).
+              mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions plic type).
   Proof.
     intros s1 s1' s2 Hsem [g Hg].
     unfold implPlicClaimStep in Hsem.
@@ -2098,7 +2099,7 @@ Section Periph.
   Local Abbreviation nS := (S (S (length (collectIrqActions specRegions)))).
   Local Abbreviation RELG :=
     (RefRelG pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-             mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
+             mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
              clintS clint plicS plic initLine fwcs).
 
   Lemma length_irq_eq :
@@ -2385,7 +2386,7 @@ Section Periph.
   Theorem stepOK_implPlicPendingsSteps :
     forall act,
       In act (@implPlicPendingsSteps pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions plic type) ->
+                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions plic type) ->
       StepOK act.
   Proof.
     intros act Hin s1 s1' s2 Hsem [g Hg].
@@ -2452,7 +2453,7 @@ Section Periph.
 
   Lemma stepOK_implTickCycle :
     StepOK (@implTickCycle pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-              mulCapacity divCapacity mulStages divStages mulDivMode config implRegions type).
+              mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions type).
   Proof.
     intros s1 s1' s2 Hsem [g Hg].
     unfold implTickCycle in Hsem.
@@ -2477,7 +2478,7 @@ Section Periph.
   Theorem stepOK_implPeripheralSteps :
     forall act,
       In act (@implPeripheralSteps pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions clint plic type) ->
+                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions clint plic type) ->
       StepOK act.
   Proof.
     intros act Hin.
@@ -2570,7 +2571,7 @@ Section Periph.
   Theorem stepOK_fenceIAcks :
     forall act,
       In act (@fenceIAcks pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions type) ->
+                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions type) ->
       StepOK act.
   Proof.
     intros act Hin s1 s1' s2 Hsem [g Hg].

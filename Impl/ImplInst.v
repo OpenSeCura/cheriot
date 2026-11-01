@@ -73,6 +73,7 @@ Definition implSysTreeInst : Tree Elem :=
               ImplMulStages
               ImplDivStages
               ImplMulDivMode
+              (implWithInstIfc implNoInstIfc)
               concreteRevConfig
               implConcreteRegions.
 
@@ -89,6 +90,7 @@ Definition pipelinedModInst : Mod implSysTreeInst :=
                 ImplMulStages
                 ImplDivStages
                 ImplMulDivMode
+                (implWithInstIfc implNoInstIfc)
                 concreteRevConfig
                 implConcreteRegions
                 implConcreteClint

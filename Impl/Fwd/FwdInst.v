@@ -43,6 +43,7 @@ Definition forwardDatapathModInst : Mod implSysTreeInst :=
                       ImplMulStages
                       ImplDivStages
                       ImplMulDivMode
+                      (implWithInstIfc implNoInstIfc)
                       concreteRevConfig
                       implConcreteRegions
                       implConcreteClint

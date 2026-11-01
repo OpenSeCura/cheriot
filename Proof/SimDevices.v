@@ -38,11 +38,12 @@ Section SubtreeAccessors.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity : nat.
   Variable mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
+  Variable bp : WithInstPredIfc.
   Variable config : RevConfig.
   Variable regions : list MemRegion.
 
   Local Abbreviation sTree := (@specSysTree pcAddrInit regions).
-  Local Abbreviation iTree := (@implSysTree pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions).
+  Local Abbreviation iTree := (@implSysTree pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions).
 
   Definition specRf (s : TreeState ElemState sTree)
     : TreeState ElemState (rfTree pcAddrInit) :=
@@ -54,7 +55,7 @@ Section SubtreeAccessors.
 
   Definition implCore (s : TreeState ElemState iTree)
     : TreeState ElemState
-        (coreTree (rfTree pcAddrInit) implBpTree (implMemTree regions)
+        (coreTree (rfTree pcAddrInit) (withInst_BpTree bp) (implMemTree regions)
                   (implFetchTree pcAddrInit fetchCapacity instCapacity)
                   (implDecodeTree decodeCapacity)
                   implExecuteTree
@@ -71,7 +72,7 @@ Section SubtreeAccessors.
     Fst (Fst (Snd (Fst s))).
 
   Definition implBp (s : TreeState ElemState iTree)
-    : TreeState ElemState implBpTree :=
+    : TreeState ElemState (withInst_BpTree bp) :=
     Fst (Fst (Snd (Snd (Fst s)))).
 
   Definition implMem (s : TreeState ElemState iTree)
@@ -114,42 +115,42 @@ Section SubtreeAccessors.
 
   Lemma readSubTreeState_impl_np_core :
     forall (s : TreeState ElemState iTree),
-      readSubTreeState (@Impl.np_core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions) s = implCore s.
+      readSubTreeState (@Impl.np_core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions) s = implCore s.
   Proof.
     intros s; reflexivity.
   Qed.
 
   Lemma readSubTreeState_impl_np_rf :
     forall (s : TreeState ElemState iTree),
-      readSubTreeState (@Impl.np_rf pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions) s = implRf s.
+      readSubTreeState (@Impl.np_rf pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions) s = implRf s.
   Proof.
     intros s; reflexivity.
   Qed.
 
   Lemma readSubTreeState_impl_np_mem :
     forall (s : TreeState ElemState iTree),
-      readSubTreeState (@Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions) s = implMem s.
+      readSubTreeState (@Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions) s = implMem s.
   Proof.
     intros s; reflexivity.
   Qed.
 
   Lemma readSubTreeState_impl_np_fetch :
     forall (s : TreeState ElemState iTree),
-      readSubTreeState (@Impl.np_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions) s = implFetch s.
+      readSubTreeState (@Impl.np_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions) s = implFetch s.
   Proof.
     intros s; reflexivity.
   Qed.
 
   Lemma readSubTreeState_impl_np_decode :
     forall (s : TreeState ElemState iTree),
-      readSubTreeState (@Impl.np_decode pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions) s = implDecode s.
+      readSubTreeState (@Impl.np_decode pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions) s = implDecode s.
   Proof.
     intros s; reflexivity.
   Qed.
 
   Lemma readSubTreeState_impl_np_execute :
     forall (s : TreeState ElemState iTree),
-      readSubTreeState (@Impl.np_execute pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions) s = implExecute s.
+      readSubTreeState (@Impl.np_execute pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions) s = implExecute s.
   Proof.
     intros s; reflexivity.
   Qed.
@@ -172,7 +173,7 @@ Section SubtreeAccessors.
 
   Lemma impl_write_np_rf_accessors :
     forall (s : TreeState ElemState iTree) rf',
-      let s' := writeSubTreeState (@Impl.np_rf pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions) s rf' in
+      let s' := writeSubTreeState (@Impl.np_rf pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions) s rf' in
       implRf s' = rf' /\
       implWaitBits s' = implWaitBits s /\
       implBp s' = implBp s /\
@@ -188,7 +189,7 @@ Section SubtreeAccessors.
 
   Lemma impl_write_np_mem_accessors :
     forall (s : TreeState ElemState iTree) m',
-      let s' := writeSubTreeState (@Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions) s m' in
+      let s' := writeSubTreeState (@Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions) s m' in
       implRf s' = implRf s /\
       implWaitBits s' = implWaitBits s /\
       implBp s' = implBp s /\
@@ -205,24 +206,24 @@ End SubtreeAccessors.
 
 Arguments specRf {pcAddrInit regions} s.
 Arguments specMem {pcAddrInit regions} s.
-Arguments implCore {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions} s.
-Arguments implRf {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions} s.
-Arguments implWaitBits {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions} s.
-Arguments implBp {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions} s.
-Arguments implMem {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions} s.
-Arguments implFetch {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions} s.
-Arguments implDecode {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions} s.
-Arguments implExecute {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions} s.
-Arguments implDataMem {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions} s.
-Arguments implMulDiv {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions} s.
+Arguments implCore {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions} s.
+Arguments implRf {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions} s.
+Arguments implWaitBits {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions} s.
+Arguments implBp {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions} s.
+Arguments implMem {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions} s.
+Arguments implFetch {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions} s.
+Arguments implDecode {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions} s.
+Arguments implExecute {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions} s.
+Arguments implDataMem {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions} s.
+Arguments implMulDiv {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions} s.
 Arguments readSubTreeState_spec_np_rf {pcAddrInit regions} s.
 Arguments readSubTreeState_spec_np_mem {pcAddrInit regions} s.
-Arguments readSubTreeState_impl_np_core {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions} s.
-Arguments readSubTreeState_impl_np_rf {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions} s.
-Arguments readSubTreeState_impl_np_mem {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions} s.
-Arguments readSubTreeState_impl_np_fetch {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions} s.
-Arguments readSubTreeState_impl_np_decode {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions} s.
-Arguments readSubTreeState_impl_np_execute {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions} s.
+Arguments readSubTreeState_impl_np_core {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions} s.
+Arguments readSubTreeState_impl_np_rf {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions} s.
+Arguments readSubTreeState_impl_np_mem {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions} s.
+Arguments readSubTreeState_impl_np_fetch {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions} s.
+Arguments readSubTreeState_impl_np_decode {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions} s.
+Arguments readSubTreeState_impl_np_execute {pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions} s.
 
 (* ===========================================================================
  * 2. MEMORY REGION PROJECTION (`projImplRegionSpecState` / `projImplMemSpecState`)
@@ -679,6 +680,7 @@ Section SystemDevicesSim.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity : nat.
   Variable mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
+  Variable bp : WithInstPredIfc.
   Variable config : RevConfig.
   Variable regions : list MemRegion.
   Variable clint : @ClintInstance regions.
@@ -687,13 +689,13 @@ Section SystemDevicesSim.
   Variable plic : @PlicInstance (S (S (length (collectIrqActions regions)))) regions.
 
   Local Abbreviation sTree := (@specSysTree pcAddrInit regions).
-  Local Abbreviation iTree := (@implSysTree pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions).
+  Local Abbreviation iTree := (@implSysTree pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions).
   Local Abbreviation specMod := (@spec pcAddrInit config regions clint revSpec plic).
-  Local Abbreviation np_rf_i := (@Impl.np_rf pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions).
-  Local Abbreviation np_mem_i := (@Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions).
-  Local Abbreviation np_fetch_i := (@Impl.np_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions).
-  Local Abbreviation np_decode_i := (@Impl.np_decode pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions).
-  Local Abbreviation np_execute_i := (@Impl.np_execute pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions).
+  Local Abbreviation np_rf_i := (@Impl.np_rf pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions).
+  Local Abbreviation np_mem_i := (@Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions).
+  Local Abbreviation np_fetch_i := (@Impl.np_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions).
+  Local Abbreviation np_decode_i := (@Impl.np_decode pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions).
+  Local Abbreviation np_execute_i := (@Impl.np_execute pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions).
   Local Abbreviation np_rf_s := (@Spec.np_rf pcAddrInit regions).
   Local Abbreviation np_mem_s := (@Spec.np_mem pcAddrInit regions).
 
@@ -804,7 +806,7 @@ Section SystemDevicesSim.
     forall {envImpl : Env iTree} {envSpec : Env sTree}
            (old1 new1 : TreeState ElemState iTree)
            (old2 : TreeState ElemState sTree) (v : bits 0),
-      SemAction envImpl (@implTickCycle pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions type) old1 new1 v ->
+      SemAction envImpl (@implTickCycle pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions type) old1 new1 v ->
       let mid2 := writeSubTreeState np_rf_s old2 (evalIncrementMcycle pcAddrInit (specRf old2)) in
       new1 = writeSubTreeState np_rf_i old1 (evalIncrementMcycle pcAddrInit (implRf old1)) /\
       v = Zmod.zero /\
@@ -855,7 +857,7 @@ Section SystemDevicesSim.
            (old1 new1 : TreeState ElemState iTree)
            (old2 : TreeState ElemState sTree) (v : bits 0),
       specMem old2 = projImplMemSpecState regions (implMem old1) ->
-      SemAction envImpl (@implTickTimer pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions clint type) old1 new1 v ->
+      SemAction envImpl (@implTickTimer pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions clint type) old1 new1 v ->
       let mid2 := writeSubTreeState np_mem_s old2 (projImplMemSpecState regions (implMem new1)) in
       SemAction envSpec (@specTickTimer pcAddrInit regions clint type) old2 mid2 v /\
       SemActions envSpec (specMod type) old2 mid2 /\
@@ -893,7 +895,7 @@ Section SystemDevicesSim.
            (old1 new1 : TreeState ElemState iTree)
            (old2 : TreeState ElemState sTree) (v : bits 0),
       specMem old2 = projImplMemSpecState regions (implMem old1) ->
-      SemAction envImpl (@implSampleMtipStep pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions clint type) old1 new1 v ->
+      SemAction envImpl (@implSampleMtipStep pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions clint type) old1 new1 v ->
       let mid2 := writeSubTreeState np_mem_s old2 (projImplMemSpecState regions (implMem new1)) in
       SemAction envSpec (@specSampleMtipStep pcAddrInit regions clint type) old2 mid2 v /\
       SemActions envSpec (specMod type) old2 mid2 /\
@@ -951,7 +953,7 @@ Section SystemDevicesSim.
            (old1 new1 : TreeState ElemState iTree)
            (old2 : TreeState ElemState sTree) (v : bits 0),
       specMem old2 = projImplMemSpecState regions (implMem old1) ->
-      SemAction envImpl (@implPlicClaimStep pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions plic type) old1 new1 v ->
+      SemAction envImpl (@implPlicClaimStep pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions plic type) old1 new1 v ->
       let mid2 := writeSubTreeState np_mem_s old2 (projImplMemSpecState regions (implMem new1)) in
       SemAction envSpec (@specPlicClaimStep pcAddrInit regions plic type) old2 mid2 v /\
       SemActions envSpec (specMod type) old2 mid2 /\
@@ -989,7 +991,7 @@ Section SystemDevicesSim.
            (old1 new1 : TreeState ElemState iTree)
            (old2 : TreeState ElemState sTree) (v : bits 0),
       specMem old2 = projImplMemSpecState regions (implMem old1) ->
-      SemAction envImpl (@implPlicSampleMeipStep pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions plic type) old1 new1 v ->
+      SemAction envImpl (@implPlicSampleMeipStep pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions plic type) old1 new1 v ->
       let mid2 := writeSubTreeState np_mem_s old2 (projImplMemSpecState regions (implMem new1)) in
       SemAction envSpec (@specPlicSampleMeipStep pcAddrInit regions plic type) old2 mid2 v /\
       SemActions envSpec (specMod type) old2 mid2 /\
@@ -1137,7 +1139,7 @@ Section SystemDevicesSim.
            (Henv : ImplSpecSysEnvRel envImpl envSpec)
            act (old1 new1 : TreeState ElemState iTree)
            (old2 : TreeState ElemState sTree) (v : bits 0),
-      In act (@implPlicPendingsSteps pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions plic type) ->
+      In act (@implPlicPendingsSteps pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions plic type) ->
       specMem old2 = projImplMemSpecState regions (implMem old1) ->
       SemAction envImpl act old1 new1 v ->
       let mid2 := writeSubTreeState np_mem_s old2 (projImplMemSpecState regions (implMem new1)) in
@@ -1304,7 +1306,7 @@ Section SystemDevicesSim.
            (Henv : ImplSpecSysEnvRel envImpl envSpec)
            act (old1 new1 : TreeState ElemState iTree)
            (old2 : TreeState ElemState sTree) (v : bits 0),
-      In act (@fenceIAcks pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions type) ->
+      In act (@fenceIAcks pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions type) ->
       specMem old2 = projImplMemSpecState regions (implMem old1) ->
       SemAction envImpl act old1 new1 v ->
       let mid2 := writeSubTreeState np_mem_s old2 (projImplMemSpecState regions (implMem new1)) in
@@ -1360,7 +1362,7 @@ Section SystemDevicesSim.
 
   Theorem SemAction_setFetchCanProceedStage_inv :
     forall {env : Env iTree} (old1 new1 : TreeState ElemState iTree) (v : bits 0),
-      SemAction env (@setFetchCanProceedStage pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions type) old1 new1 v ->
+      SemAction env (@setFetchCanProceedStage pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions type) old1 new1 v ->
       new1 = writeSubTreeState np_fetch_i old1 (implFetch new1) /\
       v = Zmod.zero /\
       implRf new1 = implRf old1 /\
@@ -1389,7 +1391,7 @@ Section SystemDevicesSim.
 
   Theorem SemAction_setDecodeCanProceedStage_inv :
     forall {env : Env iTree} (old1 new1 : TreeState ElemState iTree) (v : bits 0),
-      SemAction env (@setDecodeCanProceedStage pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions type) old1 new1 v ->
+      SemAction env (@setDecodeCanProceedStage pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions type) old1 new1 v ->
       new1 = writeSubTreeState np_decode_i old1 (implDecode new1) /\
       v = Zmod.zero /\
       implRf new1 = implRf old1 /\
@@ -1414,7 +1416,7 @@ Section SystemDevicesSim.
 
   Theorem SemAction_setExecuteCanProceedStage_inv :
     forall {env : Env iTree} (old1 new1 : TreeState ElemState iTree) (v : bits 0),
-      SemAction env (@setExecuteCanProceedStage pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions type) old1 new1 v ->
+      SemAction env (@setExecuteCanProceedStage pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions type) old1 new1 v ->
       new1 = writeSubTreeState np_execute_i old1 (implExecute new1) /\
       v = Zmod.zero /\
       implRf new1 = implRf old1 /\
@@ -2547,6 +2549,7 @@ Section SysEnvs.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity : nat.
   Variable mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
+  Variable bp : WithInstPredIfc.
   Variable config : RevConfig.
   Variable regions : list MemRegion.
   Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
@@ -2554,7 +2557,7 @@ Section SysEnvs.
   Variable fenceIWriteCount : nat -> nat -> nat.
 
   Local Abbreviation sTree := (@specSysTree pcAddrInit regions).
-  Local Abbreviation iTree := (@implSysTree pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config regions).
+  Local Abbreviation iTree := (@implSysTree pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config regions).
 
   (* `specSysTree`: sys [ core [ rf; mem [ specMemTree ]; secondLine ] ] *)
   Definition specEnv : Env sTree :=

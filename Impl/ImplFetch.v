@@ -131,15 +131,14 @@ Section FetchStage.
   Definition isParcelCompressed {ty : Kind -> Type} (p : ty (Bit CompInstSz)) : Expr ty Bool :=
     Not (isAllOnes (TruncLsb (CompInstSz - 2) 2 #p)).
 
-  Variable noInstIfc : forall ty, @NoInstPredIfc ty.
-  Variable withInstIfc : forall ty, @WithInstPredIfc (noInstIfc ty).(noInstTree) ty.
+  Variable withInstIfc : WithInstPredIfc.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable executeIfc : forall ty, @ExecuteIfc ty.
   Variable decodeTree dataMemTree mulDivTree : Tree Elem.
   Variable ty : Kind -> Type.
 
   Local Abbreviation rfTree := (rfTree pcAddrInit).
-  Local Abbreviation bpTree := (bpTree (noInstIfc ty).(noInstTree) (withInstIfc ty).(withInstTree)).
+  Local Abbreviation bpTree := withInstIfc.(withInst_BpTree).
   Local Abbreviation memTree := (memIfc ty).(memTree).
   Local Abbreviation executeTree := (executeIfc ty).(executeTree).
   Local Abbreviation coreTree := (coreTree rfTree bpTree memTree implFetchTree decodeTree executeTree dataMemTree mulDivTree).
@@ -150,9 +149,6 @@ Section FetchStage.
 
   Definition np_bp : NodePath coreTree :=
     Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.bp") singletonChildPath).
-
-  Definition np_noInst : NodePath coreTree :=
-    Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.bp..noInst") singletonChildPath).
 
   Definition np_mem : NodePath coreTree :=
     Eval cbv in (embedNodeIntoPath (getNodePath coreTree "core.mem") singletonChildPath).
@@ -178,7 +174,7 @@ Section FetchStage.
    *                 EX-perm, and Base-bounds checks. If no fault so far,
    *                 issue aligned packet read mem_readInstRq(alignedPc).
    *                 When pre-fault or request accepted, predict exitParcel
-   *                 and predPc via noInst_getPred(fetchPc), enqueue
+   *                 and predPc via withInst_noInst_getPred(fetchPc), enqueue
    *                 FetchBufEntry into fetchBuf, and advance fetchPc to predPc.
    * ========================================================================= *)
   Definition fetchRq : Action ty coreTree (Bit 0) :=
@@ -220,7 +216,7 @@ Section FetchStage.
         } ;
         LetIf noInstOut : NoInstPredOut <-
           If (Not #hasPreFault) Then (
-            liftAction np_noInst ((noInstIfc ty).(noInst_getPred) fetchPc)
+            liftAction np_bp (withInstIfc.(withInst_noInst_getPred) fetchPc)
           ) Else (
             Return #defaultNoInstOut
           ) ;
@@ -373,7 +369,7 @@ Section FetchStage.
                 LetIf l2PredPc : Addr <-
                   If (And [ Not #initStraddle ; Not #hasCombFault ]) Then (
                     LetIf predPc <- If #needsPred Then
-                                      liftAction np_bp ((withInstIfc ty).(withInst_getPred) instPc instPred expInst pb)
+                                      liftAction np_bp (withInstIfc.(withInst_getPred) instPc instPred expInst pb)
                                     Else Return #seqPc ;
                     Return #predPc
                   ) Else (
@@ -391,7 +387,7 @@ Section FetchStage.
                     liftAction np_mem ((memIfc ty).(mem_deqInstRp) alignedPc)
                   ) ;
                   Act (liftAction np_fetch (@writeCurParcelOpt ty noneParcel)) ;
-                  Act (liftAction np_noInst ((noInstIfc ty).(noInst_updByFetch)
+                  Act (liftAction np_bp (withInstIfc.(withInst_noInst_updByFetch)
                          entryPc currInstLastParcel exitMismatch l2PredPc predPcMismatch pb initStraddle)) ;
 
                   If #predPcMismatch Then (

@@ -77,8 +77,7 @@ Section ExecuteStage.
   |}.
 
   Variable pcAddrInit : Z.
-  Variable noInstTree : Tree Elem.
-  Variable withInstIfc : forall ty, @WithInstPredIfc noInstTree ty.
+  Variable withInstIfc : WithInstPredIfc.
   Variable memIfc : forall ty, @MemIfc ty.
   Variable fetchIfc : forall ty, @FetchIfc ty.
   Variable decodeIfc : forall ty, @DecodeIfc ty.
@@ -88,7 +87,7 @@ Section ExecuteStage.
   Variable meipAct mtipAct : Action ty (memIfc ty).(memTree) Bool.
 
   Local Abbreviation rfTree := (rfTree pcAddrInit).
-  Local Abbreviation bpTree := (bpTree noInstTree (withInstIfc ty).(withInstTree)).
+  Local Abbreviation bpTree := withInstIfc.(withInst_BpTree).
   Local Abbreviation memTree := (memIfc ty).(memTree).
   Local Abbreviation fetchTree := (fetchIfc ty).(fetchTree).
   Local Abbreviation decodeTree := (decodeIfc ty).(decodeTree).
@@ -279,11 +278,11 @@ Section ExecuteStage.
                 Let  capChanged      : Bool             <- And [ #hasCf ; ##cf`"capChanged" ] ;
 
                 If #hasCf Then (
-                  liftAction np_bp ((withInstIfc ty).(withInst_updCf) pcAddr cf)
+                  liftAction np_bp (withInstIfc.(withInst_updCf) pcAddr cf)
                 ) ;
 
                 If #isExc Then (
-                  liftAction np_bp ((withInstIfc ty).(withInst_updException) pcAddr)
+                  liftAction np_bp (withInstIfc.(withInst_updException) pcAddr)
                 ) ;
 
                 If (Or [ #isExc ; #capChanged ; ##execOut`"isFenceIRq" ; Not (Eq #committedNextPc #predPc) ]) Then (

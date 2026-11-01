@@ -80,6 +80,7 @@ Section StateProjections.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
+  Variable bp : WithInstPredIfc.
   Variable revCfg : RevConfig.
   Variable regions : list MemRegion.
 
@@ -92,7 +93,7 @@ Section StateProjections.
   Definition ImplTree : Tree Elem :=
     implSysTree pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages
-                mulDivMode revCfg regions.
+                mulDivMode bp revCfg regions.
 
   Definition SpecState : Type :=
     TreeState ElemState SpecTree.
@@ -113,7 +114,7 @@ Section StateProjections.
     TreeState ElemState WaitBitsTree.
 
   Definition BpTree : Tree Elem :=
-    implBpTree.
+    withInst_BpTree bp.
 
   Definition BpState : Type :=
     TreeState ElemState BpTree.

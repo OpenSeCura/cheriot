@@ -37,8 +37,11 @@ Section ImplDom.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity mulCapacity divCapacity : nat.
   Variable mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
+  (* The branch predictor (instantiated in ImplInst.v) *)
+  Variable withInstIfc : WithInstPredIfc.
 
   Local Abbreviation rTree := (rfTree pcAddrInit).
+  Local Abbreviation bpTree := withInstIfc.(withInst_BpTree).
   Local Abbreviation fTree := (implFetchTree pcAddrInit fetchCapacity instCapacity).
   Local Abbreviation decTree := (implDecodeTree decodeCapacity).
   Local Abbreviation eTree := implExecuteTree.
@@ -47,7 +50,7 @@ Section ImplDom.
 
   Definition implSysTree (config : RevConfig) (regions : list MemRegion) : Tree Elem :=
     Node "sys" [
-      coreTree rTree implBpTree (implMemTree regions) fTree decTree eTree dmTree mdTree
+      coreTree rTree bpTree (implMemTree regions) fTree decTree eTree dmTree mdTree
     ].
 
   Section Impl.
@@ -57,9 +60,6 @@ Section ImplDom.
     Variable rev : @RevokerInstance implRevokerExtraChildren regions.
     Variable plic : @PlicInstance (S (S (length (collectIrqActions regions)))) regions.
 
-    Local Abbreviation bpTree := implBpTree.
-    Local Abbreviation noInstIfc := (fun ty => @implNoInstIfc ty).
-    Local Abbreviation withInstIfc := (fun ty => @implWithInstIfc noInstIfc ty).
     Local Abbreviation memTree := (implMemTree regions).
     Local Abbreviation memIfc := (fun ty => @implMemIfc config regions ty rev).
     Local Abbreviation fetchIfc := (fun ty => @implFetchIfc pcAddrInit fetchCapacity instCapacity ty).
@@ -181,14 +181,14 @@ Section ImplDom.
        * ===================================================================== *)
 
       Definition fetchRqStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@fetchRq pcAddrInit fetchCapacity instCapacity noInstIfc withInstIfc memIfc executeIfc decTree dmTree mdTree ty).
+        liftAction np_core (@fetchRq pcAddrInit fetchCapacity instCapacity withInstIfc memIfc executeIfc decTree dmTree mdTree ty).
 
       (* =====================================================================
        * STAGE 2: Fetch Assemble, Pre-Decode & Level-2 Branch Prediction
        * ===================================================================== *)
 
       Definition fetchAssembleStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@fetchAssemble pcAddrInit fetchCapacity instCapacity noInstIfc withInstIfc memIfc executeIfc decTree dmTree mdTree ty).
+        liftAction np_core (@fetchAssemble pcAddrInit fetchCapacity instCapacity withInstIfc memIfc executeIfc decTree dmTree mdTree ty).
 
       Definition setFetchCanProceedStage : Action ty sysTree (Bit 0) :=
         liftAction np_fetch (@setFetchCanProceed pcAddrInit fetchCapacity instCapacity ty).
@@ -212,7 +212,7 @@ Section ImplDom.
       Definition aluAndExecuteNonDeferredStage : Action ty sysTree (Bit 0) :=
         liftAction np_core
           (@aluAndExecuteNonDeferred pcAddrInit
-                                     implNoInstTree withInstIfc memIfc
+                                     withInstIfc memIfc
                                      fetchIfc decodeIfc dataMemIfc mulDivIfc ty
                                      (implPlicAction (@plicMeip nIrq ty))
                                      (implClintAction (readClintMtip ty))).

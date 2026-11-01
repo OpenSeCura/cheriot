@@ -301,6 +301,7 @@ Section RefInitMain.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
+  Variable bp : WithInstPredIfc.
   Variable config : RevConfig.
   Variables pre post : list MemRegion.
   Variable revBase : Z.
@@ -323,7 +324,7 @@ Section RefInitMain.
 
   Local Abbreviation ITree :=
     (ImplTree pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-              mulCapacity divCapacity mulStages divStages mulDivMode config implRegions).
+              mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions).
   Local Abbreviation STree := (SpecTree pcAddrInit specRegions).
 
   Lemma length_collectIrqActions_pre :
@@ -347,21 +348,21 @@ Section RefInitMain.
   Hypothesis H2 : InitStateConsistent STree s2.
 
   Local Abbreviation IMEM := (impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1).
+                                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1).
   Local Abbreviation IFETCH := (impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                  mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1).
+                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1).
   Local Abbreviation IDEC := (impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1).
+                                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1).
   Local Abbreviation IEXEC := (impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1).
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1).
   Local Abbreviation IDM := (impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                               mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1).
+                               mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1).
   Local Abbreviation IWB := (impl_waitBits pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                               mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1).
+                               mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1).
   Local Abbreviation IRF := (impl_rf pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                               mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1).
+                               mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1).
   Local Abbreviation IMD := (impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                               mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1).
+                               mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1).
 
   Lemma init_mem : InitStateConsistent (implMemTree implRegions) IMEM.
   Proof. exact (proj1 (proj1 (proj2 (proj2 (proj2 (proj1 H1)))))). Qed.
@@ -387,11 +388,11 @@ Section RefInitMain.
 
   Lemma init_flush_eq :
     flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1 =
+                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1 =
     spec_rf pcAddrInit specRegions s2.
   Proof.
     rewrite (InitStateConsistent_flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-               mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1 H1).
+               mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1 H1).
     exact (allTreeInitDet_InitStateConsistent_eq _ _ _ (allTreeInitDet_RfTree pcAddrInit) init_rf init_srf).
   Qed.
 
@@ -422,7 +423,7 @@ Section RefInitMain.
 
   Theorem RefRel_init :
     RefRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-      mulCapacity divCapacity mulStages divStages mulDivMode config pre post revBase revPfB revPfA
+      mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
       clintS clint plicS plic initLine fwcs s1 s2.
   Proof.
     pose proof init_fetch as Hf.
@@ -534,7 +535,7 @@ Section RefInitMain.
       rewrite (InitStateConsistent_fifo_to_list decodeCapacity DecodeToAluEntry _ (proj1 (proj1 (proj2 Hd)))).
       rewrite (InitStateConsistent_extractMulDivEntries mulCapacity divCapacity mulStages divStages mulDivMode
                  _ (InitStateConsistent_impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
-                      dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1 H1)).
+                      dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1 H1)).
       cbv zeta.
       change (dmLoadRp (getDefault DataMemState)) with false.
       change (dmRevRq (getDefault DataMemState)) with false.
@@ -600,7 +601,7 @@ Section RefInitMain.
       split; [exact (InitStateConsistent_fifo_wf dataMemCapacity MemFenceReq _ (proj1 (proj1 Hdm))) |].
       split; [exact (MulDivWf_init mulCapacity divCapacity mulStages divStages mulDivMode _
                        (InitStateConsistent_impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity
-                          dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode config implRegions
+                          dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions
                           s1 H1)) |].
       apply AllPorts_init; [| exact init_regions].
       intros r y Hy; split.

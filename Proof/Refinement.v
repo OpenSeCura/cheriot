@@ -42,6 +42,7 @@ Section TopLevelGlue.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
+  Variable bp : WithInstPredIfc.
   Variable config : RevConfig.
   (* Spec and impl region lists. They are meant to differ only at the revoker index
    * (the impl revoker region has extra leaves); the glue does not need that link. *)
@@ -58,16 +59,16 @@ Section TopLevelGlue.
   Local Abbreviation iTree :=
     (ImplTree pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages
-              mulDivMode config implRegions).
+              mulDivMode bp config implRegions).
   Local Abbreviation SState := (SpecState pcAddrInit specRegions).
   Local Abbreviation IState :=
     (ImplState pcAddrInit fetchCapacity instCapacity decodeCapacity
                dataMemCapacity mulCapacity divCapacity mulStages divStages
-               mulDivMode config implRegions).
+               mulDivMode bp config implRegions).
   Local Abbreviation specMod := (@spec pcAddrInit config specRegions clintS revSpec plicS).
   Local Abbreviation pipeMod :=
     (@pipelinedMod pcAddrInit issueWidth fetchCapacity instCapacity decodeCapacity
-       dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+       dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
        config implRegions clint rev plic).
 
   (* Impl env, family of spec envs indexed by an oracle, and oracle prefixes. *)
@@ -105,83 +106,83 @@ Section TopLevelGlue.
     ob_peripheral :
       forall act,
         In act (@implPeripheralSteps pcAddrInit fetchCapacity instCapacity decodeCapacity
-                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                   config implRegions clint plic type) ->
         ActStepSim act ;
     ob_fetchRqStage :
       ActStepSim (@fetchRqStage pcAddrInit fetchCapacity instCapacity decodeCapacity
-                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                     config implRegions rev type) ;
     ob_fetchRps :
       forall act,
         In act (@fetchRps pcAddrInit fetchCapacity instCapacity decodeCapacity
-                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                   config implRegions type) ->
         ActStepSim act ;
     ob_fetchAssembleStage :
       ActStepSim (@fetchAssembleStage pcAddrInit fetchCapacity instCapacity decodeCapacity
-                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                     config implRegions rev type) ;
     ob_decodeAndRegReadStage :
       ActStepSim (@decodeAndRegReadStage pcAddrInit fetchCapacity instCapacity decodeCapacity
-                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                     config implRegions rev type) ;
     ob_aluAndExecuteStage :
       ActStepSim (@aluAndExecuteNonDeferredStage pcAddrInit fetchCapacity instCapacity decodeCapacity
-                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                     config implRegions clint rev plic type) ;
     ob_loadRqOrStoreOrFenceStage :
       ActStepSim (@loadRqOrStoreOrFenceStage pcAddrInit fetchCapacity instCapacity decodeCapacity
-                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                     config implRegions rev type) ;
     ob_dataWriteRqs :
       forall act,
         In act (@dataWriteRqs pcAddrInit fetchCapacity instCapacity decodeCapacity
-                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                   config implRegions type) ->
         ActStepSim act ;
     ob_dataReadRqs :
       forall act,
         In act (@dataReadRqs pcAddrInit fetchCapacity instCapacity decodeCapacity
-                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                   config implRegions type) ->
         ActStepSim act ;
     ob_dataReadRps :
       forall act,
         In act (@dataReadRps pcAddrInit fetchCapacity instCapacity decodeCapacity
-                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                   config implRegions type) ->
         ActStepSim act ;
     ob_loadRpAndIssueRevRqStage :
       ActStepSim (@loadRpAndIssueRevRqStage pcAddrInit fetchCapacity instCapacity decodeCapacity
-                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                     config implRegions rev type) ;
     ob_revRpAndWriteBackStage :
       ActStepSim (@revRpAndWriteBackStage pcAddrInit fetchCapacity instCapacity decodeCapacity
-                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                     config implRegions rev type) ;
     ob_mulDivStageActions :
       forall act,
         In act (@mulDivStageActions pcAddrInit fetchCapacity instCapacity decodeCapacity
-                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                   config implRegions type) ->
         ActStepSim act ;
     ob_revokerStepsSys :
       forall act,
         In act (@implRevokerStepsSys pcAddrInit fetchCapacity instCapacity decodeCapacity
-                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                   config implRegions rev type) ->
         ActStepSim act ;
     ob_fenceIAcks :
       forall act,
         In act (@fenceIAcks pcAddrInit fetchCapacity instCapacity decodeCapacity
-                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                   config implRegions type) ->
         ActStepSim act ;
     ob_setCanProceedSteps :
       forall act,
         In act (@setCanProceedSteps pcAddrInit fetchCapacity instCapacity decodeCapacity
-                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode
+                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                   config implRegions type) ->
         ActStepSim act
   }.
@@ -196,7 +197,7 @@ Section TopLevelGlue.
     intros Hob p s1 s1' s2 a Hin Ha Hrule Hr.
     pose proof (In_pipelinedMod_ImplActionKind pcAddrInit issueWidth
                   fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                  mulCapacity divCapacity mulStages divStages mulDivMode
+                  mulCapacity divCapacity mulStages divStages mulDivMode bp
                   config implRegions clint rev plic type a Hin) as Hkind.
     destruct Hkind as
       [Hin' | -> | Hin' | -> | -> | -> | -> | Hin' | Hin' | Hin' | -> | -> | Hin' | Hin' | Hin' | Hin'].

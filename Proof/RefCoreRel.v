@@ -162,6 +162,7 @@ Section CoreRel.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
   Variable mulCapacity divCapacity mulStages divStages : nat.
   Variable mulDivMode : MulDivMode.
+  Variable bp : WithInstPredIfc.
   Variable config : RevConfig.
   Variables pre post : list MemRegion.
   Variable revBase : Z.
@@ -180,7 +181,7 @@ Section CoreRel.
 
   Local Abbreviation IState :=
     (ImplState pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-               mulCapacity divCapacity mulStages divStages mulDivMode config implRegions).
+               mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions).
   Local Abbreviation SState := (SpecState pcAddrInit specRegions).
   Local Abbreviation RfSt := (RfState pcAddrInit).
   Local Abbreviation GEntryT := (GEntry).
@@ -190,28 +191,28 @@ Section CoreRel.
 
   Definition iRf (s1 : IState) : RfSt :=
     impl_rf pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-            mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1.
+            mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1.
   Definition iFlush (s1 : IState) : RfSt :=
     flushMulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1.
+                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1.
   Definition iWb (s1 : IState) :=
     impl_waitBits pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                  mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1.
+                  mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1.
   Definition iMem (s1 : IState) :=
     impl_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-             mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1.
+             mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1.
   Definition iFetch (s1 : IState) :=
     impl_fetch pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-               mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1.
+               mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1.
   Definition iDecode (s1 : IState) :=
     impl_decode pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1.
+                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1.
   Definition iExec (s1 : IState) :=
     impl_execute pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1.
+                 mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1.
   Definition iDm (s1 : IState) :=
     impl_dataMem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1.
+                 mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1.
 
   Definition iRegions (s1 : IState) : TS (implRegionsTree implRegions) := (iMem s1).(Fst).
   Definition iMemSt (s1 : IState) : type MemState := (iMem s1).(Snd).(Fst).
@@ -853,7 +854,7 @@ Section CoreRel.
        map mrDst (filter (fun q => opIsLoad (mrOp q)) (iDmBuf s1)) ++
        map fst (extractMulDivEntries mulCapacity divCapacity mulStages divStages mulDivMode
                   (impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                     mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1)))%list.
+                     mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1)))%list.
 
   Definition d2aWriters (l : list (type DecodeToAluEntry)) : list (bits RegIdxSzReal) :=
     map (fun j => aluInCd (daAluIn j)) (filter (fun j => aluInWritesCd (daAluIn j)) l).
@@ -1032,7 +1033,7 @@ Section CoreRel.
     fifo_wf (decode_toAluFifo decodeCapacity (iDecode s1)) /\
     fifo_wf (dataMem_fifo dataMemCapacity (iDm s1)) /\
     MulDivWf (impl_mulDiv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions s1) /\
+                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions s1) /\
     AllPorts (fun r y => ImplExternalRegionHandshakeInv r y /\ RegionFenceICountInv r y.(Fst))
       implRegions (iRegions s1).
 
@@ -1198,7 +1199,7 @@ Section CoreRel.
   Lemma RefRelG_regions_frame :
     forall g (s1 s1' : IState) (s2 s2' : SState) mi' ms',
       s1' = writeSubTreeState (Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions)
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions)
               s1 (mi' ,, (iMem s1).(Snd)) ->
       s2' = writeSubTreeState (Spec.np_mem pcAddrInit specRegions) s2 ms' ->
       (forall P, AllPorts P implRegions (iRegions s1') = AllPorts P implRegions (iRegions s1)) ->
@@ -1353,7 +1354,7 @@ Section CoreRel.
   Lemma RefRelG_wait_frame :
     forall g (s1 s1' : IState) (s2 s2' : SState) mi' ms',
       s1' = writeSubTreeState (Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions)
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions)
               s1 (mi' ,, (iMem s1).(Snd)) ->
       s2' = writeSubTreeState (Spec.np_mem pcAddrInit specRegions) s2 ms' ->
       ~ NoFenceIWait s1 ->
@@ -1432,7 +1433,7 @@ Section CoreRel.
   Lemma RefRelG_mem_frame :
     forall g g' (s1 s1' : IState) (s2 s2' : SState) mi' ms',
       s1' = writeSubTreeState (Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions) s1 mi' ->
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions) s1 mi' ->
       s2' = writeSubTreeState (Spec.np_mem pcAddrInit specRegions) s2 ms' ->
       g_chain g' = g_chain g -> g_rf0 g' = g_rf0 g -> g_cnwb g' = g_cnwb g -> g_d2aFo g' = g_d2aFo g ->
       accTakesHead (g_acc g') = accTakesHead (g_acc g) ->
@@ -1502,7 +1503,7 @@ Section CoreRel.
     Lemma RefRelG_rq_frame :
     forall g g' (s1 s1' : IState) (s2 s2' : SState) mi' ms',
       s1' = writeSubTreeState (Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                 mulCapacity divCapacity mulStages divStages mulDivMode config implRegions) s1 mi' ->
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions) s1 mi' ->
       s2' = writeSubTreeState (Spec.np_mem pcAddrInit specRegions) s2 ms' ->
       g_chain g' = g_chain g -> g_rf0 g' = g_rf0 g -> g_cnwb g' = g_cnwb g -> g_d2aFo g' = g_d2aFo g ->
       accTakesHead (g_acc g') = accTakesHead (g_acc g) ->
@@ -1632,7 +1633,7 @@ Section CoreRel.
 
   Local Abbreviation NPRF :=
     (Impl.np_rf pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                mulCapacity divCapacity mulStages divStages mulDivMode config implRegions).
+                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions).
 
   (* Common part of the two tick cases: everything but the chain-dependent components *)
   Lemma tick_impl_facts :

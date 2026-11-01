@@ -58,14 +58,14 @@ Section PreDecodeBranch.
     }).
 End PreDecodeBranch.
 
-Record NoInstPredIfc {ty : Kind -> Type} := {
-  noInstTree                : Tree Elem ;
-  noInst_getPred            : ty Addr -> Action ty noInstTree NoInstPredOut ;
-  noInst_updByFetch         : ty Addr -> ty (Bit LgFetchParcels) -> ty Bool ->
+Record NoInstPredIfc := {
+  noInst_BpTree             : Tree Elem ;
+  noInst_getPred            : forall {ty : Kind -> Type}, ty Addr -> Action ty noInst_BpTree NoInstPredOut ;
+  noInst_updByFetch         : forall {ty : Kind -> Type}, ty Addr -> ty (Bit LgFetchParcels) -> ty Bool ->
                               ty Addr -> ty Bool -> ty PreBranchInfo -> ty Bool ->
-                              Action ty noInstTree (Bit 0) ;
-  noInst_updTargetByExecute : ty Addr -> ty Addr -> ty PreBranchInfo -> Action ty noInstTree (Bit 0) ;
-  noInst_updException       : ty Addr -> Action ty noInstTree (Bit 0)
+                              Action ty noInst_BpTree (Bit 0) ;
+  noInst_updTargetByExecute : forall {ty : Kind -> Type}, ty Addr -> ty Addr -> ty PreBranchInfo -> Action ty noInst_BpTree (Bit 0) ;
+  noInst_updException       : forall {ty : Kind -> Type}, ty Addr -> Action ty noInst_BpTree (Bit 0)
 }.
 
 Definition bpTree (noInstTree withInstTree : Tree Elem) : Tree Elem :=
@@ -74,11 +74,17 @@ Definition bpTree (noInstTree withInstTree : Tree Elem) : Tree Elem :=
     Node "withInst" [ withInstTree ]
   ].
 
-Record WithInstPredIfc (noInstTree : Tree Elem) {ty : Kind -> Type} := {
-  withInstTree          : Tree Elem ;
-  withInst_getPred      : ty Addr -> ty Addr -> ty Inst -> ty PreBranchInfo -> Action ty (bpTree noInstTree withInstTree) Addr ;
-  withInst_updCf        : ty Addr -> ty CfPayload -> Action ty (bpTree noInstTree withInstTree) (Bit 0) ;
-  withInst_updException : ty Addr -> Action ty (bpTree noInstTree withInstTree) (Bit 0)
+(* The predictor interface the pipeline uses.  withInst_BpTree is the state of the whole predictor;
+ * the withInst_noInst_* functions just call the level-1 predictor. *)
+Record WithInstPredIfc := {
+  withInst_BpTree            : Tree Elem ;
+  withInst_noInst_getPred    : forall {ty : Kind -> Type}, ty Addr -> Action ty withInst_BpTree NoInstPredOut ;
+  withInst_noInst_updByFetch : forall {ty : Kind -> Type}, ty Addr -> ty (Bit LgFetchParcels) -> ty Bool ->
+                               ty Addr -> ty Bool -> ty PreBranchInfo -> ty Bool ->
+                               Action ty withInst_BpTree (Bit 0) ;
+  withInst_getPred           : forall {ty : Kind -> Type}, ty Addr -> ty Addr -> ty Inst -> ty PreBranchInfo -> Action ty withInst_BpTree Addr ;
+  withInst_updCf             : forall {ty : Kind -> Type}, ty Addr -> ty CfPayload -> Action ty withInst_BpTree (Bit 0) ;
+  withInst_updException      : forall {ty : Kind -> Type}, ty Addr -> Action ty withInst_BpTree (Bit 0)
 }.
 
 Section ImplBranchPredictor.
@@ -120,21 +126,22 @@ Section ImplBranchPredictor.
     Definition implNoInst_updException (pc : ty Addr) : Action ty implNoInstTree (Bit 0) :=
       Retv.
 
-    Definition implNoInstIfc : @NoInstPredIfc ty := {|
-      noInstTree                := implNoInstTree ;
-      noInst_getPred            := implNoInst_getPred ;
-      noInst_updByFetch         := implNoInst_updByFetch ;
-      noInst_updTargetByExecute := implNoInst_updTargetByExecute ;
-      noInst_updException       := implNoInst_updException
-    |}.
   End NoInstTy.
+
+  Definition implNoInstIfc : NoInstPredIfc := {|
+    noInst_BpTree             := implNoInstTree ;
+    noInst_getPred            := implNoInst_getPred ;
+    noInst_updByFetch         := implNoInst_updByFetch ;
+    noInst_updTargetByExecute := implNoInst_updTargetByExecute ;
+    noInst_updException       := implNoInst_updException
+  |}.
 
   (* =========================================================================
    * Level 2 (WithInst) Predictor Implementation
    * ========================================================================= *)
 
   Section WithInst.
-    Variable noInstIfc : forall ty, @NoInstPredIfc ty.
+    Variable noInstIfc : NoInstPredIfc.
 
     Definition implWithInstTree : Tree Elem :=
       Node "" [].
@@ -142,11 +149,25 @@ Section ImplBranchPredictor.
     Section WithInstTy.
       Variable ty : Kind -> Type.
 
-      Local Abbreviation noInstTree := (noInstIfc ty).(noInstTree).
-      Local Abbreviation tree := (bpTree noInstTree implWithInstTree).
+      Local Abbreviation tree := (bpTree noInstIfc.(noInst_BpTree) implWithInstTree).
 
       Local Definition np_noInst : NodePath tree :=
         Eval cbv in (embedNodeIntoPath (getNodePath tree ".noInst") singletonChildPath).
+
+      Definition implWithInst_noInst_getPred (pc : ty Addr) : Action ty tree NoInstPredOut :=
+        liftAction np_noInst (noInstIfc.(noInst_getPred) pc).
+
+      Definition implWithInst_noInst_updByFetch
+        (entryPc : ty Addr)
+        (lastParcel : ty (Bit LgFetchParcels))
+        (exitMismatch : ty Bool)
+        (l2PredPc : ty Addr)
+        (predPcMismatch : ty Bool)
+        (pb : ty PreBranchInfo)
+        (isStraddle : ty Bool)
+        : Action ty tree (Bit 0) :=
+        liftAction np_noInst
+          (noInstIfc.(noInst_updByFetch) entryPc lastParcel exitMismatch l2PredPc predPcMismatch pb isStraddle).
 
       Definition implWithInst_getPred
         (pc predPc : ty Addr)
@@ -194,22 +215,20 @@ Section ImplBranchPredictor.
           "isCall"   ::= #isCall ;
           "isReturn" ::= #isReturn
         } ;
-        liftAction np_noInst ((noInstIfc ty).(noInst_updTargetByExecute) pc target pb).
+        liftAction np_noInst (noInstIfc.(noInst_updTargetByExecute) pc target pb).
 
       Definition implWithInst_updException (pc : ty Addr) : Action ty tree (Bit 0) :=
-        liftAction np_noInst ((noInstIfc ty).(noInst_updException) pc).
-
-      Definition implWithInstIfc : @WithInstPredIfc noInstTree ty := {|
-        withInstTree          := implWithInstTree ;
-        withInst_getPred      := implWithInst_getPred ;
-        withInst_updCf        := implWithInst_updCf ;
-        withInst_updException := implWithInst_updException
-      |}.
-
+        liftAction np_noInst (noInstIfc.(noInst_updException) pc).
     End WithInstTy.
-  End WithInst.
 
-  Definition implBpTree : Tree Elem :=
-    bpTree implNoInstTree implWithInstTree.
+    Definition implWithInstIfc : WithInstPredIfc := {|
+      withInst_BpTree            := bpTree noInstIfc.(noInst_BpTree) implWithInstTree ;
+      withInst_noInst_getPred    := implWithInst_noInst_getPred ;
+      withInst_noInst_updByFetch := implWithInst_noInst_updByFetch ;
+      withInst_getPred           := implWithInst_getPred ;
+      withInst_updCf             := implWithInst_updCf ;
+      withInst_updException      := implWithInst_updException
+    |}.
+  End WithInst.
 
 End ImplBranchPredictor.
