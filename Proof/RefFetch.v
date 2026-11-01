@@ -200,16 +200,18 @@ Section FetchAllowedInst.
   Variable initLine : forall r : MemRegion, bits AddrSz -> type LineReadRp.
 
 
-  Definition instSzLg : type (Bit LgLgNumBytesFullCapSz) := evalExpr ($LgNumBytesInstSz : Expr type (Bit LgLgNumBytesFullCapSz)).
-
   (* The packet of `pc` in line response `rp` *)
   Definition specPkt (pc : type Addr) (rp : type LineReadRp) : type CapPacket :=
     evalLetExpr (memExtractCapPacket (Var type Addr pc) (Var type LineReadRp rp)).
 
+  (* The definitions below follow the syntax of `specMemFetchRead` and `specFetch` (a `Let x <- e`
+   * of the action becomes `evalExpr e`, a variable `#x` becomes `Var type _ x`), so that the values
+   * the actions compute are convertible to them without unfolding the expression evaluator. *)
+
   (* The 4-byte word read from packet `pkt` at `pc` *)
   Definition specWord (pc : type Addr) (pkt : type CapPacket) : type Inst :=
     let res : type FullCapWithTag :=
-      evalLetExpr (memAssembleCapRead (Var type Addr pc) (Var type (Bit LgLgNumBytesFullCapSz) instSzLg)
+      evalLetExpr (memAssembleCapRead (Var type Addr pc) ($LgNumBytesInstSz : Expr type (Bit LgLgNumBytesFullCapSz))
                      (Var type CapPacket pkt)) in
     evalExpr (##res`"addr").
 
@@ -217,7 +219,7 @@ Section FetchAllowedInst.
   Definition specTopExc (pc : type Addr) (top : type (Bit (AddrSz + 2))) (raw0 : type Inst) : bool :=
     let isComp : bool := evalExpr (@isCompressed type raw0) in
     let instLgBytes : type (Bit LgLgNumBytesFullCapSz) :=
-      evalExpr (ITE (Const type Bool isComp)
+      evalExpr (ITE (Var type Bool isComp)
                     ($(Z.log2 (CompInstSz / 8)) : Expr type (Bit LgLgNumBytesFullCapSz))
                     $(Z.log2 (InstSz / 8))) in
     let instEnd : type (Bit (AddrSz + 2)) := evalLetExpr (@AdderAccessEnd type pc instLgBytes) in
@@ -225,8 +227,13 @@ Section FetchAllowedInst.
 
   (* Whether the instruction (raw low word `raw0`) at `pc` spills into the next line *)
   Definition specCrosses (pc : type Addr) (raw0 : type Inst) : bool :=
-    andb (negb (evalExpr (@isCompressed type raw0)))
-         (evalExpr (memCrossesLine (Var type Addr pc) (Var type (Bit LgLgNumBytesFullCapSz) instSzLg))).
+    let isComp : bool := evalExpr (@isCompressed type raw0) in
+    evalExpr (And [ Not (Var type Bool isComp) ;
+                    memCrossesLine (Var type Addr pc) ($LgNumBytesInstSz : Expr type (Bit LgLgNumBytesFullCapSz)) ]).
+
+  (* Whether the instruction reads the next line: it crosses and passes the top check *)
+  Definition specReads2 (pc : type Addr) (top : type (Bit (AddrSz + 2))) (raw0 : type Inst) : bool :=
+    evalExpr (And [ Var type Bool (specCrosses pc raw0) ; Not (Var type Bool (specTopExc pc top raw0)) ]).
 
   (* `specMemFetchRead pc top` with line responses `rp0` (line of `pc`) and `rp1` (next
    * line, read only when the instruction crosses and passes the top check) *)
@@ -236,20 +243,22 @@ Section FetchAllowedInst.
     let raw0 := specWord pc pkt0 in
     let topExc := specTopExc pc top raw0 in
     let crosses := specCrosses pc raw0 in
-    let pkt1 := if andb crosses (negb topExc) then specPkt pc rp1 else getDefault CapPacket in
+    let pkt1 : type CapPacket :=
+      if specReads2 pc top raw0 then specPkt pc rp1 else evalExpr (Const type CapPacket (getDefault CapPacket)) in
     let pkt : type CapPacket :=
-      if crosses
-      then evalExpr (memMergeCapPacket (Var type Addr pc) (Var type CapPacket pkt0) (Var type CapPacket pkt1))
-      else pkt0 in
+      evalExpr (ITE (Var type Bool crosses)
+                    (memMergeCapPacket (Var type Addr pc) (Var type CapPacket pkt0) (Var type CapPacket pkt1))
+                    (Var type CapPacket pkt0)) in
     (specWord pc pkt, topExc).
 
   Definition specPreFault (pcc : type FullECapWithTag) : bool :=
     let pccAddr : type Addr := evalExpr (##pcc`"addr") in
     let pccECap : type ECap := evalExpr (##pcc`"ecap") in
-    evalExpr (Or [ Not (##pcc`"tag") ;
-                   @isSealed type pccECap ;
-                   Not (##pccECap`"perms"`"EX") ;
-                   Ult (ZeroExtendTo (AddrSz + 1) (##pccAddr)) (##pccECap`"base") ]).
+    let tagExc : bool := evalExpr (Not (##pcc`"tag")) in
+    let sealExc : bool := evalExpr (@isSealed type pccECap) in
+    let permExc : bool := evalExpr (Not (##pccECap`"perms"`"EX")) in
+    let baseBndsExc : bool := evalExpr (Ult (ZeroExtendTo (AddrSz + 1) (##pccAddr)) (##pccECap`"base")) in
+    evalExpr (Or [ Var type Bool tagExc ; Var type Bool sealExc ; Var type Bool permExc ; Var type Bool baseBndsExc ]).
 
   Definition pccTopOf (pcc : type FullECapWithTag) : type (Bit (AddrSz + 2)) :=
     let pccECap : type ECap := evalExpr (##pcc`"ecap") in
@@ -263,16 +272,18 @@ Section FetchAllowedInst.
     let sealExc : bool := evalExpr (@isSealed type pccECap) in
     let permExc : bool := evalExpr (Not (##pccECap`"perms"`"EX")) in
     let baseBndsExc : bool := evalExpr (Ult (ZeroExtendTo (AddrSz + 1) (##pccAddr)) (##pccECap`"base")) in
-    let boundsExc : bool := orb baseBndsExc topExc in
+    let boundsExc : bool := evalExpr (Or [ Var type Bool baseBndsExc ; Var type Bool topExc ]) in
     (evalExpr (##pccECap`"perms"`"SR") ,, (expInst ,, ((tagExc ,, (sealExc ,, (permExc ,, (boundsExc ,, tt)))) ,, tt))).
 
   (* A pre-faulted instruction reads as 0, a compressed (2-byte) instruction *)
   Definition specPreFaultTopExc (pcc : type FullECapWithTag) : bool :=
     let pccAddr : type Addr := evalExpr (##pcc`"addr") in
+    let pccECap : type ECap := evalExpr (##pcc`"ecap") in
+    let pccTop : type (Bit (AddrSz + 2)) := evalExpr (##pccECap`"top") in
     let compLgBytes : type (Bit LgLgNumBytesFullCapSz) :=
       evalExpr ($(Z.log2 (CompInstSz / 8)) : Expr type (Bit LgLgNumBytesFullCapSz)) in
     let instEnd0 : type (Bit (AddrSz + 2)) := evalLetExpr (@AdderAccessEnd type pccAddr compLgBytes) in
-    evalExpr (Ugt (Var type (Bit (AddrSz + 2)) instEnd0) (Var type (Bit (AddrSz + 2)) (pccTopOf pcc))).
+    evalExpr (Ugt (Var type (Bit (AddrSz + 2)) instEnd0) (Var type (Bit (AddrSz + 2)) pccTop)).
 
   Definition FetchAllowedInst (fwcs : nat -> nat -> nat) (regions : list MemRegion)
     (m : TreeState ElemState (specMemTree regions))
@@ -283,8 +294,7 @@ Section FetchAllowedInst.
     then fo = specFetchOutOf pcc Zmod.zero (specPreFaultTopExc pcc)
     else exists rp0 rp1,
       LineAllowed initLine fwcs regions m (evalExpr (memLineAddr (Var type Addr pc))) rp0 /\
-      (let raw0 := specWord pc (specPkt pc rp0) in
-       andb (specCrosses pc raw0) (negb (specTopExc pc top raw0)) = true ->
+      (specReads2 pc top (specWord pc (specPkt pc rp0)) = true ->
        LineAllowed initLine fwcs regions m (evalExpr (memNextLineAddr (Var type Addr pc))) rp1) /\
       fo = specFetchOutOf pcc (evalLetExpr (@preDecode type (fst (specFetchRd pc top rp0 rp1))))
                           (snd (specFetchRd pc top rp0 rp1)).

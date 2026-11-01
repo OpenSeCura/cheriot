@@ -1742,5 +1742,205 @@ Section CoreRel.
         [rewrite E1; reflexivity | intros L; rewrite Hsm; reflexivity].
   Qed.
 
+  (* --- 18. Replaying the Head of the Chain --- *)
+
+  (* The relation without `EagerRel`: it holds while the spec replays the head items of the chain
+   * (one `specTickCycle` or `specStep` each) until `EagerRel` holds again *)
+  Record RefRelNE (g : Ghost) (s1 : IState) (s2 : SState) : Prop := {
+    ne_rf     : RfRel g s1 s2 ;
+    ne_mem    : MemRelC g s1 s2 ;
+    ne_latch  : LatchRel g s2 ;
+    ne_replay : ReplayRel g s2 ;
+    ne_acc    : AccessRel g s1 s2 ;
+    ne_cnwb   : CnwbRel g s1 s2 ;
+    ne_dmq    : DmQueueRel g s1 ;
+    ne_fence  : FenceRel g s1 ;
+    ne_score  : ScoreRel g s1 ;
+    ne_front  : FrontRel g s1 s2 ;
+    ne_wf     : WfRel g s1 s2 ;
+    ne_rev    : RevokerRel g s1 s2
+  }.
+
+  Lemma RefRelNE_of_G : forall g s1 s2, RefRelG g s1 s2 -> RefRelNE g s1 s2.
+  Proof. intros g s1 s2 []; constructor; assumption. Qed.
+
+  Lemma RefRelG_of_NE : forall g s1 s2, RefRelNE g s1 s2 -> EagerRel g s2 -> RefRelG g s1 s2.
+  Proof. intros g s1 s2 [] He; constructor; assumption. Qed.
+
+  (* One item of the chain: a tick or an instruction step *)
+  Definition ItemStep (rf0 rf1 : RfSt) (it : GItemT) : Prop :=
+    match it with
+    | GTick => rf1 = evalIncrementMcycle pcAddrInit rf0
+    | GInst e => GInstStep pcAddrInit rf0 rf1 e
+    end.
+
+  Lemma GChain_cons_inv :
+    forall rf0 it G rf', GChain pcAddrInit rf0 (it :: G) rf' ->
+      exists rf1, ItemStep rf0 rf1 it /\ GChain pcAddrInit rf1 G rf'.
+  Proof.
+    intros rf0 it G rf' H.
+    inversion H as [| rf G0 rf'' Ht | rf0' rf1 e G0 rf'' Hs Hr]; subst.
+    - exists (evalIncrementMcycle pcAddrInit rf0); split; [reflexivity | exact Ht].
+    - exists rf1; split; [exact Hs | exact Hr].
+  Qed.
+
+  Lemma GChain_cons :
+    forall rf0 rf1 it G rf',
+      ItemStep rf0 rf1 it -> GChain pcAddrInit rf1 G rf' -> GChain pcAddrInit rf0 (it :: G) rf'.
+  Proof.
+    intros rf0 rf1 [| e] G rf' Hs H; cbn [ItemStep] in Hs.
+    - subst rf1; apply GChainTick; exact H.
+    - eapply GChainInst; [exact Hs | exact H].
+  Qed.
+
+  (* The items the spec replays as soon as they reach the head: ticks, ALU entries, plain fences *)
+  Definition itemNonBlocking (it : GItemT) : bool :=
+    match it with GTick => true | GInst e => negb (entryBlocking e) end.
+
+  Lemma nonBlocking_noMem :
+    forall e q, entryBlocking e = false -> entryReq e = Some q ->
+      opIsMem (mrOp q) = false /\ opIsFenceI (mrOp q) = false.
+  Proof.
+    intros e q Hb Hq; unfold entryBlocking in Hb; rewrite Hq in Hb; unfold isPlainFence in Hb.
+    revert Hb; destruct (opIsMem (mrOp q)), (opIsFenceI (mrOp q)); cbn; intros Hb;
+      first [discriminate Hb | split; reflexivity].
+  Qed.
+
+  Lemma nonBlocking_dm :
+    forall e, entryBlocking e = false -> optValid (ge_dm e) = true ->
+      opIsMem (optData (ge_dm e)) = false /\ opIsFenceI (optData (ge_dm e)) = false.
+  Proof.
+    intros e Hb Hv.
+    assert (Hq : entryReq e = Some (aluDstIdx (ge_aluOut e) ,,
+                                    ((aluDstVal (ge_aluOut e)).(Snd).(Snd).(Fst) ,, (optData (ge_dm e) ,, tt))))
+      by (unfold entryReq; rewrite Hv; reflexivity).
+    exact (nonBlocking_noMem e _ Hb Hq).
+  Qed.
+
+  (* The ghost after the spec replayed the head item, ending in register file `rf1` *)
+  Definition gPop (g : Ghost) (G' : list GItemT) (rf1 : RfSt) : Ghost :=
+    mkGhost G' rf1 (g_cnwb g) (g_revOff g) (g_d2aFo g) (g_acc g).
+
+  (* `AccessRel_ghost` when only memory heads move: `AccessRel` names the head only for loads and
+   * stores *)
+  Lemma AccessRel_ghost_mem :
+    forall g g' (s1 : IState) (s2 : SState),
+      g_acc g' = g_acc g -> g_revOff g' = g_revOff g -> g_cnwb g' = g_cnwb g ->
+      (forall q, HeadReq g q -> opIsMem (mrOp q) = true -> HeadReq g' q) ->
+      AccessRel g s1 s2 -> AccessRel g' s1 s2.
+  Proof.
+    intros g g' s1 s2 Eacc Erev Ecnwb HH Ha.
+    unfold AccessRel in *; rewrite Eacc, Erev, Ecnwb.
+    revert Ha.
+    destruct (g_acc g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
+                          | rc [[|]|[|]|[|]|[|] rp|res] | [[|]|[|]|[|]|[|] rp|res]
+                          | [[|]|[|]|[|]|[|] rp|res] | addr pkt [[|]|[|]]];
+      intros Ha; cbv beta iota zeta in *;
+      (let rec go H :=
+         lazymatch type of H with
+         | exists q, HeadReq _ q /\ _ =>
+             let q := fresh "q" in let Hh := fresh "Hh" in let Hr := fresh "Hr" in let Hop := fresh "Hop" in
+             destruct H as [q [Hh Hr]]; exists q; split; [| exact Hr];
+             apply HH; [exact Hh |];
+             destruct Hr as [Hop _]; unfold opIsStore, opIsLoad in Hop; apply andb_prop in Hop; exact (proj1 Hop)
+         | _ /\ _ =>
+             let H1 := fresh "H" in let H2 := fresh "H" in
+             destruct H as [H1 H2]; split; [go H1 | go H2]
+         | _ => exact H
+         end in
+       go Ha).
+  Qed.
+
+  Lemma filterReqs_pop :
+    forall it G, itemNonBlocking it = true ->
+      filter (fun q => negb (isPlainFence q)) (chainReqs (it :: G)) =
+      filter (fun q => negb (isPlainFence q)) (chainReqs G).
+  Proof.
+    intros [| e] G Hnb; [reflexivity |].
+    cbn [itemNonBlocking] in Hnb; apply negb_true_iff in Hnb.
+    unfold chainReqs; cbn [flat_map]; rewrite filter_app.
+    destruct (entryReq e) as [q |] eqn:Eq; [| reflexivity].
+    destruct (nonBlocking_noMem e q Hnb Eq) as [H1 H2].
+    cbn [filter]; unfold isPlainFence; rewrite H1, H2; reflexivity.
+  Qed.
+
+  (* The spec replayed the head item `it` (a tick, or a non-blocking entry): its register file is
+   * now `cnwbApply (g_cnwb g) rf1`, its memory changed only by reads, and `secondLine` is as
+   * before *)
+  Lemma RefRelNE_pop :
+    forall g it G' rf1 (s1 : IState) (s2 s2' : SState),
+      g_chain g = it :: G' ->
+      ItemStep (g_rf0 g) rf1 it ->
+      GChain pcAddrInit rf1 G' (iFlush s1) ->
+      itemNonBlocking it = true ->
+      sRf s2' = cnwbApply (g_cnwb g) rf1 ->
+      sSecond s2' = sSecond s2 ->
+      (forall L, lineContent specRegions (sMem s2') L = lineContent specRegions (sMem s2) L) ->
+      FetchViewExt specRegions (sMem s2) (sMem s2') ->
+      MemRelC g s1 s2' ->
+      sClint s2' = sClint s2 -> sPlic s2' = sPlic s2 ->
+      RefRelNE g s1 s2 -> RefRelNE (gPop g G' rf1) s1 s2'.
+  Proof.
+    intros g it G' rf1 s1 s2 s2' Hch Hst Hgc Hnb Erf Esec Hlc Hext Hmem Ecl Epl H.
+    destruct H as [Hrf Hm Hl Hrp Ha Hc Hd Hf Hs Hfr Hw Hrk].
+    pose proof (proj2 (proj2 Hm)) as Hsnap.
+    assert (Hhead : forall e, it = GInst e -> entryBlocking e = false)
+      by (intros e ->; cbn [itemNonBlocking] in Hnb; apply negb_true_iff in Hnb; exact Hnb).
+    constructor.
+    - unfold RfRel in *; unfold gPop; cbn [g_chain g_rf0 g_cnwb].
+      destruct Hrf as [R1 [R2 [R3 R4]]]; rewrite Hch in R3, R4.
+      split; [exact Erf |]; split; [exact Hgc |]; split.
+      + intros d v Hcn e Hin; exact (R3 d v Hcn e (or_intror Hin)).
+      + intros G1 e G2 HG Hld; apply (R4 (it :: G1) e G2); [rewrite HG; reflexivity | exact Hld].
+    - exact Hmem.
+    - unfold LatchRel in *; unfold gPop; cbn [g_chain].
+      intros e Hin; rewrite Ecl, Epl; apply Hl; rewrite Hch; right; exact Hin.
+    - unfold ReplayRel in *; unfold gPop; cbn [g_chain g_rf0].
+      intros G1 e G2 rfe HG Hc1.
+      apply (FetchAllowedInst_fetchViewExt initLine fwcs specRegions (sMem s2) (sMem s2') _ _ Hsnap Hext).
+      apply (Hrp (it :: G1) e G2 rfe); [rewrite Hch, HG; reflexivity | exact (GChain_cons _ _ _ _ _ Hst Hc1)].
+    - apply (AccessRel_ghost_mem g); [reflexivity | reflexivity | reflexivity | |].
+      + intros q [e [G'' [HG Hq]]] Hmq.
+        rewrite Hch in HG; injection HG as E1 _.
+        destruct (nonBlocking_noMem e q (Hhead e E1) Hq) as [Hm' _].
+        rewrite Hm' in Hmq; discriminate Hmq.
+      + exact (AccessRel_frame g s1 s1 s2 s2' (fun P => eq_refl) eq_refl eq_refl eq_refl eq_refl eq_refl Esec Hlc Ha).
+    - unfold CnwbRel in *; unfold gPop; cbn [g_cnwb].
+      destruct Hc as [C1 [C2 C3]].
+      split; [exact C1 | split; [| exact C3]].
+      intros Hq; rewrite (revWb_ext (sMem s2) (sMem s2') _ Hlc); exact (C2 Hq).
+    - unfold DmQueueRel in *; unfold gPop; cbn [g_chain g_acc]; cbv zeta in *.
+      rewrite Hch, (filterReqs_pop it G' Hnb) in Hd; exact Hd.
+    - unfold FenceRel in *; unfold gPop; cbn [g_chain].
+      destruct Hf as [Hf1 Hf2]; split.
+      + intros Hp; destruct (Hf1 Hp) as [Hnl [Hst' [G1 [e [G2 [HG [Hfi HF]]]]]]].
+        split; [exact Hnl | split; [exact Hst' |]].
+        rewrite Hch in HG.
+        destruct G1 as [| x G1]; cbn [app] in HG; injection HG as E1 E2.
+        * exfalso.
+          unfold entryIsFenceI in Hfi; revert Hfi; destruct (entryReq e) as [q |] eqn:Eq; intros Hfi;
+            [| discriminate Hfi].
+          destruct (nonBlocking_noMem e q (Hhead e E1) Eq) as [_ H2]; rewrite H2 in Hfi; discriminate Hfi.
+        * exists G1, e, G2; split; [exact E2 | split; [exact Hfi | exact HF]].
+      + intros Hw'; destruct (Hf2 Hw') as [Hp [Hnl [Hst' Hno]]].
+        split; [exact Hp | split; [exact Hnl | split; [exact Hst' |]]].
+        intros e Hin; apply (Hno e); rewrite Hch; right; exact Hin.
+    - exact Hs.
+    - unfold FrontRel in *; destruct Hfr as [F1 [F2 [F3 [F4 [F5 [F6 F7]]]]]].
+      split; [exact F1 |]; split; [exact F2 |]; split; [exact F3 |]; split; [exact F4 |]; split; [exact F5 |].
+      split.
+      + unfold LiveChain in *.
+        refine (LiveChainG_mono _ _ _ (FrontierRel s1 s2) _ _ _ Hsnap Hext _ F6).
+        intros p Hp; exact (FrontierRel_mono s1 s2 s2' p Hsnap Hext Hp).
+      + unfold FetchRespRel in *.
+        refine (AllPorts_impl _ _ implRegions (iRegions s1) _ F7).
+        intros r y HP; cbv beta zeta in HP |- *.
+        destruct HP as [C [HC1 [HC2 HC3]]]; exists C; split; [exact HC1 | split; [exact HC2 |]].
+        intros Hv; destruct (HC3 Hv) as [f [E' [HE Hla]]]; exists f, E'; split; [exact HE |].
+        intros Hlv; exact (LineAllowed_fetchViewExt initLine specRegions fwcs _ _ _ _ Hsnap Hext (Hla Hlv)).
+    - exact Hw.
+    - exact (RevokerRel_frame g (gPop g G' rf1) s1 s1 s2 s2' eq_refl eq_refl eq_refl Hlc Hrk).
+  Qed.
+
 End CoreRel.
 

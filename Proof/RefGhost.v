@@ -96,10 +96,12 @@ Section GhostChain.
   Definition execNextPcc (x : type ExecuteOut) : type FullECapWithTag :=
     x.(Snd).(Snd).(Snd).(Snd).(Fst).
 
-  (* The mulDiv result the spec's deferred stage writes (`specExecuteDeferred`) *)
+  (* The mulDiv result the spec's deferred stage writes (`specExecuteDeferred`): it checks the
+   * memory/fence request first and applies a mulDiv result only to an instruction without one *)
   Definition specMulDivWb (aluOut : type AluOutUnion) (execOut : type ExecuteOut) (rf : RfSt) : RfSt :=
     let mdOpt := execMulDiv execOut in
-    if mdOpt.(Snd).(Fst)
+    if (execDataMem execOut).(Snd).(Fst) then rf
+    else if mdOpt.(Snd).(Fst)
     then
       let mdOp : type MulDivUnion := mdOpt.(Fst) in
       let addr : type Addr := (aluDstVal aluOut).(Snd).(Snd).(Fst) in
@@ -278,6 +280,7 @@ Section GhostChain.
   Proof.
     intros a x d v rf Hav.
     unfold specMulDivWb.
+    destruct ((execDataMem x).(Snd).(Fst)); [reflexivity |].
     destruct ((execMulDiv x).(Snd).(Fst)); [| reflexivity].
     apply writeGprVal_comm.
     intros Hx Hd; exact (Hav Hd Hx).
