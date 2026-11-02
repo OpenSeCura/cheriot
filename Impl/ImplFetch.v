@@ -303,7 +303,7 @@ Section FetchStage.
       LetL instEnd            : Bit (AddrSz + 2)           <- AdderAccessEnd instPc instLgBytes ;
 
       Let  pccECap            : ECap                       <- ##pcc`"ecap" ;
-      Let  topExc             : Bool                       <- Ugt #instEnd (##pccECap`"top") ;
+      Let  topExc             : Bool                       <- memFetchTopExc #instEnd (##pccECap`"top") ;
 
       (* A 4-byte instruction in the last parcel spills into the next line. It is saved as a
        * straddle and completed with the next packet, unless it fails the top check: then the

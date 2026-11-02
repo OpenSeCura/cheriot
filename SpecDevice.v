@@ -664,7 +664,7 @@ Section SpecDevice.
     (* 2. Instruction fetch: the line holding addr and, if a 4-byte instruction spills into it,
      *    the next line; the two lines may belong to different regions. The low parcel tells
      *    whether the instruction is compressed (2 bytes) or not (4 bytes). The top bounds
-     *    check (instEnd > top) is done here: a 4-byte instruction that spills into the next
+     *    check (memFetchTopExc) is done here: a 4-byte instruction that spills into the next
      *    line but fails it does not fetch that line, and its upper parcel reads as 0. *)
     Definition specMemFetchRead
                (regions : list MemRegion)
@@ -680,7 +680,7 @@ Section SpecDevice.
       Let  instLgBytes : Bit LgLgNumBytesFullCapSz <-
         ITE #isComp $(Z.log2 (CompInstSz / 8)) $(Z.log2 (InstSz / 8)) ;
       LetL instEnd     : Bit (AddrSz + 2)          <- AdderAccessEnd addr instLgBytes ;
-      Let  topExc      : Bool                      <- Ugt #instEnd #top ;
+      Let  topExc      : Bool                      <- memFetchTopExc #instEnd #top ;
       Let  crosses     : Bool                      <-
         And [ Not #isComp ; memCrossesLine #addr ($LgNumBytesInstSz : Expr ty (Bit LgLgNumBytesFullCapSz)) ] ;
       LetIf pkt1 : CapPacket <-

@@ -223,7 +223,7 @@ Section FetchAllowedInst.
                     ($(Z.log2 (CompInstSz / 8)) : Expr type (Bit LgLgNumBytesFullCapSz))
                     $(Z.log2 (InstSz / 8))) in
     let instEnd : type (Bit (AddrSz + 2)) := evalLetExpr (@AdderAccessEnd type pc instLgBytes) in
-    evalExpr (Ugt (Var type (Bit (AddrSz + 2)) instEnd) (Var type (Bit (AddrSz + 2)) top)).
+    evalExpr (memFetchTopExc (Var type (Bit (AddrSz + 2)) instEnd) (Var type (Bit (AddrSz + 2)) top)).
 
   (* Whether the instruction (raw low word `raw0`) at `pc` spills into the next line *)
   Definition specCrosses (pc : type Addr) (raw0 : type Inst) : bool :=

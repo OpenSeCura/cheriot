@@ -483,6 +483,18 @@ Section CapEncoding.
   End BaseTop.
 End CapEncoding.
 
+Section FetchTopExc.
+  Variable ty : Kind -> Type.
+
+  (* The fetch top check: the instruction ends above `top`, or above the address space. The
+   * second test is *unnecessary* for real capabilities (a tagged cap's top never exceeds
+   * 2^AddrSz); it keeps an instruction from wrapping around the address space. *)
+  Definition memFetchTopExc (instEnd top : Expr ty (Bit (AddrSz + 2))) : Expr ty Bool :=
+    Or [ Ugt instEnd top ; Ugt instEnd (Const ty (Bit (AddrSz + 2)) (Zmod.of_Z _ (2 ^ AddrSz))) ].
+End FetchTopExc.
+
+Arguments memFetchTopExc [ty] instEnd top.
+
 Section Roots.
   Definition ExecRootPerms : type CapPerms := (STRUCT_CONST {
                                                    "U0" ::= false;
