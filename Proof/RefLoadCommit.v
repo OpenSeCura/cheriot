@@ -14,10 +14,6 @@
  * limitations under the License.
  *)
 
-(* Spec side of the load commit (milestone 4), the parts that build. The draft of the rest
- * (dispatchMemFence_load, loadCmdOf_dst, specCompleteLoad_wp, deferred_load_wp) is in
- * RefLoadCommit.v.wip, which is not built. *)
-
 From Stdlib Require Import String List ZArith Zmod Lia Bool.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems HelperLemmas.
 From Cheriot Require Import SpecDefines SpecDevice SpecFetchDeferred Spec Clint Plic Impl.ImplDevice.
