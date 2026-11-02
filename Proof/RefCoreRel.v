@@ -940,6 +940,7 @@ Section CoreRel.
        lineAddrOf fp <> fp /\ (* the straddle sits in the last parcel of its line *)
        evalExpr (@getPacketParcel type fp) = lastParcel /\
        sh.(Snd).(Fst) = preExcAt pcc fp /\
+       excAny (preExcAt pcc fp) = false /\
        (exists rpPrev,
           LineAllowed initLine fwcs specRegions (sMem s2) (lineAddrOf fp) rpPrev /\
           sh.(Fst) = pktParcel (fetchPktOf rpPrev) lastParcel) /\
@@ -1139,8 +1140,8 @@ Section CoreRel.
     intros s1 s2 s2' fp Hsnap Hext H; unfold FrontierRel in *; cbv zeta in *.
     destruct H as [H1 [H2 [H3 H4]]]; split; [exact H1 | split; [exact H2 | split; [| exact H4]]].
     destruct (optValid (iStraddle s1)); [| exact H3].
-    destruct H3 as [Ha [Hb [Hc [[rpPrev [Hal Hsh]] Hd]]]].
-    split; [exact Ha | split; [exact Hb | split; [exact Hc | split; [| exact Hd]]]].
+    destruct H3 as [Ha [Hb [Hc [Hx [[rpPrev [Hal Hsh]] Hd]]]]].
+    split; [exact Ha | split; [exact Hb | split; [exact Hc | split; [exact Hx | split; [| exact Hd]]]]].
     exists rpPrev; split; [| exact Hsh].
     exact (LineAllowed_fetchViewExt initLine specRegions fwcs _ _ _ _ Hsnap Hext Hal).
   Qed.

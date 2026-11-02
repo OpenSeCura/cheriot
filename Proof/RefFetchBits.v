@@ -61,3 +61,49 @@ Proof.
     rewrite E in Hq; [left | right; left | right; right; left | right; right; right]; exact Hq.
 Qed.
 
+
+Lemma constExtract_low2 : forall raw : type Inst,
+  evalExpr (ConstExtract 30 2 0 (Var type Inst raw)) = Zmod.firstn 2 raw.
+Proof.
+  intros raw; cbn [evalExpr ConstExtract]; unfold Zmod_lastn.
+  apply Zmod.unsigned_inj; rewrite Zmod.unsigned_of_Z, Z.shiftr_0_r.
+  apply Z.mod_small; exact (bits.unsigned_range (Zmod.firstn 2 raw) ltac:(lia)).
+Qed.
+
+Lemma orI_0l : forall x : type Inst, @evalOrBinary Inst Zmod.zero x = x.
+Proof. intros x; exact (evalOrBinary_getDefault_l Inst x). Qed.
+Lemma orI_0r : forall x : type Inst, @evalOrBinary Inst x Zmod.zero = x.
+Proof. intros x; exact (evalOrBinary_getDefault_r Inst x). Qed.
+Lemma orB_eq : forall a b : bool, @evalOrBinary Bool a b = orb a b.
+Proof. intros [|] [|]; reflexivity. Qed.
+
+Lemma preDecode_low2 : forall raw : type Inst,
+  Zmod.firstn 2 (evalLetExpr (@preDecode type raw)) = Zmod.firstn 2 raw.
+Proof.
+  intros raw.
+  pose proof (low2_q0 raw) as L0; pose proof (low2_q1 raw) as L1; pose proof (low2_q2 raw) as L2.
+  cbn [evalExpr] in L0, L1, L2.
+  unfold preDecode. cbn [evalLetExpr]. cbn [evalExpr].
+  rewrite constExtract_low2.
+  revert L0 L1 L2.
+  generalize (evalLetExpr (expandQuadrant0 (ty:=type) raw)) as q0.
+  generalize (evalLetExpr (expandQuadrant1 (ty:=type) raw)) as q1.
+  generalize (evalLetExpr (expandQuadrant2 (ty:=type) raw)) as q2.
+  intros q2 q1 q0 L0 L1 L2.
+  remember (Zmod.firstn 2 raw) as q eqn:Eq.
+  unfold caseDefault; cbn [evalExpr map fold_left].
+  destruct (bits2_cases q) as [-> | [-> | [-> | ->]]]; cbn -[Zmod.firstn evalOrBinary];
+    rewrite ?orI_0l, ?orI_0r.
+  - exact L0.
+  - exact L1.
+  - exact L2.
+  - exact (eq_sym Eq).
+Qed.
+
+(* `isCompressed` before and after the expansion *)
+Lemma preDecode_isCompressed : forall raw : type Inst,
+  evalExpr (@isCompressed type (evalLetExpr (@preDecode type raw))) = evalExpr (@isCompressed type raw).
+Proof.
+  intros raw; unfold isCompressed, isAllOnes; cbn [evalExpr].
+  exact (f_equal (fun q : bits 2 => @evalNot Bool (@isEq (Bit 2) q (InvDefault (Bit 2)))) (preDecode_low2 raw)).
+Qed.
