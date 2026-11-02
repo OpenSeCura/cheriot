@@ -620,7 +620,7 @@ Section RevSteps.
       try (exfalso; exact Hcore); intros Ha Hsn;
       unfold WrStageRel, RdStageRel, PortsQuiet, PortsReadStaged, PortsReadOut, PortsWriteStaged, dmNotAccessing in *;
       cbv beta iota zeta in *;
-      try (destruct Hsn as [Es Eh]; rewrite ?Es, ?Eh);
+      try (lazymatch type of Hsn with _ /\ _ => destruct Hsn as [Es Eh]; rewrite ?Es, ?Eh end);
       rewrite ?HP, ?Emst, ?Erp, ?Ereq, ?Edm;
       (let rec go H :=
          lazymatch goal with

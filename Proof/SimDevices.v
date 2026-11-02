@@ -563,8 +563,8 @@ Section MemProjection.
   Qed.
 End MemProjection.
 
-Arguments projImplRegionSpecState_writeImplRegionSpecState r s m.
-Arguments projImplRegionExtraState_writeImplRegionSpecState r s m.
+Arguments projImplRegionSpecState_writeImplRegionSpecState r s m : assert.
+Arguments projImplRegionExtraState_writeImplRegionSpecState r s m : assert.
 Arguments evalActionPropGen_liftToImplRegion r {k env} act s P.
 
 (* ===========================================================================
