@@ -107,3 +107,25 @@ Proof.
   intros raw; unfold isCompressed, isAllOnes; cbn [evalExpr].
   exact (f_equal (fun q : bits 2 => @evalNot Bool (@isEq (Bit 2) q (InvDefault (Bit 2)))) (preDecode_low2 raw)).
 Qed.
+
+Lemma parcelAddr_self : forall pc : type Addr,
+  pcAligned pc -> parcelAddrOf (lineAddrOf pc) (evalExpr (@getPacketParcel type pc)) = pc.
+Proof.
+  intros pc Hal. unfold pcAligned in Hal; unfold parcelAddrOf, lineAddrOf, getParcelAddr, getPacketParcel, memLineAddr.
+  cbn [evalExpr] in Hal |- *.
+  rewrite Zmod_lastn_app by (cbv; congruence).
+  assert (Hlow : Zmod.app (Zmod.app (Zmod.zero : bits 0) (Zmod.zero : bits (LgLineBytes - LgFetchParcels)))
+                   (Zmod_lastn LgFetchParcels (Zmod.firstn LgLineBytes pc)) = Zmod.firstn LgLineBytes pc).
+  { rewrite <- (Zmod_app_firstn_lastn (LgLineBytes - LgFetchParcels) LgFetchParcels (Zmod.firstn LgLineBytes pc))
+      at 2 by (cbv; congruence).
+    f_equal.
+    apply Zmod.unsigned_inj.
+    rewrite bits.unsigned_app by (cbv; congruence).
+    rewrite !bits.unsigned_firstn by (cbv; congruence).
+    assert (H1 : (Zmod.unsigned pc mod 2 ^ 1 = 0)%Z).
+    { apply (f_equal Zmod.unsigned) in Hal. rewrite bits.unsigned_firstn in Hal by lia. exact Hal. }
+    rewrite Z.mod_mod_divide by (exists (2 ^ (LgLineBytes - 1))%Z; cbv; reflexivity).
+    change (LgLineBytes - LgFetchParcels)%Z with 1%Z. rewrite H1. reflexivity. }
+  etransitivity; [exact (f_equal (fun x => Zmod.app x (Zmod_lastn (AddrSz - LgLineBytes) pc)) Hlow) |].
+  exact (Zmod_app_firstn_lastn LgLineBytes (AddrSz - LgLineBytes) pc ltac:(cbv; congruence) ltac:(cbv; congruence)).
+Qed.
