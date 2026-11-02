@@ -724,7 +724,7 @@ Section RevSteps.
       unfold iRevArch, iRevPhase, iRevScanCap, iRevScanBase, iRevSnoopHit, iScanAddr in K1, K2, K3, K4.
       rewrite ER in K1, K2, K3, K4; cbn [mkRev12 Fst Snd] in K1, K2, K3, K4.
       specialize (K1 P1).
-      destruct (K2 (rpCheck_writeCap _ Hph)) as [Hnc [Hsb _]].
+      destruct (K2 (rpCheck_writeCap _ Hph)) as [Hnc [Hsb Hlk]].
       specialize (K3 (rpCheck_writeCap _ Hph) Hsh).
       change (memValAt pre post revBase revPfB revPfA initLine (sMemA s2) (scanFull sa) capSz = sc) in K3.
       specialize (K4 Hph Hsh).
@@ -771,7 +771,7 @@ Section RevSteps.
         split; [exact K1 |].
         rewrite K3.
         split; [exact Hnc |].
-        split; [rewrite <- Hsb; exact K4 | reflexivity].
+        split; [rewrite <- Hsb; exact K4 | split; [reflexivity | exact Hlk]].
   Qed.
 
   (* --- 3e. Idle: the cap read is issued, or the impl and the spec step together --- *)

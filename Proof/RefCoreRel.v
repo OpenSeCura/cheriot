@@ -744,7 +744,8 @@ Section CoreRel.
       revSweepingAt (iRevArch s1) sa /\
       capNeedsCheck (memValAt (sMem s2) addr capSz) = true /\
       revBitOf (sMem s2) (capBase (memValAt (sMem s2) addr capSz)) = true /\
-      pkt = disassembleW addr (untagCap (memValAt (sMem s2) addr capSz)) capSz.
+      pkt = disassembleW addr (untagCap (memValAt (sMem s2) addr capSz)) capSz /\
+      lineKind implRegions (lineOf false addr) = Some true.
 
   (* The value of the revoker's cap read. For an ExternalMem line (the spec at the same position)
    * it is the spec memory's; a line that is not ExternalMem was a device read, where the spec

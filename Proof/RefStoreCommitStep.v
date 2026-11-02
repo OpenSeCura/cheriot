@@ -594,4 +594,104 @@ Section StoreCommit.
     - eapply ConsAction; [apply In_specStep_spec | exact Hsp | exact Hss].
     - exists g''; exact Hg''.
   Qed.
+
+  (* --- The second line of a crossing store: accepted by its ExternalMem region --- *)
+
+  (* The access after the second line of a store was accepted *)
+  Lemma acc_storeSecond :
+    forall g1 (s1 s1' : IState) (s2m : SState),
+      iMemStA s1' = iMemStA s1 -> iReadRpA s1' = iReadRpA s1 -> iDmStA s1' = iDmStA s1 -> iRevA s1' = iRevA s1 ->
+      g_acc pcAddrInit g1 = AccNone -> g_revOff pcAddrInit g1 = RevEq ->
+      PQ s1' -> optValid (iReadRpA s1) = false -> msIdle (iMemStA s1) = true ->
+      dmLoadRq (iDmStA s1) = true -> RNR s1 -> optValid (sSecondA s2m) = false ->
+      ACC g1 s1' s2m.
+  Proof.
+    intros g1 s1 s1' s2m Emst Erp Edm HR Eacc Eoff HPQ Hrp0 Hidle Hdlq Hrnr Hsl.
+    unfold AccessRel; rewrite Eacc, Eoff.
+    unfold revNotReading, iRevPhase in Hrnr |- *; unfold dmNotAccessing.
+    destruct (dmLoadRq_excl _ Hdlq) as [Hx1 [_ Hx3]].
+    rewrite ?HR, ?Emst, ?Erp, ?Edm.
+    exact (conj Hidle (conj Hrp0 (conj HPQ (conj eq_refl (conj (conj Hx1 Hx3) (conj Hrnr Hsl)))))).
+  Qed.
+
+  (* The second line of a crossing store accepted by the memory: the spec performs it
+   * (`specSecondLine`), which completes the store, then replays eagerly *)
+  Lemma storeCommit_second :
+    forall g (s1 s1' : IState) (s2 : SState) mi' addr size pkt,
+      s1' = writeSubTreeState NPMI s1 (mi' ,, (iMemA s1).(Snd)) ->
+      WriteAtL (lineOf true addr) (buildW true addr pkt size) true implRegions (iRegionsA s1) mi' ->
+      g_acc pcAddrInit g = AccStore addr size pkt (WrStaged true) ->
+      RULE s1 s1' -> RELG g s1 s2 ->
+      exists s2', SemActions envS specActs s2 s2' /\ REL s1' s2'.
+  Proof.
+    intros g s1 s1' s2 mi' addr size pkt E1 Hwr Eacc Hrule Hg.
+    pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
+    unfold AccessRel in Ha; rewrite Eacc in Ha; unfold WrStageRel in Ha; cbv beta iota zeta in Ha.
+    destruct Ha as [[Hrp0 [Hst0 [Hlk Hws]]] [Hdlq [Hrnr [Hoff [Hsnoop [Hcr Hsec]]]]]].
+    cbn [andb negb] in Hst0.
+    pose proof (proj1 Hc Hdlq) as Hcn.
+    destruct Hrf as [R1 [R2 [R3 R4]]].
+    rewrite Hcn in R1; cbn [cnwbApply] in R1.
+    assert (HlkS : lineKind specRegions (lineOf true addr) = Some true) by (rewrite lineKind_revSwap; exact Hlk).
+    pose proof (specSecondLine_store pcAddrInit config pre post revBase revPfB revPfA initLine fwcs Hdisj
+                  (sRfA s2) (sMemA s2) addr pkt size HlkS) as Hsp.
+    rewrite <- Hsec, mkSys_eta in Hsp.
+    remember (mkSysA (sRfA s2) (specWriteLine specRegions (lineOf true addr) (buildW true addr pkt size) (sMemA s2))
+                (getDefault (Option SecondLine))) as s2m eqn:Es2m in Hsp.
+    remember (mkGhost pcAddrInit (g_chain pcAddrInit g) (g_rf0 pcAddrInit g) None (g_revOff pcAddrInit g)
+                (g_d2aFo pcAddrInit g) AccNone) as g1 eqn:Eg1.
+    assert (Ems : sMemA s2m = specWriteLine specRegions (lineOf true addr) (buildW true addr pkt size) (sMemA s2))
+      by (rewrite Es2m; reflexivity).
+    assert (Ess : sSecondA s2m = getDefault (Option SecondLine)) by (rewrite Es2m; reflexivity).
+    assert (Ers : sRfA s2m = sRfA s2) by (rewrite Es2m; reflexivity).
+    pose proof (TraceFrameS_refl specRegions (sMemA s2)) as Htf.
+    pose proof (iRev_writeAt s1 s1' mi' _ _ _ E1 Hwr) as HR.
+    assert (Hmem : MEMC g1 s1' s2m)
+      by (rewrite Eg1 at 1; exact (MemRelC_storeWrite g _ s1 s1' s2 s2m mi' (sMemA s2) _ _ E1 Hwr Htf Ems eq_refl Hm)).
+    assert (HPQ : PortsQuiet pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                    mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1').
+    { unfold PortsQuiet; rewrite E1.
+      change (AllPorts quietP implRegions mi').
+      refine (quiet_writeAt _ _ _ _ _ _ Hws Hwr).
+      apply lineUnique_implRegions, Is_true_eq_true; exact Hdisj. }
+    destruct (dmLoadRq_excl _ Hdlq) as [Hx1 [Hx2 Hx3]].
+    assert (Hne : RELNE g1 s1' s2m).
+    { apply (RefRelNE_storeCommit g g1 s1 s1' s2 s2m mi' [] (sMemA s2) _ _ E1 Hwr Htf).
+      - exact Ems.
+      - rewrite Eg1; reflexivity.
+      - rewrite Eg1; apply GChainNil.
+      - rewrite Eg1; exact R2.
+      - intros e0 [].
+      - rewrite Eg1; reflexivity.
+      - rewrite Eg1; reflexivity.
+      - rewrite Eg1, Ers, R1; reflexivity.
+      - rewrite Eg1; intros d v Hcn'; discriminate Hcn'.
+      - apply (acc_storeSecond g1 s1 s1' s2m);
+          [rewrite E1; reflexivity | rewrite E1; reflexivity | rewrite E1; reflexivity | exact HR
+          | rewrite Eg1; reflexivity | rewrite Eg1; exact Hoff | exact HPQ | exact Hrp0
+          | exact Hst0 | exact Hdlq | exact Hrnr | rewrite Ess; reflexivity].
+      - rewrite Eg1; unfold CnwbRel; cbn [g_cnwb g_chain g_acc].
+        assert (Edm : iDmSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                        mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1' =
+                      iDmSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                        mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1)
+          by (rewrite E1; reflexivity).
+        rewrite Edm, Hx1, Hx2.
+        split; [intros _; reflexivity |]; split; [intros H; discriminate H |]; split; [intros H; discriminate H |].
+        intros H; discriminate H.
+      - rewrite Eg1; unfold DmQueueRel in Hd |- *; cbn [g_chain g_acc]; cbv zeta in Hd |- *.
+        rewrite Eacc in Hd; cbn [accTakesHead] in Hd |- *.
+        rewrite E1; exact Hd.
+      - apply (RevokerRel_storeWrite g g1 s1 s1' s2 s2m (sMemA s2) true addr pkt size Hrk HR Htf Ems HlkS
+                 (fun _ => Hcr) Hsnoop Hrule
+                 (MemAgree_of_MemRelC g s1 s2 Hm) (MemAgree_of_MemRelC g1 s1' s2m Hmem)).
+        rewrite Eg1; unfold RevAccRel; exact I.
+      - exact (NEofG g s1 s2 Hg). }
+    assert (Hlen : (length (g_chain pcAddrInit g1) <= length (g_chain pcAddrInit g))%nat) by (rewrite Eg1; apply le_n).
+    destruct (eagerA (length (g_chain pcAddrInit g)) g1 s1' s2m Hlen Hne) as [g'' [s2'' [Hss Hg'']]].
+    exists s2''; split.
+    - eapply ConsAction;
+        [apply (In_specSecondLine_spec pcAddrInit config pre post revBase revPfB revPfA clintS plicS) | exact Hsp | exact Hss].
+    - exists g''; exact Hg''.
+  Qed.
 End StoreCommit.
