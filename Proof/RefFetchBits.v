@@ -18,7 +18,7 @@ From Stdlib Require Import String List ZArith Zmod Zmod.Bits Lia Bool.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems HelperLemmas.
 From Cheriot Require Import SpecDefines Decoder FunctionalUnits SpecDevice.
 From Cheriot Require Import ImplCommon ImplDevice ImplFetch.
-From Cheriot.Proof Require Import RefCoreRel RefFetch.
+From Cheriot.Proof Require Import RefCoreRel RefFetch RefBits RefRevTable RefPcEven.
 
 Import ListNotations.
 Local Open Scope string_scope.
@@ -155,4 +155,76 @@ Proof.
   apply Z.div_lt_upper_bound; [exact Hp |].
   rewrite <- Z.pow_add_r by (cbv; congruence).
   replace (LgLineBytes + (AddrSz - LgLineBytes))%Z with AddrSz by lia; exact H1.
+Qed.
+
+(* An address that is a multiple of the line size is its own line address *)
+Lemma lineAddr_self : forall pc : type Addr,
+  (Zmod.unsigned pc mod 2 ^ LgLineBytes = 0)%Z -> lineAddrOf pc = pc.
+Proof.
+  intros pc H; apply Zmod.unsigned_inj; rewrite lineAddr_div.
+  assert (Hp : (2 ^ LgLineBytes <> 0)%Z) by (cbv; congruence).
+  pose proof (Z.div_mod (Zmod.unsigned pc) _ Hp) as E; rewrite H, Z.add_0_r in E.
+  rewrite Z.mul_comm; symmetry; exact E.
+Qed.
+
+Lemma nextLine_unsigned : forall fp : type Addr,
+  Zmod.unsigned (evalExpr (memNextLineAddr (Var type Addr fp))) =
+  ((Zmod.unsigned (lineAddrOf fp) + 2 ^ LgLineBytes) mod 2 ^ AddrSz)%Z.
+Proof.
+  intros fp; unfold memNextLineAddr; rewrite to_Z_Add2; reflexivity.
+Qed.
+
+(* The next line address is line-aligned (also when it wraps to 0) *)
+Lemma lineAddr_nextLine : forall fp : type Addr,
+  lineAddrOf (evalExpr (memNextLineAddr (Var type Addr fp))) = evalExpr (memNextLineAddr (Var type Addr fp)).
+Proof.
+  intros fp; apply lineAddr_self; rewrite nextLine_unsigned, lineAddr_div.
+  rewrite Z.mod_mod_divide by (exists (2 ^ (AddrSz - LgLineBytes))%Z; cbv; reflexivity).
+  rewrite <- (Z.mul_1_l (2 ^ LgLineBytes)) at 3; rewrite <- Z.mul_add_distr_r.
+  apply Z.mod_mul; cbv; congruence.
+Qed.
+
+(* An even PC in the last parcel of its line is 2 bytes below the end of the line *)
+Lemma lastParcel_low : forall fp : type Addr,
+  pcAligned fp -> evalExpr (@getPacketParcel type fp) = lastParcel ->
+  (Zmod.unsigned fp mod 2 ^ LgLineBytes = 2 ^ LgLineBytes - 2)%Z.
+Proof.
+  intros fp Hal Hp; apply pcAligned_iff in Hal.
+  unfold getPacketParcel in Hp; cbn [evalExpr] in Hp.
+  apply (f_equal Zmod.unsigned) in Hp; unfold Zmod_lastn in Hp.
+  rewrite Zmod.unsigned_of_Z, bits.unsigned_firstn, Z.shiftr_div_pow2 in Hp by (cbv; congruence).
+  change (Zmod.unsigned lastParcel) with (2 ^ LgFetchParcels - 1)%Z in Hp.
+  change (Zmod.to_Z fp) with (Zmod.unsigned fp) in Hal.
+  match type of Hp with context [@Zmod.unsigned ?m fp] =>
+    change (@Zmod.unsigned m fp) with (Zmod.unsigned fp) in Hp end.
+  revert Hal Hp; generalize (Zmod.unsigned fp); intros u Hal Hp.
+  replace (LgLineBytes - LgFetchParcels + LgFetchParcels - LgFetchParcels)%Z with 1%Z in Hp by reflexivity.
+  assert (EB : (2 ^ LgLineBytes = 2 * 2 ^ LgFetchParcels)%Z) by reflexivity.
+  assert (HB : (0 < 2 ^ LgFetchParcels)%Z) by reflexivity.
+  rewrite EB in Hp |- *; revert Hp HB; generalize (2 ^ LgFetchParcels)%Z; intros B Hp HB.
+  assert (Hr : (0 <= u mod (2 * B) < 2 * B)%Z) by (apply Z.mod_pos_bound; lia).
+  assert (Hm : ((u mod (2 * B)) mod 2 = 0)%Z).
+  { rewrite Z.mod_mod_divide by (exists B; lia); exact Hal. }
+  rewrite Z.pow_1_r, Z.mod_small in Hp by (split; [apply Z.div_pos | apply Z.div_lt_upper_bound]; lia).
+  pose proof (Z.div_mod (u mod (2 * B)) 2 ltac:(lia)) as E; lia.
+Qed.
+
+(* The PC of a straddling instruction (`alignedPc - 2` in fetchAssemble, `alignedPc` the line of
+ * the head, i.e. the line after `fp`) is the frontier `fp` *)
+Lemma straddle_pc : forall fp : type Addr,
+  pcAligned fp -> evalExpr (@getPacketParcel type fp) = lastParcel ->
+  evalExpr (Sub (Var type Addr (lineAddrOf (evalExpr (memNextLineAddr (Var type Addr fp)))))
+                ($2 : Expr type Addr)) = fp.
+Proof.
+  intros fp Hal Hp; pose proof (lastParcel_low fp Hal Hp) as Hl.
+  apply Zmod.unsigned_inj; rewrite to_Z_Sub by (cbv; congruence).
+  rewrite to_Z_Var, lineAddr_nextLine; change (Zmod.to_Z (evalExpr (Var type Addr ?x))) with (Zmod.unsigned x).
+  rewrite nextLine_unsigned, lineAddr_div, Zminus_mod_idemp_l.
+  pose proof (bits.unsigned_range fp ltac:(cbv; congruence)) as Hr.
+  assert (Hb : (2 ^ LgLineBytes <> 0)%Z) by (cbv; congruence).
+  pose proof (Z.div_mod (Zmod.unsigned fp) _ Hb) as E.
+  change (Zmod.to_Z (evalExpr ($2 : Expr type Addr))) with 2%Z.
+  match goal with |- (_ mod ?M)%Z = _ =>
+    rewrite <- (Z.mod_small (Zmod.unsigned fp) M) at 2 by lia end.
+  f_equal; rewrite Hl in E; lia.
 Qed.
