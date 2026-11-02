@@ -129,3 +129,30 @@ Proof.
   etransitivity; [exact (f_equal (fun x => Zmod.app x (Zmod_lastn (AddrSz - LgLineBytes) pc)) Hlow) |].
   exact (Zmod_app_firstn_lastn LgLineBytes (AddrSz - LgLineBytes) pc ltac:(cbv; congruence) ltac:(cbv; congruence)).
 Qed.
+
+Lemma lineAddr_unsigned : forall pc : type Addr,
+  Zmod.unsigned (lineAddrOf pc) =
+  Z.lor (Zmod.unsigned (Zmod.app (Zmod.zero : bits 0) (Zmod.zero : bits LgLineBytes)))
+        (Z.shiftl (Zmod.unsigned (Zmod_lastn (AddrSz - LgLineBytes) pc)) LgLineBytes).
+Proof.
+  intros pc; unfold lineAddrOf, memLineAddr; cbn [evalExpr].
+  exact (bits.unsigned_app (Zmod.app (Zmod.zero : bits 0) (Zmod.zero : bits LgLineBytes))
+           (Zmod_lastn (AddrSz - LgLineBytes) pc) ltac:(cbv; congruence) ltac:(cbv; congruence)).
+Qed.
+
+(* The line address of `pc`, as a number: `pc` rounded down to a multiple of the line size *)
+Lemma lineAddr_div : forall pc : type Addr,
+  Zmod.unsigned (lineAddrOf pc) = (Zmod.unsigned pc / 2 ^ LgLineBytes * 2 ^ LgLineBytes)%Z.
+Proof.
+  intros pc; rewrite lineAddr_unsigned.
+  change (Zmod.unsigned (Zmod.app (Zmod.zero : bits 0) (Zmod.zero : bits LgLineBytes))) with 0%Z.
+  rewrite Z.lor_0_l, Z.shiftl_mul_pow2 by (cbv; congruence).
+  unfold Zmod_lastn; rewrite Zmod.unsigned_of_Z, Z.shiftr_div_pow2 by (cbv; congruence).
+  f_equal; apply Z.mod_small.
+  pose proof (bits.unsigned_range pc ltac:(cbv; congruence)) as [H0 H1].
+  assert (Hp : (0 < 2 ^ LgLineBytes)%Z) by (apply Z.pow_pos_nonneg; [lia | cbv; congruence]).
+  split; [apply Z.div_pos; [exact H0 | exact Hp] |].
+  apply Z.div_lt_upper_bound; [exact Hp |].
+  rewrite <- Z.pow_add_r by (cbv; congruence).
+  replace (LgLineBytes + (AddrSz - LgLineBytes))%Z with AddrSz by lia; exact H1.
+Qed.
