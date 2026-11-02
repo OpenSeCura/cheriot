@@ -148,6 +148,94 @@ Section SimA.
                   (c2 (castStateReg p2 (readTreeState t2 s2 p2.(regPath)))) ->
       SimAt s1 s2 (ReadReg n1 p1 c1) (ReadReg n2 p2 c2).
   Proof. intros k s1 s2 n1 n2 p1 p2 c1 c2 Hc P1 P2 HP H; exact (Hc _ _ HP H). Qed.
+
+  (* The remaining constructors: the states after the step are those of `evalActionPropGen` *)
+  Lemma simAt_readRqMem :
+    forall k (s1 : TS t1) (s2 : TS t2) (x1 : MemPath t1) (x2 : MemPath t2)
+           (i1 : Expr type (Bit (Z.log2_up (Z.of_nat (getMemFromPath x1).(memSize)))))
+           (i2 : Expr type (Bit (Z.log2_up (Z.of_nat (getMemFromPath x2).(memSize)))))
+           (p1 : FinType (getMemFromPath x1).(memPort)) (p2 : FinType (getMemFromPath x2).(memPort))
+           (c1 : Action type t1 k) (c2 : Action type t2 k),
+      SimAt (let arr := castStateMem x1 (readTreeState t1 s1 x1.(memPath)) in
+             writeTreeState t1 s1 x1.(memPath)
+               (castStateMemInv x1 (arr.(Fst) ,, updSameTuple arr.(Snd) p1
+                  (nth (Z.to_nat (Zmod.to_Z (evalExpr i1))) arr.(Fst).(tupleElems) (getDefault _)))))
+            (let arr := castStateMem x2 (readTreeState t2 s2 x2.(memPath)) in
+             writeTreeState t2 s2 x2.(memPath)
+               (castStateMemInv x2 (arr.(Fst) ,, updSameTuple arr.(Snd) p2
+                  (nth (Z.to_nat (Zmod.to_Z (evalExpr i2))) arr.(Fst).(tupleElems) (getDefault _)))))
+            c1 c2 ->
+      SimAt s1 s2 (ReadRqMem x1 i1 p1 c1) (ReadRqMem x2 i2 p2 c2).
+  Proof. intros k s1 s2 x1 x2 i1 i2 p1 p2 c1 c2 Hc P1 P2 HP H; exact (Hc _ _ HP H). Qed.
+
+  Lemma simAt_readRpMem :
+    forall k (s1 : TS t1) (s2 : TS t2) n1 n2 (x1 : MemPath t1) (x2 : MemPath t2)
+           (p1 : FinType (getMemFromPath x1).(memPort)) (p2 : FinType (getMemFromPath x2).(memPort))
+           (c1 : _ -> Action type t1 k) (c2 : _ -> Action type t2 k),
+      SimAt s1 s2 (c1 (readSameTuple (castStateMem x1 (readTreeState t1 s1 x1.(memPath))).(Snd) p1))
+                  (c2 (readSameTuple (castStateMem x2 (readTreeState t2 s2 x2.(memPath))).(Snd) p2)) ->
+      SimAt s1 s2 (ReadRpMem n1 x1 p1 c1) (ReadRpMem n2 x2 p2 c2).
+  Proof. intros k s1 s2 n1 n2 x1 x2 p1 p2 c1 c2 Hc P1 P2 HP H; exact (Hc _ _ HP H). Qed.
+
+  Lemma simAt_writeMem :
+    forall k (s1 : TS t1) (s2 : TS t2) (x1 : MemPath t1) (x2 : MemPath t2)
+           (i1 : Expr type (Bit (Z.log2_up (Z.of_nat (getMemFromPath x1).(memSize)))))
+           (i2 : Expr type (Bit (Z.log2_up (Z.of_nat (getMemFromPath x2).(memSize)))))
+           (v1 : Expr type (getMemFromPath x1).(memKind)) (v2 : Expr type (getMemFromPath x2).(memKind))
+           (c1 : Action type t1 k) (c2 : Action type t2 k),
+      SimAt (let arr := castStateMem x1 (readTreeState t1 s1 x1.(memPath)) in
+             writeTreeState t1 s1 x1.(memPath)
+               (castStateMemInv x1 (updSameTupleNat arr.(Fst) (Z.to_nat (Zmod.to_Z (evalExpr i1))) (evalExpr v1) ,, arr.(Snd))))
+            (let arr := castStateMem x2 (readTreeState t2 s2 x2.(memPath)) in
+             writeTreeState t2 s2 x2.(memPath)
+               (castStateMemInv x2 (updSameTupleNat arr.(Fst) (Z.to_nat (Zmod.to_Z (evalExpr i2))) (evalExpr v2) ,, arr.(Snd))))
+            c1 c2 ->
+      SimAt s1 s2 (WriteMem x1 i1 v1 c1) (WriteMem x2 i2 v2 c2).
+  Proof. intros k s1 s2 x1 x2 i1 i2 v1 v2 c1 c2 Hc P1 P2 HP H; exact (Hc _ _ HP H). Qed.
+
+  Lemma simAt_send :
+    forall k (s1 : TS t1) (s2 : TS t2) (x1 : SendPath t1) (x2 : SendPath t2)
+           (v1 : Expr type (getSendKind x1)) (v2 : Expr type (getSendKind x2))
+           (c1 : Action type t1 k) (c2 : Action type t2 k),
+      SimAt (writeTreeState t1 s1 x1.(sendPath)
+               (castStateSendInv x1 (evalExpr v1 :: castStateSend x1 (readTreeState t1 s1 x1.(sendPath)))))
+            (writeTreeState t2 s2 x2.(sendPath)
+               (castStateSendInv x2 (evalExpr v2 :: castStateSend x2 (readTreeState t2 s2 x2.(sendPath)))))
+            c1 c2 ->
+      SimAt s1 s2 (Send x1 v1 c1) (Send x2 v2 c2).
+  Proof. intros k s1 s2 x1 x2 v1 v2 c1 c2 Hc P1 P2 HP H; exact (Hc _ _ HP H). Qed.
+
+  (* Every value the first env delivers is matched by one the second env accepts *)
+  Lemma simAt_recv :
+    forall k (s1 : TS t1) (s2 : TS t2) n1 n2 (x1 : RecvPath t1) (x2 : RecvPath t2)
+           (c1 : type (getRecvKind x1) -> Action type t1 k) (c2 : type (getRecvKind x2) -> Action type t2 k),
+      (forall r1, env1 s1 x1 r1 -> exists r2, env2 s2 x2 r2 /\
+         SimAt (writeTreeState t1 s1 x1.(recvPath)
+                  (castStateRecvInv x1 (r1 :: castStateRecv x1 (readTreeState t1 s1 x1.(recvPath)))))
+               (writeTreeState t2 s2 x2.(recvPath)
+                  (castStateRecvInv x2 (r2 :: castStateRecv x2 (readTreeState t2 s2 x2.(recvPath)))))
+               (c1 r1) (c2 r2)) ->
+      SimAt s1 s2 (Recv n1 x1 c1) (Recv n2 x2 c2).
+  Proof.
+    intros k s1 s2 n1 n2 x1 x2 c1 c2 Hc P1 P2 HP H; cbn [evalActionPropGen] in *.
+    destruct H as [r1 [He1 H]]; destruct (Hc r1 He1) as [r2 [He2 Hs]].
+    exists r2; split; [exact He2 | exact (Hs _ _ HP H)].
+  Qed.
+
+  Lemma simAt_nonDet :
+    forall k k1 k2 (s1 : TS t1) (s2 : TS t2) n1 n2 (c1 : type k1 -> Action type t1 k) (c2 : type k2 -> Action type t2 k),
+      (forall v1, exists v2, SimAt s1 s2 (c1 v1) (c2 v2)) ->
+      SimAt s1 s2 (NonDet n1 k1 c1) (NonDet n2 k2 c2).
+  Proof.
+    intros k k1 k2 s1 s2 n1 n2 c1 c2 Hc P1 P2 HP H; cbn [evalActionPropGen] in *.
+    destruct H as [v1 H]; destruct (Hc v1) as [v2 Hs].
+    exists v2; exact (Hs _ _ HP H).
+  Qed.
+
+  Lemma sim_system :
+    forall k ls1 ls2 (c1 : Action type t1 k) (c2 : Action type t2 k),
+      SimA c1 c2 -> SimA (System ls1 c1) (System ls2 c2).
+  Proof. intros k ls1 ls2 c1 c2 Hc s1 s2 HR P1 P2 HP H; cbn [evalActionPropGen] in *; exact (Hc _ _ HR _ _ HP H). Qed.
 End SimA.
 
 (* --- 2. The Revoker's Registers --- *)
@@ -268,6 +356,64 @@ Section SimS.
     intros k n p c Hr Hc s1 s2 HR P1 P2 HP H; cbn [evalActionPropGen] in *.
     rewrite <- (Hr _ _ HR); exact (Hc _ _ _ HR _ _ HP H).
   Qed.
+
+  (* The remaining constructors. A leaf that is read and then written (memories, traces) needs
+   * equal reads and `R` kept by equal writes. *)
+  Lemma simS_readRqMem : forall k (x : MemPath t) i p (c : Action type t k),
+      (forall s1 s2, R s1 s2 -> readTreeState t s1 x.(memPath) = readTreeState t s2 x.(memPath)) ->
+      (forall s1 s2 w, R s1 s2 -> R (writeTreeState t s1 x.(memPath) w) (writeTreeState t s2 x.(memPath) w)) ->
+      SimS c -> SimS (ReadRqMem x i p c).
+  Proof.
+    intros k x i p c Hr Hw Hc s1 s2 HR; apply simAt_readRqMem; cbv zeta.
+    rewrite (Hr _ _ HR); apply simAt_of; [apply Hw; exact HR | exact Hc].
+  Qed.
+
+  Lemma simS_readRpMem : forall k n (x : MemPath t) p (c : _ -> Action type t k),
+      (forall s1 s2, R s1 s2 -> readTreeState t s1 x.(memPath) = readTreeState t s2 x.(memPath)) ->
+      (forall v, SimS (c v)) -> SimS (ReadRpMem n x p c).
+  Proof.
+    intros k n x p c Hr Hc s1 s2 HR; apply simAt_readRpMem.
+    rewrite (Hr _ _ HR); apply simAt_of; [exact HR | apply Hc].
+  Qed.
+
+  Lemma simS_writeMem : forall k (x : MemPath t) i v (c : Action type t k),
+      (forall s1 s2, R s1 s2 -> readTreeState t s1 x.(memPath) = readTreeState t s2 x.(memPath)) ->
+      (forall s1 s2 w, R s1 s2 -> R (writeTreeState t s1 x.(memPath) w) (writeTreeState t s2 x.(memPath) w)) ->
+      SimS c -> SimS (WriteMem x i v c).
+  Proof.
+    intros k x i v c Hr Hw Hc s1 s2 HR; apply simAt_writeMem; cbv zeta.
+    rewrite (Hr _ _ HR); apply simAt_of; [apply Hw; exact HR | exact Hc].
+  Qed.
+
+  Lemma simS_send : forall k (x : SendPath t) v (c : Action type t k),
+      (forall s1 s2, R s1 s2 -> readTreeState t s1 x.(sendPath) = readTreeState t s2 x.(sendPath)) ->
+      (forall s1 s2 w, R s1 s2 -> R (writeTreeState t s1 x.(sendPath) w) (writeTreeState t s2 x.(sendPath) w)) ->
+      SimS c -> SimS (Send x v c).
+  Proof.
+    intros k x v c Hr Hw Hc s1 s2 HR; apply simAt_send.
+    rewrite (Hr _ _ HR); apply simAt_of; [apply Hw; exact HR | exact Hc].
+  Qed.
+
+  Lemma simS_recv : forall k n (x : RecvPath t) (c : _ -> Action type t k),
+      (forall s1 s2 r, R s1 s2 -> env1 s1 x r -> env2 s2 x r) ->
+      (forall s1 s2, R s1 s2 -> readTreeState t s1 x.(recvPath) = readTreeState t s2 x.(recvPath)) ->
+      (forall s1 s2 w, R s1 s2 -> R (writeTreeState t s1 x.(recvPath) w) (writeTreeState t s2 x.(recvPath) w)) ->
+      (forall r, SimS (c r)) -> SimS (Recv n x c).
+  Proof.
+    intros k n x c He Hr Hw Hc s1 s2 HR; apply simAt_recv; intros r He1.
+    exists r; split; [exact (He _ _ _ HR He1) |].
+    rewrite (Hr _ _ HR); apply simAt_of; [apply Hw; exact HR | apply Hc].
+  Qed.
+
+  Lemma simS_nonDet : forall k k' n (c : type k' -> Action type t k),
+      (forall v, SimS (c v)) -> SimS (NonDet n k' c).
+  Proof.
+    intros k k' n c Hc s1 s2 HR; apply simAt_nonDet; intros v.
+    exists v; apply simAt_of; [exact HR | apply Hc].
+  Qed.
+
+  Lemma simS_system : forall k ls (c : Action type t k), SimS c -> SimS (System ls c).
+  Proof. intros; apply sim_system; assumption. Qed.
 
   Lemma simS_writeRegsListHelper :
     forall k sz (paths : list (RegOfKind (t := t) k)) curr (idx : Expr type (Bit sz)) v,

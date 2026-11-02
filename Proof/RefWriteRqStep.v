@@ -699,15 +699,15 @@ Section WriteRqStep.
 
   (* --- 4. The Step --- *)
 
-  Local Abbreviation STEPOKR := (StepOKR pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+  Local Abbreviation STEPOK := (StepOK pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                    mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
                                    clintS clint plicS plic initLine fwcs).
 
   Theorem stepOK_writeRqStep :
-    STEPOKR (@writeRqStep pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    STEPOK (@writeRqStep pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions type).
   Proof.
-    intros s1 s1' s2 Hsem Hrule [g Hg].
+    intros s1 s1' s2 Hsem [g Hg].
     unfold writeRqStep in Hsem.
     apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
     change (readSubTreeState NPMI s1) with (iMemA s1) in Hm'.
