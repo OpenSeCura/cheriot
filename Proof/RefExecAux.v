@@ -103,12 +103,21 @@ Proof.
   repeat (constructor; [simpl; intuition congruence |]); constructor.
 Qed.
 
-(* x1 .. x15: one wait leaf per register but x0; with the start index 1 they fill the 4-bit index space *)
-Lemma length_gprWaitPathsWithKind : length gprWaitPathsWithKind = 15%nat.
+(* The register-index space has `NumRegs` entries (`gprWaitPathsWithKind` is computed by `Eval cbv`, so
+ * these hold by computation for any `RegIdxSzReal`) *)
+Lemma NumRegs_eq : NumRegs = (2 ^ RegIdxSzReal)%Z.
+Proof. reflexivity. Qed.
+
+Lemma NumRegs_pos : (0 < NumRegs)%Z.
+Proof. rewrite NumRegs_eq; apply Z.pow_pos_nonneg; [lia | cbv; congruence]. Qed.
+
+(* x1 .. x(NumRegs - 1): one wait leaf per register but x0; with the start index 1 they fill the
+ * index space *)
+Lemma length_gprWaitPathsWithKind : Z.of_nat (length gprWaitPathsWithKind) = (NumRegs - 1)%Z.
 Proof. reflexivity. Qed.
 
 Lemma waitPaths_fit : (Z.of_nat (1 + length gprWaitPathsWithKind) <= 2 ^ RegIdxSzReal)%Z.
-Proof. rewrite length_gprWaitPathsWithKind; apply Z.leb_le; reflexivity. Qed.
+Proof. rewrite Nat2Z.inj_add, length_gprWaitPathsWithKind, <- NumRegs_eq; lia. Qed.
 
 (* x0 has no wait bit: it always reads false *)
 Lemma evalReadWaitBit_zero :
@@ -128,9 +137,9 @@ Proof.
   intros d v wb Hnz; unfold evalReadWaitBit, evalWriteWaitBit.
   apply (@evalReadRegsListHelper_evalWriteRegsListHelper_same waitBitsTree Bool RegIdxSzReal);
     [| exact waitPaths_fit | constructor].
-  rewrite length_gprWaitPathsWithKind.
-  pose proof (Zmod.unsigned_pos_bound d (ltac:(reflexivity) : (0 < 2 ^ RegIdxSzReal)%Z)) as Hb.
-  assert (E16 : (2 ^ RegIdxSzReal = 16)%Z) by reflexivity.
+  pose proof length_gprWaitPathsWithKind as Hlen.
+  pose proof (Zmod.unsigned_pos_bound d (ltac:(rewrite <- NumRegs_eq; exact NumRegs_pos) : (0 < 2 ^ RegIdxSzReal)%Z)) as Hb.
+  assert (Hb' : (Zmod.to_Z d < NumRegs)%Z) by (rewrite NumRegs_eq; exact (proj2 Hb)).
   assert (Hne : Zmod.to_Z d <> 0%Z).
   { intros H0; rewrite <- (Zmod.unsigned_0 (2 ^ RegIdxSzReal)) in H0.
     apply Zmod.unsigned_inj in H0; rewrite H0, Zmod.eqb_refl in Hnz; discriminate Hnz. }

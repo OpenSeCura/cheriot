@@ -17,7 +17,7 @@
 From Stdlib Require Import String List ZArith Zmod Zmod.Bits Lia Bool.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics HelperLemmas.
 From Cheriot Require Import SpecDefines SpecDevice.
-From Cheriot.Proof Require Import RefCoreRel RefRevTable.
+From Cheriot.Proof Require Import RefConsts RefCoreRel RefRevTable.
 
 Import ListNotations.
 Local Open Scope guru_scope.
@@ -51,8 +51,9 @@ Proof. reflexivity. Qed.
 
 (* --- 2. Accesses That Stay in Their Line --- *)
 
-Lemma LgLineBytes_val : 2 ^ LgLineBytes = 32.
-Proof. reflexivity. Qed.
+(* The value of a constant *)
+Lemma to_Z_const : forall n z, Zmod.to_Z (evalExpr ($z : Expr type (Bit n))) = z mod 2 ^ n.
+Proof. intros n z; cbn [evalExpr]; apply Zmod.unsigned_of_Z. Qed.
 
 (* An access of `2^sz` bytes at `a` crosses its line only when it runs past the line's end *)
 Lemma crossesB_false : forall (a : type Addr) (sz : type (Bit LgLgNumBytesFullCapSz)),
@@ -60,9 +61,10 @@ Lemma crossesB_false : forall (a : type Addr) (sz : type (Bit LgLgNumBytesFullCa
   crossesB a sz = false.
 Proof.
   intros a sz H.
-  rewrite LgLineBytes_val in H.
-  assert (Hs : 0 <= Zmod.to_Z sz < 4) by exact (Zmod.unsigned_pos_bound sz ltac:(cbv; reflexivity)).
-  pose proof (Zmod.unsigned_pos_bound a ltac:(cbv; reflexivity)) as Ha.
+  pose proof (size_pow_bound (Zmod.to_Z sz) (Zmod.unsigned_pos_bound sz ltac:(reflexivity))) as Hp.
+  pose proof capBytes_le_lineBytes as Hcl.
+  pose proof lineBytes_pos as Hlb.
+  pose proof (Z.mod_pos_bound (Zmod.to_Z a) (2 ^ LgLineBytes) Hlb) as Hlo.
   unfold crossesB, memCrossesLine, memLineOffset.
   match goal with |- evalExpr (FromBit Bool ?e) = false =>
     change (Zmod.eqb (evalExpr e) Zmod.one = false) end.
@@ -73,28 +75,15 @@ Proof.
   rewrite to_Z_Sub by (cbv; congruence).
   rewrite to_Z_Add2, to_Z_Sll.
   rewrite !to_Z_ZeroExtend by (cbv; congruence).
-  rewrite to_Z_TruncLsb.
-  rewrite !to_Z_Var.
-  change (Zmod.to_Z (evalExpr ($1 : Expr type (Bit (LgLineBytes + 1))))) with 1.
-  rewrite Z.shiftl_1_l.
-  rewrite LgLineBytes_val.
-  change (2 ^ (LgLineBytes + 1)) with 64.
-  change (2 ^ LgLineBytes) with 32.
+  rewrite to_Z_TruncLsb, !to_Z_Var, !to_Z_const.
   change (Zmod.to_Z (@Zmod.one (2 ^ 1))) with 1.
-  match goal with |- context [2 ^ ?t mod 64] =>
-    assert (Ht : 0 <= t < 4) by exact Hs;
-    assert (Hp : 1 <= 2 ^ t <= 8)
-      by (destruct Ht as [Ht0 Ht1]; split;
-          [apply (Z.pow_le_mono_r 2 0 t); lia | change 8 with (2 ^ 3); apply Z.pow_le_mono_r; lia]);
-    rewrite (Z.mod_small (2 ^ t) 64) by lia
-  end.
-  match goal with |- context [?u mod 32 + 2 ^ ?t] =>
-    assert (Hu : u mod 32 + 2 ^ t <= 32) by exact H;
-    pose proof (Z.mod_pos_bound u 32 ltac:(lia)) as Hlo;
-    rewrite (Z.mod_small (u mod 32 + 2 ^ t) 64) by lia;
-    rewrite (Z.mod_small (u mod 32 + 2 ^ t - 1) 64) by lia;
-    rewrite Z.div_small by lia
-  end.
+  rewrite lineBytes_succ.
+  rewrite (Z.mod_small 1) by lia.
+  rewrite Z.shiftl_1_l.
+  rewrite (Z.mod_small (2 ^ Zmod.to_Z sz)) by lia.
+  rewrite (Z.mod_small (Zmod.to_Z a mod 2 ^ LgLineBytes + 2 ^ Zmod.to_Z sz)) by lia.
+  rewrite (Z.mod_small (Zmod.to_Z a mod 2 ^ LgLineBytes + 2 ^ Zmod.to_Z sz - 1)) by lia.
+  rewrite Z.div_small by lia.
   reflexivity.
 Qed.
 
@@ -102,9 +91,8 @@ Qed.
 Lemma crossesB_byte : forall a, crossesB a byteSz = false.
 Proof.
   intros a; apply crossesB_false.
-  change (Zmod.to_Z byteSz) with 0; rewrite LgLineBytes_val.
-  cbn [Z.pow].
-  match goal with |- ?u mod 32 + 1 <= 32 => pose proof (Z.mod_pos_bound u 32 ltac:(lia)); lia end.
+  change (Zmod.to_Z byteSz) with 0; rewrite Z.pow_0_r.
+  pose proof lineBytes_pos; pose proof (Z.mod_pos_bound (Zmod.to_Z a) (2 ^ LgLineBytes) ltac:(lia)); lia.
 Qed.
 
 (* The value of a capability-aligned address *)
@@ -122,13 +110,11 @@ Qed.
 Lemma crossesB_scanFull : forall sa, crossesB (scanFull sa) capSz = false.
 Proof.
   intros sa; apply crossesB_false.
-  rewrite to_Z_scanFull, LgLineBytes_val.
-  change (Zmod.to_Z capSz) with 3.
-  change (2 ^ LgNumBytesFullCapSz) with 8.
-  change (2 ^ 3) with 8.
-  match goal with |- (?x * 8) mod 32 + 8 <= 32 =>
-    pose proof (Z.mod_pos_bound (x * 8) 32 ltac:(lia));
-    pose proof (Z.div_mod (x * 8) 32 ltac:(lia));
-    lia
-  end.
+  rewrite to_Z_scanFull.
+  change (Zmod.to_Z capSz) with LgNumBytesFullCapSz.
+  rewrite lineBytes_split.
+  pose proof capBytes_pos; pose proof lineTags_pos.
+  rewrite Z.mul_mod_distr_r by lia.
+  pose proof (Z.mod_pos_bound (Zmod.to_Z sa) (2 ^ LgNumLineTags) ltac:(lia)).
+  nia.
 Qed.

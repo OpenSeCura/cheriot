@@ -77,7 +77,7 @@ Section RdRqPortRegion.
     cbn; split; [reflexivity |].
     match goal with |- context [(@Zmod.unsigned ?m L mod _)%Z] =>
       pose proof (@Zmod.unsigned_pos_bound m L ltac:(reflexivity)) as HL;
-      change (0 <= @Zmod.unsigned m L < 4294967296)%Z in HL end.
+      let mv := eval vm_compute in m in change (0 <= @Zmod.unsigned m L < mv)%Z in HL end.
     rewrite Z.mod_small by lia.
     match goal with |- context [(Z.sgn ?u =? -1)%Z] =>
       replace (Z.sgn u =? -1)%Z with false

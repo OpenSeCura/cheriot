@@ -17,7 +17,7 @@
 From Stdlib Require Import String List ZArith Zmod Zmod.Bits Lia Bool.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems HelperLemmas.
 From Cheriot Require Import SpecDefines SpecDevice.
-From Cheriot.Proof Require Import StateRel SimDevices RefRel RefFetch RefCoreRel RefRevTable RefBits RefSpecRead RefWriteRqPorts.
+From Cheriot.Proof Require Import RefConsts StateRel SimDevices RefRel RefFetch RefCoreRel RefRevTable RefBits RefSpecRead RefWriteRqPorts.
 
 Import ListNotations.
 Local Open Scope Z_scope.
@@ -26,7 +26,8 @@ Local Open Scope guru_scope.
 (* Milestone 4, the snoop-miss lemma (byte level): a store line write that misses the revoker's
  * snoop leaves the capability slot at `scanFull sa` untouched. The write masks depend on the
  * address only through its line offset; they are written here as functions of the offset
- * (`dataMaskO`), equal to the spec's by `reflexivity`, and checked on all offsets by `vm_compute`. *)
+ * (`dataMaskO`), equal to the spec's by `reflexivity`, and checked on all offsets by `vm_compute`.
+ * All sizes are the named constants; arithmetic facts about them come from RefConsts.v. *)
 
 Section MaskO.
   Variable ty : Kind -> Type.
@@ -44,7 +45,7 @@ Section MaskO.
       ITE isSecond #add1Bits (Not #add1Bits) ;
     RetE (FromBit (Array LineBytes Bool) (And [ #fullMask ; #lineSelMask ])).
 
-  (* `memTagMask` with the address's low 3 bits and its tag slot as inputs *)
+  (* `memTagMask` with the address's offset in its capability slot and its tag slot as inputs *)
   Definition tagMaskO (isSecond : Expr ty Bool) (capOff : Expr ty (Bit LgNumBytesFullCapSz))
     (slot : Expr ty (Bit LgNumLineTags)) (memSize : Expr ty (Bit LgLgNumBytesFullCapSz))
     : LetExpr ty (Array NumLineTags Bool) :=
@@ -138,7 +139,7 @@ Section Window.
 
   Lemma specPkt_window :
     forall pc rp1 rp2,
-      (forall j, (j < 8)%nat -> winByte pc rp1 j = winByte pc rp2 j) ->
+      (forall j, (j < Z.to_nat (2 ^ LgNumBytesFullCapSz))%nat -> winByte pc rp1 j = winByte pc rp2 j) ->
       winTag pc rp1 = winTag pc rp2 ->
       specPkt pc rp1 = specPkt pc rp2.
   Proof.
@@ -187,8 +188,8 @@ Section Window.
   Proof.
     intros pc j; unfold winIdx.
     match goal with |- (Z.to_nat (@Zmod.to_Z ?m ?x) < _)%nat =>
-      pose proof (Zmod.to_Z_range x) as Hr; assert (Em : m = 32) by reflexivity end.
-    change LineBytes with (Z.to_nat 32); apply Z2Nat.inj_lt; lia.
+      assert (Hr : 0 <= @Zmod.to_Z m x < 2 ^ LgLineBytes) by exact (Zmod.unsigned_pos_bound x lineBytes_pos) end.
+    rewrite lineBytes_nat; apply Z2Nat.inj_lt; lia.
   Qed.
 
   (* A line write whose data mask is off at the window byte's index leaves the byte *)
@@ -218,8 +219,8 @@ Section Window.
   Proof.
     intros pc; unfold winTagIdx.
     match goal with |- (Z.to_nat (@Zmod.to_Z ?m ?x) < _)%nat =>
-      pose proof (Zmod.to_Z_range x) as Hr; assert (Em : m = 4) by reflexivity end.
-    change NumLineTags with (Z.to_nat 4); apply Z2Nat.inj_lt; lia.
+      assert (Hr : 0 <= @Zmod.to_Z m x < 2 ^ LgNumLineTags) by exact (Zmod.unsigned_pos_bound x lineTags_pos) end.
+    rewrite numLineTags_nat; apply Z2Nat.inj_lt; lia.
   Qed.
 
   Lemma winTag_write :
@@ -257,21 +258,25 @@ Definition dmBits (b : bool) (o : bits LgLineBytes) (sz : bits LgLgNumBytesFullC
   (evalLetExpr (dataMaskO type (Const type Bool b) (Var type (Bit LgLineBytes) o)
                   (Var type (Bit LgLgNumBytesFullCapSz) sz))).(tupleElems).
 
-(* When slot `k` of the line is untouched: first line (`b = false`): the store's slot `o / 8` is not
- * `k`, nor is the next slot when the store spills into it; second line: `k` is not slot 0, or the
- * store does not cross the line *)
+(* When slot `k` of the line is untouched: first line (`b = false`): the store's slot
+ * `o / 2^LgNumBytesFullCapSz` is not `k`, nor is the next slot when the store spills into it; second
+ * line: `k` is not slot 0, or the store does not cross the line *)
 Definition dCond (b : bool) (o sz k : Z) : bool :=
-  if b then orb (negb (k =? 0)) (negb (32 <? o + 2 ^ sz))
-  else andb (negb (o / 8 =? k)) (negb (andb (8 <=? o mod 8 + 2 ^ sz - 1) (o / 8 + 1 =? k))).
+  if b then orb (negb (k =? 0)) (negb (2 ^ LgLineBytes <? o + 2 ^ sz))
+  else andb (negb (o / 2 ^ LgNumBytesFullCapSz =? k))
+            (negb (andb (2 ^ LgNumBytesFullCapSz <=? o mod 2 ^ LgNumBytesFullCapSz + 2 ^ sz - 1)
+                        (o / 2 ^ LgNumBytesFullCapSz + 1 =? k))).
 
 (* The checker, one named constant per level (so that each instantiation matches syntactically) *)
 Definition checkK (b : bool) (oz szz : nat) (bits : list bool) (k : nat) : bool :=
   implb (dCond b (Z.of_nat oz) (Z.of_nat szz) (Z.of_nat k))
-        (forallb (fun j => negb (nth (8 * k + j) bits false)) (seq 0 8)).
+        (forallb (fun j => negb (nth (Z.to_nat (2 ^ LgNumBytesFullCapSz) * k + j) bits false))
+           (seq 0 (Z.to_nat (2 ^ LgNumBytesFullCapSz)))).
 Definition checkSz (b : bool) (oz szz : nat) : bool :=
-  forallb (checkK b oz szz (dmBits b (Zmod.of_Z _ (Z.of_nat oz)) (Zmod.of_Z _ (Z.of_nat szz)))) (seq 0 4).
-Definition checkO (b : bool) (oz : nat) : bool := forallb (checkSz b oz) (seq 0 4).
-Definition checkB (b : bool) : bool := forallb (checkO b) (seq 0 32).
+  forallb (checkK b oz szz (dmBits b (Zmod.of_Z _ (Z.of_nat oz)) (Zmod.of_Z _ (Z.of_nat szz)))) (seq 0 NumLineTags).
+Definition checkO (b : bool) (oz : nat) : bool :=
+  forallb (checkSz b oz) (seq 0 (Z.to_nat (2 ^ LgLgNumBytesFullCapSz))).
+Definition checkB (b : bool) : bool := forallb (checkO b) (seq 0 LineBytes).
 (* Stated without a constant for the whole check: converting one with the concrete `forallb`
  * would make the kernel evaluate the check without the VM (8 s) *)
 Lemma checkD_ok : forallb checkB [true; false] = true.
@@ -295,21 +300,21 @@ Proof. intros A f l x H Hx; exact (proj1 (forallb_forall f l) H x Hx). Qed.
 
 Lemma dmBits_spec :
   forall b (o : bits LgLineBytes) (sz : bits LgLgNumBytesFullCapSz) k j,
-    (k < 4)%nat -> (j < 8)%nat ->
+    (k < NumLineTags)%nat -> (j < Z.to_nat (2 ^ LgNumBytesFullCapSz))%nat ->
     dCond b (Zmod.to_Z o) (Zmod.to_Z sz) (Z.of_nat k) = true ->
-    nth (8 * k + j) (dmBits b o sz) false = false.
+    nth (Z.to_nat (2 ^ LgNumBytesFullCapSz) * k + j) (dmBits b o sz) false = false.
 Proof.
   intros b o sz k j Hk Hj Hc.
-  destruct (bits_of_to_nat _ o ltac:(cbv; congruence)) as [Eo Ho].
+  destruct (bits_of_to_nat _ o ltac:(cbv; congruence)) as [Eo Ho]; rewrite <- lineBytes_nat in Ho.
   destruct (bits_of_to_nat _ sz ltac:(cbv; congruence)) as [Es Hs].
   pose proof (forallb_in checkB _ b checkD_ok ltac:(destruct b; cbn; auto)) as H1; unfold checkB in H1.
-  pose proof (forallb_in (checkO b) _ _ H1 (in_seq_lt 32 _ Ho)) as H2; unfold checkO in H2; clear H1.
-  pose proof (forallb_in (checkSz b _) _ _ H2 (in_seq_lt 4 _ Hs)) as H3; unfold checkSz in H3; clear H2.
-  pose proof (forallb_in (checkK b _ _ _) _ _ H3 (in_seq_lt 4 k Hk)) as H4; unfold checkK in H4; clear H3.
+  pose proof (forallb_in (checkO b) _ _ H1 (in_seq_lt LineBytes _ Ho)) as H2; unfold checkO in H2; clear H1.
+  pose proof (forallb_in (checkSz b _) _ _ H2 (in_seq_lt _ _ Hs)) as H3; unfold checkSz in H3; clear H2.
+  pose proof (forallb_in (checkK b _ _ _) _ _ H3 (in_seq_lt NumLineTags k Hk)) as H4; unfold checkK in H4; clear H3.
   rewrite <- Eo, <- Es in H4.
-  rewrite !Z2Nat.id in H4 by (match goal with |- (0 <= ?u)%Z => match u with context [?x] => is_var x; pose proof (Zmod.to_Z_range x) end end; lia).
+  rewrite !Z2Nat.id in H4 by (match goal with |- 0 <= @Zmod.unsigned _ ?x => exact (proj1 (Zmod.unsigned_pos_bound x ltac:(apply pow2_pos; cbv; congruence))) end).
   rewrite Hc in H4; cbn [implb] in H4.
-  pose proof (forallb_in _ _ _ H4 (in_seq_lt 8 j Hj)) as H5; cbv beta in H5.
+  pose proof (forallb_in _ _ _ H4 (in_seq_lt _ j Hj)) as H5; cbv beta in H5.
   apply negb_true_iff in H5; exact H5.
 Qed.
 
@@ -323,68 +328,79 @@ Definition tmBits (b : bool) (c : bits LgNumBytesFullCapSz) (t : bits LgNumLineT
 Definition checkTK (b : bool) (oz szz : nat) (bits : list bool) (k : nat) : bool :=
   implb (dCond b (Z.of_nat oz) (Z.of_nat szz) (Z.of_nat k)) (negb (nth k bits false)).
 Definition checkTSz (b : bool) (oz szz : nat) : bool :=
-  forallb (checkTK b oz szz (tmBits b (Zmod.of_Z _ (Z.of_nat oz mod 8)) (Zmod.of_Z _ (Z.of_nat oz / 8))
-                                     (Zmod.of_Z _ (Z.of_nat szz)))) (seq 0 4).
-Definition checkTO (b : bool) (oz : nat) : bool := forallb (checkTSz b oz) (seq 0 4).
-Definition checkTB (b : bool) : bool := forallb (checkTO b) (seq 0 32).
+  forallb (checkTK b oz szz (tmBits b (Zmod.of_Z _ (Z.of_nat oz mod 2 ^ LgNumBytesFullCapSz))
+                                     (Zmod.of_Z _ (Z.of_nat oz / 2 ^ LgNumBytesFullCapSz))
+                                     (Zmod.of_Z _ (Z.of_nat szz)))) (seq 0 NumLineTags).
+Definition checkTO (b : bool) (oz : nat) : bool :=
+  forallb (checkTSz b oz) (seq 0 (Z.to_nat (2 ^ LgLgNumBytesFullCapSz))).
+Definition checkTB (b : bool) : bool := forallb (checkTO b) (seq 0 LineBytes).
 
 Lemma checkT_ok : forallb checkTB [true; false] = true.
 Proof. vm_compute; reflexivity. Qed.
 
 Lemma tmBits_spec :
   forall b (o : bits LgLineBytes) (sz : bits LgLgNumBytesFullCapSz) k,
-    (k < 4)%nat ->
+    (k < NumLineTags)%nat ->
     dCond b (Zmod.to_Z o) (Zmod.to_Z sz) (Z.of_nat k) = true ->
-    nth k (tmBits b (Zmod.of_Z _ (Zmod.to_Z o mod 8)) (Zmod.of_Z _ (Zmod.to_Z o / 8)) sz) false = false.
+    nth k (tmBits b (Zmod.of_Z _ (Zmod.to_Z o mod 2 ^ LgNumBytesFullCapSz))
+                 (Zmod.of_Z _ (Zmod.to_Z o / 2 ^ LgNumBytesFullCapSz)) sz) false = false.
 Proof.
   intros b o sz k Hk Hc.
-  destruct (bits_of_to_nat _ o ltac:(cbv; congruence)) as [_ Ho].
+  destruct (bits_of_to_nat _ o ltac:(cbv; congruence)) as [_ Ho]; rewrite <- lineBytes_nat in Ho.
   destruct (bits_of_to_nat _ sz ltac:(cbv; congruence)) as [Es Hs].
   pose proof (forallb_in checkTB _ b checkT_ok ltac:(destruct b; cbn; auto)) as H1; unfold checkTB in H1.
-  pose proof (forallb_in (checkTO b) _ _ H1 (in_seq_lt 32 _ Ho)) as H2; unfold checkTO in H2; clear H1.
-  pose proof (forallb_in (checkTSz b _) _ _ H2 (in_seq_lt 4 _ Hs)) as H3; unfold checkTSz in H3; clear H2.
-  pose proof (forallb_in (checkTK b _ _ _) _ _ H3 (in_seq_lt 4 k Hk)) as H4; unfold checkTK in H4; clear H3.
+  pose proof (forallb_in (checkTO b) _ _ H1 (in_seq_lt LineBytes _ Ho)) as H2; unfold checkTO in H2; clear H1.
+  pose proof (forallb_in (checkTSz b _) _ _ H2 (in_seq_lt _ _ Hs)) as H3; unfold checkTSz in H3; clear H2.
+  pose proof (forallb_in (checkTK b _ _ _) _ _ H3 (in_seq_lt NumLineTags k Hk)) as H4; unfold checkTK in H4; clear H3.
   rewrite <- Es in H4.
-  rewrite !Z2Nat.id in H4 by (match goal with |- (0 <= ?u)%Z => match u with context [?x] => is_var x; pose proof (Zmod.to_Z_range x) end end; lia).
+  rewrite !Z2Nat.id in H4 by (match goal with |- 0 <= @Zmod.unsigned _ ?x => exact (proj1 (Zmod.unsigned_pos_bound x ltac:(apply pow2_pos; cbv; congruence))) end).
   rewrite Hc in H4; cbn [implb] in H4.
   apply negb_true_iff in H4; exact H4.
 Qed.
 
 (* --- Indices of the slot at `scanFull sa` --- *)
 
-Lemma winIdx_scanFull :
-  forall sa j, (j < 8)%nat -> winIdx (scanFull sa) j = (8 * Z.to_nat (Zmod.to_Z sa mod 4) + j)%nat.
+(* Generic arithmetic (over variables: the constants are instantiated below) *)
+Lemma slot_idx_gen : forall s j cb nt, 0 < cb -> 0 < nt -> 0 <= j < cb ->
+  ((s * cb) mod (nt * cb) + j mod (nt * cb)) mod (nt * cb) = s mod nt * cb + j.
 Proof.
-  intros sa j Hj; unfold winIdx.
-  rewrite to_Z_Add2; unfold memLineOffset; rewrite to_Z_TruncLsb, to_Z_Var, to_Z_scanFull.
-  cbn [evalExpr]; rewrite Zmod.unsigned_of_Z.
-  pose proof (Zmod.to_Z_range sa) as Hs.
-  change (2 ^ LgNumBytesFullCapSz) with 8; rewrite LgLineBytes_val.
-  assert (E : (Zmod.to_Z sa * 8 mod 32 + Z.of_nat j mod 32) mod 32 = 8 * (Zmod.to_Z sa mod 4) + Z.of_nat j)
-    by (rewrite (Z.mod_small (Z.of_nat j) 32) by lia;
-        replace 32 with (4 * 8) by reflexivity; rewrite Z.mul_mod_distr_r by lia;
-        rewrite Z.mod_small; [lia |]; pose proof (Z.mod_pos_bound (Zmod.to_Z sa) 4 ltac:(lia)); lia).
-  rewrite E.
-  pose proof (Z.mod_pos_bound (Zmod.to_Z sa) 4 ltac:(lia)).
-  apply Nat2Z.inj; rewrite Nat2Z.inj_add, Nat2Z.inj_mul, !Z2Nat.id by lia; lia.
+  intros s j cb nt Hc Hn Hj.
+  pose proof (Z.mod_pos_bound s nt Hn).
+  rewrite Z.mul_mod_distr_r by lia.
+  rewrite (Z.mod_small j) by nia.
+  apply Z.mod_small; nia.
 Qed.
 
-Lemma winTagIdx_scanFull : forall sa, winTagIdx (scanFull sa) = Z.to_nat (Zmod.to_Z sa mod 4).
+Lemma winIdx_scanFull :
+  forall sa j, (j < Z.to_nat (2 ^ LgNumBytesFullCapSz))%nat ->
+    winIdx (scanFull sa) j = (Z.to_nat (2 ^ LgNumBytesFullCapSz) * Z.to_nat (Zmod.to_Z sa mod 2 ^ LgNumLineTags) + j)%nat.
+Proof.
+  intros sa j Hj; unfold winIdx.
+  pose proof capBytes_pos as Hcb; pose proof lineTags_pos as Hnt.
+  assert (Hj' : 0 <= Z.of_nat j < 2 ^ LgNumBytesFullCapSz)
+    by (split; [lia | apply Nat2Z.inj_lt in Hj; rewrite Z2Nat.id in Hj by lia; exact Hj]).
+  rewrite to_Z_Add2; unfold memLineOffset; rewrite to_Z_TruncLsb, to_Z_Var, to_Z_scanFull.
+  cbn [evalExpr]; rewrite Zmod.unsigned_of_Z.
+  assert (E : (Zmod.to_Z sa * 2 ^ LgNumBytesFullCapSz mod 2 ^ LgLineBytes + Z.of_nat j mod 2 ^ LgLineBytes) mod 2 ^ LgLineBytes
+              = Zmod.to_Z sa mod 2 ^ LgNumLineTags * 2 ^ LgNumBytesFullCapSz + Z.of_nat j)
+    by (rewrite lineBytes_split; apply slot_idx_gen; lia).
+  rewrite E.
+  pose proof (Z.mod_pos_bound (Zmod.to_Z sa) (2 ^ LgNumLineTags) Hnt).
+  apply Nat2Z.inj; rewrite Nat2Z.inj_add, Nat2Z.inj_mul, !Z2Nat.id by nia; ring.
+Qed.
+
+Lemma winTagIdx_scanFull : forall sa, winTagIdx (scanFull sa) = Z.to_nat (Zmod.to_Z sa mod 2 ^ LgNumLineTags).
 Proof.
   intros sa; unfold winTagIdx, memTagSlot.
   match goal with |- context [evalExpr (TruncMsb LgNumLineTags LgNumBytesFullCapSz ?x)] =>
     change (evalExpr (TruncMsb LgNumLineTags LgNumBytesFullCapSz x)) with (Zmod_lastn LgNumLineTags (evalExpr x)) end.
-  unfold Zmod_lastn; rewrite Zmod.unsigned_of_Z.
-  rewrite Z.shiftr_div_pow2 by (cbv; congruence).
+  rewrite to_Z_lastn by (cbv; congruence).
   unfold memLineOffset; rewrite to_Z_TruncLsb, to_Z_Var, to_Z_scanFull.
-  pose proof (Zmod.to_Z_range sa) as Hs.
-  change (2 ^ LgNumBytesFullCapSz) with 8; rewrite LgLineBytes_val.
   f_equal.
-  match goal with |- (?u / 2 ^ ?d) mod 2 ^ ?e = _ =>
-    change (2 ^ d) with 8; change (2 ^ e) with 4 end.
-  replace 32 with (4 * 8) by reflexivity; rewrite Z.mul_mod_distr_r by lia.
-  rewrite Z.div_mul by lia.
-  apply Z.mod_small; apply Z.mod_pos_bound; lia.
+  match goal with |- ?u / 2 ^ ?d = _ => change (u / 2 ^ d) with (u / 2 ^ LgNumBytesFullCapSz) end.
+  pose proof capBytes_pos; pose proof lineTags_pos.
+  rewrite lineBytes_split, Z.mul_mod_distr_r by lia.
+  rewrite Z.div_mul by lia; reflexivity.
 Qed.
 
 (* The tag mask of a line write as `tmBits` at the address's offset *)
@@ -392,7 +408,7 @@ Lemma buildW_tagMask :
   forall b addr pkt size,
     let o := evalExpr (memLineOffset (Var type Addr addr)) in
     (buildW b addr pkt size).(Snd).(Snd).(Snd).(Snd).(Fst).(tupleElems) =
-    tmBits b (Zmod.of_Z _ (Zmod.to_Z o mod 8)) (Zmod.of_Z _ (Zmod.to_Z o / 8)) size.
+    tmBits b (Zmod.of_Z _ (Zmod.to_Z o mod 2 ^ LgNumBytesFullCapSz)) (Zmod.of_Z _ (Zmod.to_Z o / 2 ^ LgNumBytesFullCapSz)) size.
 Proof.
   intros b addr pkt size o.
   unfold tmBits; apply (f_equal (fun t : SameTuple bool NumLineTags => t.(tupleElems))).
@@ -402,26 +418,25 @@ Proof.
   - apply Zmod.unsigned_inj.
     rewrite to_Z_TruncLsb, to_Z_Var; cbn [evalExpr]; rewrite Zmod.unsigned_of_Z.
     subst o; unfold memLineOffset; rewrite to_Z_TruncLsb, to_Z_Var.
-    change (2 ^ LgNumBytesFullCapSz) with 8; rewrite LgLineBytes_val.
+    pose proof capBytes_pos.
     rewrite Z.mod_mod by lia.
-    symmetry; apply Z.mod_mod_divide; exists 4; reflexivity.
+    symmetry; apply Z.mod_mod_divide; exists (2 ^ LgNumLineTags); exact lineBytes_split.
   - apply Zmod.unsigned_inj.
     unfold memTagSlot.
     match goal with |- context [evalExpr (TruncMsb LgNumLineTags LgNumBytesFullCapSz ?x)] =>
       change (evalExpr (TruncMsb LgNumLineTags LgNumBytesFullCapSz x)) with (Zmod_lastn LgNumLineTags (evalExpr x)) end.
-    unfold Zmod_lastn; rewrite Zmod.unsigned_of_Z, Z.shiftr_div_pow2 by (cbv; congruence).
+    rewrite to_Z_lastn by (cbv; congruence).
     cbn [evalExpr]; rewrite Zmod.unsigned_of_Z.
     subst o; unfold memLineOffset; rewrite !to_Z_TruncLsb, !to_Z_Var.
-    rewrite LgLineBytes_val.
-    match goal with |- (?u / 2 ^ ?d) mod 2 ^ ?e = _ =>
-      change (2 ^ d) with 8; change (2 ^ e) with 4 end.
-    change (2 ^ LgNumLineTags) with 4.
-    pose proof (Zmod.to_Z_range addr); lia.
+    match goal with |- ?u / 2 ^ ?d = _ => change (u / 2 ^ d) with (u / 2 ^ LgNumBytesFullCapSz) end.
+    pose proof lineBytes_pos; pose proof capBytes_pos; pose proof lineTags_pos; pose proof lineBytes_split.
+    match goal with |- ?u mod 2 ^ LgLineBytes / _ = _ => pose proof (Z.mod_pos_bound u (2 ^ LgLineBytes) ltac:(lia)) end.
+    symmetry; apply Z.mod_small; split; [apply Z.div_pos; lia | apply Z.div_lt_upper_bound; nia].
 Qed.
 
 (* --- The conditions in Z --- *)
 
-Lemma to_Z_lineOf_false : forall x, Zmod.to_Z (lineOf false x) = Zmod.to_Z x / 32 * 32.
+Lemma to_Z_lineOf_false : forall x, Zmod.to_Z (lineOf false x) = Zmod.to_Z x / 2 ^ LgLineBytes * 2 ^ LgLineBytes.
 Proof.
   intros x; unfold lineOf, memLineAddr; cbn [evalExpr].
   etransitivity; [apply bits.unsigned_app; cbv; congruence |].
@@ -429,33 +444,31 @@ Proof.
   rewrite !Zmod.unsigned_0, !Z.shiftl_0_l, !Z.lor_0_l.
   rewrite Z.shiftl_mul_pow2 by (cbv; congruence).
   unfold Zmod_lastn; rewrite Zmod.unsigned_of_Z, Z.shiftr_div_pow2 by (cbv; congruence).
-
   match goal with |- (?u / 2 ^ ?d) mod 2 ^ ?e * 2 ^ ?f = _ =>
-    change (2 ^ d) with 32; change (2 ^ e) with 134217728; change (2 ^ f) with 32 end.
+    change ((u / 2 ^ d) mod 2 ^ e * 2 ^ f)
+      with ((u / 2 ^ LgLineBytes) mod 2 ^ (AddrSz - LgLineBytes) * 2 ^ LgLineBytes) end.
   rewrite Z.mod_small; [reflexivity |].
   match goal with |- context [@Zmod.unsigned ?m x] =>
-    assert (Hx : 0 <= @Zmod.unsigned m x < 4294967296) by exact (Zmod.unsigned_pos_bound x ltac:(cbv; reflexivity)) end.
-  split; [apply Z.div_pos | apply Z.div_lt_upper_bound]; lia.
+    assert (Hx : 0 <= @Zmod.unsigned m x < 2 ^ AddrSz) by exact (Zmod.unsigned_pos_bound x addrBytes_pos) end.
+  pose proof lineBytes_pos; pose proof addrBytes_lines as E.
+  split; [apply Z.div_pos; lia | apply Z.div_lt_upper_bound; [lia | rewrite Z.mul_comm, <- E; lia]].
 Qed.
 
 (* A crossing access runs past its line's end *)
 Lemma crossesB_true : forall (a : type Addr) (sz : type (Bit LgLgNumBytesFullCapSz)),
-  crossesB a sz = true -> 32 < Zmod.to_Z a mod 32 + 2 ^ Zmod.to_Z sz.
+  crossesB a sz = true -> 2 ^ LgLineBytes < Zmod.to_Z a mod 2 ^ LgLineBytes + 2 ^ Zmod.to_Z sz.
 Proof.
   intros a sz H; apply Z.nle_gt; intros Hle.
-  rewrite crossesB_false in H; [discriminate H |].
-  rewrite LgLineBytes_val; exact Hle.
+  rewrite crossesB_false in H; [discriminate H | exact Hle].
 Qed.
 
-(* The store's slot and the next one, in Z *)
+(* The store's slot, in Z *)
 Lemma to_Z_slotOf : forall addr : type Addr,
-  Zmod.to_Z (Zmod_lastn TagAddrWidth addr) = Zmod.to_Z addr / 8.
+  Zmod.to_Z (Zmod_lastn TagAddrWidth addr) = Zmod.to_Z addr / 2 ^ LgNumBytesFullCapSz.
 Proof.
-  intros addr; unfold Zmod_lastn; rewrite Zmod.unsigned_of_Z, Z.shiftr_div_pow2 by (cbv; congruence).
-  match goal with |- context [@Zmod.unsigned ?m addr] =>
-    assert (Hx : 0 <= @Zmod.unsigned m addr < 4294967296) by exact (Zmod.unsigned_pos_bound addr ltac:(cbv; reflexivity)) end.
-  match goal with |- (?u / 2 ^ ?d) mod 2 ^ ?e = _ => change (2 ^ d) with 8; change (2 ^ e) with 536870912 end.
-  apply Z.mod_small; split; [apply Z.div_pos | apply Z.div_lt_upper_bound]; lia.
+  intros addr; rewrite to_Z_lastn by (cbv; congruence).
+  match goal with |- ?u / 2 ^ ?d = _ => change (u / 2 ^ d) with (u / 2 ^ LgNumBytesFullCapSz) end.
+  reflexivity.
 Qed.
 
 Lemma isEq_bits_false : forall n (a b : bits n), isEq (k:=Bit n) a b = false -> Zmod.to_Z a <> Zmod.to_Z b.
@@ -491,15 +504,18 @@ Qed.
 Lemma snoopMiss_Z :
   forall (addr : type Addr) (size : type (Bit LgLgNumBytesFullCapSz)) sa,
     snoopHitsB addr size sa = false ->
-    Zmod.to_Z addr / 8 <> Zmod.to_Z sa /\
-    (8 <= Zmod.to_Z addr mod 8 + 2 ^ Zmod.to_Z size - 1 -> (Zmod.to_Z addr / 8 + 1) mod 2 ^ 29 <> Zmod.to_Z sa).
+    Zmod.to_Z addr / 2 ^ LgNumBytesFullCapSz <> Zmod.to_Z sa /\
+    (2 ^ LgNumBytesFullCapSz <= Zmod.to_Z addr mod 2 ^ LgNumBytesFullCapSz + 2 ^ Zmod.to_Z size - 1 ->
+     (Zmod.to_Z addr / 2 ^ LgNumBytesFullCapSz + 1) mod 2 ^ TagAddrWidth <> Zmod.to_Z sa).
 Proof.
   intros addr size sa H.
   unfold snoopHitsB in H; cbv zeta in H.
   apply evalExpr_Or2_false in H as [H1 H2].
   apply evalExpr_Eq_false in H1; rewrite !to_Z_Var in H1.
-  assert (HA : 0 <= Zmod.to_Z addr < 4294967296) by exact (Zmod.unsigned_pos_bound addr ltac:(cbv; reflexivity)).
-  assert (Hsz : 0 <= Zmod.to_Z size < 4) by exact (Zmod.unsigned_pos_bound size ltac:(cbv; reflexivity)).
+  assert (Hsz : 0 <= Zmod.to_Z size < 2 ^ LgLgNumBytesFullCapSz)
+    by exact (Zmod.unsigned_pos_bound size (pow2_pos _ LgLgNumBytesFullCapSz_nonneg)).
+  pose proof (size_pow_bound _ Hsz) as Hp.
+  pose proof capBytes_pos as Hcb.
   split.
   - change (evalExpr (TruncMsb TagAddrWidth LgNumBytesFullCapSz (Var type Addr addr)))
       with (Zmod_lastn TagAddrWidth addr) in H1.
@@ -511,15 +527,14 @@ Proof.
         with (Zmod_lastn TagAddrWidth addr) in H3.
       rewrite to_Z_slotOf in H3.
       cbn [evalExpr] in H3; rewrite Zmod.unsigned_of_Z in H3.
-      change (2 ^ TagAddrWidth) with 536870912 in H3; change (2 ^ 29) with 536870912.
-      rewrite (Z.mod_small 1 536870912) in H3 by lia.
+      rewrite (Z.mod_small 1 (2 ^ TagAddrWidth)) in H3 by (pose proof slotCount_gt1; lia).
       exact H3.
     + match goal with |- evalExpr (Var _ _ (evalExpr (FromBit Bool ?e))) = true =>
         change (Zmod.eqb (evalExpr e) Zmod.one = true) end.
       apply Zmod.eqb_eq, Zmod.unsigned_inj.
       match goal with |- context [evalExpr (TruncMsb 1 LgNumBytesFullCapSz ?x)] =>
         change (evalExpr (TruncMsb 1 LgNumBytesFullCapSz x)) with (Zmod_lastn 1 (evalExpr x)) end.
-      unfold Zmod_lastn; rewrite Zmod.unsigned_of_Z, Z.shiftr_div_pow2 by (cbv; congruence).
+      rewrite to_Z_lastn by (cbv; congruence).
       rewrite to_Z_Sub by (cbv; congruence).
       rewrite to_Z_Var, to_Z_Add2.
       rewrite to_Z_ZeroExtend by (cbv; congruence).
@@ -530,18 +545,18 @@ Proof.
       match goal with |- _ = Zmod.unsigned ?o => change (Zmod.unsigned o) with 1 end.
       match goal with |- context [@Zmod.unsigned ?m addr] => change (@Zmod.unsigned m addr) with (Zmod.to_Z addr) end.
       match goal with |- context [@Zmod.unsigned ?m size] => change (@Zmod.unsigned m size) with (Zmod.to_Z size) end.
-      change (2 ^ LgNumBytesFullCapSz) with 8; change (2 ^ (LgNumBytesFullCapSz + 1)) with 16.
-      change (2 ^ (LgNumBytesFullCapSz + 1 - 1)) with 8; change (2 ^ 1) with 2.
-      rewrite Z.shiftl_1_l.
-      assert (Ecs : Zmod.to_Z size = 0 \/ Zmod.to_Z size = 1 \/ Zmod.to_Z size = 2 \/ Zmod.to_Z size = 3) by lia.
-      pose proof (Z.mod_pos_bound (Zmod.to_Z addr) 8 ltac:(lia)) as Hr.
-      generalize dependent (Zmod.to_Z addr mod 8); intros r Hc Hr.
-      assert (Er : r = 0 \/ r = 1 \/ r = 2 \/ r = 3 \/ r = 4 \/ r = 5 \/ r = 6 \/ r = 7) by lia.
-      destruct Ecs as [E | [E | [E | E]]]; rewrite E in Hc |- *; cbn [Z.pow Z.pow_pos Pos.iter Z.mul] in Hc |- *;
-        destruct Er as [-> | [-> | [-> | [-> | [-> | [-> | [-> | ->]]]]]]]; first [reflexivity | lia].
+      match goal with |- ?u / 2 ^ ?d = _ => change (u / 2 ^ d) with (u / 2 ^ LgNumBytesFullCapSz) end.
+      rewrite Z.shiftl_1_l, capBytes_succ.
+      pose proof (Z.mod_pos_bound (Zmod.to_Z addr) (2 ^ LgNumBytesFullCapSz) Hcb) as Hr.
+      rewrite (Z.mod_small (2 ^ Zmod.to_Z size)) by lia.
+      rewrite (Z.mod_small (Zmod.to_Z addr mod 2 ^ LgNumBytesFullCapSz + 2 ^ Zmod.to_Z size)) by lia.
+      rewrite (Z.mod_small (Zmod.to_Z addr mod 2 ^ LgNumBytesFullCapSz + 2 ^ Zmod.to_Z size - 1)) by lia.
+      symmetry; apply (Z.div_unique _ _ _ (Zmod.to_Z addr mod 2 ^ LgNumBytesFullCapSz + 2 ^ Zmod.to_Z size - 1 -
+                                 2 ^ LgNumBytesFullCapSz)); [left; lia | lia].
 Qed.
 
-Lemma to_Z_lineOf_true : forall x, Zmod.to_Z (lineOf true x) = (Zmod.to_Z x / 32 * 32 + 32) mod 2 ^ 32.
+Lemma to_Z_lineOf_true : forall x,
+  Zmod.to_Z (lineOf true x) = (Zmod.to_Z x / 2 ^ LgLineBytes * 2 ^ LgLineBytes + 2 ^ LgLineBytes) mod 2 ^ AddrSz.
 Proof.
   intros x; unfold lineOf, memNextLineAddr.
   rewrite to_Z_Add2.
@@ -551,53 +566,81 @@ Proof.
 Qed.
 
 Lemma to_Z_offset : forall addr : type Addr,
-  Zmod.to_Z (evalExpr (memLineOffset (Var type Addr addr))) = Zmod.to_Z addr mod 32.
+  Zmod.to_Z (evalExpr (memLineOffset (Var type Addr addr))) = Zmod.to_Z addr mod 2 ^ LgLineBytes.
 Proof. intros addr; unfold memLineOffset; rewrite to_Z_TruncLsb, to_Z_Var; reflexivity. Qed.
 
-(* The second line of a crossing store holds slot 0 of the next line, the store's slot + 1 *)
-Lemma arith_second :
-  forall A S, 0 <= A < 4294967296 -> 0 <= S < 536870912 -> S mod 4 = 0 -> 25 <= A mod 32 ->
-    (A / 32 * 32 + 32) mod 4294967296 = S * 8 / 32 * 32 -> (A / 8 + 1) mod 536870912 = S.
+(* The second line of a crossing store holds slot 0 of the next line, the store's slot + 1. Over
+ * variables: `lb` bytes per line, `cb` per capability slot, `nt` slots per line, `lc` lines, `M`
+ * bytes and `N` slots in the address space *)
+Lemma arith_second_gen : forall A S lb cb nt lc M N,
+  0 < cb -> 0 < nt -> 0 < lc -> lb = nt * cb -> M = lc * lb -> N = lc * nt ->
+  0 <= A < M -> 0 <= S < N -> S mod nt = 0 -> lb < A mod lb + cb ->
+  (A / lb * lb + lb) mod M = S * cb / lb * lb -> (A / cb + 1) mod N = S.
 Proof.
-  intros A S HA HS Hk Ho Hl.
-  pose proof (Z.mod_pos_bound A 32 ltac:(lia)) as HAm.
-  pose proof (Z.div_mod A 32 ltac:(lia)) as HAd.
-  pose proof (Z.mod_pos_bound S 4 ltac:(lia)) as HSm.
-  pose proof (Z.div_mod S 4 ltac:(lia)) as HSd.
-  assert (H8 : A / 8 = 4 * (A / 32) + 3).
-  { assert (EA : A = 4 * (A / 32) * 8 + A mod 32) by (pose proof (Z.div_mod A 32 ltac:(lia)); lia).
-    rewrite EA at 1; rewrite Z.div_add_l by lia.
-    assert (Eo : A mod 32 / 8 = 3) by (symmetry; apply Z.div_unique with (r := A mod 32 - 24); [left |]; lia).
-    rewrite Eo; reflexivity. }
-  assert (HS8 : S * 8 / 32 * 32 = 8 * S).
-  { assert (ES : S = S / 4 * 4) by (pose proof (Z.div_mod S 4 ltac:(lia)); lia).
-    rewrite ES at 1.
-    replace (S / 4 * 4 * 8) with (S / 4 * 32) by ring.
-    rewrite Z.div_mul by lia; lia. }
-  rewrite HS8 in Hl; rewrite H8.
-  assert (Hq : 0 <= A / 32 < 134217728) by lia.
-  destruct (Z.lt_ge_cases (A / 32 + 1) 134217728) as [Hlt | Hge].
-  - rewrite Z.mod_small in Hl by lia; rewrite Z.mod_small by lia; lia.
-  - assert (Eq : A / 32 = 134217727) by lia.
-    rewrite Eq in Hl |- *.
-    change ((134217727 * 32 + 32) mod 4294967296) with 0 in Hl.
-    change ((4 * 134217727 + 3 + 1) mod 536870912) with 0; lia.
+  intros A S lb cb nt lc M N Hcb Hnt Hlc Elb EM EN HA HS Hk Ho Hl.
+  subst lb M N.
+  assert (Hncb : 0 < nt * cb) by nia.
+  assert (Hq : 0 <= A / (nt * cb) < lc)
+    by (split; [apply Z.div_pos; lia | apply Z.div_lt_upper_bound; nia]).
+  pose proof (Z.div_mod A (nt * cb) ltac:(lia)) as HAd.
+  pose proof (Z.mod_pos_bound A (nt * cb) Hncb) as HAm.
+  pose proof (Z.div_mod S nt ltac:(lia)) as HSd; rewrite Hk, Z.add_0_r in HSd.
+  assert (HA8 : A / cb = nt * (A / (nt * cb)) + (nt - 1)).
+  { rewrite HAd at 1.
+    replace (nt * cb * (A / (nt * cb)) + A mod (nt * cb)) with (nt * (A / (nt * cb)) * cb + A mod (nt * cb)) by ring.
+    rewrite Z.div_add_l by lia; f_equal.
+    symmetry; apply (Z.div_unique _ _ _ (A mod (nt * cb) - (nt - 1) * cb)); [left; nia | ring]. }
+  assert (HS8 : S * cb / (nt * cb) * (nt * cb) = S * cb).
+  { rewrite HSd; replace (nt * (S / nt) * cb) with (S / nt * (nt * cb)) by ring.
+    rewrite Z.div_mul by lia; reflexivity. }
+  rewrite HS8 in Hl; rewrite HA8.
+  destruct (Z.lt_ge_cases (A / (nt * cb) + 1) lc) as [Hlt | Hge].
+  - rewrite Z.mod_small in Hl by nia.
+    assert (Es : S / nt = A / (nt * cb) + 1).
+    { apply (Z.mul_reg_r _ _ (nt * cb)); [lia |]. rewrite HSd in Hl; nia. }
+    rewrite Z.mod_small by nia.
+    rewrite HSd, Es; ring.
+  - assert (Eq : A / (nt * cb) = lc - 1) by lia.
+    rewrite Eq in Hl; rewrite Eq.
+    replace ((lc - 1) * (nt * cb) + nt * cb) with (lc * (nt * cb)) in Hl by ring.
+    rewrite Z.mod_same in Hl by lia.
+    assert (ES : S = 0) by nia.
+    replace (nt * (lc - 1) + (nt - 1) + 1) with (lc * nt) by ring.
+    rewrite Z.mod_same by nia; lia.
 Qed.
 
-Lemma pow2_0 : 2 ^ 0 = 1. Proof. reflexivity. Qed.
-Lemma pow2_1 : 2 ^ 1 = 2. Proof. reflexivity. Qed.
-Lemma pow2_2 : 2 ^ 2 = 4. Proof. reflexivity. Qed.
-Lemma pow2_3 : 2 ^ 3 = 8. Proof. reflexivity. Qed.
+Lemma arith_second :
+  forall A S, 0 <= A < 2 ^ AddrSz -> 0 <= S < 2 ^ TagAddrWidth -> S mod 2 ^ LgNumLineTags = 0 ->
+    2 ^ LgLineBytes < A mod 2 ^ LgLineBytes + 2 ^ LgNumBytesFullCapSz ->
+    (A / 2 ^ LgLineBytes * 2 ^ LgLineBytes + 2 ^ LgLineBytes) mod 2 ^ AddrSz =
+      S * 2 ^ LgNumBytesFullCapSz / 2 ^ LgLineBytes * 2 ^ LgLineBytes ->
+    (A / 2 ^ LgNumBytesFullCapSz + 1) mod 2 ^ TagAddrWidth = S.
+Proof.
+  intros A S.
+  exact (arith_second_gen A S _ _ _ _ _ _ capBytes_pos lineTags_pos lineCount_pos
+           lineBytes_split addrBytes_lines slotCount_lines).
+Qed.
+
+Lemma div_split_gen : forall A lb cb nt, 0 < cb -> 0 < nt -> lb = nt * cb -> 0 <= A ->
+  A / cb = nt * (A / lb) + A mod lb / cb /\ A mod cb = A mod lb mod cb.
+Proof.
+  intros A lb cb nt Hc Hn E HA; subst lb.
+  split.
+  - rewrite (Z.div_mod A (nt * cb)) at 1 by nia.
+    replace (nt * cb * (A / (nt * cb)) + A mod (nt * cb)) with (nt * (A / (nt * cb)) * cb + A mod (nt * cb)) by ring.
+    rewrite Z.div_add_l by lia; reflexivity.
+  - symmetry; apply Z.mod_mod_divide; exists nt; reflexivity.
+Qed.
 
 Lemma div8_split : forall A, 0 <= A ->
-  A / 8 = 4 * (A / 32) + A mod 32 / 8 /\ A mod 8 = A mod 32 mod 8 /\ 0 <= A mod 32 < 32 /\ 0 <= A mod 8 < 8.
+  A / 2 ^ LgNumBytesFullCapSz = 2 ^ LgNumLineTags * (A / 2 ^ LgLineBytes) + A mod 2 ^ LgLineBytes / 2 ^ LgNumBytesFullCapSz /\
+  A mod 2 ^ LgNumBytesFullCapSz = A mod 2 ^ LgLineBytes mod 2 ^ LgNumBytesFullCapSz /\
+  0 <= A mod 2 ^ LgLineBytes < 2 ^ LgLineBytes /\ 0 <= A mod 2 ^ LgNumBytesFullCapSz < 2 ^ LgNumBytesFullCapSz.
 Proof.
   intros A HA.
-  pose proof (Z.mod_pos_bound A 32 ltac:(lia)); pose proof (Z.mod_pos_bound A 8 ltac:(lia)).
-  split; [| split; [| split; lia]].
-  - assert (EA : A = 4 * (A / 32) * 8 + A mod 32) by (pose proof (Z.div_mod A 32 ltac:(lia)); lia).
-    rewrite EA at 1; rewrite Z.div_add_l by lia; reflexivity.
-  - symmetry; apply Z.mod_mod_divide; exists 4; reflexivity.
+  destruct (div_split_gen A _ _ _ capBytes_pos lineTags_pos lineBytes_split HA) as [E1 E2].
+  pose proof (Z.mod_pos_bound A _ lineBytes_pos); pose proof (Z.mod_pos_bound A _ capBytes_pos).
+  repeat split; first [exact E1 | exact E2 | lia].
 Qed.
 
 (* The slot condition from the line equality, the snoop miss and (second line) the crossing *)
@@ -606,48 +649,50 @@ Lemma dCond_of :
     lineOf b addr = lineOf false (scanFull sa) ->
     snoopHitsB addr size sa = false ->
     (b = true -> crossesB addr size = true) ->
-    dCond b (Zmod.to_Z (evalExpr (memLineOffset (Var type Addr addr)))) (Zmod.to_Z size) (Zmod.to_Z sa mod 4) = true.
+    dCond b (Zmod.to_Z (evalExpr (memLineOffset (Var type Addr addr)))) (Zmod.to_Z size)
+      (Zmod.to_Z sa mod 2 ^ LgNumLineTags) = true.
 Proof.
   intros b addr size sa Hl Hm Hcr.
   destruct (snoopMiss_Z addr size sa Hm) as [M1 M2].
   apply (f_equal (@Zmod.to_Z _)) in Hl.
   rewrite to_Z_lineOf_false, to_Z_scanFull in Hl.
   rewrite to_Z_offset.
-  assert (HA : 0 <= Zmod.to_Z addr < 4294967296) by exact (Zmod.unsigned_pos_bound addr ltac:(cbv; reflexivity)).
-  assert (HS : 0 <= Zmod.to_Z sa < 536870912) by exact (Zmod.unsigned_pos_bound sa ltac:(cbv; reflexivity)).
-  assert (Hsz : 0 <= Zmod.to_Z size < 4) by exact (Zmod.unsigned_pos_bound size ltac:(cbv; reflexivity)).
-  change (2 ^ LgNumBytesFullCapSz) with 8 in Hl.
-  change (2 ^ 29) with 536870912 in M2.
+  assert (HA : 0 <= Zmod.to_Z addr < 2 ^ AddrSz) by exact (Zmod.unsigned_pos_bound addr addrBytes_pos).
+  assert (HS : 0 <= Zmod.to_Z sa < 2 ^ TagAddrWidth)
+    by exact (Zmod.unsigned_pos_bound sa (pow2_pos _ (Z.lt_le_incl _ _ TagAddrWidth_pos))).
+  assert (Hsz : 0 <= Zmod.to_Z size < 2 ^ LgLgNumBytesFullCapSz)
+    by exact (Zmod.unsigned_pos_bound size (pow2_pos _ LgLgNumBytesFullCapSz_nonneg)).
+  pose proof (size_pow_bound _ Hsz) as Hp.
   destruct (div8_split (Zmod.to_Z addr) ltac:(lia)) as [D1 [D2 [D3 D4]]].
-  pose proof (Z.div_mod (Zmod.to_Z sa) 4 ltac:(lia)) as DS1.
-  pose proof (Z.mod_pos_bound (Zmod.to_Z sa) 4 ltac:(lia)) as DS2.
-  pose proof (Z.mod_pos_bound (Zmod.to_Z addr mod 32) 8 ltac:(lia)) as D5.
-  pose proof (Z.div_mod (Zmod.to_Z addr mod 32) 8 ltac:(lia)) as D6.
-  assert (DS3 : Zmod.to_Z sa * 8 / 32 = Zmod.to_Z sa / 4)
-    by (change 32 with (4 * 8); apply Z.div_mul_cancel_r; lia).
-  assert (D7 : 24 <= Zmod.to_Z addr mod 32 -> Zmod.to_Z addr mod 8 = Zmod.to_Z addr mod 32 - 24)
-    by (intros H24; rewrite D2; symmetry; apply Z.mod_unique with (q := 3); [left |]; lia).
-  assert (Ecs : Zmod.to_Z size = 0 \/ Zmod.to_Z size = 1 \/ Zmod.to_Z size = 2 \/ Zmod.to_Z size = 3) by lia.
+  pose proof lineBytes_pos as Hlb; pose proof capBytes_pos as Hcb; pose proof lineTags_pos as Hnt.
+  pose proof lineBytes_split as Esp.
+  pose proof (Z.div_mod (Zmod.to_Z sa) (2 ^ LgNumLineTags) ltac:(lia)) as DS1.
+  pose proof (Z.mod_pos_bound (Zmod.to_Z sa) (2 ^ LgNumLineTags) Hnt) as DS2.
+  assert (DS3 : Zmod.to_Z sa * 2 ^ LgNumBytesFullCapSz / 2 ^ LgLineBytes = Zmod.to_Z sa / 2 ^ LgNumLineTags)
+    by (rewrite Esp; apply Z.div_mul_cancel_r; lia).
   destruct b.
   - pose proof (crossesB_true addr size (Hcr eq_refl)) as Hx.
-    rewrite to_Z_lineOf_true in Hl; change (2 ^ 32) with 4294967296 in Hl.
-    unfold dCond.
-    destruct Ecs as [E | [E | [E | E]]]; rewrite E in *; rewrite ?pow2_0, ?pow2_1, ?pow2_2, ?pow2_3 in *.
-    all: apply orb_true_intro.
-    all: destruct (Z.eqb_spec (Zmod.to_Z sa mod 4) 0) as [Hk | Hk]; [right | left; reflexivity].
-    all: apply negb_true_iff, Z.ltb_ge; exfalso; apply M2.
-    all: first [apply arith_second; [lia | lia | exact Hk | lia | exact Hl] | lia].
-  - rewrite (to_Z_lineOf_false addr) in Hl.
-    assert (HlS : Zmod.to_Z addr / 32 = Zmod.to_Z sa / 4) by (rewrite DS3 in Hl; lia).
-    clear Hl.
-    unfold dCond.
-    destruct Ecs as [E | [E | [E | E]]]; rewrite E in *; rewrite ?pow2_0, ?pow2_1, ?pow2_2, ?pow2_3 in *.
-    all: apply andb_true_intro; split; apply negb_true_iff.
-    all: first [ apply Z.eqb_neq; intros Ek; apply M1; lia
-               | apply not_true_is_false; intros Hb; apply andb_true_iff in Hb as [Hb1 Hb2];
-                 apply Z.leb_le in Hb1; apply Z.eqb_eq in Hb2; apply (M2 ltac:(lia));
-                 assert (Ex : Zmod.to_Z addr / 8 + 1 = Zmod.to_Z sa) by lia;
-                 rewrite Ex; apply Z.mod_small; lia ].
+    rewrite to_Z_lineOf_true in Hl.
+    unfold dCond; apply orb_true_intro.
+    destruct (Z.eqb_spec (Zmod.to_Z sa mod 2 ^ LgNumLineTags) 0) as [Hk | Hk]; [right | left; reflexivity].
+    apply negb_true_iff, Z.ltb_ge; exfalso; apply M2.
+    + assert (Hoc : Zmod.to_Z addr mod 2 ^ LgLineBytes mod 2 ^ LgNumBytesFullCapSz =
+                    Zmod.to_Z addr mod 2 ^ LgLineBytes - (2 ^ LgNumLineTags - 1) * 2 ^ LgNumBytesFullCapSz)
+        by (symmetry; apply (Z.mod_unique _ _ (2 ^ LgNumLineTags - 1));
+            [left; rewrite Z.mul_sub_distr_r, Z.mul_1_l, <- Esp; lia | ring]).
+      rewrite D2, Hoc, Z.mul_sub_distr_r, Z.mul_1_l, <- Esp; lia.
+    + apply arith_second; [lia | lia | exact Hk | lia | exact Hl].
+  - rewrite (to_Z_lineOf_false addr), DS3 in Hl.
+    assert (HlS : Zmod.to_Z addr / 2 ^ LgLineBytes = Zmod.to_Z sa / 2 ^ LgNumLineTags)
+      by (apply (Z.mul_reg_r _ _ (2 ^ LgLineBytes)); lia).
+    clear Hl; unfold dCond.
+    apply andb_true_intro; split; apply negb_true_iff.
+    + apply Z.eqb_neq; intros Ek; apply M1; rewrite D1, HlS, Ek; lia.
+    + apply not_true_is_false; intros Hb; apply andb_true_iff in Hb as [Hb1 Hb2].
+      apply Z.leb_le in Hb1; apply Z.eqb_eq in Hb2.
+      apply (M2 ltac:(rewrite D2; lia)).
+      assert (Ex : Zmod.to_Z addr / 2 ^ LgNumBytesFullCapSz + 1 = Zmod.to_Z sa) by (rewrite D1, HlS; lia).
+      rewrite Ex; apply Z.mod_small; lia.
 Qed.
 
 (* --- The slot at `scanFull sa` after a line write that misses the snoop --- *)
@@ -662,9 +707,10 @@ Lemma specPkt_write_miss :
 Proof.
   intros b addr pkt size sa rp Hl Hm Hc.
   pose proof (dCond_of b addr size sa Hl Hm Hc) as Hd.
-  pose proof (Z.mod_pos_bound (Zmod.to_Z sa) 4 ltac:(lia)) as Hk.
-  assert (Hk4 : (Z.to_nat (Zmod.to_Z sa mod 4) < 4)%nat) by lia.
-  rewrite <- (Z2Nat.id (Zmod.to_Z sa mod 4)) in Hd by lia.
+  pose proof (Z.mod_pos_bound (Zmod.to_Z sa) _ lineTags_pos) as Hk.
+  assert (Hk4 : (Z.to_nat (Zmod.to_Z sa mod 2 ^ LgNumLineTags) < NumLineTags)%nat)
+    by (rewrite numLineTags_nat; apply Z2Nat.inj_lt; lia).
+  rewrite <- (Z2Nat.id (Zmod.to_Z sa mod 2 ^ LgNumLineTags)) in Hd by lia.
   apply specPkt_window.
   - intros j Hj; apply winByte_write.
     rewrite winIdx_scanFull by exact Hj.
