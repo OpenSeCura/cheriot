@@ -425,11 +425,13 @@ Section ExecAppend.
       rewrite <- (preExcAt_pccWithAddr (iPccA s1') (iPccA s1).(Snd).(Snd).(Fst) a).
       rewrite <- (preExcAt_pccWithAddr (iPccA s1) (iPccA s1).(Snd).(Snd).(Fst) a).
       unfold pccWithAddr; rewrite Et, Ee; reflexivity. }
+    assert (Etop : forall a c, topExcAt (iPccA s1') a c = topExcAt (iPccA s1) a c)
+      by (intros a c; apply topExcAt_ecap; exact Ee).
     rewrite Elive, Efb, Efpc, Ecp, Estr.
     destruct H as [H1 [H2 [H3 H4]]]; split; [exact H1 |]; split; [| split; [| exact H4]].
     - eapply Forall_impl; [| exact H2]; intros f Hf; rewrite Epre; exact Hf.
     - destruct (optValid (iStraddleA s1)).
-      + rewrite Epre; exact H3.
+      + rewrite Epre, Etop; exact H3.
       + destruct (filter (fbLiveA s1) (iFetchBufA s1)) as [| f l]; [exact H3 |].
         destruct (iFetchBufA s1) as [| f0 rest]; [exact H3 |].
         replace (fbLiveA s1' f0) with (fbLiveA s1 f0) by (unfold fbLive; rewrite Eep, Epep; reflexivity).

@@ -908,6 +908,20 @@ Section CoreRel.
       (evalExpr (Not (##pccECap`"perms"`"EX")) ,,
        (evalExpr (Ult (ZeroExtendTo (AddrSz + 1) (Var type Addr pc)) (##pccECap`"base")) ,, tt)))).
 
+  (* The fetch top check of a compressed (`isComp`) or full instruction at `pc` under PCC `pcc`,
+   * as fetchAssemble and `specMemFetchRead` compute it (`specTopExc`) *)
+  Definition topExcAt (pcc : type FullECapWithTag) (pc : type Addr) (isComp : bool) : bool :=
+    let instLgBytes : type (Bit LgLgNumBytesFullCapSz) :=
+      evalExpr (ITE (Var type Bool isComp)
+                    ($(Z.log2 (CompInstSz / 8)) : Expr type (Bit LgLgNumBytesFullCapSz))
+                    $(Z.log2 (InstSz / 8))) in
+    let instEnd : type (Bit (AddrSz + 2)) := evalLetExpr (@AdderAccessEnd type pc instLgBytes) in
+    evalExpr (memFetchTopExc (Var type (Bit (AddrSz + 2)) instEnd) (Var type (Bit (AddrSz + 2)) (pccTopOf pcc))).
+
+  Lemma topExcAt_ecap :
+    forall (p1 p2 : type FullECapWithTag) pc c, p1.(Snd).(Fst) = p2.(Snd).(Fst) -> topExcAt p1 pc c = topExcAt p2 pc c.
+  Proof. intros [t1 [e1 [a1 []]]] [t2 [e2 [a2 []]]] pc c E; cbn in E; subst e2; reflexivity. Qed.
+
   (* Live instructions: each with its fetch output and predicted next PC, oldest first *)
   Definition liveInsts (g : Ghost) (s1 : IState) : list (type FetchOut * type Addr) :=
     (map (fun jf => (snd jf, daPredPc (fst jf)))
@@ -927,7 +941,9 @@ Section CoreRel.
     evalExpr (TruncLsb (AddrSz - 1) 1 (Var type Addr a)) = Zmod.zero.
 
   (* Where fetch continues, given the PC `fp` of the next instruction to assemble. A live fetchBuf
-   * head being assembled from parcel `curParcelOpt` has the pre-fault flags of `fp`; `fp` is even. *)
+   * head being assembled from parcel `curParcelOpt` has the pre-fault flags of `fp`; `fp` is even.
+   * A saved straddle is the uncompressed low parcel of a 4-byte instruction at `fp` that passes
+   * the pre-fault and top checks of the current PCC. *)
   Definition FrontierRel (s1 : IState) (s2 : SState) (fp : type Addr) : Prop :=
     let fb := iFetchBuf s1 in
     let live := filter (fbLive s1) fb in
@@ -941,6 +957,8 @@ Section CoreRel.
        evalExpr (@getPacketParcel type fp) = lastParcel /\
        sh.(Snd).(Fst) = preExcAt pcc fp /\
        excAny (preExcAt pcc fp) = false /\
+       topExcAt pcc fp false = false /\
+       evalExpr (@isParcelCompressed type sh.(Fst)) = false /\
        (exists rpPrev,
           LineAllowed initLine fwcs specRegions (sMem s2) (lineAddrOf fp) rpPrev /\
           sh.(Fst) = pktParcel (fetchPktOf rpPrev) lastParcel) /\
@@ -1140,8 +1158,9 @@ Section CoreRel.
     intros s1 s2 s2' fp Hsnap Hext H; unfold FrontierRel in *; cbv zeta in *.
     destruct H as [H1 [H2 [H3 H4]]]; split; [exact H1 | split; [exact H2 | split; [| exact H4]]].
     destruct (optValid (iStraddle s1)); [| exact H3].
-    destruct H3 as [Ha [Hb [Hc [Hx [[rpPrev [Hal Hsh]] Hd]]]]].
-    split; [exact Ha | split; [exact Hb | split; [exact Hc | split; [exact Hx | split; [| exact Hd]]]]].
+    destruct H3 as [Ha [Hb [Hc [Hx [Ht [Hu [[rpPrev [Hal Hsh]] Hd]]]]]]].
+    split; [exact Ha | split; [exact Hb | split; [exact Hc | split; [exact Hx |]]]].
+    split; [exact Ht | split; [exact Hu | split; [| exact Hd]]].
     exists rpPrev; split; [| exact Hsh].
     exact (LineAllowed_fetchViewExt initLine specRegions fwcs _ _ _ _ Hsnap Hext Hal).
   Qed.

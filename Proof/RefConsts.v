@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Lia Bool.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics.
-From Cheriot Require Import SpecDefines.
+From Cheriot Require Import SpecDefines ImplCommon.
 
 Import ListNotations.
 Local Open Scope Z_scope.
@@ -62,6 +62,17 @@ Proof. unfold LgNumBytesFullCapSz, LgLineBytes, AddrSz; lia. Qed.
  * capability slot *)
 Theorem invariant_sizes : 0 <= LgLgNumBytesFullCapSz /\ 2 ^ LgLgNumBytesFullCapSz = LgNumBytesFullCapSz + 1.
 Proof. unfold LgLgNumBytesFullCapSz, LgNumBytesFullCapSz; split; [lia | reflexivity]. Qed.
+
+(* Instruction fetch: a parcel is a compressed instruction (two bytes); a line holds
+ * 2^LgFetchParcels parcels; an instruction is two parcels and fits in a capability packet. (The
+ * instruction sizes are fixed by the ISA; the address size is not constrained here.) *)
+Theorem invariant_fetch :
+  Z.of_nat NumFetchParcels = 2 ^ LgFetchParcels /\ LgFetchParcels + 1 = LgLineBytes /\
+  CompInstSz = 2 * 8 /\ InstSz = CompInstSz + CompInstSz /\
+  2 ^ LgNumBytesInstSz = InstSz / 8 /\ LgNumBytesInstSz <= LgNumBytesFullCapSz /\ 0 <= LgNumBytesInstSz /\
+  0 <= LgFetchParcels /\
+  2 ^ LgNumBytesInstSz = 2 ^ (LgLineBytes - LgFetchParcels) + 2 ^ (LgLineBytes - LgFetchParcels).
+Proof. vm_compute; repeat split; first [reflexivity | congruence]. Qed.
 
 (* ========================================================================= *)
 (* DERIVED FACTS (from the invariants only)                                  *)
