@@ -220,7 +220,8 @@ Section FetchStage.
           ) Else (
             Return #defaultNoInstOut
           ) ;
-        Let  predPc    : Addr          <- ##noInstOut`"predPc" ;
+        Let  predPc    : Addr          <- {< TruncMsb (AddrSz - 1) 1 (##noInstOut`"predPc"),
+                                             Const ty (Bit 1) Zmod.zero >} ;
         Let  entry     : FetchBufEntry <- STRUCT {
           "pcAddr"     ::= #fetchPc ;
           "predPc"     ::= #predPc ;
@@ -371,7 +372,7 @@ Section FetchStage.
                     LetIf predPc <- If #needsPred Then
                                       liftAction np_bp (withInstIfc.(withInst_getPred) instPc instPred expInst pb)
                                     Else Return #seqPc ;
-                    Return #predPc
+                    Return {< TruncMsb (AddrSz - 1) 1 #predPc, Const ty (Bit 1) Zmod.zero >}
                   ) Else (
                     Return #defaultPredPc
                   ) ;
