@@ -322,6 +322,9 @@ Section RefInitMain.
   Hypothesis HdetPre : Forall (fun r => allTreeInitDet (memRegionTree r) = true) pre.
   Hypothesis HdetPost : Forall (fun r => allTreeInitDet (memRegionTree r) = true) post.
 
+  (* The reset PC is even *)
+  Hypothesis HpcEven : pcAligned (Zmod.of_Z _ pcAddrInit).
+
   Local Abbreviation ITree :=
     (ImplTree pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
               mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions).
@@ -576,7 +579,7 @@ Section RefInitMain.
         cbv iota beta.
         unfold iFetchPc, iFetch, fetch_pc, iPcc, iRf.
         rewrite (proj1 Hf), (readPcc_init_addr pcAddrInit _ init_rf).
-        reflexivity.
+        split; [reflexivity | exact HpcEven].
       + unfold FetchRespRel.
         apply AllPorts_init; [| exact init_regions].
         intros r y Hy.
@@ -593,8 +596,19 @@ Section RefInitMain.
         intros Hc; discriminate Hc.
     - (* WfRel *)
       unfold WfRel, iFetch, iDecode, iDm.
-      split; [exact (InitStateConsistent_fifo_wf fetchCapacity FetchBufEntry _
-                       (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 Hf)))))))) |].
+      split; [split; [exact (InitStateConsistent_fifo_wf fetchCapacity FetchBufEntry _
+                               (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 Hf)))))))) |] |].
+      { split.
+        - unfold iCurParcel, iFetch, fetch_curParcelOpt; rewrite (proj1 (proj2 (proj2 Hf))).
+          intros Hc; discriminate Hc.
+        - split; [unfold iPcc, iRf; rewrite (readPcc_init_addr pcAddrInit _ init_rf); exact HpcEven |].
+          unfold iD2a, iInstBuf, iFetchBuf, iDecode, iFetch, decode_toAluFifo, fetch_instFifo, fetch_fetchBufFifo.
+          rewrite (InitStateConsistent_fifo_to_list decodeCapacity DecodeToAluEntry _ (proj1 (proj1 (proj2 Hd)))).
+          rewrite (InitStateConsistent_fifo_to_list instCapacity AssembledInst _
+                     (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 Hf))))))))).
+          rewrite (InitStateConsistent_fifo_to_list fetchCapacity FetchBufEntry _
+                     (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 Hf)))))))).
+          split; [constructor | split; constructor]. }
       split; [exact (InitStateConsistent_fifo_wf instCapacity AssembledInst _
                        (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 Hf))))))))) |].
       split; [exact (InitStateConsistent_fifo_wf decodeCapacity DecodeToAluEntry _ (proj1 (proj1 (proj2 Hd)))) |].

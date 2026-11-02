@@ -22,6 +22,7 @@ From Cheriot Require Import Impl ImplCommon ImplDevice ImplRevoker ImplFetch Imp
 From Cheriot.Proof Require Import TreeLemmas StateRel DecodeFacts SimDevices SimFetchDecode SimExecute SimDataMem GhostListLemmas.
 From Cheriot.Proof Require Import RefRel RefRegion RefGhost RefFetch FifoGen RefMemRel RefCoreRel RefFrame RefPeriph RefSpecRead RefSpecFetch RefRevoker RefReplay.
 From Cheriot.Proof Require Import RefExec RefExecImpl.
+From Cheriot.Proof Require Import RefPcEven.
 
 Unset Implicit Arguments.
 Unset Strict Implicit.
@@ -864,7 +865,7 @@ Proof.
       * repeat step_allReturns; intros _; exact (getSeqPcc_keep pcc a.(Fst)).
       * pose proof (Hcf (isCf_of_tags a Hdmt Hsc)) as Hok0; pose proof Hok0 as Hok.
         unfold CfOK in Hok; cbv zeta in Hok.
-        do 3 (simple apply allReturns_step_letexp).
+        do 4 (simple apply allReturns_step_letexp).
         simple apply allReturns_step_let; intros ?.
         simple apply allReturns_IfElse_any; intros _.
         apply allReturns_IfElse_Ret_cond; intros Hao.
@@ -1550,6 +1551,9 @@ Section ExecMain.
     intros g s1 s1' s2 Hg Hsem Hcp Hv Hlive Hint Hq.
     destruct (IMPL impl_interrupt clint plic envI s1 s1' Hsem Hcp Hv Hlive Hint Hq)
       as [rfMid [execOut [Hex [Erf [Ewb [Emem [Efe [Ed2a' [Edm [Emd [Eep Efip]]]]]]]]]]].
+    assert (Hpc : pcAligned (iPccA s1').(Snd).(Snd).(Fst)).
+    { unfold iPcc; rewrite Erf, readPcc_writePcc.
+      exact (executeInterrupt_nextPcc_even pcAddrInit _ _ _ _ _ _ Hex). }
     pose proof (wf_d2a g s1 s2 Hg) as Hwf.
     pose proof (head_of_valid s1 Hwf Hv) as Ed2a.
     destruct (d2a_of_deq s1 s1' Hwf Ed2a') as [Ed2a2 Hwf'].
@@ -1584,7 +1588,7 @@ Section ExecMain.
       assert (Efpc : iFetchPcA s1' = (iPccA s1').(Snd).(Snd).(Fst))
         by (unfold iFetchPc, iPcc; rewrite Efe, Erf, readPcc_writePcc; reflexivity).
       destruct (IMPL redirect_FrontRel_NoLive initLine fwcs g g' s1 s1' s2m s2' (stJA s1) (tl (iD2aA s1))
-                  Hfrm Ed2a Hlive' Ed2a2 Eib Efb Ereg Eep Estr Efpc) as [Hnl Hfr'].
+                  Hfrm Ed2a Hlive' Ed2a2 Eib Efb Ereg Eep Estr Efpc Hpc) as [Hnl Hfr'].
       assert (Hstale : forall x, In x (tl (iD2aA s1)) -> daLiveA s1' x = false).
       { destruct Hnl as [Hnl _]; rewrite Ed2a2, Forall_forall in Hnl; exact Hnl. }
       split; [| split; [exact Hfr' |]].
@@ -1606,7 +1610,7 @@ Section ExecMain.
         * intros l1 j2 l2 fo Hl1 _ Hx _ _; exfalso.
           assert (Hin : In j2 (tl (iD2aA s1))) by (rewrite Hl1; apply in_or_app; right; left; reflexivity).
           rewrite (Hstale j2 Hin) in Hx; discriminate Hx.
-      + eapply (IMPL WfRel_exec_step); [exact Hwm | | | exact Hwf' | | | exact Ereg].
+      + eapply (IMPL WfRel_exec_step); [exact Hwm | | | exact Hwf' | | | exact Ereg | unfold iCurParcel; rewrite Efe; reflexivity | exact Hpc | intros y Hy; rewrite Ed2a2 in Hy; rewrite Ed2a; right; exact Hy].
         * rewrite Efe; reflexivity.
         * rewrite Efe; reflexivity.
         * rewrite Edm; destruct Hwm as [_ [_ [_ [W4 _]]]]; exact W4.
@@ -1912,6 +1916,8 @@ Section ExecMain.
     set (g1 := mkGhost pcAddrInit (g_chain pcAddrInit g ++ [GInst e])%list (g_rf0 pcAddrInit g)
                  (g_cnwb pcAddrInit g) (g_revOff pcAddrInit g) fo_tail (g_acc pcAddrInit g)).
     assert (Ereg : iRegionsA s1' = iRegionsA s1) by (unfold iRegions; rewrite Emem; reflexivity).
+    assert (Hpc : forall p, iPccA s1' = pccWithAddr (iPccA s1) p -> pcAligned p -> pcAligned (iPccA s1').(Snd).(Snd).(Fst))
+      by (intros p Ep Hp; rewrite Ep; exact Hp).
     assert (Epcc : iPccA s1' = pccWithAddr (iPccA s1) (daPredPc (stJA s1)))
       by (rewrite (stPcc_eq s1'), Erf; apply readPcc_writePcc).
     assert (Hdm0 : optValid (ge_dm e) = false) by exact (execDataMem_seqOut (iPccA s1) a mdOpt).
@@ -1933,7 +1939,9 @@ Section ExecMain.
         try exact Ereg; rewrite Epcc; reflexivity.
     - eapply (IMPL WfRel_exec_step);
         [exact Hw | rewrite Efe; reflexivity | rewrite Efe; reflexivity | exact Hwf'
-        | rewrite Edm; exact W4 | exact Hwf5 | exact Ereg].
+        | rewrite Edm; exact W4 | exact Hwf5 | exact Ereg | unfold iCurParcel; rewrite Efe; reflexivity
+        | apply (Hpc _ Epcc); destruct Hw as [[_ [_ [_ [Hd _]]]] _]; rewrite Ed2a in Hd; exact (Forall_inv Hd)
+        | intros y Hy; rewrite Ed2a2 in Hy; rewrite Ed2a; right; exact Hy].
   Qed.
 
   (* --- 6. Non-Sequential Instructions --- *)
@@ -2093,6 +2101,10 @@ Section ExecMain.
     intros g s1 s1' s2 a Hg Hsem Hcp Hv Hlive Hint Ha Hns Hgd Hnv HA1 HA2.
     destruct (IMPL impl_nonSeq clint plic envI s1 s1' a Hsem Hcp Hv Hlive Hint Ha Hns Hgd)
       as [rfMid [x [Hex [Erf [Emem [Ed2a' [Emd [Hred [Efip Hdmc]]]]]]]]].
+    assert (Hpc : pcAligned (iPccA s1').(Snd).(Snd).(Fst)).
+    { pose proof Hg as HgW; destruct HgW as [_ _ _ _ _ _ _ _ _ _ _ [[_ [_ [Hpc0 _]]] _] _].
+      unfold iPcc; rewrite Erf, readPcc_writePcc.
+      exact (executeNonSequential_nextPcc_even pcAddrInit _ _ _ _ _ _ _ Hpc0 Hex). }
     pose proof (wf_d2a g s1 s2 Hg) as Hwf.
     pose proof (head_of_valid s1 Hwf Hv) as Ed2a.
     destruct (d2a_of_deq s1 s1' Hwf Ed2a') as [Ed2a2 Hwf'].
@@ -2157,6 +2169,12 @@ Section ExecMain.
           exact (score_clear g g1 s1 s1' (stJA s1) (tl (iD2aA s1)) fo0 fo_tail Hs Ed2a Efo Ed2a2 eq_refl Edm Emd Ewb
                    Hlv Hrr). }
     (* redirect or not: the live tail, the frontend and the fence flag *)
+    assert (Ecp : iCurParcel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                   mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1' =
+                 iCurParcel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                   mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1)
+          by (destruct (execRedirect a x (daPredPc (stJA s1))); destruct Hred as [_ Efe0];
+              unfold iCurParcel; rewrite Efe0; reflexivity).
     assert (HR : (forall y, In y (tl (iD2aA s1)) -> daLiveA s1' y = true -> daLiveA s1 y = true) /\
                  (forall l1 j2 l2 fo, tl (iD2aA s1) = (l1 ++ j2 :: l2)%list -> nth_error fo_tail (length l1) = Some fo ->
                     daLiveA s1' j2 = true ->
@@ -2178,7 +2196,7 @@ Section ExecMain.
         assert (Efpc : iFetchPcA s1' = (iPccA s1').(Snd).(Snd).(Fst))
           by (unfold iFetchPc, iPcc; rewrite Efe, Erf, readPcc_writePcc; reflexivity).
         destruct (IMPL redirect_FrontRel_NoLive initLine fwcs g g1 s1 s1' s2 s2 (stJA s1) (tl (iD2aA s1))
-                    Hfr Ed2a Hlive' Ed2a2 Eib Efb Ereg Eep Estr Efpc) as [Hnl Hfr'].
+                    Hfr Ed2a Hlive' Ed2a2 Eib Efb Ereg Eep Estr Efpc Hpc) as [Hnl Hfr'].
         assert (Hstale : forall y, In y (tl (iD2aA s1)) -> daLiveA s1' y = false).
         { destruct Hnl as [Hnl0 _]; rewrite Ed2a2, Forall_forall in Hnl0; exact Hnl0. }
         split; [intros y Hin Hy; rewrite (Hstale y Hin) in Hy; discriminate Hy |].
@@ -2214,7 +2232,8 @@ Section ExecMain.
     - exact (Hsc' Hlv Hrr).
     - exact Hfr'.
     - eapply (IMPL WfRel_exec_step);
-        [exact Hw | exact Efb | exact Eib | exact Hwf' | exact Hwfd | rewrite Emd; exact W5 | exact Ereg].
+        [exact Hw | exact Efb | exact Eib | exact Hwf' | exact Hwfd | rewrite Emd; exact W5 | exact Ereg
+        | exact Ecp | exact Hpc | intros y Hy; rewrite Ed2a2 in Hy; rewrite Ed2a; right; exact Hy].
   Qed.
 
   (* Non-sequential virtual CSR read: lockstep (dataMem is empty, so the spec catches up first) *)
@@ -2232,6 +2251,10 @@ Section ExecMain.
     intros g s1 s1' s2 a Hg Hsem Hcp Hv Hlive Hint Ha Hns Hgd Hvc HA2.
     destruct (IMPL impl_nonSeq clint plic envI s1 s1' a Hsem Hcp Hv Hlive Hint Ha Hns Hgd)
       as [rfMid [x [Hex [Erf [Emem [Ed2a' [Emd [Hred [Efip Hdmc]]]]]]]]].
+    assert (Hpc : pcAligned (iPccA s1').(Snd).(Snd).(Fst)).
+    { pose proof Hg as HgW; destruct HgW as [_ _ _ _ _ _ _ _ _ _ _ [[_ [_ [Hpc0 _]]] _] _].
+      unfold iPcc; rewrite Erf, readPcc_writePcc.
+      exact (executeNonSequential_nextPcc_even pcAddrInit _ _ _ _ _ _ _ Hpc0 Hex). }
     pose proof (wf_d2a g s1 s2 Hg) as Hwf.
     pose proof (head_of_valid s1 Hwf Hv) as Ed2a.
     destruct (d2a_of_deq s1 s1' Hwf Ed2a') as [Ed2a2 Hwf'].
@@ -2283,6 +2306,12 @@ Section ExecMain.
     - intros g' s2m s2' Hgm Efo' Htf.
       pose proof Hgm as Hgm0; destruct Hgm0 as [_ Hmm _ _ _ _ _ _ _ _ Hfrm Hwm _].
       rewrite Efo in Efo'; cbn [tl] in Efo'.
+      assert (Ecp : iCurParcel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                     mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1' =
+                   iCurParcel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                     mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1)
+            by (destruct (execRedirect a x (daPredPc (stJA s1))); destruct Hred as [_ Efe0];
+                unfold iCurParcel; rewrite Efe0; reflexivity).
       assert (HR : (forall y, In y (tl (iD2aA s1)) -> daLiveA s1' y = true -> daLiveA s1 y = true) /\
                    (forall l1 j2 l2 fo, tl (iD2aA s1) = (l1 ++ j2 :: l2)%list -> nth_error fo_tail (length l1) = Some fo ->
                       daLiveA s1' j2 = true ->
@@ -2303,7 +2332,7 @@ Section ExecMain.
           assert (Efpc : iFetchPcA s1' = (iPccA s1').(Snd).(Snd).(Fst))
             by (unfold iFetchPc, iPcc; rewrite Efe, Erf, readPcc_writePcc; reflexivity).
           destruct (IMPL redirect_FrontRel_NoLive initLine fwcs g g' s1 s1' s2m s2' (stJA s1) (tl (iD2aA s1))
-                      Hfrm Ed2a Hlive' Ed2a2 Eib Efb Ereg Eep Estr Efpc) as [Hnl Hfr'].
+                      Hfrm Ed2a Hlive' Ed2a2 Eib Efb Ereg Eep Estr Efpc Hpc) as [Hnl Hfr'].
           assert (Hstale : forall y, In y (tl (iD2aA s1)) -> daLiveA s1' y = false).
           { destruct Hnl as [Hnl0 _]; rewrite Ed2a2, Forall_forall in Hnl0; exact Hnl0. }
           split; [intros y Hin Hy; rewrite (Hstale y Hin) in Hy; discriminate Hy |].
@@ -2329,7 +2358,8 @@ Section ExecMain.
       + eapply (IMPL WfRel_exec_step);
           [exact Hwm | exact Efb | exact Eib | exact Hwf'
           | rewrite Edm; destruct Hwm as [_ [_ [_ [W4 _]]]]; exact W4
-          | rewrite Emd; destruct Hwm as [_ [_ [_ [_ [W5 _]]]]]; exact W5 | exact Ereg].
+          | rewrite Emd; destruct Hwm as [_ [_ [_ [_ [W5 _]]]]]; exact W5 | exact Ereg
+          | exact Ecp | exact Hpc | intros y Hy; rewrite Ed2a2 in Hy; rewrite Ed2a; right; exact Hy].
   Qed.
 
   (* --- 7. The Whole Stage --- *)

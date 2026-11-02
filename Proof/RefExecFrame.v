@@ -348,7 +348,8 @@ Section ExecFrame.
              daLive, aiLive, fbLive, iPcc, iFetchPc, iPredEpoch, iCurParcel, iStraddle,
              iFetchBuf, iInstBuf in *;
         rewrite Erf, Ereg, Efe, Ed2a, Eep; exact Hfr.
-    - unfold WfRel in *; rewrite Efe, Ede, Edm, Emd, Ereg; exact Hw.
+    - unfold WfRel, iCurParcel, iFetchBuf, iPcc, liveInsts, daLive, aiLive, iInstBuf in *;
+        rewrite ?Erf, ?Ed2a, ?Eep, ?Efe, ?Ede, ?Edm, ?Emd, ?Ereg; exact Hw.
     - eapply RevokerRel_frame with (g := g) (s1 := s1) (s2 := s2);
         try reflexivity;
         try (unfold iRev, iRegions; rewrite Emem; reflexivity);

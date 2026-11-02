@@ -437,7 +437,7 @@ Section AluRF.
       "dataMem"    ::= @mkNone ty MemFenceUnion ;
       "cf"         ::= @mkNone ty CfPayload ;
       "isFenceIRq" ::= Const ty Bool false ;
-      "nextPcc"    ::= #mtcc
+      "nextPcc"    ::= #mtcc `{ "addr" <- {< TruncMsb (AddrSz - 1) 1 (##mtcc`"addr"), Const ty (Bit 1) Zmod.zero >} }
     }).
 
   Definition executeInterrupt (currPcc : ty FullECapWithTag) (meip mtip : ty Bool)
@@ -587,7 +587,9 @@ Section AluRF.
                   Else
                     (
                       Let  cf      : CfPayload       <- #cfScrCsr `! "ControlFlow" ;
-                      Let  newPcc  : FullECapWithTag <- ##cf`"NewPcc" ;
+                      Let  cfPcc   : FullECapWithTag <- ##cf`"NewPcc" ;
+                      Let  newPcc  : FullECapWithTag <- #cfPcc `{ "addr" <- {< TruncMsb (AddrSz - 1) 1 (##cfPcc`"addr"),
+                                                                               Const ty (Bit 1) Zmod.zero >} } ;
                       Let  cfOp    : CfOp            <- ##cf`"CfOp" ;
                       LetA mstatus : Bit Xlen        <- readRegsList csrPathsWithKind
                                                           ($(getCsrPhysicalIdx "mstatus") : Expr ty (Bit CsrIdxSz)) ;
@@ -665,7 +667,8 @@ Section AluRF.
                                     "dataMem"    ::= @mkNone ty MemFenceUnion ;
                                     "cf"         ::= mkSome #cfOut ;
                                     "isFenceIRq" ::= Const ty Bool false ;
-                                    "nextPcc"    ::= #mePcc
+                                    "nextPcc"    ::= #mePcc `{ "addr" <- {< TruncMsb (AddrSz - 1) 1 (##mePcc`"addr"),
+                                                                      Const ty (Bit 1) Zmod.zero >} }
                                   })
                                 ) ;
                             Return #resAddrECap

@@ -922,7 +922,12 @@ Section CoreRel.
     | f :: (f' :: _) as l' => fbPredPc f = fbPcAddr f' /\ FbChain l' fetchPc
     end.
 
-  (* Where fetch continues, given the PC `fp` of the next instruction to assemble *)
+  (* `a` is even (bit 0 is clear) *)
+  Definition pcAligned (a : type Addr) : Prop :=
+    evalExpr (TruncLsb (AddrSz - 1) 1 (Var type Addr a)) = Zmod.zero.
+
+  (* Where fetch continues, given the PC `fp` of the next instruction to assemble. A live fetchBuf
+   * head being assembled from parcel `curParcelOpt` has the pre-fault flags of `fp`; `fp` is even. *)
   Definition FrontierRel (s1 : IState) (s2 : SState) (fp : type Addr) : Prop :=
     let fb := iFetchBuf s1 in
     let live := filter (fbLive s1) fb in
@@ -947,9 +952,11 @@ Section CoreRel.
        | [] => iFetchPc s1 = fp
        | f :: _ =>
            if andb (match fb with f0 :: _ => fbLive s1 f0 | [] => false end) (optValid (iCurParcel s1))
-           then parcelAddrOf (lineAddrOf (fbPcAddr f)) (optData (iCurParcel s1)) = fp
+           then parcelAddrOf (lineAddrOf (fbPcAddr f)) (optData (iCurParcel s1)) = fp /\
+                fbFetchExc f = preExcAt pcc fp
            else fbPcAddr f = fp
-       end).
+       end) /\
+    pcAligned fp.
 
   (* The chain of live instructions from PC `pc`: each can be fetched by the spec, and
    * predicts the sequential PC unless it needs prediction; after a faulting instruction
@@ -1034,8 +1041,15 @@ Section CoreRel.
       exact (InitStateConsistent_fifo_wf _ _ _ Hreq).
   Qed.
 
+  (* fetchBuf is well-formed and non-empty while a parcel of its head is being assembled; the PC
+   * and all predicted PCs in the frontend are even *)
   Definition WfRel (g : Ghost) (s1 : IState) (s2 : SState) : Prop :=
-    fifo_wf (fetch_fetchBufFifo pcAddrInit fetchCapacity instCapacity (iFetch s1)) /\
+    (fifo_wf (fetch_fetchBufFifo pcAddrInit fetchCapacity instCapacity (iFetch s1)) /\
+     (optValid (iCurParcel s1) = true -> iFetchBuf s1 <> []) /\
+     pcAligned (iPcc s1).(Snd).(Snd).(Fst) /\
+     Forall (fun j => pcAligned (daPredPc j)) (iD2a s1) /\
+     Forall (fun a => pcAligned (aiPredPc a)) (iInstBuf s1) /\
+     Forall (fun f => pcAligned (fbPredPc f)) (iFetchBuf s1)) /\
     fifo_wf (fetch_instFifo pcAddrInit fetchCapacity instCapacity (iFetch s1)) /\
     fifo_wf (decode_toAluFifo decodeCapacity (iDecode s1)) /\
     fifo_wf (dataMem_fifo dataMemCapacity (iDm s1)) /\
@@ -1123,7 +1137,7 @@ Section CoreRel.
       FrontierRel s1 s2 fp -> FrontierRel s1 s2' fp.
   Proof.
     intros s1 s2 s2' fp Hsnap Hext H; unfold FrontierRel in *; cbv zeta in *.
-    destruct H as [H1 [H2 H3]]; split; [exact H1 | split; [exact H2 |]].
+    destruct H as [H1 [H2 [H3 H4]]]; split; [exact H1 | split; [exact H2 | split; [| exact H4]]].
     destruct (optValid (iStraddle s1)); [| exact H3].
     destruct H3 as [Ha [Hb [Hc [[rpPrev [Hal Hsh]] Hd]]]].
     split; [exact Ha | split; [exact Hb | split; [exact Hc | split; [| exact Hd]]]].

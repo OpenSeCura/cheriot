@@ -293,11 +293,17 @@ Section ExecStageStepOK.
       fifo_wf (dataMem_fifo dataMemCapacity (iDmA s1')) ->
       MulDivWf mulCapacity divCapacity mulStages divStages mulDivMode (iMdA s1') ->
       iRegionsA s1' = iRegionsA s1 ->
+      iCurParcelA s1' = iCurParcelA s1 ->
+      pcAligned (iPccA s1').(Snd).(Snd).(Fst) ->
+      (forall x, In x (iD2aA s1') -> In x (iD2aA s1)) ->
       WfRelA g' s1' s2'.
   Proof.
-    intros g g' s1 s1' s2 s2' [W1 [W2 [_ [_ [_ W5]]]]] Efb Eib Hwd Hwm Hmd Ereg.
+    intros g g' s1 s1' s2 s2' [[W1a [W1b [_ [W1d [W1e W1f]]]]] [W2 [_ [_ [_ W5]]]]] Efb Eib Hwd Hwm Hmd Ereg Ecp Hpc Hd2a.
     unfold WfRel; rewrite Efb, Eib, Ereg.
-    exact (conj W1 (conj W2 (conj Hwd (conj Hwm (conj Hmd W5))))).
+    refine (conj (conj W1a (conj _ (conj Hpc (conj _ _)))) (conj W2 (conj Hwd (conj Hwm (conj Hmd W5))))).
+    - rewrite Ecp; unfold iFetchBuf; rewrite Efb; exact W1b.
+    - rewrite Forall_forall in W1d |- *; intros x Hx; exact (W1d x (Hd2a x Hx)).
+    - unfold iInstBuf, iFetchBuf; rewrite Eib, Efb; exact (conj W1e W1f).
   Qed.
 
   Lemma DmQueueRel_snoc_none :

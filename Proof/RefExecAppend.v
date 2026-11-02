@@ -426,14 +426,14 @@ Section ExecAppend.
       rewrite <- (preExcAt_pccWithAddr (iPccA s1) (iPccA s1).(Snd).(Snd).(Fst) a).
       unfold pccWithAddr; rewrite Et, Ee; reflexivity. }
     rewrite Elive, Efb, Efpc, Ecp, Estr.
-    destruct H as [H1 [H2 H3]]; split; [exact H1 |]; split.
+    destruct H as [H1 [H2 [H3 H4]]]; split; [exact H1 |]; split; [| split; [| exact H4]].
     - eapply Forall_impl; [| exact H2]; intros f Hf; rewrite Epre; exact Hf.
     - destruct (optValid (iStraddleA s1)).
       + rewrite Epre; exact H3.
       + destruct (filter (fbLiveA s1) (iFetchBufA s1)) as [| f l]; [exact H3 |].
         destruct (iFetchBufA s1) as [| f0 rest]; [exact H3 |].
         replace (fbLiveA s1' f0) with (fbLiveA s1 f0) by (unfold fbLive; rewrite Eep, Epep; reflexivity).
-        exact H3.
+        rewrite Epre; exact H3.
   Qed.
 
   Lemma FrontRel_step_no_redirect :

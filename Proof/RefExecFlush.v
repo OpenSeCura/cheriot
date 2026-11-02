@@ -278,9 +278,10 @@ Section ExecFlush.
       iExecEpochA s1' = evalExpr (Add [ Var type Epoch (iExecEpochA s1) ; ($1 : Expr type Epoch) ]) ->
       optValid (iStraddleA s1') = false ->
       iFetchPcA s1' = (iPccA s1').(Snd).(Snd).(Fst) ->
+      pcAligned (iPccA s1').(Snd).(Snd).(Fst) ->
       NoLiveA s1' /\ FrontRelA g' s1' s2'.
   Proof.
-    intros g g' s1 s1' s2 s2' j d2a_tail Hfr Ed2a Hlive Ed2a' Eib Efb Ereg Eep' Estr' Efpc'.
+    intros g g' s1 s1' s2 s2' j d2a_tail Hfr Ed2a Hlive Ed2a' Eib Efb Ereg Eep' Estr' Efpc' Hal.
     destruct Hfr as [F1 [F2 [F3 [F4 [F5 [_ F7]]]]]].
     rewrite Ed2a in F1, F4, F5.
     assert (Hex_j : Exists (fun x => daLiveA s1 x = true) (j :: d2a_tail))
@@ -321,7 +322,7 @@ Section ExecFlush.
       unfold FrontierRel; cbv zeta.
       rewrite (filter_false_nil (fbLiveA s1') (iFetchBufA s1') Hfb_false).
       rewrite Estr', Efpc'.
-      split; [exact I | split; [constructor | reflexivity]].
+      split; [exact I | split; [constructor | split; [reflexivity | exact Hal]]].
     - (* FetchRespRel: every `fbLive s1' f = true` premise is vacuous (`false = true`)! *)
       unfold FetchRespRel, fbInRegion in *.
       rewrite Efb, Ereg.

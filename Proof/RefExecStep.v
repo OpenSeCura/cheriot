@@ -331,9 +331,11 @@ Section ExecStep.
           rewrite ?Erf, ?Efe, ?Eep; exact F6.
       + unfold FetchRespRel, fbInRegion, fbLive, iFetchBuf, iPredEpoch in *;
           rewrite ?Ereg, ?Efe, ?Eep; exact F7.
-    - unfold WfRel in *; rewrite ?Efe, ?Edm, ?Emd, ?Ereg.
-      destruct Hw as [W1 [W2 [_ [W4 W5]]]].
-      split; [exact W1 | split; [exact W2 | split; [exact Hwf_dec | split; [exact W4 | exact W5]]]].
+    - unfold WfRel, iCurParcel, iFetchBuf, iInstBuf, iPcc in *; rewrite ?Erf, ?Efe, ?Edm, ?Emd, ?Ereg, ?Ed2a'.
+      destruct Hw as [[W1a [W1b [W1c [W1d W1e]]]] [W2 [_ [W4 W5]]]].
+      rewrite Ed2a in W1d; apply Forall_inv_tail in W1d.
+      split; [split; [exact W1a | split; [exact W1b | split; [exact W1c | split; [exact W1d | exact W1e]]]] |].
+      split; [exact W2 | split; [exact Hwf_dec | split; [exact W4 | exact W5]]].
     - eapply RevokerRel_frame with (g := g) (s1 := s1) (s2 := s2);
         try reflexivity;
         try (unfold iRev, iRegions; rewrite Emem; reflexivity);
