@@ -175,15 +175,6 @@ Proof.
                          (csrPaths_all_child2 pcAddrInit)))).
 Qed.
 
-Lemma updCsr_Snd_Snd_Snd :
-  forall pcAddrInit idx val rf,
-    (updCsr pcAddrInit idx val rf).(Snd).(Snd).(Snd) = rf.(Snd).(Snd).(Snd).
-Proof.
-  intros pcAddrInit idx val rf.
-  exact (proj1 (proj2 (proj2 (evalWriteRegsListHelper_child2 (csrPathsWithKind pcAddrInit) 0 idx val rf rf
-                                (csrPaths_all_child2 pcAddrInit))))).
-Qed.
-
 Lemma updCsr_Snd_Snd_Fst_ext :
   forall pcAddrInit idx val rf1 rf2,
     rf1.(Snd).(Snd).(Fst) = rf2.(Snd).(Snd).(Fst) ->
@@ -241,18 +232,6 @@ Proof.
   - rewrite !updGpr_Snd; symmetry; apply updCsr_Snd_Snd_Fst_ext; rewrite updGpr_Snd; reflexivity.
 Qed.
 
-Theorem updScr_updCsr_comm :
-  forall pcAddrInit scrIdx scrVal csrIdx csrVal rf,
-    updScr pcAddrInit scrIdx scrVal (updCsr pcAddrInit csrIdx csrVal rf) =
-    updCsr pcAddrInit csrIdx csrVal (updScr pcAddrInit scrIdx scrVal rf).
-Proof.
-  intros pcAddrInit scrIdx scrVal csrIdx csrVal rf.
-  apply rfTree_state_eq.
-  - rewrite !updScr_Fst, !updCsr_Fst, !updScr_Fst; reflexivity.
-  - rewrite updCsr_Snd_Fst; apply updScr_Snd_Fst_ext, updCsr_Snd_Fst.
-  - rewrite !updScr_Snd_Snd; symmetry; apply updCsr_Snd_Snd_Fst_ext; rewrite updScr_Snd_Snd; reflexivity.
-Qed.
-
 (* --- Cross-bank read-over-write invariance --- *)
 
 Theorem readScr_updGpr :
@@ -279,22 +258,6 @@ Proof.
   intros; apply readGpr_Fst_ext, updCsr_Fst.
 Qed.
 
-Theorem readScr_updCsr :
-  forall pcAddrInit scrIdx csrIdx csrVal rf,
-    readScr pcAddrInit scrIdx (updCsr pcAddrInit csrIdx csrVal rf) =
-    readScr pcAddrInit scrIdx rf.
-Proof.
-  intros; apply readScr_Snd_Fst_ext, updCsr_Snd_Fst.
-Qed.
-
-Theorem readCsr_updScr :
-  forall pcAddrInit csrIdx scrIdx scrVal rf,
-    readCsr pcAddrInit csrIdx (updScr pcAddrInit scrIdx scrVal rf) =
-    readCsr pcAddrInit csrIdx rf.
-Proof.
-  intros; apply readCsr_Snd_Snd_Fst_ext; rewrite updScr_Snd_Snd; reflexivity.
-Qed.
-
 (* --- Same-bank GPR, SCR, and CSR read-over-write and write-over-write lemmas --- *)
 
 Lemma NoDup_gprPathsWithKind :
@@ -305,28 +268,6 @@ Proof.
   intros pcAddrInit.
   apply NoDup_regPath_of_leafPath_id.
   cbn [gprPathsWithKind map rk_path regPath leafPath_id].
-  repeat (constructor; [simpl; intuition congruence |]); constructor.
-Qed.
-
-Lemma NoDup_scrPathsWithKind :
-  forall pcAddrInit,
-    NoDup (map (fun r : RegOfKind FullECapWithTag => r.(rk_path).(regPath))
-               (scrPathsWithKind pcAddrInit)).
-Proof.
-  intros pcAddrInit.
-  apply NoDup_regPath_of_leafPath_id.
-  cbn [scrPathsWithKind map rk_path regPath leafPath_id].
-  repeat (constructor; [simpl; intuition congruence |]); constructor.
-Qed.
-
-Lemma NoDup_csrPathsWithKind :
-  forall pcAddrInit,
-    NoDup (map (fun r : RegOfKind (Bit Xlen) => r.(rk_path).(regPath))
-               (csrPathsWithKind pcAddrInit)).
-Proof.
-  intros pcAddrInit.
-  apply NoDup_regPath_of_leafPath_id.
-  cbn [csrPathsWithKind map rk_path regPath leafPath_id].
   repeat (constructor; [simpl; intuition congruence |]); constructor.
 Qed.
 
@@ -417,24 +358,3 @@ Proof.
     exfalso; exact (noRecvTree_no_RecvPath t Hno x).
 Qed.
 
-Lemma evalActionPropGen_rfTree_env :
-  forall {pcAddrInit : Z}
-         (env1 env2 : Env (rfTree pcAddrInit)) {k : Kind}
-         (a : Action type (rfTree pcAddrInit) k)
-         (s : TreeState ElemState (rfTree pcAddrInit)) P,
-    evalActionPropGen env1 a s P <-> evalActionPropGen env2 a s P.
-Proof.
-  intros pcAddrInit env1 env2 k a s P.
-  exact (evalActionPropGen_noRecvTree_env env1 env2 a s P eq_refl).
-Qed.
-
-Lemma SemAction_rfTree_env :
-  forall {pcAddrInit : Z}
-         (env1 env2 : Env (rfTree pcAddrInit)) {k : Kind}
-         (a : Action type (rfTree pcAddrInit) k)
-         (s s' : TreeState ElemState (rfTree pcAddrInit)) (v : type k),
-    SemAction env1 a s s' v <-> SemAction env2 a s s' v.
-Proof.
-  intros pcAddrInit env1 env2 k a s s' v.
-  exact (SemAction_noRecvTree_env env1 env2 a s s' v eq_refl).
-Qed.

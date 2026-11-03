@@ -664,13 +664,6 @@ Section FifoGen.
     reflexivity.
   Qed.
 
-  Lemma fifoEnqState_full : forall (f : FState) (v : type k), fifo_wf f ->
-    Datatypes.length (fifo_to_list f) = cap -> fifoEnqState f v = f.
-  Proof.
-    intros f v Hwf Hlen. rewrite (length_fifo_to_list f Hwf) in Hlen.
-    apply fifoEnqState_full_eq. rewrite fifo_size_eqb_cap, Hlen. apply Nat.eqb_refl.
-  Qed.
-
   Lemma fifo_wf_enq : forall (f : FState) (v : type k), fifo_wf f -> fifo_wf (fifoEnqState f v).
   Proof.
     intros f v Hwf.
@@ -753,17 +746,6 @@ Section FifoGen.
     evalActionPropGen env (@ShiftFifo.clear cap k type) f P <-> P (fifoClearState f) Zmod.zero.
   Proof. intros env f P. reflexivity. Qed.
 
-  Lemma fifo_to_list_clear : forall f : FState, fifo_to_list (fifoClearState f) = [].
-  Proof.
-    intros f. pose proof fifo_pow_pos as Hp. unfold fifo_to_list, fifoClearState.
-    rewrite fifo_size_setSize, Zmod.unsigned_of_Z, Z.mod_0_l by lia. reflexivity.
-  Qed.
-
-  Lemma fifo_wf_clear : forall f : FState, fifo_wf (fifoClearState f).
-  Proof.
-    intros f. pose proof fifo_pow_pos as Hp. unfold fifo_wf, fifoClearState.
-    rewrite fifo_size_setSize, Zmod.unsigned_of_Z, Z.mod_0_l by lia. lia.
-  Qed.
 End FifoGen.
 
 Arguments fifo_wf {cap k} f.
