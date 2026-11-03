@@ -569,8 +569,12 @@ Section ExternalMemEnvAndHandshake.
   Definition rpParcel (rp : type LineReadRp) (p : nat) : list (bits 8) :=
     firstn 2 (skipn (2 * p) rp.(Fst).(tupleElems)).
 
+  (* Data byte `i` of a line response (empty past the end of the line). *)
+  Definition rpByte (rp : type LineReadRp) (i : nat) : list (bits 8) :=
+    firstn 1 (skipn i rp.(Fst).(tupleElems)).
+
   (* Post-`fence.iAck` fetch constraint for a response to the request for `lineAddr`,
-   * per 16-bit parcel (`fenceIAck` and `writes` are newest first):
+   * per data byte (`fenceIAck` and `writes` are newest first):
    * - `n_at := fenceISnapshotCount fenceIWriteCount fenceIAck` is the write count at the
    *   last `fence.iAck` (0 before any ack: the initial memory).
    * - `writes_after := firstn (length writes - n_at) writes` is the prefix of `writes` that
@@ -579,8 +583,9 @@ Section ExternalMemEnvAndHandshake.
    *   to the last `fence.iAck`.
    * - `baseLine` evaluates the committed state at `fence.iAck` (where all older stores to
    *   an address prior to the last store at `fence.iAck` are overwritten and irrelevant).
-   * - Each parcel of `rp` independently comes from some allowed version: `baseLine` plus
-   *   an oldest-first prefix `ws_used` of `writes_after`, chosen per parcel.
+   * - Each byte of `rp` independently comes from some allowed version: `baseLine` plus
+   *   an oldest-first prefix `ws_used` of `writes_after`, chosen per byte. So a byte is
+   *   its value at the last ack or the value of some later write covering it.
    * - Tag bits are unconstrained: instruction fetch never uses them. *)
   Definition EnvFetchLineReadRpAt
     (initLine : bits AddrSz -> type LineReadRp)
@@ -593,11 +598,11 @@ Section ExternalMemEnvAndHandshake.
     let writes_after     := firstn n_after writes in
     let writes_at_fenceI := skipn n_after writes in
     let baseLine         := evalLineWriteRqTrace initLine writes_at_fenceI lineAddr in
-    forall p : nat,
+    forall i : nat,
       exists ws_used,
         isSuffix ws_used writes_after /\
-        rpParcel rp p =
-          rpParcel (evalLineWriteRqTrace (fun _ => baseLine) ws_used lineAddr) p.
+        rpByte rp i =
+          rpByte (evalLineWriteRqTrace (fun _ => baseLine) ws_used lineAddr) i.
 
   (* The spec answers each fetch request in the same action, so its response is for the
    * newest request, `hd fetchRqs`. *)
@@ -612,7 +617,7 @@ Section ExternalMemEnvAndHandshake.
   Proof.
     intros initLine fenceIWriteCount fenceIAck writes lineAddr.
     unfold EnvFetchLineReadRpAt.
-    eexists; intros p; exists []; split.
+    eexists; intros i; exists []; split.
     - exists (firstn (length writes - fenceISnapshotCount fenceIWriteCount fenceIAck) writes).
       rewrite app_nil_r; reflexivity.
     - reflexivity.
@@ -659,7 +664,7 @@ Section ExternalMemEnvAndHandshake.
       - reflexivity.
       - exact IH. }
     rewrite Hfirstn, Hskipn.
-    intros p; destruct (Henv1 p) as [ws_used [[pref Hpref] Hrp]].
+    intros i; destruct (Henv1 i) as [ws_used [[pref Hpref] Hrp]].
     exists ws_used; split; [| exact Hrp].
     exists (ws_new ++ pref)%list.
     rewrite <- app_assoc, <- Hpref; reflexivity.
