@@ -16,7 +16,7 @@
 
 From Stdlib Require Import String List ZArith Zmod Lia Bool.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems HelperLemmas.
-From Cheriot.Proof Require Import ImplSpec RunSim.
+From Cheriot.Proof Require Import ImplSpec.
 
 Unset Implicit Arguments.
 Unset Strict Implicit.
@@ -29,10 +29,12 @@ Local Open Scope guru_scope.
 (* ===========================================================================
  * TOP-LEVEL REFINEMENT GLUE FOR `pipelinedMod`
  * ===========================================================================
- * `run_sim` (RunSim.v) turns one step obligation into a run-level result, with
- * the spec env chosen per run (`env2 : O -> Env sTree`, oracle prefixes `P`)
- * and every impl step assumed to obey `Rule`. This section splits that step
- * obligation into one obligation per action group of `pipelinedMod`
+ * Guru's `OracleStepToModSimulation` (Theorems.v) turns one step obligation into a
+ * module-level result, with the spec env chosen per run (`env2 : O -> Env sTree`,
+ * oracle prefixes `P`). Here every impl step from a reachable state is assumed to
+ * obey `Rule`; to use that inside the step obligation, the relation is
+ * strengthened with reachability from the run's start state. This section splits
+ * the step obligation into one obligation per action group of `pipelinedMod`
  * (`ImplActionKind`) and derives the top-level statement for any relation `R`
  * that meets them. The envs, `Rule` and `R` stay abstract here. *)
 
@@ -187,12 +189,19 @@ Section TopLevelGlue.
         ActStepSim act
   }.
 
-  (* --- From Per-Group Obligations to `run_sim`'s Step Obligation --- *)
+  (* --- From Per-Group Obligations to One Step Obligation for Any Action --- *)
 
   Lemma obligations_StepSim :
     RefinementObligations ->
-    StepSim iTree sTree env1 O P env2 Agrees Ext
-      (pipeMod type) (specMod type) R Rule.
+    forall p s1 s1' s2 a,
+      In a (pipeMod type) ->
+      SemAction env1 a s1 s1' Zmod.zero ->
+      Rule s1 s1' ->
+      R p s1 s2 ->
+      exists p' s2',
+        Ext p p' /\
+        (forall o, Agrees p' o -> SemActions (env2 o) (specMod type) s2 s2') /\
+        R p' s1' s2'.
   Proof.
     intros Hob p s1 s1' s2 a Hin Ha Hrule Hr.
     pose proof (In_pipelinedMod_ImplActionKind pcAddrInit issueWidth
@@ -245,16 +254,21 @@ Section TopLevelGlue.
             exists p, R p new1 new2.
   Proof.
     intros Hob p0 Hinit old1 new1 Hsem Hrule old2 Hinit2.
-    destruct Hsem as [old1 new1 Hinit1 Hrun].
-    destruct (run_sim iTree sTree env1 O P env2 Agrees Ext Ext_refl Ext_trans Agrees_Ext
-                (pipeMod type) (specMod type) R Rule
-                (obligations_StepSim Hob) old1 new1 Hrun Hrule p0 old2
-                (Hinit old1 old2 Hinit1 Hinit2))
-      as [p' [new2 [_ [Hval Hr]]]].
-    destruct (Agrees_inhabited p') as [o Ho].
-    exists o, new2; split.
-    - constructor; [exact Hinit2 | exact (Hval o Ho)].
-    - exists p'; exact Hr.
+    assert (Hinit1 : InitStateConsistent iTree old1) by (destruct Hsem; assumption).
+    (* `R` plus reachability of the impl state from `old1`, so `Hrule` applies. *)
+    set (RR := fun q s1 s2 => R q s1 s2 /\ SemActions env1 (pipeMod type) old1 s1).
+    assert (Hsim : OracleStepSim env1 env2 Agrees Ext (pipeMod type) (specMod type) RR).
+    { intros q s1 s1' s2 a Hin Ha [Hr Hreach].
+      destruct (obligations_StepSim Hob q s1 s1' s2 a Hin Ha (Hrule s1 s1' a Hreach Hin Ha) Hr)
+        as [q' [s2' [Hqq' [Hval Hr']]]].
+      exists q', s2'; split; [exact Hqq' | split; [exact Hval |]].
+      split; [exact Hr' | exact (SemActions_snoc Hreach Hin Ha)]. }
+    assert (Hmod : OracleModSimulation env1 env2 pipeMod specMod RR)
+      by (apply OracleStepToModSimulation with (Agrees := Agrees) (Ext := Ext); assumption).
+    assert (Hnil : SemActions env1 (pipeMod type) old1 old1) by (constructor 1; reflexivity).
+    destruct (Hmod old1 new1 Hsem p0 old2 Hinit2 (conj (Hinit old1 old2 Hinit1 Hinit2) Hnil))
+      as [o [new2 [Hsem2 [p' [Hr _]]]]].
+    exists o, new2; split; [exact Hsem2 | exists p'; exact Hr].
   Qed.
 
 End TopLevelGlue.

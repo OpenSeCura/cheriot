@@ -18,7 +18,7 @@ From Stdlib Require Import String List ZArith Zmod Lia Bool.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems HelperLemmas.
 From Cheriot Require Import SpecDefines Spec SpecDevice Clint Plic SpecRevoker.
 From Cheriot Require Import Impl ImplCommon ImplDevice ImplRevoker ImplMulDiv ImplInst.
-From Cheriot.Proof Require Import ImplSpec RunSim Refinement SimDevices.
+From Cheriot.Proof Require Import ImplSpec Refinement SimDevices.
 From Cheriot.Proof Require Import RefRel RefCoreRel RefPcEven RefInit RefPeriph RefRevBitRule.
 From Cheriot.Proof Require Import RefRevokerStep RefMemStep RefReadRp RefFetchRp RefLoadCommitStep RefRevWriteCommit.
 From Cheriot.Proof Require Import RefWriteRqStep RefReadRqStep RefDmStep RefMdStep RefLsfFenceI RefDecodeStep.
