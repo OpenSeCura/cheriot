@@ -267,7 +267,7 @@ Section ExecStep.
     - unfold CnwbRel in *; cbn [g_cnwb g_chain g_acc]; unfold iDmSt in *; rewrite Edm; exact Hc.
     - unfold DmQueueRel, iDmBuf in *; cbn [g_chain g_acc]; rewrite Edm; exact Hd.
     - unfold FenceRel, NoFenceIWait in *; cbn [g_chain]; rewrite Ereg, Efip.
-      destruct Hf as [Hf1 Hf2]; split.
+      destruct Hf as [Hf1 [Hf2 Hf3]]; split; [| split; [| exact Hf3]].
       + intros Hp; destruct (Hf1 Hp) as [[Hnl1 [Hnl2 Hnl3]] [Hst Hrest]].
         rewrite Ed2a in Hnl1; inversion Hnl1 as [| ? ? _ Hnl1'].
         split.

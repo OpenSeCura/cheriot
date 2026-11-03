@@ -43,6 +43,8 @@ Definition ImplMulStages  : nat := 2%nat.
 Definition ImplDivStages  : nat := 16%nat.
 Definition ImplMulDivMode : MulDivMode := PipelinedMul_IterDiv.
 
+Definition implMulDivStagesDivideXlen : Is_true (mulDivStagesDivideXlen ImplMulStages ImplDivStages) := I.
+
 Definition implConcreteRegions : list MemRegion := [
   ramRegion ;
   revTableRegion ;

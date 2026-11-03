@@ -158,7 +158,7 @@ Section LoadCommit.
     - exact Hdq.
     - unfold FenceRel, NoFenceIWait in *.
       rewrite HP by (intros; reflexivity).
-      destruct Hf as [Hf1 Hf2]; split.
+      destruct Hf as [Hf1 [Hf2 Hf3]]; split; [| split].
       + intros Hp; rewrite E1 in Hp; destruct (Hf1 Hp) as [Hnl [Hst' [G1 [e [G2 [HG [Hfie HF]]]]]]].
         split; [rewrite E1; exact Hnl | split; [rewrite E1; exact Hst' |]].
         rewrite Ech in HG.
@@ -168,6 +168,8 @@ Section LoadCommit.
       + intros Hw'; destruct (Hf2 Hw') as [Hp [Hnl [Hst' Hno]]].
         split; [rewrite E1; exact Hp | split; [rewrite E1; exact Hnl | split; [rewrite E1; exact Hst' |]]].
         intros e Hin; apply (Hno e); rewrite Ech; apply in_or_app; right; exact Hin.
+      + intros G1 e G2 HG Hfie; rewrite E1.
+        apply (Hf3 (G0 ++ G1)%list e G2); [rewrite Ech, HG, app_assoc; reflexivity | exact Hfie].
     - unfold ScoreRel in *; rewrite Ed2a; rewrite E1; exact Hs.
     - subst s1'.
       unfold FrontRel in *; destruct Hfr as [F1 [F2 [F3 [F4 [F5 [F6 F7]]]]]].
@@ -308,7 +310,7 @@ Section LoadCommit.
       by (intros r y; destruct (y.(Fst).(Fst).(Snd).(Snd).(Fst)); [right; discriminate | left; reflexivity]).
     destruct (AllPorts_dec (fun r y => y.(Fst).(Fst).(Snd).(Snd).(Fst) = false) HdecW implRegions (iRegionsA s1))
       as [Hnw | Hnw].
-    2: { exfalso; unfold FenceRel, NoFenceIWait in Hf; destruct Hf as [_ Hf2].
+    2: { exfalso; unfold FenceRel, NoFenceIWait in Hf; destruct Hf as [_ [Hf2 _]].
          destruct (Hf2 Hnw) as [_ [_ [_ Hno]]]; exact (Hno e Hin). }
     assert (Hsnw : SpecNoWait specRegions (sMemA s2)).
     { unfold MemRelC, MemRel in Hm; destruct Hm as [[Hpre _] _].

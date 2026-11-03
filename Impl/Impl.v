@@ -31,6 +31,12 @@ Local Open Scope guru_scope.
  * Pipelined System Tree and Implementation Module
  * =========================================================================== *)
 
+(* The multiplier's and the divider's stage counts divide Xlen (each stage, or each iteration,
+ * handles the same whole number of bits); the mulDiv engines compute the right result only then *)
+Definition mulDivStagesDivideXlen (mulStages divStages : nat) : bool :=
+  andb (Nat.eqb (mulStages * (Z.to_nat Xlen / mulStages))%nat (Z.to_nat Xlen))
+       (Nat.eqb (divStages * (Z.to_nat Xlen / divStages))%nat (Z.to_nat Xlen)).
+
 Section ImplDom.
   Variable pcAddrInit : Z.
   Variable issueWidth : nat.

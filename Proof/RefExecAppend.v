@@ -322,7 +322,7 @@ Section ExecAppend.
       NoFenceIWaitA s1 /\
       SpecNoWait specRegions (sMemA s2).
   Proof.
-    intros g s1 s2 j d2a_tail [Hf1 Hf2] [[Hpre _] _] Ed2a Hlive.
+    intros g s1 s2 j d2a_tail [Hf1 [Hf2 _]] [[Hpre _] _] Ed2a Hlive.
     pose proof (not_NoLive_of_head s1 j d2a_tail Ed2a Hlive) as HnotLive.
     assert (Hfip : iFenceIPendingA s1 = false).
     { destruct (iFenceIPendingA s1) eqn:Ep; [| reflexivity].
@@ -787,7 +787,7 @@ Section ExecAppend.
                 split; [rewrite Hrrq; intros H; discriminate H | rewrite Hlrp; intros H; discriminate H]]].
       + unfold DmQueueRel, iDmBuf in *; cbn [g_chain g_acc]; rewrite Edm; rewrite Hch in Hdmqm; exact Hdmqm.
       + unfold FenceRel, NoFenceIWait; cbn [g_chain]; rewrite Efip', Ereg.
-        split; [intros H; discriminate H |].
+        split; [intros H; discriminate H | split; [| intros G1 e0 G2 H; destruct G1; discriminate H]].
         intros Hc; exfalso; exact (Hc Hnfw).
       + exact Hs'.
       + exact Hfr'.

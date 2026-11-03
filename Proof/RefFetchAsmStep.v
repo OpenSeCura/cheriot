@@ -916,7 +916,7 @@ Section FetchAsmStep.
     - exact Cd.
     - unfold FenceRel in *; rewrite HNF, Efip, Estr.
       pose proof (NoLive_drop s1 s1' _ rest Efb0 Efb Elv Ed2a Eib Eep) as HNL.
-      destruct Hfe as [Hf1 Hf2]; split.
+      destruct Hfe as [Hf1 [Hf2 Hf3]]; split; [| split; [| exact Hf3]].
       + intros Hp; destruct (Hf1 Hp) as [Hn Hr]; exact (conj (HNL Hn) Hr).
       + intros Hq; destruct (Hf2 Hq) as [Hp [Hn Hr]]; exact (conj Hp (conj (HNL Hn) Hr)).
     - unfold ScoreRel, daLive in *; rewrite Eow, Ed2a, Ewb, Efl, Eep; exact Hs.
@@ -1160,11 +1160,12 @@ Section FetchAsmStep.
     pose proof Hg as [_ _ _ _ _ _ _ _ Hfe _ _ _ _].
     assert (HNL : ~ ACC NoLive s1).
     { intros [_ [_ N3]]; rewrite Efb in N3; rewrite (Forall_inv N3) in Hl; discriminate Hl. }
-    destruct Hfe as [Hf1 Hf2].
+    destruct Hfe as [Hf1 [Hf2 Hf3]].
     assert (Hfip : iFenceIPendingA s1 = false).
     { destruct (iFenceIPendingA s1) eqn:E; [exfalso; exact (HNL (proj1 (Hf1 eq_refl))) | reflexivity]. }
     unfold FenceRel; rewrite Efip, Hfip, HNF.
-    split; [intros C; discriminate C | intros C; exfalso; exact (HNL (proj1 (proj2 (Hf2 C))))].
+    split; [intros C; discriminate C | split; [intros C; exfalso; exact (HNL (proj1 (proj2 (Hf2 C)))) |]].
+    intros G1 e G2 Hc Hfi; destruct (Hf3 G1 e G2 Hc Hfi) as [Hp _]; rewrite Hfip in Hp; discriminate Hp.
   Qed.
 
   (* --- Fetch responses after the head is dropped (and its response dequeued unless it was

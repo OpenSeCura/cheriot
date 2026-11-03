@@ -342,7 +342,7 @@ Section DecodeStep.
         - rewrite Eib; rewrite Eib0 in N2; apply Forall_inv_tail in N2.
           eapply Forall_impl; [| exact N2]; intros x Hx; rewrite Eal; exact Hx.
         - rewrite Efb; eapply Forall_impl; [| exact N3]; intros x Hx; unfold fbLive in *; rewrite Eep, Epe; exact Hx. }
-      destruct Hf as [Hf1 Hf2]; split.
+      destruct Hf as [Hf1 [Hf2 Hf3]]; split; [| split; [| exact Hf3]].
       + intros Hp; destruct (Hf1 Hp) as [Hn Hr]; exact (conj (HNL Hn) Hr).
       + intros Hq; destruct (Hf2 Hq) as [Hp [Hn Hr]]; exact (conj Hp (conj (HNL Hn) Hr)).
     - unfold ScoreRel, daLive in *; rewrite Eow, Ed2a, Ewb, Efl, Eep; exact Hs.
@@ -480,7 +480,7 @@ Section DecodeStep.
       { intros [_ [N2 _]]; rewrite Eib0 in N2; apply Forall_inv in N2.
         change (aiLiveA s1 a = false) in N2; rewrite Hlive in N2; discriminate N2. }
       unfold FenceRel, NoFenceIWait in *; rewrite Ereg, Efip.
-      destruct Hf as [Hf1 Hf2]; split.
+      destruct Hf as [Hf1 [Hf2 Hf3]]; split; [| split; [| exact Hf3]].
       + intros Hp; exfalso; exact (Hcontra (proj1 (Hf1 Hp))).
       + intros Hq; exfalso; exact (Hcontra (proj1 (proj2 (Hf2 Hq)))).
     - (* ScoreRel *)

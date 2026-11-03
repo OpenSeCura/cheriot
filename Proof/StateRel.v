@@ -459,38 +459,50 @@ Section StateProjections.
     let resAddr  := evalLetExpr (@SpecMulDiv.MulDiv type op1 mulDivOp) in
     (dstIdx, mkMulDivCap resAddr).
 
-  (* Extract active `(dstIdx, resCap)` from an iterative engine + `RegIdx` FIFO *)
+  (* `n` more steps of an engine on state `st` *)
+  Fixpoint iterStepN {StateK : Kind} (stepFn : forall ty, ty StateK -> LetExpr ty StateK) (n : nat)
+    (st : type StateK) : type StateK :=
+    match n with
+    | 0%nat => st
+    | S n' => iterStepN stepFn n' (evalLetExpr (stepFn type st))
+    end.
+
+  (* The pending `(dstIdx, resCap)` of an iterative engine + `RegIdx` FIFO: the result the engine
+   * produces after its remaining `stepsRem` steps *)
   Definition extractIterEngineEntries {StateK OutK : Kind}
     (num_stages : nat)
+    (stepFn : forall ty, ty StateK -> LetExpr ty StateK)
     (finishFn : forall ty, ty StateK -> LetExpr ty OutK)
     (projRes : type OutK -> type Addr)
     (s_iter : TreeState ElemState (stagedIterTree StateK num_stages))
     (s_dstFifo : TreeState ElemState (fifoTree MulDivFifoCapacity RegIdx))
     : list (bits RegIdxSzReal * type FullECapWithTag) :=
-    let busy := s_iter.(Fst) in
-    let st   := s_iter.(Snd).(Snd).(Fst) in
+    let busy     := s_iter.(Fst) in
+    let stepsRem := s_iter.(Snd).(Fst) in
+    let st       := s_iter.(Snd).(Snd).(Fst) in
     match fifo_to_list s_dstFifo with
     | dstIdx :: _ =>
         if busy
         then
-          let outVal := evalLetExpr (finishFn type st) in
+          let outVal := evalLetExpr (finishFn type (iterStepN stepFn (Z.to_nat (Zmod.unsigned stepsRem)) st)) in
           [(dstIdx, mkMulDivCap (projRes outVal))]
         else []
     | [] => []
     end.
 
-  (* Extract active stage values from a pipelined multiplier (`stagedStagesTree`) *)
+  (* The states of a pipelined multiplier (`stagedStagesTree`), oldest first, each with the number
+   * of steps it still needs (a state in stage `stages_k` needs `k`) *)
   Fixpoint extractPipeStageStates {StateK : Kind} (n : nat)
     : TreeState ElemState (stagedStagesTree StateK n) ->
-      list (type StateK) :=
+      list (nat * type StateK) :=
     match n return
       TreeState ElemState (stagedStagesTree StateK n) ->
-      list (type StateK)
+      list (nat * type StateK)
     with
     | 0%nat => fun s =>
-        @fifo_to_list 1 StateK (s.(Fst))
+        map (pair 0%nat) (@fifo_to_list 1 StateK (s.(Fst)))
     | S m => fun s =>
-        (extractPipeStageStates m s.(Snd).(Fst) ++ @fifo_to_list 1 StateK (s.(Fst)))%list
+        (extractPipeStageStates m s.(Snd).(Fst) ++ map (pair (S m)) (@fifo_to_list 1 StateK (s.(Fst))))%list
     end.
 
   Definition extractPipeEngineEntries
@@ -499,8 +511,9 @@ Section StateProjections.
     : list (bits RegIdxSzReal * type FullECapWithTag) :=
     let stList  := extractPipeStageStates mulStages s_pipe in
     let dstList := fifo_to_list s_dstFifo in
-    map (fun '(dstIdx, st) =>
-           let outVal := evalLetExpr (@mulFinishStage (Z.to_nat Xlen) type st) in
+    map (fun '(dstIdx, (k, st)) =>
+           let outVal := evalLetExpr (@mulFinishStage (Z.to_nat Xlen) type
+                           (iterStepN (fun ty' st' => @mulStageStep (Z.to_nat Xlen) ty' (Z.to_nat Xlen / mulStages)%nat st') k st)) in
            (dstIdx, mkMulDivCap (evalExpr (#outVal`"res"))))
         (combine dstList stList).
 
@@ -523,7 +536,9 @@ Section StateProjections.
         let divDstF   := s_div.(Snd).(Fst).(Snd).(Fst) in
         (extractPipeEngineEntries mulPipe mulDstF ++
          map evalMulReqCap (fifo_to_list mulReqF) ++
-         extractIterEngineEntries divStages (@divFinishStage (Z.to_nat Xlen)) (fun o => evalExpr (#o`"res")) divIter divDstF ++
+         extractIterEngineEntries divStages
+           (fun ty' st' => @divStageStep (Z.to_nat Xlen) ty' (Z.to_nat Xlen / divStages)%nat st')
+           (@divFinishStage (Z.to_nat Xlen)) (fun o => evalExpr (#o`"res")) divIter divDstF ++
          map evalDivReqCap (fifo_to_list divReqF))%list
     | IterMul_SeparateIterDiv => fun s =>
         let s_mul     := s.(Fst) in
@@ -534,15 +549,21 @@ Section StateProjections.
         let divReqF   := s_div.(Fst) in
         let divIter   := s_div.(Snd).(Fst).(Fst) in
         let divDstF   := s_div.(Snd).(Fst).(Snd).(Fst) in
-        (extractIterEngineEntries mulStages (@mulFinishStage (Z.to_nat Xlen)) (fun o => evalExpr (#o`"res")) mulIter mulDstF ++
+        (extractIterEngineEntries mulStages
+           (fun ty' st' => @mulStageStep (Z.to_nat Xlen) ty' (Z.to_nat Xlen / mulStages)%nat st')
+           (@mulFinishStage (Z.to_nat Xlen)) (fun o => evalExpr (#o`"res")) mulIter mulDstF ++
          map evalMulReqCap (fifo_to_list mulReqF) ++
-         extractIterEngineEntries divStages (@divFinishStage (Z.to_nat Xlen)) (fun o => evalExpr (#o`"res")) divIter divDstF ++
+         extractIterEngineEntries divStages
+           (fun ty' st' => @divStageStep (Z.to_nat Xlen) ty' (Z.to_nat Xlen / divStages)%nat st')
+           (@divFinishStage (Z.to_nat Xlen)) (fun o => evalExpr (#o`"res")) divIter divDstF ++
          map evalDivReqCap (fifo_to_list divReqF))%list
     | IterMul_SharedIterDiv => fun s =>
         let reqF       := s.(Fst) in
         let sharedIter := s.(Snd).(Fst).(Fst) in
         let dstF       := s.(Snd).(Fst).(Snd).(Fst) in
         (extractIterEngineEntries (Nat.max mulStages divStages)
+           (fun ty' st' => @sharedStageStep (Z.to_nat Xlen) ty' (Z.to_nat Xlen / mulStages)%nat
+                             (Z.to_nat Xlen / divStages)%nat st')
            (@sharedFinishStage (Z.to_nat Xlen)) (fun o => evalExpr (#o`"res")) sharedIter dstF ++
          map evalMulDivReqCap (fifo_to_list reqF))%list
     end smd.

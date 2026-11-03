@@ -805,7 +805,7 @@ Section Replay.
         by (intros r y; destruct (y.(Fst).(Fst).(Snd).(Snd).(Fst)); [right; discriminate | left; reflexivity]).
       destruct (AllPorts_dec (fun r y => y.(Fst).(Fst).(Snd).(Snd).(Fst) = false) HdecW implRegions (iRegionsA s1))
         as [Hnw | Hnw].
-      2: { exfalso; unfold FenceRel, NoFenceIWait in Hf; destruct Hf as [_ Hf2].
+      2: { exfalso; unfold FenceRel, NoFenceIWait in Hf; destruct Hf as [_ [Hf2 _]].
            destruct (Hf2 Hnw) as [_ [_ [_ Hno]]]; exact (Hno e Hin). }
       assert (Hsnw : SpecNoWait specRegions (sMemA s2)).
       { unfold MemRelC, MemRel in Hm; destruct Hm as [[Hpre _] _].

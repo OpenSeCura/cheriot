@@ -393,13 +393,19 @@ Section ExecStageStepOK.
     destruct (live_head_fence_facts pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
                 clintS clint plicS plic fwcs g s1 s2 j d2a_tail Hf Hm Ed2a Hlive)
-      as [_ [Hnfw _]].
+      as [Hfip [Hnfw _]].
+    destruct Hf as [_ [_ Hf3]].
     unfold FenceRel, NoFenceIWait; rewrite Ech, Ereg, Efip'.
-    split.
+    split; [| split].
     - intros Hfi; destruct (Hfi_post Hfi) as [Hnl' Hstr'].
       split; [exact Hnl' | split; [exact Hstr' |]].
       exists (g_chain pcAddrInit g), e, []; split; [reflexivity | split; [exact Hfi | constructor]].
     - intros Hc; exfalso; exact (Hc Hnfw).
+    - intros G1 e' G2 Hc Hfi'.
+      destruct G2 as [| x G2' _] using rev_ind.
+      + apply app_inj_tail in Hc as [_ Hc]; injection Hc as <-; split; [exact Hfi' | constructor].
+      + rewrite app_comm_cons, app_assoc in Hc; apply app_inj_tail in Hc as [Hc _].
+        exfalso; destruct (Hf3 G1 e' G2' Hc Hfi') as [Hp _]; rewrite Hfip in Hp; discriminate Hp.
   Qed.
 
   (* The head's register moves to the older writers (a load enters dataMem, a mulDiv its request

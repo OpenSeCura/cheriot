@@ -522,6 +522,8 @@ Section RefInitMain.
       split.
       { unfold iFenceIPending, iExec, exec_fenceIPending.
         rewrite (proj1 (proj2 He)); intros Hc; discriminate Hc. }
+      split.
+      2: { intros G1 e G2 HG; cbn [g_chain ghost0] in HG; destruct G1; discriminate HG. }
       intros Hnot; exfalso; apply Hnot.
       unfold NoFenceIWait.
       apply AllPorts_init; [| exact init_regions].

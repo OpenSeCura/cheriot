@@ -317,8 +317,8 @@ Section MdEnq.
       Permutation (EXT (ENQM dst op1 mOp smd))
                   (EXT smd ++ [(dst, mkMulDivCap (evalLetExpr (@SpecMulDiv.MulDiv type op1 (mulUnionV mOp))))]).
   Proof.
-    intros dst op1 mOp; unfold extractMulDivEntries, MulDivWf, mdEnqMul, mdFullMul.
-    destruct mulDivMode; intros smd Hwf Hnf.
+    intros dst op1 mOp; unfold extractMulDivEntries, MulDivWf, MulDivReqWf, mdEnqMul, mdFullMul.
+    destruct mulDivMode; intros smd [Hwf _] Hnf.
     - destruct smd as [[mulReqF [[mulPipe [mulDstF []]] []]] [[divReqF [[divIter [divDstF []]] []]] []]].
       cbn [Fst Snd] in *; destruct Hwf as [Hwm _]; cbv zeta.
       rewrite (fifo_to_list_enq _ _ mulReqF _ Hwm (fifo_notFull_lt _ _ mulReqF Hwm Hnf)), map_app; cbn [map].
@@ -341,8 +341,8 @@ Section MdEnq.
       Permutation (EXT (ENQD dst op1 dOp smd))
                   (EXT smd ++ [(dst, mkMulDivCap (evalLetExpr (@SpecMulDiv.MulDiv type op1 (divUnionV dOp))))]).
   Proof.
-    intros dst op1 dOp; unfold extractMulDivEntries, MulDivWf, mdEnqDiv, mdFullDiv.
-    destruct mulDivMode; intros smd Hwf Hnf.
+    intros dst op1 dOp; unfold extractMulDivEntries, MulDivWf, MulDivReqWf, mdEnqDiv, mdFullDiv.
+    destruct mulDivMode; intros smd [Hwf _] Hnf.
     - destruct smd as [[mulReqF [[mulPipe [mulDstF []]] []]] [[divReqF [[divIter [divDstF []]] []]] []]].
       cbn [Fst Snd] in *; destruct Hwf as [_ Hwd]; cbv zeta.
       rewrite (fifo_to_list_enq _ _ divReqF _ Hwd (fifo_notFull_lt _ _ divReqF Hwd Hnf)), map_app; cbn [map].
@@ -359,24 +359,24 @@ Section MdEnq.
 
   Lemma WF_enqMul : forall dst op1 mOp (smd : TreeState ElemState MDT), WF smd -> WF (ENQM dst op1 mOp smd).
   Proof.
-    intros dst op1 mOp; unfold MulDivWf, mdEnqMul; destruct mulDivMode; intros smd Hwf.
+    intros dst op1 mOp; unfold MulDivWf, MulDivReqWf, MulDivEngWf, mdEnqMul; destruct mulDivMode; intros smd [Hwf He].
     - destruct smd as [[mulReqF [[mulPipe [mulDstF []]] []]] [[divReqF [[divIter [divDstF []]] []]] []]].
-      cbn [Fst Snd] in *; destruct Hwf as [Hwm Hwd]; split; [apply fifo_wf_enq; exact Hwm | exact Hwd].
+      cbn [Fst Snd] in *; destruct Hwf as [Hwm Hwd]; split; [split; [apply fifo_wf_enq; exact Hwm | exact Hwd] | exact He].
     - destruct smd as [[mulReqF [[mulIter [mulDstF []]] []]] [[divReqF [[divIter [divDstF []]] []]] []]].
-      cbn [Fst Snd] in *; destruct Hwf as [Hwm Hwd]; split; [apply fifo_wf_enq; exact Hwm | exact Hwd].
+      cbn [Fst Snd] in *; destruct Hwf as [Hwm Hwd]; split; [split; [apply fifo_wf_enq; exact Hwm | exact Hwd] | exact He].
     - destruct smd as [reqF [[sharedIter [dstF []]] []]].
-      cbn [Fst Snd] in *; apply fifo_wf_enq; exact Hwf.
+      cbn [Fst Snd] in *; split; [apply fifo_wf_enq; exact Hwf | exact He].
   Qed.
 
   Lemma WF_enqDiv : forall dst op1 dOp (smd : TreeState ElemState MDT), WF smd -> WF (ENQD dst op1 dOp smd).
   Proof.
-    intros dst op1 dOp; unfold MulDivWf, mdEnqDiv; destruct mulDivMode; intros smd Hwf.
+    intros dst op1 dOp; unfold MulDivWf, MulDivReqWf, MulDivEngWf, mdEnqDiv; destruct mulDivMode; intros smd [Hwf He].
     - destruct smd as [[mulReqF [[mulPipe [mulDstF []]] []]] [[divReqF [[divIter [divDstF []]] []]] []]].
-      cbn [Fst Snd] in *; destruct Hwf as [Hwm Hwd]; split; [exact Hwm | apply fifo_wf_enq; exact Hwd].
+      cbn [Fst Snd] in *; destruct Hwf as [Hwm Hwd]; split; [split; [exact Hwm | apply fifo_wf_enq; exact Hwd] | exact He].
     - destruct smd as [[mulReqF [[mulIter [mulDstF []]] []]] [[divReqF [[divIter [divDstF []]] []]] []]].
-      cbn [Fst Snd] in *; destruct Hwf as [Hwm Hwd]; split; [exact Hwm | apply fifo_wf_enq; exact Hwd].
+      cbn [Fst Snd] in *; destruct Hwf as [Hwm Hwd]; split; [split; [exact Hwm | apply fifo_wf_enq; exact Hwd] | exact He].
     - destruct smd as [reqF [[sharedIter [dstF []]] []]].
-      cbn [Fst Snd] in *; apply fifo_wf_enq; exact Hwf.
+      cbn [Fst Snd] in *; split; [apply fifo_wf_enq; exact Hwf | exact He].
   Qed.
 End MdEnq.
 

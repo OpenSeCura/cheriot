@@ -341,11 +341,13 @@ Section FetchRqStep.
     - exact Ca.
     - exact Cc.
     - exact Cd.
-    - unfold FenceRel; split.
+    - unfold FenceRel; split; [| split].
       + intros C; rewrite Efip, Hfip in C; discriminate C.
       + intros C; exfalso; apply C.
         unfold NoFenceIWait; rewrite HP by (intros r y L rdy; reflexivity).
         exact (anyWait_false _ _ Hw).
+      + intros G1 e0 G2 Hc Hfi; destruct (proj2 (proj2 Hfe) G1 e0 G2 Hc Hfi) as [Hp _].
+        rewrite Hfip in Hp; discriminate Hp.
     - unfold ScoreRel, daLive in *; rewrite Eow, Ed2a, Ewb, Efl, Eep; exact Hs.
     - destruct Hfr as [F1 [F2 [F3 [F4 [F5 [F6 F7]]]]]].
       unfold FrontRel; rewrite Ed2a, Edl, Eib, Eal, Efb, Elv, Eep.

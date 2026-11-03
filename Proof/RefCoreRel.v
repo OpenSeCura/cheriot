@@ -157,6 +157,23 @@ Inductive Access :=
 
 (* --- 3. The Relation's Parameters --- *)
 
+(* A list with an extra last item, split at an earlier item *)
+Lemma chain_snoc_split :
+  forall {A : Type} (l G1 G2 : list A) (x y : A),
+    (l ++ [x] = G1 ++ y :: G2)%list -> y <> x ->
+    exists G2', G2 = (G2' ++ [x])%list /\ l = (G1 ++ y :: G2')%list.
+Proof.
+  intros A l G1 G2 x y H Hne.
+  destruct (rev G2) as [| z R] eqn:Er.
+  - apply (f_equal (@rev A)) in Er; rewrite rev_involutive in Er; cbn in Er; subst G2.
+    apply (f_equal (@rev A)) in H; rewrite !rev_app_distr in H; cbn [rev app] in H.
+    injection H as E _; exfalso; exact (Hne (eq_sym E)).
+  - apply (f_equal (@rev A)) in Er; rewrite rev_involutive in Er; cbn [rev] in Er; subst G2.
+    rewrite app_comm_cons, app_assoc in H.
+    apply app_inj_tail in H as [H1 H2]; subst z.
+    exists (rev R); split; [reflexivity | rewrite H1; reflexivity].
+Qed.
+
 Section CoreRel.
   Variable pcAddrInit : Z.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
@@ -821,7 +838,10 @@ Section CoreRel.
                        Forall (fun it => it = GTick) G2) /\
     (~ NoFenceIWait s1 ->
        iFenceIPending s1 = false /\ NoLive s1 /\ optValid (iStraddle s1) = false /\
-       forall e, ~ In (GInst e) (g_chain g)).
+       forall e, ~ In (GInst e) (g_chain g)) /\
+    (* a fence.i in the chain is pending and is the last instruction (only ticks follow it) *)
+    (forall G1 e G2, g_chain g = (G1 ++ GInst e :: G2)%list -> entryIsFenceI e = true ->
+       iFenceIPending s1 = true /\ Forall (fun it => it = GTick) G2).
 
   Definition entryBlocking (e : GEntryT) : bool :=
     match entryReq e with Some q => negb (isPlainFence q) | None => false end.
@@ -1030,7 +1050,7 @@ Section CoreRel.
 
   (* The mulDiv request FIFOs are well-formed. The engines' result FIFOs and the multiplier's stage
    * FIFOs have capacity 1, so they are well-formed by construction. *)
-  Definition MulDivWf
+  Definition MulDivReqWf
     (smd : TS (implMulDivTree mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode)) : Prop :=
     match mulDivMode as m
       return TS (implMulDivTree mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages m) -> Prop
@@ -1040,24 +1060,70 @@ Section CoreRel.
     | IterMul_SharedIterDiv => fun s => fifo_wf s.(Fst)
     end smd.
 
+  (* An iterative engine is busy exactly when its destination FIFO holds an entry *)
+  Definition IterBusyRel {K : Kind} (busy : bool) (dst : list (type K)) : Prop := busy = true <-> dst <> [].
+
+  (* Each engine computes for exactly the destinations in its destination FIFO *)
+  Definition MulDivEngWf
+    (smd : TS (implMulDivTree mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode)) : Prop :=
+    match mulDivMode as m
+      return TS (implMulDivTree mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages m) -> Prop
+    with
+    | PipelinedMul_IterDiv => fun s =>
+        length (@extractPipeStageStates (MulStageState (dataLen (Z.to_nat Xlen))) mulStages s.(Fst).(Snd).(Fst).(Fst)) = length (@fifo_to_list MulDivFifoCapacity RegIdx s.(Fst).(Snd).(Fst).(Snd).(Fst)) /\
+        IterBusyRel s.(Snd).(Fst).(Snd).(Fst).(Fst).(Fst) (@fifo_to_list MulDivFifoCapacity RegIdx s.(Snd).(Fst).(Snd).(Fst).(Snd).(Fst))
+    | IterMul_SeparateIterDiv => fun s =>
+        IterBusyRel s.(Fst).(Snd).(Fst).(Fst).(Fst) (@fifo_to_list MulDivFifoCapacity RegIdx s.(Fst).(Snd).(Fst).(Snd).(Fst)) /\
+        IterBusyRel s.(Snd).(Fst).(Snd).(Fst).(Fst).(Fst) (@fifo_to_list MulDivFifoCapacity RegIdx s.(Snd).(Fst).(Snd).(Fst).(Snd).(Fst))
+    | IterMul_SharedIterDiv => fun s =>
+        IterBusyRel s.(Snd).(Fst).(Fst).(Fst) (@fifo_to_list MulDivFifoCapacity RegIdx s.(Snd).(Fst).(Snd).(Fst))
+    end smd.
+
+  Definition MulDivWf
+    (smd : TS (implMulDivTree mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode)) : Prop :=
+    MulDivReqWf smd /\ MulDivEngWf smd.
+
+  Lemma init_pipe_states :
+    forall K n (s : TS (stagedStagesTree K n)),
+      InitStateConsistent (stagedStagesTree K n) s -> extractPipeStageStates n s = [].
+  Proof.
+    intros K n; induction n as [| n IH]; intros [f rest] H.
+    - destruct H as [Hf _]; cbn [extractPipeStageStates Fst].
+      rewrite (InitStateConsistent_fifo_to_list 1 K f Hf); reflexivity.
+    - destruct rest as [sub []]; destruct H as [Hf [Hsub _]]; cbn [extractPipeStageStates Fst Snd].
+      rewrite (IH sub Hsub), (InitStateConsistent_fifo_to_list 1 K f Hf); reflexivity.
+  Qed.
+
+  Lemma init_iter_busy :
+    forall K n (w : TS (stagedIterTree K n)), InitStateConsistent (stagedIterTree K n) w -> w.(Fst) = false.
+  Proof. intros K n w H; cbn in H; subst w; reflexivity. Qed.
+
   Lemma MulDivWf_init :
     forall smd,
       InitStateConsistent (implMulDivTree mulCapacity divCapacity (Z.to_nat Xlen) mulStages divStages mulDivMode) smd ->
       MulDivWf smd.
   Proof.
-    unfold MulDivWf; destruct mulDivMode; intros smd Hinit.
+    unfold MulDivWf, MulDivReqWf, MulDivEngWf; destruct mulDivMode; intros smd Hinit.
     - destruct smd as [[mulReqF [[mulPipe [mulDstF []]] []]] [[divReqF [[divIter [divDstF []]] []]] []]].
       cbn [InitStateConsistent Fst Snd] in Hinit |- *.
-      destruct Hinit as [[HmulReq _] [[HdivReq _] _]].
-      exact (conj (InitStateConsistent_fifo_wf _ _ _ HmulReq) (InitStateConsistent_fifo_wf _ _ _ HdivReq)).
+      destruct Hinit as [[HmulReq [[HmulPipe [HmulDst _]] _]] [[HdivReq [[HdivIter [HdivDst _]] _]] _]].
+      split; [exact (conj (InitStateConsistent_fifo_wf _ _ _ HmulReq) (InitStateConsistent_fifo_wf _ _ _ HdivReq)) |].
+      rewrite (init_pipe_states _ _ mulPipe HmulPipe), (InitStateConsistent_fifo_to_list _ _ mulDstF HmulDst),
+              (InitStateConsistent_fifo_to_list _ _ divDstF HdivDst), (init_iter_busy _ _ divIter HdivIter).
+      split; [reflexivity | split; [discriminate | intros H; exfalso; exact (H eq_refl)]].
     - destruct smd as [[mulReqF [[mulIter [mulDstF []]] []]] [[divReqF [[divIter [divDstF []]] []]] []]].
       cbn [InitStateConsistent Fst Snd] in Hinit |- *.
-      destruct Hinit as [[HmulReq _] [[HdivReq _] _]].
-      exact (conj (InitStateConsistent_fifo_wf _ _ _ HmulReq) (InitStateConsistent_fifo_wf _ _ _ HdivReq)).
+      destruct Hinit as [[HmulReq [[HmulIter [HmulDst _]] _]] [[HdivReq [[HdivIter [HdivDst _]] _]] _]].
+      split; [exact (conj (InitStateConsistent_fifo_wf _ _ _ HmulReq) (InitStateConsistent_fifo_wf _ _ _ HdivReq)) |].
+      rewrite (InitStateConsistent_fifo_to_list _ _ mulDstF HmulDst), (InitStateConsistent_fifo_to_list _ _ divDstF HdivDst),
+              (init_iter_busy _ _ mulIter HmulIter), (init_iter_busy _ _ divIter HdivIter).
+      split; (split; [discriminate | intros H; exfalso; exact (H eq_refl)]).
     - destruct smd as [reqF [[sharedIter [dstF []]] []]].
       cbn [InitStateConsistent Fst Snd] in Hinit |- *.
-      destruct Hinit as [Hreq _].
-      exact (InitStateConsistent_fifo_wf _ _ _ Hreq).
+      destruct Hinit as [Hreq [[Hiter [Hdst _]] _]].
+      split; [exact (InitStateConsistent_fifo_wf _ _ _ Hreq) |].
+      rewrite (InitStateConsistent_fifo_to_list _ _ dstF Hdst), (init_iter_busy _ _ sharedIter Hiter).
+      split; [discriminate | intros H; exfalso; exact (H eq_refl)].
   Qed.
 
   (* fetchBuf is well-formed and non-empty while a parcel of its head is being assembled; the PC
@@ -1200,17 +1266,14 @@ Section CoreRel.
     destruct (g_acc g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
                           | rc [[|]|[|]|[|]|[|] rp|res] | [[|]|[|]|[|]|[|] rp|res]
                           | [[|]|[|]|[|]|[|] rp|res] | addr pkt [[|]|[|]]];
-      intros Ha;
-      unfold WrStageRel, RdStageRel, PortsQuiet, PortsReadStaged, PortsReadOut, PortsWriteStaged,
-        revNotReading, dmNotAccessing, iRevPhase, iScanAddr, iRevScanBase, iScanMsb, iRevSnoopHit in *;
-      cbv beta iota zeta in *;
-      rewrite ?HP, ?HR, ?Hrw, ?Hmv, ?Emst, ?Erp, ?Ereq, ?Edm, ?Esec;
-      try setoid_rewrite Hslw;
-      lazymatch goal with
-      | |- context [s1'] => fail 1 "AccessRel_frame: an impl observation is left"
-      | |- context [s2'] => fail 1 "AccessRel_frame: a spec observation is left"
-      | _ => exact Ha
-      end.
+      intros Ha.
+    (* one step per sentence over the 45 cases (compile speed) *)
+    all: unfold WrStageRel, RdStageRel, PortsQuiet, PortsReadStaged, PortsReadOut, PortsWriteStaged,
+           revNotReading, dmNotAccessing, iRevPhase, iScanAddr, iRevScanBase, iScanMsb, iRevSnoopHit in *.
+    all: cbv beta iota zeta in *.
+    all: rewrite ?HP, ?HR, ?Hrw, ?Hmv, ?Emst, ?Erp, ?Ereq, ?Edm, ?Esec.
+    all: try (lazymatch goal with |- context [specLoadWb] => setoid_rewrite Hslw end).
+    all: exact Ha.
   Qed.
 
   (* The revoker facts read only the revoker state, the access in flight and the line contents *)
@@ -1376,17 +1439,14 @@ Section CoreRel.
     destruct (g_acc g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
                           | rc [[|]|[|]|[|]|[|] rp|res] | [[|]|[|]|[|]|[|] rp|res]
                           | [[|]|[|]|[|]|[|] rp|res] | addr pkt [[|]|[|]]];
-      intros Ha;
-      unfold WrStageRel, RdStageRel, revNotReading, dmNotAccessing, iRevPhase, iScanAddr, iRevScanBase,
-        iScanMsb, iRevSnoopHit in *;
-      cbv beta iota zeta in *;
-      rewrite ?Q1, ?Q2, ?Q3, ?Q4, ?HR, ?Hrw, ?Hmv, ?Emst, ?Erp, ?Ereq, ?Edm, ?Esec;
-      try setoid_rewrite Hslw;
-      lazymatch goal with
-      | |- context [s1'] => fail 1 "AccessRel_frame_ports: an impl observation is left"
-      | |- context [s2'] => fail 1 "AccessRel_frame_ports: a spec observation is left"
-      | _ => exact Ha
-      end.
+      intros Ha.
+    (* one step per sentence over the 45 cases (compile speed) *)
+    all: unfold WrStageRel, RdStageRel, revNotReading, dmNotAccessing, iRevPhase, iScanAddr, iRevScanBase,
+           iScanMsb, iRevSnoopHit in *.
+    all: cbv beta iota zeta in *.
+    all: rewrite ?Q1, ?Q2, ?Q3, ?Q4, ?HR, ?Hrw, ?Hmv, ?Emst, ?Erp, ?Ereq, ?Edm, ?Esec.
+    all: try (lazymatch goal with |- context [specLoadWb] => setoid_rewrite Hslw end).
+    all: exact Ha.
   Qed.
 
   (* A step that changes only the region states (impl) and the spec memory while some
@@ -1408,7 +1468,7 @@ Section CoreRel.
   Proof.
     intros g s1 s1' s2 s2' mi' ms' E1 E2 Hq HP HR Hlc Hfc Hmem Hlat H.
     destruct H as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
-    destruct (proj2 Hf Hq) as [Hpend [Hnl [Hstr Hnone]]].
+    destruct (proj1 (proj2 Hf) Hq) as [Hpend [Hnl [Hstr Hnone]]].
     assert (Hrw : forall rc, revWb (sMem s2') rc = revWb (sMem s2) rc)
       by (intros rc; apply revWb_ext; exact Hlc).
     assert (Edm : iDmSt s1' = iDmSt s1) by (rewrite E1; reflexivity).
@@ -1430,9 +1490,10 @@ Section CoreRel.
       + rewrite E2; reflexivity.
     - unfold CnwbRel in *; destruct Hc as [Hc1 Hc2]; rewrite Edm, Hrw; exact (conj Hc1 Hc2).
     - rewrite E1; exact Hd.
-    - unfold FenceRel; split.
+    - unfold FenceRel; split; [| split].
       + rewrite E1; exact (proj1 Hf).
       + intros _; rewrite E1; exact (conj Hpend (conj Hnl (conj Hstr Hnone))).
+      + rewrite E1; exact (proj2 (proj2 Hf)).
     - rewrite E1; exact Hs.
     - unfold FrontRel in *.
       destruct Hfr as [F1 [F2 [F3 [F4 [F5 [F6 F7]]]]]].
@@ -1766,7 +1827,7 @@ Section CoreRel.
       intros e [Hin | []]; discriminate Hin.
     - unfold DmQueueRel in *; cbn [g_chain g_acc]; rewrite chainReqs_snoc_tick; rewrite E1; exact Hd.
     - unfold FenceRel in *; cbn [g_chain].
-      destruct Hf as [Hf1 Hf2]; split.
+      destruct Hf as [Hf1 [Hf2 Hf3]]; split; [| split].
       + intros Hp; rewrite E1 in Hp; destruct (Hf1 Hp) as [Hnl [Hst [G1 [e [G2 [HG [Hfi HF]]]]]]].
         rewrite E1; split; [exact Hnl | split; [exact Hst |]].
         exists G1, e, (G2 ++ [GTick])%list; split; [rewrite HG, <- app_assoc; reflexivity |].
@@ -1774,6 +1835,10 @@ Section CoreRel.
       + intros Hw'; rewrite E1 in Hw'; destruct (Hf2 Hw') as [Hp [Hnl [Hst Hno]]].
         rewrite E1; split; [exact Hp | split; [exact Hnl | split; [exact Hst |]]].
         intros e Hin; apply in_app_or in Hin as [Hin | [Hin | []]]; [exact (Hno e Hin) | discriminate Hin].
+      + intros G1 e G2 HG Hfi; rewrite E1.
+        destruct (chain_snoc_split _ G1 G2 GTick (GInst e) HG ltac:(discriminate)) as [G2' [-> HG']].
+        destruct (Hf3 G1 e G2' HG' Hfi) as [Hp HF]; split; [exact Hp |].
+        apply Forall_app; split; [exact HF | constructor; [reflexivity | constructor]].
     - eapply ScoreRel_tick; [exact E1 | reflexivity | exact Hs].
     - eapply FrontRel_tick; [exact E1 | reflexivity | exact (proj2 (proj2 Hm)) | exact Hfr].
     - rewrite E1; exact Hw.
@@ -1998,7 +2063,8 @@ Section CoreRel.
     - unfold DmQueueRel in *; unfold gPop; cbn [g_chain g_acc]; cbv zeta in *.
       rewrite Hch, (filterReqs_pop it G' Hnb) in Hd; exact Hd.
     - unfold FenceRel in *; unfold gPop; cbn [g_chain].
-      destruct Hf as [Hf1 Hf2]; split.
+      destruct Hf as [Hf1 [Hf2 Hf3]]; split; [| split].
+      3: { intros G1 e G2 HG Hfi; apply (Hf3 (it :: G1) e G2); [rewrite Hch, HG; reflexivity | exact Hfi]. }
       + intros Hp; destruct (Hf1 Hp) as [Hnl [Hst' [G1 [e [G2 [HG [Hfi HF]]]]]]].
         split; [exact Hnl | split; [exact Hst' |]].
         rewrite Hch in HG.
