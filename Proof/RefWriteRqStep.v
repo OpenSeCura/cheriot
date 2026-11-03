@@ -270,9 +270,6 @@ Section WriteRqStep.
   Local Abbreviation revS := (revSpecOf pre post revBase revPfB revPfA).
   Local Abbreviation envS := (specEnv pcAddrInit specRegions initLine fwcs).
   Local Abbreviation specActs := (@spec pcAddrInit config specRegions clintS revS plicS type).
-  Local Abbreviation RULE := (RevBitRuleStep pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
-                                initLine).
   Local Abbreviation envI :=
     (implEnv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
              mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions initLine fwcs).

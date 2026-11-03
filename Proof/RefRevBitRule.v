@@ -27,9 +27,10 @@ Local Open Scope guru_scope.
 
 Local Abbreviation TS t := (TreeState ElemState t).
 
-(* The software rule on revocation bits (`RevBitRuleStep`, approved by the user) and the variant of
- * `StepOK` for the impl rules that need it (the store commits). The rule speaks about the impl
- * memory: the line contents its accepted writes give (`implLineContent`). *)
+(* The software rule on revocation bits, stated on spec steps (`SpecRevBitRule`), and the variant
+ * of `StepOK` for the impl rules that need it (the store commits): the rule is assumed for every
+ * spec step from a state reachable from the current spec state (`SpecRuleFrom`). Also the impl
+ * memory read helpers (`implMemValAt`, `implRevBitOf`) used to transfer it. *)
 
 Section RevBitRule.
   Variable pcAddrInit : Z.
@@ -83,19 +84,29 @@ Section RevBitRule.
     let v := implMemValAt mi (revByteAddrOf config b) byteSz in
     evalExpr (extractRevBit lookup (TruncLsb (AddrSz - 8) 8 (##v`"addr"))).
 
-  (* The rule: a step that turns rev bit `b` from 1 to 0 happens only when the memory before the
-   * step holds no tagged capability with base `b` that needs a revocation check *)
-  Definition RevBitRuleStep (s s' : TS ITree) : Prop :=
-    forall b, implRevBitOf (iRegionsA s) b = true -> implRevBitOf (iRegionsA s') b = false ->
-      forall sa : bits TagAddrWidth,
-        capNeedsCheck config (implMemValAt (iRegionsA s) (scanFull sa) capSz) = true ->
-        capBase (implMemValAt (iRegionsA s) (scanFull sa) capSz) <> b.
+  Local Abbreviation sMemA := (sMem pcAddrInit pre post revBase revPfB revPfA).
+  Local Abbreviation memValAtA := (memValAt pre post revBase revPfB revPfA initLine).
+  Local Abbreviation revBitOfA := (revBitOf config pre post revBase revPfB revPfA initLine).
 
-  (* `StepOK` for impl steps that obey the rule *)
+  (* The rule: a spec step that turns rev bit `b` from 1 to 0 happens only when the memory before
+   * the step holds no tagged capability with base `b` that needs a revocation check *)
+  Definition SpecRevBitRule (t t' : TS STree) : Prop :=
+    forall b, revBitOfA (sMemA t) b = true -> revBitOfA (sMemA t') b = false ->
+      forall sa : bits TagAddrWidth,
+        capNeedsCheck config (memValAtA (sMemA t) (scanFull sa) capSz) = true ->
+        capBase (memValAtA (sMemA t) (scanFull sa) capSz) <> b.
+
+  (* The rule holds for every spec step from a state reachable from `s2` *)
+  Definition SpecRuleFrom (s2 : TS STree) : Prop :=
+    forall t t' a,
+      SemActions envS specActs s2 t -> In a specActs -> SemAction envS a t t' Zmod.zero ->
+      SpecRevBitRule t t'.
+
+  (* `StepOK` for impl steps taken while the spec obeys the rule *)
   Definition StepOKR (act : Action type ITree (Bit 0)) : Prop :=
     forall (s1 s1' : TS ITree) (s2 : TS STree),
       SemAction envI act s1 s1' Zmod.zero ->
-      RevBitRuleStep s1 s1' ->
+      SpecRuleFrom s2 ->
       REL s1 s2 ->
       exists s2', SemActions envS specActs s2 s2' /\ REL s1' s2'.
 

@@ -92,10 +92,8 @@ Section Top.
     (implEnv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
              mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions initLine fwc).
   Local Abbreviation specEnvL initLine fwc := (specEnv pcAddrInit specRegions initLine fwc).
-  Local Abbreviation RuleL initLine :=
-    (RevBitRuleStep pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                    mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post
-                    revBase revPfB revPfA initLine).
+  Local Abbreviation SRuleL initLine :=
+    (SpecRevBitRule pcAddrInit config pre post revBase revPfB revPfA initLine).
   Local Abbreviation RelL initLine fwc :=
     (RefRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
             mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
@@ -114,13 +112,13 @@ Section Top.
       (ActStepSim pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
          mulCapacity divCapacity mulStages divStages mulDivMode bp config specRegions clintS revSpec plicS
          implRegions (implEnvL initLine fwc) (nat -> nat -> nat) unit (fun o => specEnvL initLine o)
-         (fun _ o => o = fwc) (fun _ _ => True) (RuleL initLine) (fun _ => RelL initLine fwc)).
+         (fun _ o => o = fwc) (fun _ _ => True) (SRuleL initLine) (fun _ => RelL initLine fwc)).
     Local Abbreviation STEPOKR := (SEC StepOKR initLine fwc).
 
     Lemma actStepSim_of : forall act, STEPOKR act -> ACTSTEP act.
     Proof.
       intros act H p s1 s1' s2 Ha Hr Hrel.
-      destruct (H s1 s1' s2 Ha Hr Hrel) as [s2' [Hs Hrel']].
+      destruct (H s1 s1' s2 Ha (Hr fwc eq_refl) Hrel) as [s2' [Hs Hrel']].
       exists tt, s2'; split; [exact I | split; [intros o -> | ]; assumption].
     Qed.
 
@@ -131,7 +129,7 @@ Section Top.
         mulCapacity divCapacity mulStages divStages mulDivMode bp config specRegions clintS revSpec plicS
         implRegions clint rev plic (implEnvL initLine fwc) (nat -> nat -> nat) unit
         (fun o => specEnvL initLine o) (fun _ o => o = fwc) (fun _ _ => True)
-        (RuleL initLine) (fun _ => RelL initLine fwc).
+        (SRuleL initLine) (fun _ => RelL initLine fwc).
     Proof.
       constructor;
         lazymatch goal with |- forall _, In _ _ -> _ => intros act Hin | _ => idtac end;
@@ -161,32 +159,38 @@ Section Top.
     Qed.
   End Oracle.
 
-  (* The top-level theorem: every impl run whose steps obey the software rule
-   * `RevBitRuleStep` is matched, from any consistent initial spec state, by a spec
-   * run under the same fence.i write-count oracle, ending in `RefRel`-related states. *)
+  (* The software rule on revocation bits: every spec step reachable from the initial spec
+   * state `old2` obeys `SpecRevBitRule` (it clears rev bit `b` only if spec memory before it
+   * holds no tagged capability with base `b` that needs a revocation check). *)
+  Definition SoftwareRevBitsRule initLine fwc (old2 : TreeState ElemState sTree) : Prop :=
+    forall s2 s2' a,
+      SemActions (specEnvL initLine fwc) (specMod type) old2 s2 ->
+      In a (specMod type) ->
+      SemAction (specEnvL initLine fwc) a s2 s2' Zmod.zero ->
+      SRuleL initLine s2 s2'.
+
+  (* The top-level theorem: if every spec run from the initial spec state `old2` obeys the
+   * software rule (`SoftwareRevBitsRule`), every impl run is matched, from `old2`, by a spec run
+   * under the same fence.i write-count oracle, ending in `RefRel`-related states. *)
   Theorem pipelinedMod_refines_spec :
     forall initLine fwc old1 new1,
       SemMod (implEnvL initLine fwc) pipeMod old1 new1 ->
-      (forall s s' a,
-         SemActions (implEnvL initLine fwc) (pipeMod type) old1 s ->
-         In a (pipeMod type) ->
-         SemAction (implEnvL initLine fwc) a s s' Zmod.zero ->
-         RuleL initLine s s') ->
       forall old2, InitStateConsistent sTree old2 ->
+      SoftwareRevBitsRule initLine fwc old2 ->
       exists fwc' new2, SemMod (specEnvL initLine fwc') specMod old2 new2 /\ RelL initLine fwc new1 new2.
   Proof.
-    intros initLine fwc old1 new1 Hsem Hrule old2 Hinit2.
+    intros initLine fwc old1 new1 Hsem old2 Hinit2 Hrule.
     destruct (refinement_of_obligations pcAddrInit issueWidth fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config
                 specRegions clintS revSpec plicS implRegions clint rev plic (implEnvL initLine fwc)
                 (nat -> nat -> nat) unit (fun o => specEnvL initLine o) (fun _ o => o = fwc)
                 (fun _ _ => True)
                 (fun _ => I) (fun _ _ _ _ _ => I) (fun _ _ _ _ H => H) (fun _ => ex_intro _ fwc eq_refl)
-                (RuleL initLine) (fun _ => RelL initLine fwc)
+                (SRuleL initLine) (fun _ => RelL initLine fwc)
                 (pipelinedMod_obligations initLine fwc) tt
                 (fun o1 o2 H1 H2 =>
                    SEC RefRel_init initLine fwc HdetPre HdetPost HpcEven o1 o2 H1 H2)
-                old1 new1 Hsem Hrule old2 Hinit2)
+                old1 new1 Hsem old2 Hinit2 (fun o Ho => ltac:(cbv beta in Ho; subst o; exact Hrule)))
       as [o [new2 [Hspec [_ Hrel]]]].
     exists o, new2; split; assumption.
   Qed.

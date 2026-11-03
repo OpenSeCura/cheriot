@@ -102,9 +102,8 @@ Section StoreCommit.
                                 initLine).
   Local Abbreviation memValAtA := (memValAt pre post revBase revPfB revPfA initLine).
   Local Abbreviation revBitOfA := (revBitOf config pre post revBase revPfB revPfA initLine).
-  Local Abbreviation RULE := (RevBitRuleStep pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                                mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
-                                initLine).
+  Local Abbreviation SRULE := (SpecRevBitRule pcAddrInit config pre post revBase revPfB revPfA initLine).
+  Local Abbreviation SFROM := (SpecRuleFrom pcAddrInit config pre post revBase revPfB revPfA clintS plicS initLine fwcs).
 
   (* The spec and impl memories read alike *)
   Definition MemAgree (s1 : IState) (s2 : SState) : Prop :=
@@ -145,7 +144,7 @@ Section StoreCommit.
       lineKind specRegions (lineOf b addr) = Some true ->
       (b = true -> crossesB addr size = true) ->
       (snoopHitsB addr size (iScanMsbA s1) = true -> iRevSnoopHitA s1 = true) ->
-      RULE s1 s1' -> MemAgree s1 s2 -> MemAgree s1' s2' ->
+      SRULE s2 s2' -> MemAgree s1 s2 -> MemAgree s1' s2' ->
       RACC g' s1' s2' ->
       REVK g' s1' s2'.
   Proof.
@@ -178,7 +177,8 @@ Section StoreCommit.
                               (iRevScanBase pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1)))
         as [T | F]; [exact T | exfalso].
-      pose proof (K4 Hwc Hsf) as Hb; rewrite <- (revBitOf_agree s1 s2 _ Ha1) in Hb.
+      rewrite (revBitOf_agree s1' s2' _ Ha2) in F.
+      pose proof (K4 Hwc Hsf) as Hb.
       pose proof (rpCheck_writeCap _ Hwc) as Hck.
       destruct (K2 Hck) as [Hn [Hbase _]].
       pose proof (K3 Hck Hsf) as Hcap.
@@ -186,8 +186,8 @@ Section StoreCommit.
       match type of Hcap with _ = ?c =>
         assert (Hcap' : memValAtA (sMemA s2) (scanFull sa) capSz = c) by exact Hcap end.
       apply (Hrule _ Hb F sa).
-      + rewrite (memValAt_agree s1 s2 _ _ Ha1), Hcap'; exact Hn.
-      + rewrite (memValAt_agree s1 s2 _ _ Ha1), Hcap'; symmetry; exact Hbase.
+      + rewrite Hcap'; exact Hn.
+      + rewrite Hcap'; symmetry; exact Hbase.
   Qed.
 
   Local Abbreviation NPMI := (Impl.np_mem pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -497,7 +497,7 @@ Section StoreCommit.
       s1' = writeSubTreeState NPMI s1 (mi' ,, (iMemA s1).(Snd)) ->
       WriteAtL (lineOf false addr) (buildW false addr pkt size) true implRegions (iRegionsA s1) mi' ->
       g_acc pcAddrInit g = AccStore addr size pkt (WrStaged false) ->
-      RULE s1 s1' -> RELG g s1 s2 ->
+      SFROM s2 -> RELG g s1 s2 ->
       exists s2', SemActions envS specActs s2 s2' /\ REL s1' s2'.
   Proof.
     intros g s1 s1' s2 mi' addr size pkt E1 Hwr Eacc Hrule Hg.
@@ -586,7 +586,8 @@ Section StoreCommit.
         assert (Eat : accTakesHead acc' = false) by (rewrite Eacc'; apply accTakesHead_storeNext).
         rewrite Eat; rewrite E1; exact Hd.
       - apply (RevokerRel_storeWrite g g1 s1 s1' s2 s2m m1 false addr pkt size Hrk HR Htf Ems HlkS
-                 (fun H => ltac:(discriminate H)) Hsnoop Hrule
+                 (fun H => ltac:(discriminate H)) Hsnoop
+                 (Hrule s2 s2m _ ltac:(constructor 1; reflexivity) ltac:(apply In_specStep_spec) Hsp)
                  (MemAgree_of_MemRelC g s1 s2 Hm) (MemAgree_of_MemRelC g1 s1' s2m Hmem)).
         apply (RevAccRel_storeNext _ _ _ cr addr size pkt); rewrite Eg1, Eacc'; reflexivity.
       - exact (NEofG g s1 s2 Hg). }
@@ -623,7 +624,7 @@ Section StoreCommit.
       s1' = writeSubTreeState NPMI s1 (mi' ,, (iMemA s1).(Snd)) ->
       WriteAtL (lineOf true addr) (buildW true addr pkt size) true implRegions (iRegionsA s1) mi' ->
       g_acc pcAddrInit g = AccStore addr size pkt (WrStaged true) ->
-      RULE s1 s1' -> RELG g s1 s2 ->
+      SFROM s2 -> RELG g s1 s2 ->
       exists s2', SemActions envS specActs s2 s2' /\ REL s1' s2'.
   Proof.
     intros g s1 s1' s2 mi' addr size pkt E1 Hwr Eacc Hrule Hg.
@@ -685,7 +686,9 @@ Section StoreCommit.
         rewrite Eacc in Hd; cbn [accTakesHead] in Hd |- *.
         rewrite E1; exact Hd.
       - apply (RevokerRel_storeWrite g g1 s1 s1' s2 s2m (sMemA s2) true addr pkt size Hrk HR Htf Ems HlkS
-                 (fun _ => Hcr) Hsnoop Hrule
+                 (fun _ => Hcr) Hsnoop
+                 (Hrule s2 s2m _ ltac:(constructor 1; reflexivity)
+                    ltac:(apply (In_specSecondLine_spec pcAddrInit config pre post revBase revPfB revPfA clintS plicS)) Hsp)
                  (MemAgree_of_MemRelC g s1 s2 Hm) (MemAgree_of_MemRelC g1 s1' s2m Hmem)).
         rewrite Eg1; unfold RevAccRel; exact I.
       - exact (NEofG g s1 s2 Hg). }

@@ -31,12 +31,13 @@ Local Open Scope guru_scope.
  * ===========================================================================
  * Guru's `OracleStepToModSimulation` (Theorems.v) turns one step obligation into a
  * module-level result, with the spec env chosen per run (`env2 : O -> Env sTree`,
- * oracle prefixes `P`). Here every impl step from a reachable state is assumed to
- * obey `Rule`; to use that inside the step obligation, the relation is
- * strengthened with reachability from the run's start state. This section splits
- * the step obligation into one obligation per action group of `pipelinedMod`
- * (`ImplActionKind`) and derives the top-level statement for any relation `R`
- * that meets them. The envs, `Rule` and `R` stay abstract here. *)
+ * oracle prefixes `P`). Every spec step from a state reachable from the spec's
+ * start state is assumed to obey `SRule` (the software rule); to use that inside
+ * the step obligation, the relation is strengthened with "the rule holds from the
+ * current spec state" (`RuleFrom`). This section splits the step obligation into
+ * one obligation per action group of `pipelinedMod` (`ImplActionKind`) and derives
+ * the top-level statement for any relation `R` that meets them. The envs, `SRule`
+ * and `R` stay abstract here. *)
 
 Section TopLevelGlue.
   Variable pcAddrInit : Z.
@@ -85,18 +86,24 @@ Section TopLevelGlue.
   Hypothesis Agrees_Ext : forall p p' o, Ext p p' -> Agrees p' o -> Agrees p o.
   Hypothesis Agrees_inhabited : forall p, exists o, Agrees p o.
 
-  (* Assumed property of every impl step (the software rule), and the relation. *)
-  Variable Rule : IState -> IState -> Prop.
+  (* Assumed property of spec steps (the software rule), and the relation. *)
+  Variable SRule : SState -> SState -> Prop.
   Variable R : P -> IState -> SState -> Prop.
+
+  (* Under oracle `o`, every spec step from a state reachable from `s2` obeys `SRule`. *)
+  Definition RuleFrom (o : O) (s2 : SState) : Prop :=
+    forall t t' a,
+      SemActions (env2 o) (specMod type) s2 t -> In a (specMod type) ->
+      SemAction (env2 o) a t t' Zmod.zero -> SRule t t'.
 
   (* --- Per-Action Obligation (`ActStepSim`) --- *)
 
-  (* One impl action, taken from a related state and obeying `Rule`, is matched by
-   * spec steps that are valid for every oracle agreeing with the new prefix. *)
+  (* One impl action, taken from a related state from which the spec obeys `SRule`, is
+   * matched by spec steps that are valid for every oracle agreeing with the new prefix. *)
   Definition ActStepSim (act : Action type iTree (Bit 0)) : Prop :=
     forall p s1 s1' s2,
       SemAction env1 act s1 s1' Zmod.zero ->
-      Rule s1 s1' ->
+      (forall o, Agrees p o -> RuleFrom o s2) ->
       R p s1 s2 ->
       exists p' s2',
         Ext p p' /\
@@ -196,7 +203,7 @@ Section TopLevelGlue.
     forall p s1 s1' s2 a,
       In a (pipeMod type) ->
       SemAction env1 a s1 s1' Zmod.zero ->
-      Rule s1 s1' ->
+      (forall o, Agrees p o -> RuleFrom o s2) ->
       R p s1 s2 ->
       exists p' s2',
         Ext p p' /\
@@ -231,8 +238,8 @@ Section TopLevelGlue.
   (* --- Top-Level Statement from the Obligations --- *)
 
   (* For any relation meeting the per-group obligations and holding on initial
-   * states (for some starting prefix `p0`): every impl run whose steps obey
-   * `Rule` is matched by a spec run under some oracle, ending in related states. *)
+   * states (for some starting prefix `p0`): if every spec run from `old2` obeys `SRule`,
+   * every impl run is matched by a spec run under some oracle, ending in related states. *)
   Theorem refinement_of_obligations :
     RefinementObligations ->
     forall p0 : P,
@@ -242,31 +249,29 @@ Section TopLevelGlue.
          R p0 old1 old2) ->
       forall old1 new1,
         SemMod env1 pipeMod old1 new1 ->
-        (forall s s' a,
-           SemActions env1 (pipeMod type) old1 s ->
-           In a (pipeMod type) ->
-           SemAction env1 a s s' Zmod.zero ->
-           Rule s s') ->
         forall old2,
           InitStateConsistent sTree old2 ->
+          (forall o, Agrees p0 o -> RuleFrom o old2) ->
           exists (o : O) (new2 : SState),
             SemMod (env2 o) specMod old2 new2 /\
             exists p, R p new1 new2.
   Proof.
-    intros Hob p0 Hinit old1 new1 Hsem Hrule old2 Hinit2.
+    intros Hob p0 Hinit old1 new1 Hsem old2 Hinit2 Hrule.
     assert (Hinit1 : InitStateConsistent iTree old1) by (destruct Hsem; assumption).
-    (* `R` plus reachability of the impl state from `old1`, so `Hrule` applies. *)
-    set (RR := fun q s1 s2 => R q s1 s2 /\ SemActions env1 (pipeMod type) old1 s1).
+    (* `R` plus "the spec obeys the rule from here", kept along the matched spec steps. *)
+    set (RR := fun q s1 s2 => R q s1 s2 /\ forall o, Agrees q o -> RuleFrom o s2).
     assert (Hsim : OracleStepSim env1 env2 Agrees Ext (pipeMod type) (specMod type) RR).
-    { intros q s1 s1' s2 a Hin Ha [Hr Hreach].
-      destruct (obligations_StepSim Hob q s1 s1' s2 a Hin Ha (Hrule s1 s1' a Hreach Hin Ha) Hr)
+    { intros q s1 s1' s2 a Hin Ha [Hr Hrf].
+      destruct (obligations_StepSim Hob q s1 s1' s2 a Hin Ha Hrf Hr)
         as [q' [s2' [Hqq' [Hval Hr']]]].
       exists q', s2'; split; [exact Hqq' | split; [exact Hval |]].
-      split; [exact Hr' | exact (SemActions_snoc Hreach Hin Ha)]. }
+      split; [exact Hr' |].
+      intros o Hag t t' b Hrun Hinb Hb.
+      apply (Hrf o (Agrees_Ext q q' o Hqq' Hag) t t' b); [| exact Hinb | exact Hb].
+      eapply SemActions_trans; [exact (Hval o Hag) | exact Hrun]. }
     assert (Hmod : OracleModSimulation env1 env2 pipeMod specMod RR)
       by (apply OracleStepToModSimulation with (Agrees := Agrees) (Ext := Ext); assumption).
-    assert (Hnil : SemActions env1 (pipeMod type) old1 old1) by (constructor 1; reflexivity).
-    destruct (Hmod old1 new1 Hsem p0 old2 Hinit2 (conj (Hinit old1 old2 Hinit1 Hinit2) Hnil))
+    destruct (Hmod old1 new1 Hsem p0 old2 Hinit2 (conj (Hinit old1 old2 Hinit1 Hinit2) Hrule))
       as [o [new2 [Hsem2 [p' [Hr _]]]]].
     exists o, new2; split; [exact Hsem2 | exists p'; exact Hr].
   Qed.
