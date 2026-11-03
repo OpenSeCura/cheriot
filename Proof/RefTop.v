@@ -23,6 +23,7 @@ From Cheriot.Proof Require Import RefRel RefCoreRel RefPcEven RefInit RefPeriph 
 From Cheriot.Proof Require Import RefRevokerStep RefMemStep RefReadRp RefFetchRp RefLoadCommitStep RefRevWriteCommit.
 From Cheriot.Proof Require Import RefWriteRqStep RefReadRqStep RefDmStep RefMdStep RefLsfFenceI RefDecodeStep.
 From Cheriot.Proof Require Import RefFetchRqStep RefFetchAsmStep RefExecMain.
+From Cheriot.Proof Require Import RefGhost RefFetch RefMemRel.
 
 Unset Implicit Arguments.
 Unset Strict Implicit.
@@ -44,6 +45,66 @@ Local Open Scope guru_scope.
  * - `pipelinedMod_refines_spec`: the top-level theorem. Its static mulDiv hypothesis
  *   `Hmd` holds for the instantiated stage counts (`implMulDivStagesDivideXlen`,
  *   ImplInst.v). *)
+
+(* --- Observables: region-list pieces --- *)
+
+Local Abbreviation TS t := (TreeState ElemState t).
+
+(* An ExternalMem region: the spec's write trace equals the writes the impl region accepted *)
+Definition ExtWritesAt (r : MemRegion) : TS (memRegionTree r) -> TS (implMemRegionTree r) -> Prop :=
+  match r.(regionKind) as k
+    return TS (memRegionKindTree r k) -> TS (implMemRegionKindTree r k) -> Prop
+  with
+  | ExternalMem => fun x y => x.(Snd).(Snd).(Snd).(Fst) = implAccWrites r y
+  | CustomMem _ _ _ _ => fun _ _ => True
+  end.
+
+Fixpoint ExtWritesPost (l : list MemRegion) : TS (specMemTree l) -> TS (implRegionsTree l) -> Prop :=
+  match l as l0 return TS (specMemTree l0) -> TS (implRegionsTree l0) -> Prop with
+  | [] => fun _ _ => True
+  | r :: l' => fun ms mi => ExtWritesAt r ms.(Fst) mi.(Fst) /\ ExtWritesPost l' ms.(Snd).(Fst) mi.(Snd).(Fst)
+  end.
+
+(* The revoker position (a CustomMem region) is skipped *)
+Fixpoint ExtWritesPre (l : list MemRegion) (sRev iRev : MemRegion) (post : list MemRegion)
+  : TS (specMemTree (l ++ sRev :: post)) -> TS (implRegionsTree (l ++ iRev :: post)) -> Prop :=
+  match l as l0
+    return TS (specMemTree (l0 ++ sRev :: post)) -> TS (implRegionsTree (l0 ++ iRev :: post)) -> Prop
+  with
+  | [] => fun ms mi => ExtWritesPost post ms.(Snd).(Fst) mi.(Snd).(Fst)
+  | r :: l' => fun ms mi => ExtWritesAt r ms.(Fst) mi.(Fst) /\ ExtWritesPre l' sRev iRev post ms.(Snd).(Fst) mi.(Snd).(Fst)
+  end.
+
+Lemma ExtWritesAt_of : forall cp pp i r x y, RegionRelAt cp pp i r x y -> ExtWritesAt r x y.
+Proof.
+  intros cp pp i r; unfold RegionRelAt, ExtWritesAt, memRegionTree, implMemRegionTree.
+  destruct r as [nm bs sz kd sn im ba sa]; destruct kd; cbn [regionKind]; intros x y H;
+    [exact (proj1 H) | exact I].
+Qed.
+
+Lemma ExtWritesPost_of : forall cp pp l i ms mi, MemRelPost cp pp i l ms mi -> ExtWritesPost l ms mi.
+Proof.
+  intros cp pp l; induction l as [| r l IH]; intros i ms mi H; cbn [MemRelPost ExtWritesPost] in *; [exact I |].
+  destruct H as [H0 H1]; exact (conj (ExtWritesAt_of _ _ _ _ _ _ H0) (IH _ _ _ H1)).
+Qed.
+
+Lemma ExtWritesPre_of :
+  forall cp pp sRev iRev post l i ms mi, MemRelPre cp pp i l sRev iRev post ms mi -> ExtWritesPre l sRev iRev post ms mi.
+Proof.
+  intros cp pp sRev iRev post l; induction l as [| r l IH]; intros i ms mi H; cbn [MemRelPre ExtWritesPre] in *.
+  - exact (ExtWritesPost_of _ _ _ _ _ _ H).
+  - destruct H as [H0 H1]; exact (conj (ExtWritesAt_of _ _ _ _ _ _ H0) (IH _ _ _ H1)).
+Qed.
+
+(* The trace of the PLIC's `UartIrq` receive: [ priorities; pending; enables; threshold; claim;
+ * meip; in_service; UartIrq ] *)
+Definition plicUartOf {n} (x : TS (plicTree n)) := x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).
+
+Lemma plicUartOf_rel : forall n1 n2 xs xi, PlicRel n1 n2 xs xi -> plicUartOf xs = plicUartOf xi.
+Proof.
+  intros n1 n2 xs xi [e [H _]]; subst n2; cbn [eq_rect] in H.
+  rewrite H at 1; reflexivity.
+Qed.
 
 Section Top.
   Variable pcAddrInit : Z.
@@ -193,5 +254,74 @@ Section Top.
                 old1 new1 Hsem old2 Hinit2 (fun o Ho => ltac:(cbv beta in Ho; subst o; exact Hrule)))
       as [o [new2 [Hspec [_ Hrel]]]].
     exists o, new2; split; assumption.
+  Qed.
+
+  (* --- Observables --- *)
+
+  Local Abbreviation IStateT :=
+    (ImplState pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+               mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions).
+  Local Abbreviation SStateT := (SpecState pcAddrInit specRegions).
+  Local Abbreviation sRfA := (sRf pcAddrInit pre post revBase revPfB revPfA).
+  Local Abbreviation sMemA := (sMem pcAddrInit pre post revBase revPfB revPfA).
+  Local Abbreviation iFlushA :=
+    (iFlush pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+            mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+  Local Abbreviation iRegionsA :=
+    (iRegions pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+              mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+
+  (* Registers: the impl register file (pending mulDiv results written in) is the spec register
+   * file (`rf0` plus at most one committed load the impl has not written back, `c`) advanced by a
+   * sequence `G` of spec instruction steps (and mcycle ticks), where each instruction is one the
+   * spec can fetch from its memory at the PCC the sequence has reached. *)
+  Definition ObsRegs initLine fwc (s1 : IStateT) (s2 : SStateT) : Prop :=
+    exists rf0 c G,
+      sRfA s2 = cnwbApply pcAddrInit c rf0 /\
+      GChain pcAddrInit rf0 G (iFlushA s1) /\
+      (forall G1 e G2 rfe,
+         G = (G1 ++ GInst e :: G2)%list ->
+         GChain pcAddrInit rf0 G1 rfe ->
+         FetchAllowedInst initLine fwc specRegions (sMemA s2) (readPcc pcAddrInit rfe) (ge_fetchOut e)).
+
+  (* External behavior: every ExternalMem region received the same writes from the spec as it
+   * accepted from the impl, and the PLIC's `UartIrq` input delivered the same values to both. *)
+  Definition ObsExt (s1 : IStateT) (s2 : SStateT) : Prop :=
+    ExtWritesPre pre (specRevRegion revBase revPfB revPfA) (implRevRegion revBase revPfB revPfA) post
+      (sMemA s2) (iRegionsA s1) /\
+    plicUartOf (specPlicState pre post revBase revPfB revPfA plicS (sMemA s2)) =
+      plicUartOf (implPlicState pre post revBase revPfB revPfA plic (iRegionsA s1)).
+
+  Lemma ObsRegs_of : forall initLine fwc s1 s2, RelL initLine fwc s1 s2 -> ObsRegs initLine fwc s1 s2.
+  Proof.
+    intros initLine fwc s1 s2 [g Hg].
+    destruct Hg as [Hrf _ _ Hrp _ _ _ _ _ _ _ _ _].
+    destruct Hrf as [Hs [Hch _]].
+    exists (g_rf0 pcAddrInit g), (g_cnwb pcAddrInit g), (g_chain pcAddrInit g).
+    exact (conj Hs (conj Hch Hrp)).
+  Qed.
+
+  Lemma ObsExt_of : forall initLine fwc s1 s2, RelL initLine fwc s1 s2 -> ObsExt s1 s2.
+  Proof.
+    intros initLine fwc s1 s2 [g Hg].
+    destruct Hg as [_ Hm _ _ _ _ _ _ _ _ _ _ _].
+    destruct Hm as [[Hpre [_ [Hpl _]]] _].
+    exact (conj (ExtWritesPre_of _ _ _ _ _ _ _ _ _ Hpre) (plicUartOf_rel _ _ _ _ Hpl)).
+  Qed.
+
+  (* The top-level theorem stated with the observables *)
+  Theorem pipelinedMod_refines_spec_obs :
+    forall initLine fwc old1 new1,
+      SemMod (implEnvL initLine fwc) pipeMod old1 new1 ->
+      forall old2, InitStateConsistent sTree old2 ->
+      SoftwareRevBitsRule initLine fwc old2 ->
+      exists fwc' new2, SemMod (specEnvL initLine fwc') specMod old2 new2 /\
+                        ObsRegs initLine fwc new1 new2 /\ ObsExt new1 new2.
+  Proof.
+    intros initLine fwc old1 new1 Hsem old2 Hinit2 Hrule.
+    destruct (pipelinedMod_refines_spec initLine fwc old1 new1 Hsem old2 Hinit2 Hrule)
+      as [o [new2 [Hspec Hrel]]].
+    exists o, new2; split; [exact Hspec |].
+    exact (conj (ObsRegs_of _ _ _ _ Hrel) (ObsExt_of _ _ _ _ Hrel)).
   Qed.
 End Top.
