@@ -539,8 +539,8 @@ Proof.
     + assert (Hoc : Zmod.to_Z addr mod 2 ^ LgLineBytes mod 2 ^ LgNumBytesFullCapSz =
                     Zmod.to_Z addr mod 2 ^ LgLineBytes - (2 ^ LgNumLineTags - 1) * 2 ^ LgNumBytesFullCapSz)
         by (symmetry; apply (Z.mod_unique _ _ (2 ^ LgNumLineTags - 1));
-            [left; rewrite Z.mul_sub_distr_r, Z.mul_1_l, <- Esp; lia | ring]).
-      rewrite D2, Hoc, Z.mul_sub_distr_r, Z.mul_1_l, <- Esp; lia.
+            [left; rewrite Z.mul_sub_distr_r, <- Esp, Z.mul_1_l; lia | ring]).
+      rewrite D2, Hoc, Z.mul_sub_distr_r, <- Esp, Z.mul_1_l; lia.
     + apply arith_second; [lia | lia | exact Hk | lia | exact Hl].
   - rewrite (to_Z_lineOf_false addr), DS3 in Hl.
     assert (HlS : Zmod.to_Z addr / 2 ^ LgLineBytes = Zmod.to_Z sa / 2 ^ LgNumLineTags)

@@ -96,7 +96,7 @@ Definition LgNumBytesInstSz : Z := Eval compute in Z.log2_up (InstSz / 8).
 (* Global memory line geometry: every memory region uses lines of 2^LgLineBytes bytes. A line holds
  * 2^LgNumLineTags capabilities, each with its own tag, so a line must be at least as big as a
  * capability (checked by LgLineBytesGeCap). *)
-Definition LgLineBytes   : Z   := 5.
+Definition LgLineBytes   : Z   := 3.
 Definition LineBytes     : nat := Eval compute in Z.to_nat (2 ^ LgLineBytes).
 Definition LgNumLineTags : Z   := Eval compute in (LgLineBytes - LgNumBytesFullCapSz).
 Definition NumLineTags   : nat := Eval compute in Z.to_nat (2 ^ LgNumLineTags).

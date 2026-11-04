@@ -20,7 +20,7 @@
   localparam int RamSizeBytes      = 256 * 1024;
   localparam int RevTableSizeBytes = 4 * 1024;
   // The line geometry: LgLineBytes must match LgLineBytes in SpecDefines.v
-  localparam int LgLineBytes       = 5;
+  localparam int LgLineBytes       = 3;
   localparam int LineBytes         = 1 << LgLineBytes;
   localparam int LineBits          = LineBytes * 8;
   localparam int NumLineTags       = LineBytes / 8;  // one tag per 8-byte capability
