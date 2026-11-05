@@ -385,6 +385,8 @@ Section RevSteps.
                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iRequesterA := (iRequester pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+  Local Abbreviation iRpReadyA := (iRpReady pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iRevA := (iRev pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iRevPhaseA := (iRevPhase pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -394,6 +396,9 @@ Section RevSteps.
   Local Abbreviation setRevRA := (setRevR pre post revBase revPfB revPfA).
 
   Local Abbreviation ACC := (AccessRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                               mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
+                               initLine).
+  Local Abbreviation ARR := (AccessRel_rpReady pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
                                initLine).
   Local Abbreviation MEMC := (MemRelC pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -449,11 +454,12 @@ Section RevSteps.
   (* A response ready for the revoker is the revoker's cap read or rev-bit read *)
   Lemma AccessRel_rpReady_rev :
     forall g (s1 : IState) (s2 : SState),
-      ACC g s1 s2 -> msReadRpReady (iMemStA s1) = true -> isReqRevoker (iRequesterA s1) = true ->
-      (g_acc pcAddrInit g = AccRevCap (RdReady (msReadRpReadyV (iMemStA s1))) /\ rpWaitCapRp (iRevPhaseA s1) = true) \/
-      (g_acc pcAddrInit g = AccRevBit (RdReady (msReadRpReadyV (iMemStA s1))) /\ rpWaitRevBitRp (iRevPhaseA s1) = true).
+      ACC g s1 s2 -> optValid (iRpReadyA s1) = true -> isReqRevoker (iRequesterA s1) = true ->
+      (g_acc pcAddrInit g = AccRevCap (RdReady (optData (iRpReadyA s1))) /\ rpWaitCapRp (iRevPhaseA s1) = true) \/
+      (g_acc pcAddrInit g = AccRevBit (RdReady (optData (iRpReadyA s1))) /\ rpWaitRevBitRp (iRevPhaseA s1) = true).
   Proof.
-    intros g s1 s2 Ha Hr Hq.
+    intros g s1 s2 Ha Hrv Hq.
+    pose proof (ARR g s1 s2 Ha Hrv) as Hr.
     destruct (msReadRpReady_excl _ Hr) as [N1 [N2 [N3 N4]]].
     pose proof (isReqRevoker_excl _ Hq) as Nq.
     unfold AccessRel in Ha.
@@ -465,8 +471,10 @@ Section RevSteps.
       try (match goal with H : (if ?c then _ else _) |- _ => destruct c end;
            repeat match goal with H : _ /\ _ |- _ => destruct H end);
       try (exfalso; match goal with H : ?f ?x = true, N : ?f ?x = false |- _ => rewrite N in H; discriminate H end).
-    - left; split; [match goal with H : msReadRpReadyV _ = _ |- _ => rewrite H; reflexivity end | assumption].
-    - right; split; [match goal with H : msReadRpReadyV _ = _ |- _ => rewrite H; reflexivity end | assumption].
+    - left; split; [match goal with H : iRpReady _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ = _ |- _ => rewrite H; reflexivity end
+                   | assumption].
+    - right; split; [match goal with H : iRpReady _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ = _ |- _ => rewrite H; reflexivity end
+                    | assumption].
   Qed.
 
   (* --- 3b. The Memory Relation When Only the Impl Revoker Changes --- *)
@@ -511,10 +519,10 @@ Section RevSteps.
     apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
     rewrite iMem_read in Hm'.
     remember (iMemA s1) as m eqn:EM; symmetry in EM.
-    destruct m as [mr [mst [mrq [mrp []]]]].
+    destruct m as [mr [mst [mrq [mrp [mrdy []]]]]].
     remember (revOfRA mr) as x eqn:Ex; symmetry in Ex.
     destruct x as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh []]]]]]]]]]]]].
-    destruct (waitRevBitRq_char config pre post revBase revPfB revPfA _ mr mst mrq mrp m' _
+    destruct (waitRevBitRq_char config pre post revBase revPfB revPfA _ mr mst mrq mrp mrdy m' _
                 b t c e ist ir sa st ph sc sb sh Ex Hm')
       as [-> | [Hph [Hidle [Hnpw [st' [rq' [ph' [-> [Hrq [HrqV [Hreq Hph']]]]]]]]]]].
     - exists s2; split; [apply NilAction; reflexivity |].
@@ -524,7 +532,7 @@ Section RevSteps.
       assert (ER : iRevA s1 = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt))))))))))))).
       { rewrite iRev_eq, iRegions_eq, EM; exact Ex. }
       assert (EM' : iMemA s1' = (setRevRA mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,,
-                                 (st' ,, (rq' ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
+                                 (st' ,, (rq' ,, (mrp ,, (mrdy ,, tt)))))) by (rewrite E1; apply iMem_write).
       assert (ER' : iRevA s1' = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt))))))))))))).
       { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
       assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
@@ -534,7 +542,7 @@ Section RevSteps.
         - unfold iMemSt; rewrite EM; exact Hidle.
         - rewrite iRegions_eq, EM; exact Hnpw. }
       unfold AccessRel in Ha; rewrite Hacc0 in Ha.
-      destruct Ha as [Hi0 [Hrp0 [Hq0 [Hoff0 [Hdm0 [Hrn0 Hsec0]]]]]].
+      destruct Ha as [Hi0 [Hrp0 [Hrdy0 [Hq0 [Hoff0 [Hdm0 [Hrn0 Hsec0]]]]]]].
       exists s2; split; [apply NilAction; reflexivity |].
       exists (mkGhost pcAddrInit (g_chain pcAddrInit g) (g_rf0 pcAddrInit g) (g_cnwb pcAddrInit g) (g_revOff pcAddrInit g) (g_d2aFo pcAddrInit g) (AccRevBit (RdPend false))).
       eapply (RefRelG_mem_frame pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -551,11 +559,12 @@ Section RevSteps.
         * exact Hm.
       + unfold AccessRel; cbn [g_acc g_revOff].
         unfold RdStageRel, PortsQuiet, dmNotAccessing in *; cbv zeta.
-        unfold iMemSt, iRequester, iReadRp; rewrite EM'; cbn [Fst Snd].
+        unfold iMemSt, iRequester, iReadRp, iRpReady; rewrite EM'; cbn [Fst Snd].
         unfold iRevPhase, iRevScanBase; rewrite ER'; cbn [Fst Snd].
         unfold iReadRp in Hrp0; rewrite EM in Hrp0; cbn [Fst Snd] in Hrp0.
+        unfold iRpReady in Hrdy0; rewrite EM in Hrdy0; cbn [Fst Snd] in Hrdy0.
         rewrite HP.
-        split; [split; [exact Hrq | split; [exact HrqV | split; [exact Hrp0 | exact Hq0]]] |].
+        split; [split; [exact Hrq | split; [exact HrqV | split; [exact Hrp0 | split; [exact Hrdy0 | exact Hq0]]]] |].
         split; [exact Hreq | split; [exact Hph' | split; [rewrite E1; exact Hdm0 |
           split; [exact Hoff0 | split; [exact Hsec0 | reflexivity]]]]].
       + unfold RevokerRel in Hrk |- *; cbn [g_acc].
@@ -602,7 +611,8 @@ Section RevSteps.
   Lemma AccessRel_coreAcc_revRegs :
     forall g (s1 s1' : IState) (s2 : SState),
       (forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)) ->
-      iMemStA s1' = iMemStA s1 -> iReadRpA s1' = iReadRpA s1 -> iRequesterA s1' = iRequesterA s1 ->
+      iMemStA s1' = iMemStA s1 -> iReadRpA s1' = iReadRpA s1 -> iRpReadyA s1' = iRpReadyA s1 ->
+      iRequesterA s1' = iRequesterA s1 ->
       iDmStA s1' = iDmStA s1 -> revNotReadingA s1' ->
       match g_acc pcAddrInit g with AccRevCap _ | AccRevBit _ | AccRevWrite _ _ _ => False | _ => True end ->
       match g_acc pcAddrInit g with
@@ -611,7 +621,7 @@ Section RevSteps.
       end ->
       ACC g s1 s2 -> ACC g s1' s2.
   Proof.
-    intros g s1 s1' s2 HP Emst Erp Ereq Edm Hrn Hcore Hsn Ha.
+    intros g s1 s1' s2 HP Emst Erp Erdy Ereq Edm Hrn Hcore Hsn Ha.
     unfold AccessRel in *.
     revert Ha Hsn.
     destruct (g_acc pcAddrInit g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
@@ -621,7 +631,7 @@ Section RevSteps.
       unfold WrStageRel, RdStageRel, PortsQuiet, PortsReadStaged, PortsReadOut, PortsWriteStaged, dmNotAccessing in *;
       cbv beta iota zeta in *;
       try (lazymatch type of Hsn with _ /\ _ => destruct Hsn as [Es Eh]; rewrite ?Es, ?Eh end);
-      rewrite ?HP, ?Emst, ?Erp, ?Ereq, ?Edm;
+      rewrite ?HP, ?Emst, ?Erp, ?Erdy, ?Ereq, ?Edm;
       (let rec go H :=
          lazymatch goal with
          | |- revNotReadingA s1' => exact Hrn
@@ -654,19 +664,19 @@ Section RevSteps.
     apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
     rewrite iMem_read in Hm'.
     remember (iMemA s1) as m eqn:EM; symmetry in EM.
-    destruct m as [mr [mst [mrq [mrp []]]]].
+    destruct m as [mr [mst [mrq [mrp [mrdy []]]]]].
     remember (revOfRA mr) as x eqn:Ex; symmetry in Ex.
     destruct x as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh []]]]]]]]]]]]].
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh) by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
-    destruct (writeCap_char pre post revBase revPfB revPfA _ mr mst mrq mrp m' _
+    destruct (writeCap_char pre post revBase revPfB revPfA _ mr mst mrq mrp mrdy m' _
                 b t c e ist ir sa st ph sc sb sh Ex Hm')
       as [-> | [[Hph [Hsh [ph' [Hph' ->]]]] | [Hph [Hsh [Hidle [Hnpw [st' [ph' [-> [Hwr [HwrV Hph']]]]]]]]]]].
     - exists s2; split; [apply NilAction; reflexivity |].
       exists g; replace s1' with s1; [exact Hg |].
       rewrite E1; transitivity (writeSubTreeState NPMI s1 (iMemA s1)); [reflexivity | f_equal; exact EM].
     - (* a store hit the position: retry it (the spec stutters, the ghost is kept) *)
-      assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir sa st ph' sc sb sh) ,, (mst ,, (mrq ,, (mrp ,, tt)))))
+      assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir sa st ph' sc sb sh) ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))))
         by (rewrite E1; apply iMem_write).
       assert (ER' : iRevA s1' = mkRev12 b t c e ist ir sa st ph' sc sb sh).
       { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
@@ -694,6 +704,7 @@ Section RevSteps.
       + apply (AccessRel_coreAcc_revRegs g s1 s1' s2 HP); try exact Hcore; try exact Ha.
         * unfold iMemSt; rewrite EM', EM; reflexivity.
         * unfold iReadRp; rewrite EM', EM; reflexivity.
+        * unfold iRpReady; rewrite EM', EM; reflexivity.
         * unfold iRequester; rewrite EM', EM; reflexivity.
         * rewrite E1; reflexivity.
         * unfold revNotReading, iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd]; split; assumption.
@@ -707,7 +718,7 @@ Section RevSteps.
         exact (RevAccRel_coreAcc g s1' s2 Hcore).
     - (* the write is handed to the memory: the impl moves one position ahead *)
       assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh) ,,
-                                 (st' ,, (mrq ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
+                                 (st' ,, (mrq ,, (mrp ,, (mrdy ,, tt)))))) by (rewrite E1; apply iMem_write).
       assert (ER' : iRevA s1' = mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh).
       { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
       assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
@@ -717,7 +728,7 @@ Section RevSteps.
         - unfold iMemSt; rewrite EM; exact Hidle.
         - rewrite iRegions_eq, EM; exact Hnpw. }
       pose proof Ha as Ha'; unfold AccessRel in Ha'; rewrite Hacc0 in Ha'.
-      destruct Ha' as [Hi0 [Hrp0 [Hq0 [Hoff0 [Hdm0 [Hrn0 Hsec0]]]]]].
+      destruct Ha' as [Hi0 [Hrp0 [Hrdy0 [Hq0 [Hoff0 [Hdm0 [Hrn0 Hsec0]]]]]]].
       destruct (rpWriteCap_excl _ Hph) as [P1 _].
       destruct (rpIdle_excl _ Hph') as [Q1 [_ [Q3 Q4]]].
       unfold RevokerRel in Hrk; destruct Hrk as [K1 [K2 [K3 [K4 _]]]].
@@ -751,11 +762,12 @@ Section RevSteps.
         * exact Hm0.
       + unfold AccessRel; cbn [g_acc g_revOff].
         unfold WrStageRel, PortsQuiet, dmNotAccessing in *.
-        unfold iMemSt, iReadRp; rewrite EM'; cbn [Fst Snd].
+        unfold iMemSt, iReadRp, iRpReady; rewrite EM'; cbn [Fst Snd].
         unfold iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd].
         unfold iReadRp in Hrp0; rewrite EM in Hrp0; cbn [Fst Snd] in Hrp0.
+        unfold iRpReady in Hrdy0; rewrite EM in Hrdy0; cbn [Fst Snd] in Hrdy0.
         rewrite HP.
-        split; [split; [exact Hrp0 | split; [exact Hwr | split; [exact HwrV | exact Hq0]]] |].
+        split; [split; [exact Hrp0 | split; [exact Hrdy0 | split; [exact Hwr | split; [exact HwrV | exact Hq0]]]] |].
         split; [exact Hph' | split; [rewrite E1; exact Hdm0 | split; [reflexivity | split; [exact Hsec0 | reflexivity]]]].
       + unfold RevokerRel; cbn [g_acc].
         unfold iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd].
@@ -895,27 +907,27 @@ Section RevSteps.
 
   (* The impl revoker takes an architectural step from Idle and the spec revoker takes the same step *)
   Lemma idle_lock :
-    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp b t c e ist ir sa st ph sc sb sh
+    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mrdy b t c e ist ir sa st ph sc sb sh
            b' t' c' e' ist' ir' sa' st',
       RELG g s1 s2 ->
-      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
+      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
       revOfRA mr = mkRev12 b t c e ist ir sa st ph sc sb sh ->
       rpIdle ph = true -> msWriteRq mst = false -> noPortWriteB implRegions mr = true ->
       s1' = writeSubTreeState NPMI s1
-              (setRevRA mr (mkRev12 b' t' c' e' ist' ir' sa' st' ph sc sb sh) ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
+              (setRevRA mr (mkRev12 b' t' c' e' ist' ir' sa' st' ph sc sb sh) ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
       (specRevStateA (sMemA s2) = mkRev8 b t c e ist ir sa st ->
        forall env, SemAction env (@SpecRevoker.specRevokerStep [] specRegions revS config type) (sMemA s2)
                      (setRevSA (sMemA s2) (mkRev8 b' t' c' e' ist' ir' sa' st')) Zmod.zero) ->
       exists s2', SemActions envS specActs s2 s2' /\ exists g', RELG g' s1' s2'.
   Proof.
-    intros g s1 s1' s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh b' t' c' e' ist' ir' sa' st'
+    intros g s1 s1' s2 mr mst mrq mrp mrdy b t c e ist ir sa st ph sc sb sh b' t' c' e' ist' ir' sa' st'
            Hg EM Ex Hph Hwr Hnpw E1 Hspec.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     destruct (rpIdle_excl _ Hph) as [Q1 [Q2 [Q3 Q4]]].
     assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh)
       by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
     assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b' t' c' e' ist' ir' sa' st' ph sc sb sh) ,,
-                               (mst ,, (mrq ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
+                               (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt)))))) by (rewrite E1; apply iMem_write).
     assert (ER' : iRevA s1' = mkRev12 b' t' c' e' ist' ir' sa' st' ph sc sb sh).
     { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
     assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
@@ -965,6 +977,7 @@ Section RevSteps.
         { apply (AccessRel_coreAcc_revRegs g s1 s1' s2 HP); try exact Hcore; try exact Hsn; try exact Ha.
           - unfold iMemSt; rewrite EM', EM; reflexivity.
           - unfold iReadRp; rewrite EM', EM; reflexivity.
+          - unfold iRpReady; rewrite EM', EM; reflexivity.
           - unfold iRequester; rewrite EM', EM; reflexivity.
           - rewrite E1; reflexivity.
           - unfold revNotReading, iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd]; split; assumption. }
@@ -991,10 +1004,10 @@ Section RevSteps.
     apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
     rewrite iMem_read in Hm'.
     remember (iMemA s1) as m eqn:EM; symmetry in EM.
-    destruct m as [mr [mst [mrq [mrp []]]]].
+    destruct m as [mr [mst [mrq [mrp [mrdy []]]]]].
     remember (revOfRA mr) as x eqn:Ex; symmetry in Ex.
     destruct x as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh []]]]]]]]]]]]].
-    destruct (idle_char pre post revBase revPfB revPfA _ mr mst mrq mrp m' _
+    destruct (idle_char pre post revBase revPfB revPfA _ mr mst mrq mrp mrdy m' _
                 b t c e ist ir sa st ph sc sb sh Ex Hm')
       as [-> | [[Hnp [Hph [Hodd [Hnd [Hidle [st' [rq' [ph' [-> [Hrq [HrqV [Hreq Hph']]]]]]]]]]]]
               | [[Hnp [Hph [Hodd [Hdone ->]]]]
@@ -1010,7 +1023,7 @@ Section RevSteps.
       assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh)
         by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
       assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir sa st ph' sc sb false) ,,
-                                 (st' ,, (rq' ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
+                                 (st' ,, (rq' ,, (mrp ,, (mrdy ,, tt)))))) by (rewrite E1; apply iMem_write).
       assert (ER' : iRevA s1' = mkRev12 b t c e ist ir sa st ph' sc sb false).
       { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
       assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
@@ -1020,7 +1033,7 @@ Section RevSteps.
         - unfold iMemSt; rewrite EM; exact Hidle.
         - rewrite iRegions_eq, EM; exact Hnpw. }
       pose proof Ha as Ha'; unfold AccessRel in Ha'; rewrite Hacc0 in Ha'.
-      destruct Ha' as [Hi0 [Hrp0 [Hq0 [Hoff0 [Hdm0 [Hrn0 Hsec0]]]]]].
+      destruct Ha' as [Hi0 [Hrp0 [Hrdy0 [Hq0 [Hoff0 [Hdm0 [Hrn0 Hsec0]]]]]]].
       exists s2; split; [apply NilAction; reflexivity |].
       exists (mkGhost pcAddrInit (g_chain pcAddrInit g) (g_rf0 pcAddrInit g) (g_cnwb pcAddrInit g)
                 (g_revOff pcAddrInit g) (g_d2aFo pcAddrInit g) (AccRevCap (RdPend false))).
@@ -1038,11 +1051,12 @@ Section RevSteps.
         * exact Hm.
       + unfold AccessRel; cbn [g_acc g_revOff].
         unfold RdStageRel, PortsQuiet, dmNotAccessing in *; cbv zeta.
-        unfold iMemSt, iRequester, iReadRp; rewrite EM'; cbn [Fst Snd].
+        unfold iMemSt, iRequester, iReadRp, iRpReady; rewrite EM'; cbn [Fst Snd].
         unfold iRevPhase, iScanAddr; rewrite ER'.
         unfold iReadRp in Hrp0; rewrite EM in Hrp0; cbn [Fst Snd] in Hrp0.
+        unfold iRpReady in Hrdy0; rewrite EM in Hrdy0; cbn [Fst Snd] in Hrdy0.
         rewrite HP.
-        split; [split; [exact Hrq | split; [exact HrqV | split; [exact Hrp0 | exact Hq0]]] |].
+        split; [split; [exact Hrq | split; [exact HrqV | split; [exact Hrp0 | split; [exact Hrdy0 | exact Hq0]]]] |].
         split; [exact Hreq | split; [exact Hph' | split; [rewrite E1; exact Hdm0 |
           split; [exact Hoff0 | split; [exact Hsec0 | reflexivity]]]]].
       + unfold RevokerRel; cbn [g_acc].
@@ -1054,21 +1068,21 @@ Section RevSteps.
         split; [intros Hc'; discriminate Hc' | exact I].
     - (* the sweep completes: lockstep *)
       apply andb_prop in Hnp as [Hwr Hnpw]; apply negb_true_iff in Hwr.
-      exact (idle_lock g s1 s1' s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh
+      exact (idle_lock g s1 s1' s2 mr mst mrq mrp mrdy b t c e ist ir sa st ph sc sb sh
                b t c (epochInc e) (if ir then true else ist) ir sa st Hg EM Ex Hph Hwr Hnpw E1
                (fun Hx env => specRevStep_done config pre post revBase revPfB revPfA env (sMemA s2)
                                 b t c e ist ir sa st Hx Hodd Hdone)).
     - (* even epoch, kick: lockstep *)
       apply andb_prop in Hnp as [Hwr Hnpw]; apply negb_true_iff in Hwr.
       subst c.
-      exact (idle_lock g s1 s1' s2 mr mst mrq mrp b t true e ist ir sa st ph sc sb sh
+      exact (idle_lock g s1 s1' s2 mr mst mrq mrp mrdy b t true e ist ir sa st ph sc sb sh
                b t false (epochMkOdd e) false ir b t Hg EM Ex Hph Hwr Hnpw E1
                (fun Hx env => specRevStep_even config pre post revBase revPfB revPfA env (sMemA s2)
                                 b t true e ist ir sa st Hx Hev)).
     - (* even epoch, no kick: lockstep *)
       apply andb_prop in Hnp as [Hwr Hnpw]; apply negb_true_iff in Hwr.
       subst c.
-      exact (idle_lock g s1 s1' s2 mr mst mrq mrp b t false e ist ir sa st ph sc sb sh
+      exact (idle_lock g s1 s1' s2 mr mst mrq mrp mrdy b t false e ist ir sa st ph sc sb sh
                b t false e false ir sa st Hg EM Ex Hph Hwr Hnpw E1
                (fun Hx env => specRevStep_even config pre post revBase revPfB revPfA env (sMemA s2)
                                 b t false e ist ir sa st Hx Hev)).
@@ -1101,12 +1115,12 @@ Section RevSteps.
   Local Abbreviation sSecondA := (sSecond pcAddrInit pre post revBase revPfB revPfA).
 
   Lemma scan_commit :
-    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp b t c e ist ir sa st ph sc sb sh st' ph' ms1,
+    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mrdy b t c e ist ir sa st ph sc sb sh st' ph' ms1,
       RELG g s1 s2 ->
-      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
+      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
       revOfRA mr = mkRev12 b t c e ist ir sa st ph sc sb sh ->
       s1' = writeSubTreeState NPMI s1
-              (setRevRA mr (mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh) ,, (st' ,, (mrq ,, (mrp ,, tt)))) ->
+              (setRevRA mr (mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh) ,, (st' ,, (mrq ,, (mrp ,, (getDefault (Option FullCapWithTag) ,, tt))))) ->
       msIdle st' = true -> rpIdle ph' = true ->
       g_revOff pcAddrInit g = RevEq -> accTakesHead (g_acc pcAddrInit g) = false ->
       optValid mrp = false -> PQ s1 -> DNA s1 -> optValid (sSecondA s2) = false ->
@@ -1115,12 +1129,12 @@ Section RevSteps.
         (setRevSA ms1 (mkRev8 b t c e ist ir (scanNext sa) st)) Zmod.zero ->
       exists s2', SemActions envS specActs s2 s2' /\ exists g', RELG g' s1' s2'.
   Proof.
-    intros g s1 s1' s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh st' ph' ms1
+    intros g s1 s1' s2 mr mst mrq mrp mrdy b t c e ist ir sa st ph sc sb sh st' ph' ms1
            Hg EM Ex E1 Hidle' Hph' Hoff Htk Hrp Hq Hdm Hsec Hfr Hspec.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp0 He Ha Hc Hd Hf Hs Hfrt Hw Hrk].
     destruct (rpIdle_excl _ Hph') as [Q1 [Q2 [Q3 Q4]]].
     assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh) ,,
-                               (st' ,, (mrq ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
+                               (st' ,, (mrq ,, (mrp ,, (getDefault (Option FullCapWithTag) ,, tt)))))) by (rewrite E1; apply iMem_write).
     assert (ER' : iRevA s1' = mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh).
     { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
     assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
@@ -1156,10 +1170,10 @@ Section RevSteps.
       + apply LatchRel_setRevS; [exact Hfr | exact Hl].
       + unfold AccessRel; cbn [g_acc g_revOff].
         unfold PortsQuiet, dmNotAccessing, revNotReading in *.
-        unfold iMemSt, iReadRp; rewrite EM'; cbn [Fst Snd].
+        unfold iMemSt, iReadRp, iRpReady; rewrite EM'; cbn [Fst Snd].
         unfold iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd].
         rewrite HP.
-        split; [exact Hidle' |]. split; [exact Hrp |]. split; [exact Hq |]. split; [reflexivity |].
+        split; [exact Hidle' |]. split; [exact Hrp |]. split; [reflexivity |]. split; [exact Hq |]. split; [reflexivity |].
         split; [rewrite E1; exact Hdm |]. split; [split; assumption | exact Hsec].
       + unfold RevokerRel; cbn [g_acc].
         unfold iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd].
@@ -1172,28 +1186,28 @@ Section RevSteps.
   (* --- 3g. WaitCapRp: the Cap Read Answered --- *)
 
   Lemma waitCapRp_facts :
-    forall g (s1 : IState) (s2 : SState) mr mst mrq mrp b t c e ist ir sa st ph sc sb sh,
+    forall g (s1 : IState) (s2 : SState) mr mst mrq mrp mrdy b t c e ist ir sa st ph sc sb sh,
       RELG g s1 s2 ->
-      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
+      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
       revOfRA mr = mkRev12 b t c e ist ir sa st ph sc sb sh ->
-      rpWaitCapRp ph = true -> msReadRpReady mst = true -> isReqRevoker mrq = true ->
-      g_acc pcAddrInit g = AccRevCap (RdReady (msReadRpReadyV mst)) /\
+      rpWaitCapRp ph = true -> optValid mrdy = true -> isReqRevoker mrq = true ->
+      g_acc pcAddrInit g = AccRevCap (RdReady (optData mrdy)) /\
       optValid mrp = false /\ PQ s1 /\ DNA s1 /\ g_revOff pcAddrInit g <> RevImplAhead /\
       optValid (sSecondA s2) = false /\ epochOdd e = true /\ scanDone sa st = false /\
-      (g_revOff pcAddrInit g = RevSpecAhead -> capNeedsCheck config (msReadRpReadyV mst) = false) /\
+      (g_revOff pcAddrInit g = RevSpecAhead -> capNeedsCheck config (optData mrdy) = false) /\
       (g_revOff pcAddrInit g <> RevSpecAhead ->
          lineKind implRegions (lineOf false (scanFull sa)) = Some true /\
-         msReadRpReadyV mst = memValAt pre post revBase revPfB revPfA initLine (sMemA s2) (scanFull sa) capSz).
+         optData mrdy = memValAt pre post revBase revPfB revPfA initLine (sMemA s2) (scanFull sa) capSz).
   Proof.
-    intros g s1 s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh Hg EM Ex Hph Hrdy Hreq.
+    intros g s1 s2 mr mst mrq mrp mrdy b t c e ist ir sa st ph sc sb sh Hg EM Ex Hph Hrdy Hreq.
     destruct Hg as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh) by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
     destruct (rpWaitCapRp_excl _ Hph) as [P0 [P2 [P3 P4]]].
-    assert (H1 : msReadRpReady (iMemStA s1) = true) by (unfold iMemSt; rewrite EM; exact Hrdy).
+    assert (H1 : optValid (iRpReadyA s1) = true) by (unfold iRpReady; rewrite EM; exact Hrdy).
     assert (H2 : isReqRevoker (iRequesterA s1) = true) by (unfold iRequester; rewrite EM; exact Hreq).
-    assert (Hacc : g_acc pcAddrInit g = AccRevCap (RdReady (msReadRpReadyV mst))).
+    assert (Hacc : g_acc pcAddrInit g = AccRevCap (RdReady (optData mrdy))).
     { destruct (AccessRel_rpReady_rev g s1 s2 Ha H1 H2) as [[Ea _] | [_ Hb]].
-      - unfold iMemSt in Ea; rewrite EM in Ea; exact Ea.
+      - unfold iRpReady in Ea; rewrite EM in Ea; exact Ea.
       - unfold iRevPhase in Hb; rewrite ER in Hb; cbn [mkRev12 Fst Snd] in Hb; rewrite P3 in Hb; discriminate Hb. }
     pose proof Ha as Ha'; unfold AccessRel, RdStageRel in Ha'; rewrite Hacc in Ha'; cbv beta iota zeta in Ha'.
     destruct Ha' as [[_ [_ [Hr3 Hr4]]] [_ [_ [Hdm0 [Hoff0 [Hsec0 _]]]]]].
@@ -1220,10 +1234,10 @@ Section RevSteps.
     apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
     rewrite iMem_read in Hm'.
     remember (iMemA s1) as m eqn:EM; symmetry in EM.
-    destruct m as [mr [mst [mrq [mrp []]]]].
+    destruct m as [mr [mst [mrq [mrp [mrdy []]]]]].
     remember (revOfRA mr) as x eqn:Ex; symmetry in Ex.
     destruct x as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh []]]]]]]]]]]]].
-    destruct (waitCapRp_char config pre post revBase revPfB revPfA _ mr mst mrq mrp m' _
+    destruct (waitCapRp_char config pre post revBase revPfB revPfA _ mr mst mrq mrp mrdy m' _
                 b t c e ist ir sa st ph sc sb sh Ex Hm')
       as [-> | [[Hph [Hrdy [Hreq [Hck [st' [ph' [-> [Hidle' Hph']]]]]]]]
               | [Hph [Hrdy [Hreq [Hck [st' [ph' [-> [Hidle' Hph']]]]]]]]]].
@@ -1232,7 +1246,7 @@ Section RevSteps.
       exists g; replace s1' with s1; [exact Hg |].
       rewrite E1; transitivity (writeSubTreeState NPMI s1 (iMemA s1)); [reflexivity | f_equal; exact EM].
     - (* a check is needed: the cap and its base are saved; the spec stutters *)
-      destruct (waitCapRp_facts g s1 s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh Hg EM Ex Hph Hrdy Hreq)
+      destruct (waitCapRp_facts g s1 s2 mr mst mrq mrp mrdy b t c e ist ir sa st ph sc sb sh Hg EM Ex Hph Hrdy Hreq)
         as [Hacc [Hrp0 [Hq0 [Hdm0 [Hoff0 [Hsec0 [Hodd [Hnd [Hsa Hnsa]]]]]]]]].
       assert (Hoff : g_revOff pcAddrInit g = RevEq).
       { destruct (g_revOff pcAddrInit g) eqn:Eo.
@@ -1244,10 +1258,10 @@ Section RevSteps.
       pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
       assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh)
         by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
-      assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir sa st ph' (msReadRpReadyV mst)
-                                                 (capBase (msReadRpReadyV mst)) sh) ,,
-                                 (st' ,, (mrq ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
-      assert (ER' : iRevA s1' = mkRev12 b t c e ist ir sa st ph' (msReadRpReadyV mst) (capBase (msReadRpReadyV mst)) sh).
+      assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir sa st ph' (optData mrdy)
+                                                 (capBase (optData mrdy)) sh) ,,
+                                 (st' ,, (mrq ,, (mrp ,, (getDefault (Option FullCapWithTag) ,, tt)))))) by (rewrite E1; apply iMem_write).
+      assert (ER' : iRevA s1' = mkRev12 b t c e ist ir sa st ph' (optData mrdy) (capBase (optData mrdy)) sh).
       { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
       assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
       { intros P; rewrite !iRegions_eq, EM', EM; cbn [Fst]; unfold setRevR; apply AllPorts_upd; exact I. }
@@ -1269,10 +1283,10 @@ Section RevSteps.
         * exact Hm.
       + unfold AccessRel; cbn [g_acc g_revOff].
         unfold PortsQuiet, dmNotAccessing, revNotReading in *.
-        unfold iMemSt, iReadRp; rewrite EM'; cbn [Fst Snd].
+        unfold iMemSt, iReadRp, iRpReady; rewrite EM'; cbn [Fst Snd].
         unfold iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd].
         rewrite HP.
-        split; [exact Hidle' |]. split; [exact Hrp0 |]. split; [exact Hq0 |]. split; [exact Hoff |].
+        split; [exact Hidle' |]. split; [exact Hrp0 |]. split; [reflexivity |]. split; [exact Hq0 |]. split; [exact Hoff |].
         split; [rewrite E1; exact Hdm0 |]. split; [split; assumption | exact Hsec0].
       + unfold RevokerRel; cbn [g_acc].
         unfold iRevArch, iRevPhase, iRevScanCap, iRevScanBase, iRevSnoopHit, iScanAddr; rewrite ER'; cbn [mkRev12 Fst Snd].
@@ -1281,7 +1295,7 @@ Section RevSteps.
         split; [intros _ _; symmetry; exact Hv |].
         split; [intros Hc'; rewrite Q4 in Hc'; discriminate Hc' | exact I].
     - (* no check: the impl moves on *)
-      destruct (waitCapRp_facts g s1 s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh Hg EM Ex Hph Hrdy Hreq)
+      destruct (waitCapRp_facts g s1 s2 mr mst mrq mrp mrdy b t c e ist ir sa st ph sc sb sh Hg EM Ex Hph Hrdy Hreq)
         as [Hacc [Hrp0 [Hq0 [Hdm0 [Hoff0 [Hsec0 [Hodd [Hnd [Hsa Hnsa]]]]]]]]].
       pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
       assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh)
@@ -1302,13 +1316,13 @@ Section RevSteps.
                     (lineUnique_spec _)
                     (fun Hc' => ltac:(exfalso; rewrite <- Hv in Hc'; rewrite Hc' in Hck; discriminate Hck)))
           as [ms1 [Hfr1 Hsem1]].
-        apply (scan_commit g s1 s1' s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh st' ph' ms1
+        apply (scan_commit g s1 s1' s2 mr mst mrq mrp mrdy b t c e ist ir sa st ph sc sb sh st' ph' ms1
                  Hg EM Ex E1 Hidle' Hph' Eo); [rewrite Hacc; reflexivity | exact Hrp0 | exact Hq0 | exact Hdm0
                                              | exact Hsec0 | exact Hfr1 | exact Hsem1].
       + exfalso; exact (Hoff0 eq_refl).
       + (* the spec took the position's step already: the offset closes *)
         assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh) ,,
-                                   (st' ,, (mrq ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
+                                   (st' ,, (mrq ,, (mrp ,, (getDefault (Option FullCapWithTag) ,, tt)))))) by (rewrite E1; apply iMem_write).
         assert (ER' : iRevA s1' = mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh).
         { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
         assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
@@ -1335,10 +1349,10 @@ Section RevSteps.
           -- exact Hm.
         * unfold AccessRel; cbn [g_acc g_revOff].
           unfold PortsQuiet, dmNotAccessing, revNotReading in *.
-          unfold iMemSt, iReadRp; rewrite EM'; cbn [Fst Snd].
+          unfold iMemSt, iReadRp, iRpReady; rewrite EM'; cbn [Fst Snd].
           unfold iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd].
           rewrite HP.
-          split; [exact Hidle' |]. split; [exact Hrp0 |]. split; [exact Hq0 |]. split; [reflexivity |].
+          split; [exact Hidle' |]. split; [exact Hrp0 |]. split; [reflexivity |]. split; [exact Hq0 |]. split; [reflexivity |].
           split; [rewrite E1; exact Hdm0 |]. split; [split; assumption | exact Hsec0].
         * unfold RevokerRel; cbn [g_acc].
           unfold iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd].
@@ -1351,29 +1365,29 @@ Section RevSteps.
   (* --- 3h. WaitRevBitRp: the Rev-Bit Read Answered --- *)
 
   Lemma waitRevBitRp_facts :
-    forall g (s1 : IState) (s2 : SState) mr mst mrq mrp b t c e ist ir sa st ph sc sb sh,
+    forall g (s1 : IState) (s2 : SState) mr mst mrq mrp mrdy b t c e ist ir sa st ph sc sb sh,
       RELG g s1 s2 ->
-      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
+      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
       revOfRA mr = mkRev12 b t c e ist ir sa st ph sc sb sh ->
-      rpWaitRevBitRp ph = true -> msReadRpReady mst = true -> isReqRevoker mrq = true ->
-      g_acc pcAddrInit g = AccRevBit (RdReady (msReadRpReadyV mst)) /\
+      rpWaitRevBitRp ph = true -> optValid mrdy = true -> isReqRevoker mrq = true ->
+      g_acc pcAddrInit g = AccRevBit (RdReady (optData mrdy)) /\
       optValid mrp = false /\ PQ s1 /\ DNA s1 /\ g_revOff pcAddrInit g = RevEq /\
       optValid (sSecondA s2) = false /\ epochOdd e = true /\ scanDone sa st = false /\
       capNeedsCheck config sc = true /\ sb = capBase sc /\
       lineKind implRegions (lineOf false (scanFull sa)) = Some true /\
       (sh = false -> memValAt pre post revBase revPfB revPfA initLine (sMemA s2) (scanFull sa) capSz = sc) /\
-      revBitOfVal config sb (msReadRpReadyV mst) = revBitOf config pre post revBase revPfB revPfA initLine (sMemA s2) sb.
+      revBitOfVal config sb (optData mrdy) = revBitOf config pre post revBase revPfB revPfA initLine (sMemA s2) sb.
   Proof.
-    intros g s1 s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh Hg EM Ex Hph Hrdy Hreq.
+    intros g s1 s2 mr mst mrq mrp mrdy b t c e ist ir sa st ph sc sb sh Hg EM Ex Hph Hrdy Hreq.
     destruct Hg as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh) by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
     destruct (rpWaitRevBitRp_excl _ Hph) as [P0 [P1 [P2 P4]]].
-    assert (H1 : msReadRpReady (iMemStA s1) = true) by (unfold iMemSt; rewrite EM; exact Hrdy).
+    assert (H1 : optValid (iRpReadyA s1) = true) by (unfold iRpReady; rewrite EM; exact Hrdy).
     assert (H2 : isReqRevoker (iRequesterA s1) = true) by (unfold iRequester; rewrite EM; exact Hreq).
-    assert (Hacc : g_acc pcAddrInit g = AccRevBit (RdReady (msReadRpReadyV mst))).
+    assert (Hacc : g_acc pcAddrInit g = AccRevBit (RdReady (optData mrdy))).
     { destruct (AccessRel_rpReady_rev g s1 s2 Ha H1 H2) as [[_ Hb] | [Ea _]].
       - unfold iRevPhase in Hb; rewrite ER in Hb; cbn [mkRev12 Fst Snd] in Hb; rewrite P1 in Hb; discriminate Hb.
-      - unfold iMemSt in Ea; rewrite EM in Ea; exact Ea. }
+      - unfold iRpReady in Ea; rewrite EM in Ea; exact Ea. }
     pose proof Ha as Ha'; unfold AccessRel, RdStageRel in Ha'; rewrite Hacc in Ha'; cbv beta iota zeta in Ha'.
     destruct Ha' as [[_ [_ [Hr3 Hr4]]] [_ [_ [Hdm0 [Hoff0 [Hsec0 _]]]]]].
     unfold RevokerRel in Hrk; destruct Hrk as [K1 [K2 [K3 [_ K5]]]].
@@ -1401,17 +1415,17 @@ Section RevSteps.
     apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
     rewrite iMem_read in Hm'.
     remember (iMemA s1) as m eqn:EM; symmetry in EM.
-    destruct m as [mr [mst [mrq [mrp []]]]].
+    destruct m as [mr [mst [mrq [mrp [mrdy []]]]]].
     remember (revOfRA mr) as x eqn:Ex; symmetry in Ex.
     destruct x as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh []]]]]]]]]]]]].
-    destruct (waitRevBitRp_char config pre post revBase revPfB revPfA _ mr mst mrq mrp m' _
+    destruct (waitRevBitRp_char config pre post revBase revPfB revPfA _ mr mst mrq mrp mrdy m' _
                 b t c e ist ir sa st ph sc sb sh Ex Hm')
       as [-> | [Hph [Hrdy [Hreq [st' [ph' [Hidle' Hcases]]]]]]].
     - (* nothing changes *)
       exists s2; split; [apply NilAction; reflexivity |].
       exists g; replace s1' with s1; [exact Hg |].
       rewrite E1; transitivity (writeSubTreeState NPMI s1 (iMemA s1)); [reflexivity | f_equal; exact EM].
-    - destruct (waitRevBitRp_facts g s1 s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh Hg EM Ex Hph Hrdy Hreq)
+    - destruct (waitRevBitRp_facts g s1 s2 mr mst mrq mrp mrdy b t c e ist ir sa st ph sc sb sh Hg EM Ex Hph Hrdy Hreq)
         as [Hacc [Hrp0 [Hq0 [Hdm0 [Hoff [Hsec0 [Hodd [Hnd [Hnc [Hsb [Hlk [Hmv Hrbv]]]]]]]]]]]].
       pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
       assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh)
@@ -1419,7 +1433,7 @@ Section RevSteps.
       destruct Hcases as [[Hsh [Hph' ->]] | [[Hsh [Hrb [Hph' ->]]] | [Hsh [Hrb [Hph' ->]]]]].
       + (* a store hit the position: it is retried; the spec stutters *)
         assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir sa st ph' sc sb sh) ,,
-                                   (st' ,, (mrq ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
+                                   (st' ,, (mrq ,, (mrp ,, (getDefault (Option FullCapWithTag) ,, tt)))))) by (rewrite E1; apply iMem_write).
         assert (ER' : iRevA s1' = mkRev12 b t c e ist ir sa st ph' sc sb sh).
         { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
         assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
@@ -1442,10 +1456,10 @@ Section RevSteps.
           -- exact Hm.
         * unfold AccessRel; cbn [g_acc g_revOff].
           unfold PortsQuiet, dmNotAccessing, revNotReading in *.
-          unfold iMemSt, iReadRp; rewrite EM'; cbn [Fst Snd].
+          unfold iMemSt, iReadRp, iRpReady; rewrite EM'; cbn [Fst Snd].
           unfold iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd].
           rewrite HP.
-          split; [exact Hidle' |]. split; [exact Hrp0 |]. split; [exact Hq0 |]. split; [exact Hoff |].
+          split; [exact Hidle' |]. split; [exact Hrp0 |]. split; [reflexivity |]. split; [exact Hq0 |]. split; [exact Hoff |].
           split; [rewrite E1; exact Hdm0 |]. split; [split; assumption | exact Hsec0].
         * unfold RevokerRel; cbn [g_acc].
           unfold iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd].
@@ -1455,7 +1469,7 @@ Section RevSteps.
           split; [intros Hc'; discriminate Hc' | exact I].
       + (* the rev bit is set: the untagged cap is to be written; the spec stutters *)
         assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir sa st ph' sc sb sh) ,,
-                                   (st' ,, (mrq ,, (mrp ,, tt))))) by (rewrite E1; apply iMem_write).
+                                   (st' ,, (mrq ,, (mrp ,, (getDefault (Option FullCapWithTag) ,, tt)))))) by (rewrite E1; apply iMem_write).
         assert (ER' : iRevA s1' = mkRev12 b t c e ist ir sa st ph' sc sb sh).
         { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
         assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).
@@ -1478,10 +1492,10 @@ Section RevSteps.
           -- exact Hm.
         * unfold AccessRel; cbn [g_acc g_revOff].
           unfold PortsQuiet, dmNotAccessing, revNotReading in *.
-          unfold iMemSt, iReadRp; rewrite EM'; cbn [Fst Snd].
+          unfold iMemSt, iReadRp, iRpReady; rewrite EM'; cbn [Fst Snd].
           unfold iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd].
           rewrite HP.
-          split; [exact Hidle' |]. split; [exact Hrp0 |]. split; [exact Hq0 |]. split; [exact Hoff |].
+          split; [exact Hidle' |]. split; [exact Hrp0 |]. split; [reflexivity |]. split; [exact Hq0 |]. split; [exact Hoff |].
           split; [rewrite E1; exact Hdm0 |]. split; [split; assumption | exact Hsec0].
         * unfold RevokerRel; cbn [g_acc].
           unfold iRevArch, iRevPhase, iRevScanCap, iRevScanBase, iRevSnoopHit, iScanAddr; rewrite ER'; cbn [mkRev12 Fst Snd].
@@ -1504,7 +1518,7 @@ Section RevSteps.
                     (fun _ => ltac:(rewrite (Hmv Hsh); split; [exact (revTab_needsCheck sc Hnc) |
                                       split; [apply lineUnique_spec | rewrite <- Hsb, <- Hrbv; exact Hrb]])))
           as [ms1 [Hfr1 Hsem1]].
-        apply (scan_commit g s1 s1' s2 mr mst mrq mrp b t c e ist ir sa st ph sc sb sh st' ph' ms1
+        apply (scan_commit g s1 s1' s2 mr mst mrq mrp mrdy b t c e ist ir sa st ph sc sb sh st' ph' ms1
                  Hg EM Ex E1 Hidle' Hph' Hoff); [rewrite Hacc; reflexivity | exact Hrp0 | exact Hq0 | exact Hdm0
                                                 | exact Hsec0 | exact Hfr1 | exact Hsem1].
   Qed.

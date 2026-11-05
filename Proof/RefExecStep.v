@@ -163,7 +163,7 @@ Section ExecStep.
                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
                  addr size pkt st s1 -> False.
   Proof.
-    intros addr size pkt [b | b] s1 Hms Hnp [_ Hwr].
+    intros addr size pkt [b | b] s1 Hms Hnp [_ [_ Hwr]].
     - destruct Hwr as [Hw _]; rewrite Hms in Hw; discriminate Hw.
     - destruct Hwr as [_ [Hk Hp]].
       pose proof (noPortWriteB_false (lineOf b addr) (buildW b addr pkt size) implRegions (iRegionsA s1) Hk) as Hf.
@@ -197,7 +197,7 @@ Section ExecStep.
     { unfold AccessRel in Ha.
       destruct (g_acc pcAddrInit g) as [| addr size pkt st | ld pkt0 st | rc st | st | st | addr pkt st];
         cbn [accTakesHead] in *.
-      - split; [exact (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 Ha)))))) | reflexivity].
+      - split; [exact (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 Ha))))))) | reflexivity].
       - exfalso; destruct Ha as [Hwr _]; exact (WrStageRel_false addr size pkt st s1 Hms Hnp Hwr).
       - exfalso; destruct Ha as [_ [_ [H _]]]; rewrite Hlrp in H; discriminate H.
       - exfalso; destruct Ha as [_ [_ [H _]]]; rewrite Hrrp in H; discriminate H.
@@ -262,7 +262,7 @@ Section ExecStep.
     - unfold EagerRel in *; cbn [g_chain]; exact He.
     - eapply AccessRel_frame with (s1 := s1) (s2 := s2);
         try reflexivity;
-        try (unfold iMemSt, iRequester, iReadRp, iDmSt, iRevPhase, iRev, iRegions; rewrite ?Emem, ?Edm; reflexivity);
+        try (unfold iMemSt, iRequester, iReadRp, iRdBufs, iDmSt, iRevPhase, iRev, iRegions; rewrite ?Emem, ?Edm; reflexivity);
         exact Ha.
     - unfold CnwbRel in *; cbn [g_cnwb g_chain g_acc]; unfold iDmSt in *; rewrite Edm; exact Hc.
     - unfold DmQueueRel, iDmBuf in *; cbn [g_chain g_acc]; rewrite Edm; exact Hd.

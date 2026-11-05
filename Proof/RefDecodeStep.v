@@ -208,7 +208,7 @@ Section DecodeStep.
     split.
     { eapply AccessRel_frame with (s1 := s1) (s2 := s2);
         try reflexivity;
-        try (unfold iMemSt, iRequester, iReadRp, iDmSt, iRevPhase, iRev, iRegions; rewrite ?Emem, ?Edm; reflexivity);
+        try (unfold iMemSt, iRequester, iReadRp, iRdBufs, iDmSt, iRevPhase, iRev, iRegions; rewrite ?Emem, ?Edm; reflexivity);
         exact Ha. }
     split; [unfold CnwbRel in *; unfold iDmSt in *; rewrite Edm; exact Hc |].
     split; [unfold DmQueueRel, iDmBuf in *; rewrite Edm; exact Hd |].

@@ -211,6 +211,8 @@ Section RevCapDev.
                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iMemStA := (iMemSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+  Local Abbreviation iRpReadyA := (iRpReady pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iReadRpA := (iReadRp pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                    mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iDmStA := (iDmSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -274,9 +276,9 @@ Section RevCapDev.
   (* The revoker's cap read of a CustomMem or unmapped line: the spec revoker takes the
    * position's step on the same device read *)
   Lemma revCapDev :
-    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mr' st' mrp' env res,
-      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-      s1' = writeSubTreeState NPMI s1 (mr' ,, (st' ,, (mrq ,, (mrp' ,, tt)))) ->
+    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mrdy mr' st' mrp' env res,
+      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
+      s1' = writeSubTreeState NPMI s1 (mr' ,, (st' ,, (mrq ,, (mrp' ,, (mrdy ,, tt))))) ->
       g_acc pcAddrInit g = AccRevCap (RdPend false) ->
       lineKind implRegions (lineOf false (iScanAddrA s1)) <> Some true ->
       SemAction env (@implRegionsLineReadRq type implRegions (rdLineOf false (iScanAddrA s1))
@@ -288,10 +290,10 @@ Section RevCapDev.
       RELG g s1 s2 ->
       exists s2', SemActions envS specActs s2 s2' /\ REL s1' s2'.
   Proof.
-    intros g s1 s1' s2 mr mst mrq mrp mr' st' mrp' env res EM E1 Eacc Hk Hreg Hrt Hg.
+    intros g s1 s1' s2 mr mst mrq mrp mrdy mr' st' mrp' env res EM E1 Eacc Hk Hreg Hrt Hg.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha; unfold RdStageRel in Ha; cbv beta iota zeta in Ha.
-    destruct Ha as [[Hrq [_ [Hrp0 Hq]]] [Hreq [Hwc0 [Hdna [Hoff [Hsec _]]]]]].
+    destruct Ha as [[Hrq [_ [Hrp0 [Hrdy0 Hq]]]] [Hreq [Hwc0 [Hdna [Hoff [Hsec _]]]]]].
     assert (Hmr : iRegionsA s1 = mr) by (unfold iRegions; rewrite EM; reflexivity).
     destruct (iRevA s1) as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh []]]]]]]]]]]]] eqn:Ex.
     pose proof Hwc0 as Hwc; unfold iRevPhase in Hwc; rewrite Ex in Hwc; cbn [Fst Snd] in Hwc.
@@ -365,11 +367,13 @@ Section RevCapDev.
     - unfold AccessRel; cbn [g_acc g_revOff]; unfold RdStageRel; cbv beta iota zeta.
       assert (Emst : iMemStA s1' = st') by (rewrite E1; reflexivity).
       assert (Erp1 : iReadRpA s1' = (rpv ,, (true ,, tt))) by (rewrite E1; reflexivity).
+      assert (Erdy1 : optValid (iRpReadyA s1') = false)
+        by (rewrite E1; unfold iRpReady in Hrdy0 |- *; rewrite EM in Hrdy0; exact Hrdy0).
       assert (Erq1 : iRequesterA s1' = iRequesterA s1) by (rewrite E1; unfold iRequester; rewrite EM; reflexivity).
       assert (Edm1 : iDmStA s1' = iDmStA s1) by (rewrite E1; reflexivity).
       unfold dmNotAccessing in Hdna |- *.
       rewrite Emst, Erp1, Erq1, Edm1, Eph, Escan, Esc, Ess.
-      refine (conj (conj (conj Hsent1 HsV1) (conj eq_refl HPQ)) (conj Hreq (conj Hwc0 (conj Hdna (conj _ (conj Hsec eq_refl)))))).
+      refine (conj (conj (conj Hsent1 HsV1) (conj eq_refl (conj Erdy1 HPQ))) (conj Hreq (conj Hwc0 (conj Hdna (conj _ (conj Hsec eq_refl)))))).
       discriminate.
     - apply (revDevA g _ s1 s1' s2 s2' HK Hlc2); [| exact Hrk].
       unfold RevAccRel; cbn [g_acc]; unfold RevCapOK; cbn [g_revOff].

@@ -153,14 +153,14 @@ Section MemLineRpPort.
   (* `implMemLineRpPort port`: with `readRp` full nothing changes; otherwise the port runs on the
    * regions and a valid output fills `readRp` *)
   Lemma memLineRpPort_char :
-    forall (port : Action type (implRegionsTree regions) (Option LineReadRp)) env mr mst mrq mrp m' v,
-      SemAction env (@implMemLineRpPort regions type port) (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) m' v ->
-      (optValid mrp = true /\ m' = (mr ,, (mst ,, (mrq ,, (mrp ,, tt))))) \/
+    forall (port : Action type (implRegionsTree regions) (Option LineReadRp)) env mr mst mrq mrp mrdy m' v,
+      SemAction env (@implMemLineRpPort regions type port) (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) m' v ->
+      (optValid mrp = true /\ m' = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt)))))) \/
       (optValid mrp = false /\ exists mr' o,
-         SemAction (subEnv child0Path env (mr ,, (mst ,, (mrq ,, (mrp ,, tt))))) port mr mr' o /\
-         m' = (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, tt))))).
+         SemAction (subEnv child0Path env (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt)))))) port mr mr' o /\
+         m' = (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, (mrdy ,, tt)))))).
   Proof.
-    intros port env mr mst mrq mrp m' v H.
+    intros port env mr mst mrq mrp mrdy m' v H.
     rewrite SemAction_iff_evalActionPropGen in H.
     unfold implMemLineRpPort in H; cbn [evalActionPropGen] in H.
     mem_cbn H.
@@ -512,17 +512,17 @@ Section ReadRpPorts.
       In act (@readRpPorts pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions type) ->
       SemAction envI act s1 s1' Zmod.zero ->
-      forall mr mst mrq mrp, iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
+      forall mr mst mrq mrp mrdy, iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
       (optValid mrp = true /\ s1' = s1) \/
       (optValid mrp = false /\ exists mr' o, DataRpPortStepL initLine fwcs implRegions mr mr' o /\
-         s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, tt))))).
+         s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, (mrdy ,, tt)))))).
   Proof.
-    intros act s1 s1' Hin Hsem mr mst mrq mrp EM.
+    intros act s1 s1' Hin Hsem mr mst mrq mrp mrdy EM.
     unfold readRpPorts, implMemCollectLineReadRpPorts in Hin.
     rewrite map_map in Hin; apply in_map_iff in Hin as [f [<- Hf]]; cbv beta in Hsem.
     apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
     rewrite iMem_read2, EM in Hm'.
-    destruct (memLineRpPort_char implRegions (f type) _ mr mst mrq mrp m' _ Hm') as [[Hv Em'] | [Hv [mr' [o [Hp Em']]]]].
+    destruct (memLineRpPort_char implRegions (f type) _ mr mst mrq mrp mrdy m' _ Hm') as [[Hv Em'] | [Hv [mr' [o [Hp Em']]]]].
     - left; split; [exact Hv |].
       subst m'; rewrite <- EM in E1; rewrite E1; reflexivity.
     - right; split; [exact Hv |].
@@ -588,13 +588,13 @@ Section ReadRpPorts.
 
   (* No response taken (no valid output): the spec stutters *)
   Lemma readRpPorts_noValid :
-    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mr' o,
-      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-      s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, tt)))) ->
+    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mrdy mr' o,
+      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
+      s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, (mrdy ,, tt))))) ->
       DataRpPortStepL initLine fwcs implRegions mr mr' o -> optValid o = false ->
       RELG g s1 s2 -> RELG g s1' s2.
   Proof.
-    intros g s1 s1' s2 mr mst mrq mrp mr' o EM E1 Hst Hv Hg.
+    intros g s1 s1' s2 mr mst mrq mrp mrdy mr' o EM E1 Hst Hv Hg.
     rewrite Hv in E1; cbv iota in E1.
     assert (Es1 : s1' = UPD s1 mr') by (rewrite E1, EM; reflexivity).
     assert (Emr : iRegionsA s1 = mr) by (unfold iRegions; rewrite EM; reflexivity).
@@ -721,6 +721,8 @@ Section ReadRpPorts.
                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iRequesterA := (iRequester pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+  Local Abbreviation iRpReadyA := (iRpReady pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iReadRpA := (iReadRp pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iDmStA := (iDmSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -755,16 +757,16 @@ Section ReadRpPorts.
 
   (* The impl after a response for line `L` was taken *)
   Lemma taken_impl :
-    forall (s1 s1' : IState) mr mst mrq mrp mr' o L,
-      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-      s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, tt)))) ->
+    forall (s1 s1' : IState) mr mst mrq mrp mrdy mr' o L,
+      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
+      s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, (mrdy ,, tt))))) ->
       DataRpPortStepL initLine fwcs implRegions (iRegionsA s1) mr' o -> optValid o = true -> PRO L s1 ->
       iRevA s1' = iRevA s1 /\ iMemStA s1' = iMemStA s1 /\ iRequesterA s1' = iRequesterA s1 /\
-      iDmStA s1' = iDmStA s1 /\ iReadRpA s1' = (optData o ,, (true ,, tt)) /\ PQ s1'.
+      iDmStA s1' = iDmStA s1 /\ iReadRpA s1' = (optData o ,, (true ,, tt)) /\ iRpReadyA s1' = iRpReadyA s1 /\ PQ s1'.
   Proof.
-    intros s1 s1' mr mst mrq mrp mr' o L EM E1 Hst Hv Hout.
+    intros s1 s1' mr mst mrq mrp mrdy mr' o L EM E1 Hst Hv Hout.
     rewrite Hv in E1; cbv iota in E1.
-    split; [| split; [| split; [| split; [| split]]]].
+    split; [| split; [| split; [| split; [| split; [| split]]]]].
     - rewrite E1; change (implRevState pre post revBase revPfB revPfA mr' =
                           implRevState pre post revBase revPfB revPfA (iRegionsA s1)).
       unfold implRevState; rewrite (regionStateAt_dataRpStep initLine _ _ _ _ _ _ _ _ Hst); [reflexivity | exact I].
@@ -772,6 +774,7 @@ Section ReadRpPorts.
     - rewrite E1; unfold iRequester; rewrite EM; reflexivity.
     - rewrite E1; reflexivity.
     - rewrite E1; clear - Hv; destruct o as [d [b []]]; cbn in Hv; subst b; reflexivity.
+    - rewrite E1; unfold iRpReady; rewrite EM; reflexivity.
     - rewrite E1; unfold PortsQuiet.
       change (AllPorts (fun r y => optValid (extPortRq r y) = false /\ extDataQuiet r y) implRegions mr').
       exact (quiet_dataRpTaken initLine implRegions fwcs _ _ _ L
@@ -793,18 +796,18 @@ Section ReadRpPorts.
 
   (* The revoker's cap read is answered: the spec stutters, the value is the spec's at scanAddr *)
   Lemma readRpPorts_revCap :
-    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mr' o,
-      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-      s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, tt)))) ->
+    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mrdy mr' o,
+      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
+      s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, (mrdy ,, tt))))) ->
       DataRpPortStepL initLine fwcs implRegions (iRegionsA s1) mr' o -> optValid o = true ->
       g_acc pcAddrInit g = AccRevCap (RdOut false) ->
       RELG g s1 s2 -> RELG (gWithAcc pcAddrInit g (AccRevCap (RdArrived false (optData o)))) s1' s2.
   Proof.
-    intros g s1 s1' s2 mr mst mrq mrp mr' o EM E1 Hst Hv Eacc Hg.
+    intros g s1 s1' s2 mr mst mrq mrp mrdy mr' o EM E1 Hst Hv Eacc Hg.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha; unfold RdStageRel in Ha; cbv beta iota zeta in Ha.
-    destruct Ha as [[Hsent [_ [Hlk Hout]]] [Hreq [Hph [Hdna [Hoff [Hsec _]]]]]].
-    destruct (taken_impl s1 s1' mr mst mrq mrp mr' o _ EM E1 Hst Hv Hout) as [ER [Est [Ereq [Edm [Erp' HPQ]]]]].
+    destruct Ha as [[Hsent [_ [Hrdy0 [Hlk Hout]]]] [Hreq [Hph [Hdna [Hoff [Hsec _]]]]]].
+    destruct (taken_impl s1 s1' mr mst mrq mrp mrdy mr' o _ EM E1 Hst Hv Hout) as [ER [Est [Ereq [Edm [Erp' [Erdy' HPQ]]]]]].
     pose proof (rp_spec_content g s1 s2 mr' o _ Hm Hout Hst Hv) as Hcont.
     rewrite Hv in E1; cbv iota in E1.
     apply (RefRelG_dataRp_frame g _ s1 s1' s2 _ E1); try reflexivity.
@@ -812,8 +815,8 @@ Section ReadRpPorts.
     - intros P HT HN; rewrite E1; exact (AllPorts_dataRpStep P HT HN _ _ _ _ _ Hst).
     - exact (MemRelC_dataRpStep g s1 s1' s2 mr' _ o E1 Hst Hm).
     - unfold AccessRel, RdStageRel, dmNotAccessing, iRevPhase, iScanAddr in *; cbn [gWithAcc g_acc g_revOff].
-      rewrite ER, Est, Ereq, Edm, Erp'.
-      refine (conj (conj Hsent (conj eq_refl HPQ)) (conj Hreq (conj Hph (conj Hdna (conj _ (conj Hsec eq_refl)))))).
+      rewrite ER, Est, Ereq, Edm, Erp', Erdy'.
+      refine (conj (conj Hsent (conj eq_refl (conj Hrdy0 HPQ))) (conj Hreq (conj Hph (conj Hdna (conj _ (conj Hsec eq_refl)))))).
       rewrite Hoff; discriminate.
     - unfold RevokerRel, RevAccRel, RevCapOK in *; cbn [gWithAcc g_acc g_revOff].
       unfold iRevArch, iRevPhase, iRevScanCap, iRevScanBase, iRevSnoopHit, iScanAddr in *.
@@ -828,18 +831,18 @@ Section ReadRpPorts.
 
   (* The revoker's rev-bit read is answered: the spec stutters, the value is the spec's *)
   Lemma readRpPorts_revBit :
-    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mr' o,
-      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-      s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, tt)))) ->
+    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mrdy mr' o,
+      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
+      s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, (mrdy ,, tt))))) ->
       DataRpPortStepL initLine fwcs implRegions (iRegionsA s1) mr' o -> optValid o = true ->
       g_acc pcAddrInit g = AccRevBit (RdOut false) ->
       RELG g s1 s2 -> RELG (gWithAcc pcAddrInit g (AccRevBit (RdArrived false (optData o)))) s1' s2.
   Proof.
-    intros g s1 s1' s2 mr mst mrq mrp mr' o EM E1 Hst Hv Eacc Hg.
+    intros g s1 s1' s2 mr mst mrq mrp mrdy mr' o EM E1 Hst Hv Eacc Hg.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha; unfold RdStageRel in Ha; cbv beta iota zeta in Ha.
-    destruct Ha as [[Hsent [_ [Hlk Hout]]] [Hreq [Hph [Hdna [Hoff [Hsec _]]]]]].
-    destruct (taken_impl s1 s1' mr mst mrq mrp mr' o _ EM E1 Hst Hv Hout) as [ER [Est [Ereq [Edm [Erp' HPQ]]]]].
+    destruct Ha as [[Hsent [_ [Hrdy0 [Hlk Hout]]]] [Hreq [Hph [Hdna [Hoff [Hsec _]]]]]].
+    destruct (taken_impl s1 s1' mr mst mrq mrp mrdy mr' o _ EM E1 Hst Hv Hout) as [ER [Est [Ereq [Edm [Erp' [Erdy' HPQ]]]]]].
     pose proof (rp_spec_content g s1 s2 mr' o _ Hm Hout Hst Hv) as Hcont.
     rewrite Hv in E1; cbv iota in E1.
     apply (RefRelG_dataRp_frame g _ s1 s1' s2 _ E1); try reflexivity.
@@ -847,8 +850,8 @@ Section ReadRpPorts.
     - intros P HT HN; rewrite E1; exact (AllPorts_dataRpStep P HT HN _ _ _ _ _ Hst).
     - exact (MemRelC_dataRpStep g s1 s1' s2 mr' _ o E1 Hst Hm).
     - unfold AccessRel, RdStageRel, dmNotAccessing, iRevPhase, iRevScanBase in *; cbn [gWithAcc g_acc g_revOff].
-      rewrite ER, Est, Ereq, Edm, Erp'.
-      exact (conj (conj Hsent (conj eq_refl HPQ)) (conj Hreq (conj Hph (conj Hdna (conj Hoff (conj Hsec eq_refl)))))).
+      rewrite ER, Est, Ereq, Edm, Erp', Erdy'.
+      exact (conj (conj Hsent (conj eq_refl (conj Hrdy0 HPQ))) (conj Hreq (conj Hph (conj Hdna (conj Hoff (conj Hsec eq_refl)))))).
     - unfold RevokerRel, RevAccRel in *; cbn [gWithAcc g_acc g_revOff].
       unfold iRevArch, iRevPhase, iRevScanCap, iRevScanBase, iRevSnoopHit, iScanAddr in *.
       rewrite ER; rewrite Eacc in Hrk.
@@ -861,18 +864,18 @@ Section ReadRpPorts.
 
   (* dataMem's rev-byte read (`AccDmRev`) is answered: the spec stutters, the value is the spec's *)
   Lemma readRpPorts_dmRev :
-    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mr' o rc,
-      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-      s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, tt)))) ->
+    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mrdy mr' o rc,
+      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
+      s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, (mrdy ,, tt))))) ->
       DataRpPortStepL initLine fwcs implRegions (iRegionsA s1) mr' o -> optValid o = true ->
       g_acc pcAddrInit g = AccDmRev rc (RdOut false) ->
       RELG g s1 s2 -> RELG (gWithAcc pcAddrInit g (AccDmRev rc (RdArrived false (optData o)))) s1' s2.
   Proof.
-    intros g s1 s1' s2 mr mst mrq mrp mr' o rc EM E1 Hst Hv Eacc Hg.
+    intros g s1 s1' s2 mr mst mrq mrp mrdy mr' o rc EM E1 Hst Hv Eacc Hg.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha; unfold RdStageRel in Ha; cbv beta iota zeta in Ha.
-    destruct Ha as [[Hsent [_ [Hlk Hout]]] [Hreq [Hdr [Hdv [Hrnr [Hoff [Hsec [Hcn [_ [Hbr _]]]]]]]]]].
-    destruct (taken_impl s1 s1' mr mst mrq mrp mr' o _ EM E1 Hst Hv Hout) as [ER [Est [Ereq [Edm [Erp' HPQ]]]]].
+    destruct Ha as [[Hsent [_ [Hrdy0 [Hlk Hout]]]] [Hreq [Hdr [Hdv [Hrnr [Hoff [Hsec [Hcn [_ [Hbr _]]]]]]]]]].
+    destruct (taken_impl s1 s1' mr mst mrq mrp mrdy mr' o _ EM E1 Hst Hv Hout) as [ER [Est [Ereq [Edm [Erp' [Erdy' HPQ]]]]]].
     pose proof (rp_spec_content g s1 s2 mr' o _ Hm Hout Hst Hv) as Hcont.
     rewrite Hv in E1; cbv iota in E1.
     apply (RefRelG_dataRp_frame g _ s1 s1' s2 _ E1); try reflexivity.
@@ -880,8 +883,8 @@ Section ReadRpPorts.
     - intros P HT HN; rewrite E1; exact (AllPorts_dataRpStep P HT HN _ _ _ _ _ Hst).
     - exact (MemRelC_dataRpStep g s1 s1' s2 mr' _ o E1 Hst Hm).
     - unfold AccessRel, RdStageRel, revNotReading, iRevPhase in *; cbn [gWithAcc g_acc g_revOff g_cnwb].
-      rewrite ER, Est, Ereq, Edm, Erp'.
-      refine (conj (conj Hsent (conj eq_refl HPQ))
+      rewrite ER, Est, Ereq, Edm, Erp', Erdy'.
+      refine (conj (conj Hsent (conj eq_refl (conj Hrdy0 HPQ)))
                 (conj Hreq (conj Hdr (conj Hdv (conj Hrnr (conj Hoff (conj Hsec (conj Hcn (conj eq_refl (conj Hbr _)))))))))).
       unfold lineVal, memValAt; rewrite Hcont; reflexivity.
     - unfold RevokerRel, RevAccRel in *; cbn [gWithAcc g_acc g_revOff].
@@ -970,9 +973,9 @@ Section ReadRpPorts.
 
   (* `readRpPorts` refines the spec, given the commits of the load lines (`AccLoad .. (RdOut b)`) *)
   Theorem stepOK_readRpPorts_of :
-    (forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mr' o ld pkt0 b,
-       iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-       s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, tt)))) ->
+    (forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mrdy mr' o ld pkt0 b,
+       iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
+       s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, (mrdy ,, tt))))) ->
        DataRpPortStepL initLine fwcs implRegions (iRegionsA s1) mr' o -> optValid o = true ->
        g_acc pcAddrInit g = AccLoad ld pkt0 (RdOut b) -> RELG g s1 s2 ->
        exists s2', SemActions envS specActs s2 s2' /\ REL s1' s2') ->
@@ -983,8 +986,8 @@ Section ReadRpPorts.
   Proof.
     intros HL act Hin s1 s1' s2 Hsem [g Hg].
     remember (iMemA s1) as m eqn:EM; symmetry in EM.
-    destruct m as [mr [mst [mrq [mrp []]]]].
-    destruct (readRpPorts_mem act s1 s1' Hin Hsem mr mst mrq mrp EM) as [[_ E1] | [_ [mr' [o [Hst E1]]]]].
+    destruct m as [mr [mst [mrq [mrp [mrdy []]]]]].
+    destruct (readRpPorts_mem act s1 s1' Hin Hsem mr mst mrq mrp mrdy EM) as [[_ E1] | [_ [mr' [o [Hst E1]]]]].
     - exists s2; split; [apply NilAction; reflexivity | exists g; rewrite E1; exact Hg].
     - assert (Emr : iRegionsA s1 = mr) by (unfold iRegions; rewrite EM; reflexivity).
       assert (Hdec : optValid o = true \/ optValid o = false) by (destruct (optValid o); [left | right]; reflexivity).
@@ -992,14 +995,14 @@ Section ReadRpPorts.
       + rewrite <- Emr in Hst.
         pose proof Hg as Hg0; destruct Hg0 as [_ _ _ _ _ Ha _ _ _ _ _ _ _].
         destruct (AccessRel_rdOut g s1 s2 mr' o Ha Hst Hv) as [[ld [pkt0 [b Eacc]]] | [[rc Eacc] | [Eacc | Eacc]]].
-        * exact (HL g s1 s1' s2 mr mst mrq mrp mr' o ld pkt0 b EM E1 Hst Hv Eacc Hg).
+        * exact (HL g s1 s1' s2 mr mst mrq mrp mrdy mr' o ld pkt0 b EM E1 Hst Hv Eacc Hg).
         * exists s2; split; [apply NilAction; reflexivity |].
-          eexists; exact (readRpPorts_dmRev g s1 s1' s2 mr mst mrq mrp mr' o rc EM E1 Hst Hv Eacc Hg).
+          eexists; exact (readRpPorts_dmRev g s1 s1' s2 mr mst mrq mrp mrdy mr' o rc EM E1 Hst Hv Eacc Hg).
         * exists s2; split; [apply NilAction; reflexivity |].
-          eexists; exact (readRpPorts_revCap g s1 s1' s2 mr mst mrq mrp mr' o EM E1 Hst Hv Eacc Hg).
+          eexists; exact (readRpPorts_revCap g s1 s1' s2 mr mst mrq mrp mrdy mr' o EM E1 Hst Hv Eacc Hg).
         * exists s2; split; [apply NilAction; reflexivity |].
-          eexists; exact (readRpPorts_revBit g s1 s1' s2 mr mst mrq mrp mr' o EM E1 Hst Hv Eacc Hg).
+          eexists; exact (readRpPorts_revBit g s1 s1' s2 mr mst mrq mrp mrdy mr' o EM E1 Hst Hv Eacc Hg).
       + exists s2; split; [apply NilAction; reflexivity |].
-        exists g; exact (readRpPorts_noValid g s1 s1' s2 mr mst mrq mrp mr' o EM E1 Hst Hv Hg).
+        exists g; exact (readRpPorts_noValid g s1 s1' s2 mr mst mrq mrp mrdy mr' o EM E1 Hst Hv Hg).
   Qed.
 End ReadRpPorts.

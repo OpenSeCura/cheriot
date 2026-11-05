@@ -85,6 +85,8 @@ Section ReadRqStep.
                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iMemStA := (iMemSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+  Local Abbreviation iRpReadyA := (iRpReady pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iReadRpA := (iReadRp pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                    mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iDmStA := (iDmSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -153,13 +155,13 @@ Section ReadRqStep.
     forall addr size pkt0 (b : bool) (s1 s1' : IState) st',
       RDS addr size pkt0 (RdPend b) s1 -> iMemStA s1' = st' -> msReadRqSent st' = true ->
       msReadRqSentV st' = (crossesB addr size ,, (stepOf b addr size pkt0 ,, tt)) ->
-      iReadRpA s1' = iReadRpA s1 -> lineKind implRegions (lineOf b addr) = Some true ->
+      iReadRpA s1' = iReadRpA s1 -> iRpReadyA s1' = iRpReadyA s1 -> lineKind implRegions (lineOf b addr) = Some true ->
       AllPorts (stagedP (lineOf b addr) (someRead (lineOf b addr))) implRegions (iRegionsA s1') ->
       RDS addr size pkt0 (RdStaged b) s1'.
   Proof.
-    intros addr size pkt0 b s1 s1' st' H Emst Hs Hv Erp Hk Hp.
-    unfold RdStageRel in *; destruct H as [_ [_ [Hrp _]]].
-    rewrite Emst, Erp; exact (conj (conj Hs Hv) (conj Hrp (conj Hk Hp))).
+    intros addr size pkt0 b s1 s1' st' H Emst Hs Hv Erp Erdy Hk Hp.
+    unfold RdStageRel in *; destruct H as [_ [_ [Hrp [Hrdy _]]]].
+    rewrite Emst, Erp, Erdy; exact (conj (conj Hs Hv) (conj Hrp (conj Hrdy (conj Hk Hp)))).
   Qed.
 
   Lemma acc_stageLoad :
@@ -233,9 +235,9 @@ Section ReadRqStep.
 
   (* The facts after an ExternalMem line was staged *)
   Lemma readStage_facts :
-    forall (s1 s1' : IState) mr mst mrq mrp mr' st' mrp' env b addr size pkt res,
-      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-      s1' = writeSubTreeState NPMI s1 (mr' ,, (st' ,, (mrq ,, (mrp' ,, tt)))) ->
+    forall (s1 s1' : IState) mr mst mrq mrp mrdy mr' st' mrp' env b addr size pkt res,
+      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
+      s1' = writeSubTreeState NPMI s1 (mr' ,, (st' ,, (mrq ,, (mrp' ,, (mrdy ,, tt))))) ->
       lineKind implRegions (lineOf b addr) = Some true -> PQ s1 ->
       SemAction env (@implRegionsLineReadRq type implRegions (rdLineOf b addr) (rdMaskOf b addr size)) mr mr' res ->
       (res.(Fst) = true -> msReadRqSent st' = true /\
@@ -244,11 +246,11 @@ Section ReadRqStep.
       StageAtL (lineOf b addr) (someRead (lineOf b addr)) implRegions (iRegionsA s1) mr' /\
       iMemStA s1' = st' /\ msReadRqSent st' = true /\
       msReadRqSentV st' = (crossesB addr size ,, (stepOf b addr size pkt ,, tt)) /\
-      iReadRpA s1' = iReadRpA s1 /\
+      iReadRpA s1' = iReadRpA s1 /\ iRpReadyA s1' = iRpReadyA s1 /\
       AllPorts (stagedP (lineOf b addr) (someRead (lineOf b addr))) implRegions (iRegionsA s1') /\
       iRequesterA s1' = iRequesterA s1 /\ iDmStA s1' = iDmStA s1 /\ iRevA s1' = iRevA s1.
   Proof.
-    intros s1 s1' mr mst mrq mrp mr' st' mrp' env b addr size pkt res EM E1 Hk Hq Hreg Hrt.
+    intros s1 s1' mr mst mrq mrp mrdy mr' st' mrp' env b addr size pkt res EM E1 Hk Hq Hreg Hrt.
     assert (Hmr : iRegionsA s1 = mr) by (unfold iRegions; rewrite EM; reflexivity).
     assert (Hu : forall L, lineUnique implRegions L)
       by (intros L; apply lineUnique_implRegions, Is_true_eq_true; exact Hdisj).
@@ -263,6 +265,7 @@ Section ReadRqStep.
     split; [rewrite E1; reflexivity |].
     split; [exact Hs |]; split; [exact HsV |].
     split; [rewrite E1; unfold iReadRp; rewrite EM; reflexivity |].
+    split; [rewrite E1; unfold iRpReady; rewrite EM; reflexivity |].
     split.
     { rewrite E1; change (AllPorts (stagedP (lineOf b addr) (someRead (lineOf b addr))) implRegions mr').
       apply (stagedP_stage _ _ _ (iRegionsA s1)); [apply Hu | rewrite Hmr; exact Hq | exact Hst]. }
@@ -326,9 +329,9 @@ Section ReadRqStep.
 
   (* The first (or only) line of a load, from a device or unmapped: the spec steps the load *)
   Lemma loadDevCommit_first :
-    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mr' st' mrp' env ld pkt0 res,
-      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-      s1' = writeSubTreeState NPMI s1 (mr' ,, (st' ,, (mrq ,, (mrp' ,, tt)))) ->
+    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mrdy mr' st' mrp' env ld pkt0 res,
+      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
+      s1' = writeSubTreeState NPMI s1 (mr' ,, (st' ,, (mrq ,, (mrp' ,, (mrdy ,, tt))))) ->
       g_acc pcAddrInit g = AccLoad ld pkt0 (RdPend false) ->
       lineKind implRegions (lineOf false (ldAddr ld)) <> Some true ->
       SemAction env (@implRegionsLineReadRq type implRegions (rdLineOf false (ldAddr ld))
@@ -340,10 +343,10 @@ Section ReadRqStep.
       RELG g s1 s2 ->
       exists s2', SemActions envS specActs s2 s2' /\ REL s1' s2'.
   Proof.
-    intros g s1 s1' s2 mr mst mrq mrp mr' st' mrp' env ld pkt0 res EM E1 Eacc Hk Hreg Hrt Hg.
+    intros g s1 s1' s2 mr mst mrq mrp mrdy mr' st' mrp' env ld pkt0 res EM E1 Eacc Hk Hreg Hrt Hg.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha; unfold RdStageRel in Ha; cbv beta iota zeta in Ha.
-    destruct Ha as [[Hrq [_ [Hrp0 Hq]]] [Hreq [Hdlr [Hdlv [Hrnr [Hoff [Hsec [Hpk [Hcn Hhq]]]]]]]]].
+    destruct Ha as [[Hrq [_ [Hrp0 [Hrdy0 Hq]]]] [Hreq [Hdlr [Hdlv [Hrnr [Hoff [Hsec [Hpk [Hcn Hhq]]]]]]]]].
     destruct Hhq as [q [[e [G' [Hch Hq']]] [Hld Eld]]].
     revert Hdlv; subst ld; intros Hdlv.
     destruct Hrf as [R1 [R2 [R3 R4]]].
@@ -419,9 +422,11 @@ Section ReadRqStep.
         unfold revNotReading in Hrnr |- *.
         assert (Emst : iMemStA s1' = st') by (rewrite E1; reflexivity).
         assert (Erp1 : iReadRpA s1' = (rpv ,, (true ,, tt))) by (rewrite E1; reflexivity).
+        assert (Erdy1 : optValid (iRpReadyA s1') = false)
+          by (rewrite E1; unfold iRpReady in Hrdy0 |- *; rewrite EM in Hrdy0; exact Hrdy0).
         assert (Erq1 : iRequesterA s1' = iRequesterA s1) by (rewrite E1; unfold iRequester; rewrite EM; reflexivity).
         rewrite Emst, Erp1, Erq1, Edm1, Eph, Ems, Ess.
-        refine (conj (conj (conj Hsent1 HsV1) (conj eq_refl HPQ))
+        refine (conj (conj (conj Hsent1 HsV1) (conj eq_refl (conj Erdy1 HPQ)))
                   (conj Hreq (conj Hdlr (conj Hdlv (conj Hrnr (conj Hoff (conj Hpk _))))))).
         unfold ldDevSl, ldDevCnwb.
         destruct (crossesB (ldAddr (loadCmdOf q)) (plSize (ldPending (loadCmdOf q))));
@@ -446,9 +451,9 @@ Section ReadRqStep.
 
   (* The second line of a crossing load, from a device or unmapped: the spec performs it *)
   Lemma loadDevCommit_second :
-    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mr' st' mrp' env ld pkt0 res,
-      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-      s1' = writeSubTreeState NPMI s1 (mr' ,, (st' ,, (mrq ,, (mrp' ,, tt)))) ->
+    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mrdy mr' st' mrp' env ld pkt0 res,
+      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
+      s1' = writeSubTreeState NPMI s1 (mr' ,, (st' ,, (mrq ,, (mrp' ,, (mrdy ,, tt))))) ->
       g_acc pcAddrInit g = AccLoad ld pkt0 (RdPend true) ->
       lineKind implRegions (lineOf true (ldAddr ld)) <> Some true ->
       SemAction env (@implRegionsLineReadRq type implRegions (rdLineOf true (ldAddr ld))
@@ -460,10 +465,10 @@ Section ReadRqStep.
       RELG g s1 s2 ->
       exists s2', SemActions envS specActs s2 s2' /\ REL s1' s2'.
   Proof.
-    intros g s1 s1' s2 mr mst mrq mrp mr' st' mrp' env ld pkt0 res EM E1 Eacc Hk Hreg Hrt Hg.
+    intros g s1 s1' s2 mr mst mrq mrp mrdy mr' st' mrp' env ld pkt0 res EM E1 Eacc Hk Hreg Hrt Hg.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha; unfold RdStageRel in Ha; cbv beta iota zeta in Ha.
-    destruct Ha as [[Hrq [_ [Hrp0 Hq]]] [Hreq [Hdlr [Hdlv [Hrnr [Hoff [Hcr [Hcn Hsec]]]]]]]].
+    destruct Ha as [[Hrq [_ [Hrp0 [Hrdy0 Hq]]]] [Hreq [Hdlr [Hdlv [Hrnr [Hoff [Hcr [Hcn Hsec]]]]]]]].
     destruct Hrf as [R1 [R2 [R3 R4]]].
     rewrite Hcn in R1; cbn [cnwbApply] in R1.
     assert (Hmr : iRegionsA s1 = mr) by (unfold iRegions; rewrite EM; reflexivity).
@@ -527,9 +532,11 @@ Section ReadRqStep.
         unfold revNotReading in Hrnr |- *.
         assert (Emst : iMemStA s1' = st') by (rewrite E1; reflexivity).
         assert (Erp1 : iReadRpA s1' = (rpv ,, (true ,, tt))) by (rewrite E1; reflexivity).
+        assert (Erdy1 : optValid (iRpReadyA s1') = false)
+          by (rewrite E1; unfold iRpReady in Hrdy0 |- *; rewrite EM in Hrdy0; exact Hrdy0).
         assert (Erq1 : iRequesterA s1' = iRequesterA s1) by (rewrite E1; unfold iRequester; rewrite EM; reflexivity).
         rewrite Emst, Erp1, Erq1, Edm1, Eph, Ems, Ess.
-        exact (conj (conj (conj Hsent1 HsV1) (conj eq_refl HPQ))
+        exact (conj (conj (conj Hsent1 HsV1) (conj eq_refl (conj Erdy1 HPQ)))
                  (conj Hreq (conj Hdlr (conj Hdlv (conj Hrnr (conj Hoff (conj Hcr (conj eq_refl eq_refl)))))))).
       - rewrite Eg1; unfold CnwbRel; cbn [g_cnwb g_chain g_acc].
         rewrite Edm1, Hx1, Hx2.
@@ -570,9 +577,9 @@ Section ReadRqStep.
     apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
     change (readSubTreeState NPMI s1) with (iMemA s1) in Hm'.
     remember (iMemA s1) as m eqn:EM; symmetry in EM.
-    destruct m as [mr [mst [mrq [mrp []]]]].
+    destruct m as [mr [mst [mrq [mrp [mrdy []]]]]].
     destruct (msReadRqV mst) as [b [[addr [size [pkt []]]] []]] eqn:Ev.
-    destruct (readRqStep_char pre post revBase revPfB revPfA _ mr mst mrq mrp m' _ b addr size pkt Ev Hm')
+    destruct (readRqStep_char pre post revBase revPfB revPfA _ mr mst mrq mrp mrdy m' _ b addr size pkt Ev Hm')
       as [-> | [Hr [Hv [mr' [res [st' [mrp' [Hreg [-> [Hrf Hrt]]]]]]]]]].
     { exists s2; split; [apply NilAction; reflexivity |].
       exists g; replace s1' with s1; [exact Hg |].
@@ -584,13 +591,13 @@ Section ReadRqStep.
     - (* a load line *)
       pose proof Ha as Ha'; unfold AccessRel in Ha'; rewrite Eacc in Ha'.
       destruct Ha' as [Hrds _].
-      pose proof Hrds as Hrds0; unfold RdStageRel in Hrds0; destruct Hrds0 as [_ [HrV [_ Hq]]].
+      pose proof Hrds as Hrds0; unfold RdStageRel in Hrds0; destruct Hrds0 as [_ [HrV [_ [_ Hq]]]].
       rewrite Hmst, Ev in HrV.
       destruct (stepOf_inj _ _ _ _ _ _ _ _ HrV) as [Eb [Ea [Es Ep]]]; subst b addr size pkt.
       destruct (lineKind implRegions (lineOf b' (ldAddr ld))) as [[|] |] eqn:Hk.
       + (* ExternalMem: staged *)
-        destruct (readStage_facts s1 s1' mr mst mrq mrp mr' st' mrp' _ b' (ldAddr ld) (plSize (ldPending ld)) pkt0 res
-                    EM E1 Hk Hq Hreg Hrt) as [Hst [Emst [Hs1 [HsV1 [Erp [Hp [Erq [Edm HR]]]]]]]].
+        destruct (readStage_facts s1 s1' mr mst mrq mrp mrdy mr' st' mrp' _ b' (ldAddr ld) (plSize (ldPending ld)) pkt0 res
+                    EM E1 Hk Hq Hreg Hrt) as [Hst [Emst [Hs1 [HsV1 [Erp [Erdy [Hp [Erq [Edm HR]]]]]]]]].
         exists s2; split; [apply NilAction; reflexivity |].
         set (g' := mkGhost pcAddrInit (g_chain pcAddrInit g) (g_rf0 pcAddrInit g) (g_cnwb pcAddrInit g)
                   (g_revOff pcAddrInit g) (g_d2aFo pcAddrInit g) (AccLoad ld pkt0 (RdStaged b'))).
@@ -599,28 +606,28 @@ Section ReadRqStep.
         * cbn [g_acc accTakesHead]; rewrite Eacc; destruct b'; reflexivity.
         * apply (acc_stageLoad g g' s1 s1' s2 ld pkt0 b' Eacc eq_refl eq_refl eq_refl eq_refl);
             [| exact Erq | exact Edm | exact HR | exact Ha].
-          exact (rds_staged _ _ _ b' s1 s1' st' Hrds Emst Hs1 HsV1 Erp Hk Hp).
+          exact (rds_staged _ _ _ b' s1 s1' st' Hrds Emst Hs1 HsV1 Erp Erdy Hk Hp).
         * unfold RevAccRel; exact I.
       + (* CustomMem: the device read commits the load line *)
         assert (Hk2 : lineKind implRegions (lineOf b' (ldAddr ld)) <> Some true) by (rewrite Hk; discriminate).
         destruct b'.
-        * exact (loadDevCommit_second g s1 s1' s2 mr mst mrq mrp mr' st' mrp' _ ld pkt0 res EM E1 Eacc Hk2 Hreg Hrt Hg).
-        * exact (loadDevCommit_first g s1 s1' s2 mr mst mrq mrp mr' st' mrp' _ ld pkt0 res EM E1 Eacc Hk2 Hreg Hrt Hg).
+        * exact (loadDevCommit_second g s1 s1' s2 mr mst mrq mrp mrdy mr' st' mrp' _ ld pkt0 res EM E1 Eacc Hk2 Hreg Hrt Hg).
+        * exact (loadDevCommit_first g s1 s1' s2 mr mst mrq mrp mrdy mr' st' mrp' _ ld pkt0 res EM E1 Eacc Hk2 Hreg Hrt Hg).
       + (* unmapped: zeros commit the load line *)
         assert (Hk2 : lineKind implRegions (lineOf b' (ldAddr ld)) <> Some true) by (rewrite Hk; discriminate).
         destruct b'.
-        * exact (loadDevCommit_second g s1 s1' s2 mr mst mrq mrp mr' st' mrp' _ ld pkt0 res EM E1 Eacc Hk2 Hreg Hrt Hg).
-        * exact (loadDevCommit_first g s1 s1' s2 mr mst mrq mrp mr' st' mrp' _ ld pkt0 res EM E1 Eacc Hk2 Hreg Hrt Hg).
+        * exact (loadDevCommit_second g s1 s1' s2 mr mst mrq mrp mrdy mr' st' mrp' _ ld pkt0 res EM E1 Eacc Hk2 Hreg Hrt Hg).
+        * exact (loadDevCommit_first g s1 s1' s2 mr mst mrq mrp mrdy mr' st' mrp' _ ld pkt0 res EM E1 Eacc Hk2 Hreg Hrt Hg).
     - (* dataMem's rev byte read: an ExternalMem line *)
       pose proof Ha as Ha'; unfold AccessRel in Ha'; rewrite Eacc in Ha'.
       destruct Ha' as [Hrds [_ [_ [_ [_ [_ [_ [_ [_ [Hbr _]]]]]]]]]].
-      pose proof Hrds as Hrds0; unfold RdStageRel in Hrds0; destruct Hrds0 as [_ [HrV [_ Hq]]].
+      pose proof Hrds as Hrds0; unfold RdStageRel in Hrds0; destruct Hrds0 as [_ [HrV [_ [_ Hq]]]].
       rewrite Hmst, Ev in HrV.
       destruct (stepOf_inj _ _ _ _ _ _ _ _ HrV) as [Eb [Ea [Es Ep]]]; subst b addr size pkt.
       assert (Hk : lineKind implRegions (lineOf false (revByteAddrOf config (rcBase rc))) = Some true).
       { rewrite <- lineKind_revSwap; exact (revByte_line config pre post revBase revPfB revPfA Hdisj HrevTab _ Hbr). }
-      destruct (readStage_facts s1 s1' mr mst mrq mrp mr' st' mrp' _ false (revByteAddrOf config (rcBase rc)) byteSz
-                  (getDefault CapPacket) res EM E1 Hk Hq Hreg Hrt) as [Hst [Emst [Hs1 [HsV1 [Erp [Hp [Erq [Edm HR]]]]]]]].
+      destruct (readStage_facts s1 s1' mr mst mrq mrp mrdy mr' st' mrp' _ false (revByteAddrOf config (rcBase rc)) byteSz
+                  (getDefault CapPacket) res EM E1 Hk Hq Hreg Hrt) as [Hst [Emst [Hs1 [HsV1 [Erp [Erdy [Hp [Erq [Edm HR]]]]]]]]].
       exists s2; split; [apply NilAction; reflexivity |].
       set (g' := mkGhost pcAddrInit (g_chain pcAddrInit g) (g_rf0 pcAddrInit g) (g_cnwb pcAddrInit g)
                 (g_revOff pcAddrInit g) (g_d2aFo pcAddrInit g) (AccDmRev rc (RdStaged false))).
@@ -628,18 +635,18 @@ Section ReadRqStep.
       apply (stageA g g' s1 s1' s2 _ _ _ E1 Hst eq_refl eq_refl eq_refl eq_refl eq_refl); [| | | exact Hg].
       + cbn [g_acc accTakesHead]; rewrite Eacc; reflexivity.
       + apply (acc_stageDmRev g g' s1 s1' s2 rc Eacc eq_refl eq_refl eq_refl); [| exact Erq | exact Edm | exact HR | exact Ha].
-        exact (rds_staged _ _ _ false s1 s1' st' Hrds Emst Hs1 HsV1 Erp Hk Hp).
+        exact (rds_staged _ _ _ false s1 s1' st' Hrds Emst Hs1 HsV1 Erp Erdy Hk Hp).
       + unfold RevAccRel; exact I.
     - (* the revoker's cap read *)
       pose proof Ha as Ha'; unfold AccessRel in Ha'; rewrite Eacc in Ha'.
       destruct Ha' as [Hrds _].
-      pose proof Hrds as Hrds0; unfold RdStageRel in Hrds0; destruct Hrds0 as [_ [HrV [_ Hq]]].
+      pose proof Hrds as Hrds0; unfold RdStageRel in Hrds0; destruct Hrds0 as [_ [HrV [_ [_ Hq]]]].
       rewrite Hmst, Ev in HrV.
       destruct (stepOf_inj _ _ _ _ _ _ _ _ HrV) as [Eb [Ea [Es Ep]]]; subst b addr size pkt.
       destruct (lineKind implRegions (lineOf false (iScanAddrA s1))) as [[|] |] eqn:Hk.
       + (* ExternalMem: staged *)
-        destruct (readStage_facts s1 s1' mr mst mrq mrp mr' st' mrp' _ false (iScanAddrA s1) capSz
-                    (getDefault CapPacket) res EM E1 Hk Hq Hreg Hrt) as [Hst [Emst [Hs1 [HsV1 [Erp [Hp [Erq [Edm HR]]]]]]]].
+        destruct (readStage_facts s1 s1' mr mst mrq mrp mrdy mr' st' mrp' _ false (iScanAddrA s1) capSz
+                    (getDefault CapPacket) res EM E1 Hk Hq Hreg Hrt) as [Hst [Emst [Hs1 [HsV1 [Erp [Erdy [Hp [Erq [Edm HR]]]]]]]]].
         exists s2; split; [apply NilAction; reflexivity |].
         set (g' := mkGhost pcAddrInit (g_chain pcAddrInit g) (g_rf0 pcAddrInit g) (g_cnwb pcAddrInit g)
                   (g_revOff pcAddrInit g) (g_d2aFo pcAddrInit g) (AccRevCap (RdStaged false))).
@@ -647,24 +654,24 @@ Section ReadRqStep.
         apply (stageA g g' s1 s1' s2 _ _ _ E1 Hst eq_refl eq_refl eq_refl eq_refl eq_refl); [| | | exact Hg].
         * cbn [g_acc accTakesHead]; rewrite Eacc; reflexivity.
         * apply (acc_stageRevCap g g' s1 s1' s2 Eacc eq_refl eq_refl HR); [| exact Erq | exact Edm | exact Ha].
-          exact (rds_staged _ _ _ false s1 s1' st' Hrds Emst Hs1 HsV1 Erp Hk Hp).
+          exact (rds_staged _ _ _ false s1 s1' st' Hrds Emst Hs1 HsV1 Erp Erdy Hk Hp).
         * unfold RevAccRel; exact I.
       + assert (Hk2 : lineKind implRegions (lineOf false (iScanAddrA s1)) <> Some true) by (rewrite Hk; discriminate).
-        exact (revCapDevA g s1 s1' s2 mr mst mrq mrp mr' st' mrp' _ res EM E1 Eacc Hk2 Hreg Hrt Hg).
+        exact (revCapDevA g s1 s1' s2 mr mst mrq mrp mrdy mr' st' mrp' _ res EM E1 Eacc Hk2 Hreg Hrt Hg).
       + assert (Hk2 : lineKind implRegions (lineOf false (iScanAddrA s1)) <> Some true) by (rewrite Hk; discriminate).
-        exact (revCapDevA g s1 s1' s2 mr mst mrq mrp mr' st' mrp' _ res EM E1 Eacc Hk2 Hreg Hrt Hg).
+        exact (revCapDevA g s1 s1' s2 mr mst mrq mrp mrdy mr' st' mrp' _ res EM E1 Eacc Hk2 Hreg Hrt Hg).
     - (* the revoker's rev bit read: an ExternalMem line *)
       pose proof Ha as Ha'; unfold AccessRel in Ha'; rewrite Eacc in Ha'.
       destruct Ha' as [Hrds [_ [Hwr _]]].
-      pose proof Hrds as Hrds0; unfold RdStageRel in Hrds0; destruct Hrds0 as [_ [HrV [_ Hq]]].
+      pose proof Hrds as Hrds0; unfold RdStageRel in Hrds0; destruct Hrds0 as [_ [HrV [_ [_ Hq]]]].
       rewrite Hmst, Ev in HrV.
       destruct (stepOf_inj _ _ _ _ _ _ _ _ HrV) as [Eb [Ea [Es Ep]]]; subst b addr size pkt.
       pose proof Hrk as Hrk0; unfold RevokerRel in Hrk0; destruct Hrk0 as [_ [K2 _]].
       destruct (K2 (rpCheck_waitRevBitRp _ Hwr)) as [Hnc [Ebase _]].
       assert (Hk : lineKind implRegions (lineOf false (revByteAddrOf config (iRevScanBaseA s1))) = Some true).
       { rewrite <- lineKind_revSwap, Ebase; exact (revTab_needsCheck config pre post revBase revPfB revPfA Hdisj HrevTab _ Hnc). }
-      destruct (readStage_facts s1 s1' mr mst mrq mrp mr' st' mrp' _ false (revByteAddrOf config (iRevScanBaseA s1)) byteSz
-                  (getDefault CapPacket) res EM E1 Hk Hq Hreg Hrt) as [Hst [Emst [Hs1 [HsV1 [Erp [Hp [Erq [Edm HR]]]]]]]].
+      destruct (readStage_facts s1 s1' mr mst mrq mrp mrdy mr' st' mrp' _ false (revByteAddrOf config (iRevScanBaseA s1)) byteSz
+                  (getDefault CapPacket) res EM E1 Hk Hq Hreg Hrt) as [Hst [Emst [Hs1 [HsV1 [Erp [Erdy [Hp [Erq [Edm HR]]]]]]]]].
       exists s2; split; [apply NilAction; reflexivity |].
       set (g' := mkGhost pcAddrInit (g_chain pcAddrInit g) (g_rf0 pcAddrInit g) (g_cnwb pcAddrInit g)
                 (g_revOff pcAddrInit g) (g_d2aFo pcAddrInit g) (AccRevBit (RdStaged false))).
@@ -672,7 +679,7 @@ Section ReadRqStep.
       apply (stageA g g' s1 s1' s2 _ _ _ E1 Hst eq_refl eq_refl eq_refl eq_refl eq_refl); [| | | exact Hg].
       + cbn [g_acc accTakesHead]; rewrite Eacc; reflexivity.
       + apply (acc_stageRevBit g g' s1 s1' s2 Eacc eq_refl eq_refl HR); [| exact Erq | exact Edm | exact Ha].
-        exact (rds_staged _ _ _ false s1 s1' st' Hrds Emst Hs1 HsV1 Erp Hk Hp).
+        exact (rds_staged _ _ _ false s1 s1' st' Hrds Emst Hs1 HsV1 Erp Erdy Hk Hp).
       + unfold RevAccRel; exact I.
   Qed.
 End ReadRqStep.

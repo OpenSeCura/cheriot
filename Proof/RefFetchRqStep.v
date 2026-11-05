@@ -216,7 +216,7 @@ Section FetchRqStep.
       - intros L rq; unfold PortsWriteStaged; apply HP; intros r y L' rdy; reflexivity.
       - exact HR.
       - unfold iMemSt; rewrite Emem; reflexivity.
-      - unfold iReadRp; rewrite Emem; reflexivity.
+      - unfold iRdBufs; rewrite Emem; reflexivity.
       - unfold iRequester; rewrite Emem; reflexivity.
       - unfold iDmSt; rewrite Edm; reflexivity.
       - exact Ha. }

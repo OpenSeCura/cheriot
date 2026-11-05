@@ -537,15 +537,15 @@ Section ReadRqPorts.
   Proof.
     intros addr size pkt0 st s1 mi' Hst H.
     destruct st as [b | b | b | b rp | res].
-    - left; destruct H as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
-    - destruct H as [Hs [Hr [Hk Hp]]].
+    - left; destruct H as [_ [_ [_ [_ Hq]]]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
+    - destruct H as [Hs [Hr [Hrdy [Hk Hp]]]].
       destruct (rdRqStep_staged implRegions (lineOf b addr) (iRegionsA s1) mi' (rdRq_lineUnique _) Hp Hst)
         as [E | [Hp' | Hp']].
       + left; exact E.
-      + right; left; exact (conj Hs (conj Hr (conj Hk Hp'))).
-      + right; right; exists b; split; [reflexivity | exact (conj Hs (conj Hr (conj Hk Hp')))].
-    - left; destruct H as [_ [_ [_ Hp]]]; exact (rdRqStep_noRead _ _ _ (rdRq_outNoRead _ s1 Hp) Hst).
-    - left; destruct H as [_ [_ Hq]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
+      + right; left; exact (conj Hs (conj Hr (conj Hrdy (conj Hk Hp')))).
+      + right; right; exists b; split; [reflexivity | exact (conj Hs (conj Hr (conj Hrdy (conj Hk Hp'))))].
+    - left; destruct H as [_ [_ [_ [_ Hp]]]]; exact (rdRqStep_noRead _ _ _ (rdRq_outNoRead _ s1 Hp) Hst).
+    - left; destruct H as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
     - left; destruct H as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
   Qed.
 
@@ -564,10 +564,10 @@ Section ReadRqPorts.
     unfold revNotReading, dmNotAccessing in *.
     destruct (g_acc pcAddrInit g) as [| addr size pkt st | ld pkt0 st | rc st | st | st | addr pkt st];
       cbn [rdOutAcc]; rewrite ?EP, ?ES, ?EB.
-    - left; destruct Ha as [_ [_ [Hq _]]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
+    - left; destruct Ha as [_ [_ [_ [Hq _]]]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
     - left; destruct Ha as [Hw _]; unfold WrStageRel in Hw; destruct st as [b | b].
-      + destruct Hw as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
-      + destruct Hw as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead _ _ _ (rdRq_wstagedNoRead _ _ s1 Hq) Hst).
+      + destruct Hw as [_ [_ [_ [_ Hq]]]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
+      + destruct Hw as [_ [_ [_ [_ Hq]]]]; exact (rdRqStep_noRead _ _ _ (rdRq_wstagedNoRead _ _ s1 Hq) Hst).
     - destruct Ha as [Hrd Hrest].
       destruct (RdStageRel_rdRq _ _ _ _ s1 mi' Hst Hrd) as [E | [Hrd' | [b [-> Hrd']]]].
       + left; exact E.
@@ -589,8 +589,8 @@ Section ReadRqPorts.
       + right; left; exact (conj Hrd' Hrest).
       + right; right; cbn [rdOutStage]; exact (conj Hrd' Hrest).
     - left; destruct Ha as [Hw _]; unfold WrStageRel in Hw; destruct st as [b | b].
-      + destruct Hw as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
-      + destruct Hw as [_ [_ [_ Hq]]]; exact (rdRqStep_noRead _ _ _ (rdRq_wstagedNoRead _ _ s1 Hq) Hst).
+      + destruct Hw as [_ [_ [_ [_ Hq]]]]; exact (rdRqStep_noRead _ _ _ (rdRq_quietNoRead s1 Hq) Hst).
+      + destruct Hw as [_ [_ [_ [_ Hq]]]]; exact (rdRqStep_noRead _ _ _ (rdRq_wstagedNoRead _ _ s1 Hq) Hst).
   Qed.
 
   (* The revoker facts hold for the moved access: its read values are not yet known *)

@@ -285,19 +285,19 @@ Section LoadCommit.
   (* The first line of a load arrives: the spec steps the head entry (its first line is read; a
    * crossing load records the rest, any other completes), then replays eagerly *)
   Lemma loadCommit_first :
-    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mr' o ld pkt0,
-      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-      s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, tt)))) ->
+    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mrdy mr' o ld pkt0,
+      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
+      s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, (mrdy ,, tt))))) ->
       DataRpPortStepL initLine fwcs implRegions (iRegionsA s1) mr' o -> optValid o = true ->
       g_acc pcAddrInit g = AccLoad ld pkt0 (RdOut false) -> RELG g s1 s2 ->
       exists s2', SemActions envS specActs s2 s2' /\ REL s1' s2'.
   Proof.
-    intros g s1 s1' s2 mr mst mrq mrp mr' o ld pkt0 EM E1 Hst Hv Eacc Hg.
+    intros g s1 s1' s2 mr mst mrq mrp mrdy mr' o ld pkt0 EM E1 Hst Hv Eacc Hg.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha; unfold RdStageRel in Ha; cbv beta iota zeta in Ha.
-    destruct Ha as [[Hsent [_ [Hlk Hout]]] [Hreq [Hdlr [Hdlv [Hrnr [Hoff [Hsec [Hpk [Hcn Hhq]]]]]]]]].
+    destruct Ha as [[Hsent [_ [Hrdy0 [Hlk Hout]]]] [Hreq [Hdlr [Hdlv [Hrnr [Hoff [Hsec [Hpk [Hcn Hhq]]]]]]]]].
     destruct Hhq as [q [[e [G' [Hch Hq]]] [Hld Eld]]].
-    destruct (takenA s1 s1' mr mst mrq mrp mr' o _ EM E1 Hst Hv Hout) as [ER [Est [Ereq [Edm [Erp' HPQ]]]]].
+    destruct (takenA s1 s1' mr mst mrq mrp mrdy mr' o _ EM E1 Hst Hv Hout) as [ER [Est [Ereq [Edm [Erp' [Erdy' HPQ]]]]]].
     pose proof (rpContentA g s1 s2 mr' o _ Hm Hout Hst Hv) as Hcont.
     destruct Hrf as [R1 [R2 [R3 R4]]].
     rewrite Hcn in R1; cbn [cnwbApply] in R1.
@@ -350,9 +350,9 @@ Section LoadCommit.
         rewrite (ldCommitCnwb_dst _ _ _ _ Hcn'), Hdst; exact Havoid.
       - exact (memTraceA g1 s1' s2 s2m Htf (memDataRpA g s1 s1' s2 mr' _ o E1 Hst Hm)).
       - unfold AccessRel; cbn [g_acc g_revOff g_cnwb g1]; unfold RdStageRel; cbv beta iota zeta.
-        unfold revNotReading, iRevPhase in *; rewrite ER, Est, Ereq, Edm, Erp'.
+        unfold revNotReading, iRevPhase in *; rewrite ER, Est, Ereq, Edm, Erp', Erdy'.
         unfold s2m; rewrite sSecond_mkSys, sMem_mkSys.
-        refine (conj (conj Hsent (conj eq_refl HPQ)) (conj Hreq (conj Hdlr (conj Hdlv (conj Hrnr (conj Hoff (conj Hpk _))))))).
+        refine (conj (conj Hsent (conj eq_refl (conj Hrdy0 HPQ))) (conj Hreq (conj Hdlr (conj Hdlv (conj Hrnr (conj Hoff (conj Hpk _))))))).
         rewrite Hcont; unfold ldCommitSl, ldCommitCnwb.
         assert (Hdec : crossesB (ldAddr ld) (plSize (ldPending ld)) = true \/ crossesB (ldAddr ld) (plSize (ldPending ld)) = false)
           by (destruct (crossesB (ldAddr ld) (plSize (ldPending ld))); [left | right]; reflexivity).
@@ -391,18 +391,18 @@ Section LoadCommit.
   (* The second line of a crossing load arrives: the spec performs it (`specSecondLine`), which
    * completes the load, then replays eagerly *)
   Lemma loadCommit_second :
-    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mr' o ld pkt0,
-      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) ->
-      s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, tt)))) ->
+    forall g (s1 s1' : IState) (s2 : SState) mr mst mrq mrp mrdy mr' o ld pkt0,
+      iMemA s1 = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) ->
+      s1' = writeSubTreeState NPMI s1 (mr' ,, (mst ,, (mrq ,, ((if optValid o then o else mrp) ,, (mrdy ,, tt))))) ->
       DataRpPortStepL initLine fwcs implRegions (iRegionsA s1) mr' o -> optValid o = true ->
       g_acc pcAddrInit g = AccLoad ld pkt0 (RdOut true) -> RELG g s1 s2 ->
       exists s2', SemActions envS specActs s2 s2' /\ REL s1' s2'.
   Proof.
-    intros g s1 s1' s2 mr mst mrq mrp mr' o ld pkt0 EM E1 Hst Hv Eacc Hg.
+    intros g s1 s1' s2 mr mst mrq mrp mrdy mr' o ld pkt0 EM E1 Hst Hv Eacc Hg.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha; unfold RdStageRel in Ha; cbv beta iota zeta in Ha.
-    destruct Ha as [[Hsent [_ [Hlk Hout]]] [Hreq [Hdlr [Hdlv [Hrnr [Hoff [Hcr [Hcn Hsec]]]]]]]].
-    destruct (takenA s1 s1' mr mst mrq mrp mr' o _ EM E1 Hst Hv Hout) as [ER [Est [Ereq [Edm [Erp' HPQ]]]]].
+    destruct Ha as [[Hsent [_ [Hrdy0 [Hlk Hout]]]] [Hreq [Hdlr [Hdlv [Hrnr [Hoff [Hcr [Hcn Hsec]]]]]]]].
+    destruct (takenA s1 s1' mr mst mrq mrp mrdy mr' o _ EM E1 Hst Hv Hout) as [ER [Est [Ereq [Edm [Erp' [Erdy' HPQ]]]]]].
     pose proof (rpContentA g s1 s2 mr' o _ Hm Hout Hst Hv) as Hcont.
     destruct Hrf as [R1 [R2 [R3 R4]]].
     rewrite Hcn in R1; cbn [cnwbApply] in R1.
@@ -438,9 +438,9 @@ Section LoadCommit.
         rewrite (ldMergedWb_dst _ _ _ _ _ Hcn'); exact Havoid.
       - exact (memTraceA g1 s1' s2 s2m Htf (memDataRpA g s1 s1' s2 mr' _ o E1 Hst Hm)).
       - unfold AccessRel; cbn [g_acc g_revOff g_cnwb g1]; unfold RdStageRel; cbv beta iota zeta.
-        unfold revNotReading, iRevPhase in *; rewrite ER, Est, Ereq, Edm, Erp'.
+        unfold revNotReading, iRevPhase in *; rewrite ER, Est, Ereq, Edm, Erp', Erdy'.
         unfold s2m; rewrite sSecond_mkSys, sMem_mkSys.
-        refine (conj (conj Hsent (conj eq_refl HPQ))
+        refine (conj (conj Hsent (conj eq_refl (conj Hrdy0 HPQ)))
                   (conj Hreq (conj Hdlr (conj Hdlv (conj Hrnr (conj Hoff (conj Hcr (conj eq_refl _)))))))).
         rewrite Hcont; unfold ldMergedWb.
         rewrite (specLoadWb_ext config pre post revBase revPfB revPfA initLine (sMemA s2) m' _ _ Hlc); reflexivity.
@@ -474,8 +474,8 @@ Section LoadCommit.
       STEPOK act.
   Proof.
     apply stepOK_readRpPorts_of with (Hdisj := Hdisj).
-    intros g s1 s1' s2 mr mst mrq mrp mr' o ld pkt0 [|] EM E1 Hst Hv Eacc Hg.
-    - exact (loadCommit_second g s1 s1' s2 mr mst mrq mrp mr' o ld pkt0 EM E1 Hst Hv Eacc Hg).
-    - exact (loadCommit_first g s1 s1' s2 mr mst mrq mrp mr' o ld pkt0 EM E1 Hst Hv Eacc Hg).
+    intros g s1 s1' s2 mr mst mrq mrp mrdy mr' o ld pkt0 [|] EM E1 Hst Hv Eacc Hg.
+    - exact (loadCommit_second g s1 s1' s2 mr mst mrq mrp mrdy mr' o ld pkt0 EM E1 Hst Hv Eacc Hg).
+    - exact (loadCommit_first g s1 s1' s2 mr mst mrq mrp mrdy mr' o ld pkt0 EM E1 Hst Hv Eacc Hg).
   Qed.
 End LoadCommit.

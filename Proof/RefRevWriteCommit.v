@@ -423,7 +423,7 @@ Section RevWriteCommit.
     intros g s1 s1' s2 mi' addr pkt E1 Hwr Eacc Hg.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha; unfold WrStageRel in Ha; cbv beta iota zeta in Ha.
-    destruct Ha as [[Hrp0 [Hst0 [Hlk Hws]]] [Hidle [Hdna [Hoff [Hsec _]]]]].
+    destruct Ha as [[Hrp0 [Hrdy0 [Hst0 [Hlk Hws]]]] [Hidle [Hdna [Hoff [Hsec _]]]]].
     pose proof Hrk as Hrk0; unfold RevokerRel in Hrk0; destruct Hrk0 as [_ [_ [_ [_ Hra]]]].
     unfold RevAccRel in Hra; rewrite Eacc in Hra.
     destruct Hra as [sa [Esa [Ea [Hsw [Hnc [Hrb [Epkt _]]]]]]].
@@ -471,9 +471,10 @@ Section RevWriteCommit.
       + exact (LatchRel_revWrite g s2 ms1 sa xs' Hfr1 Hl).
       + unfold AccessRel; cbn [g_acc g_revOff].
         unfold revNotReading, iRevPhase; rewrite ER'; cbn [mkRev12 Fst Snd].
-        refine (conj _ (conj _ (conj _ (conj eq_refl (conj _ (conj (conj Q1 Q3) _)))))).
+        refine (conj _ (conj _ (conj _ (conj _ (conj eq_refl (conj _ (conj (conj Q1 Q3) _))))))).
         * rewrite E1; exact Hst0.
         * rewrite E1; exact Hrp0.
+        * rewrite E1; exact Hrdy0.
         * unfold PortsQuiet; rewrite E1.
           change (AllPorts quietP implRegions mi').
           refine (quiet_writeAt _ _ _ _ _ _ Hws Hwr).
@@ -554,7 +555,7 @@ Section RevWriteCommit.
     destruct (AccessRel_wr g s1 s2 Ha) as [Hnw | [[addr [size [pkt [b Eacc]]]] | [addr [pkt Eacc]]]].
     - apply Hstut; exact (wrRqStep_noWrite _ _ _ Hnw Hst).
     - pose proof Ha as Ha'; unfold AccessRel in Ha'; rewrite Eacc in Ha'; unfold WrStageRel in Ha'; cbv beta iota zeta in Ha'.
-      destruct Ha' as [[_ [_ [_ Hws]]] _].
+      destruct Ha' as [[_ [_ [_ [_ Hws]]]] _].
       destruct (wrRqStep_staged _ _ _ _ _ (Hu _) Hws Hst) as [Emi | [[|] Hwr]].
       + apply Hstut; exact Emi.
       + destruct b.
@@ -563,7 +564,7 @@ Section RevWriteCommit.
       + exists s2; split; [apply NilAction; reflexivity |].
         exists g; eapply RefRelG_wrNotAccepted; eassumption.
     - pose proof Ha as Ha'; unfold AccessRel in Ha'; rewrite Eacc in Ha'; unfold WrStageRel in Ha'; cbv beta iota zeta in Ha'.
-      destruct Ha' as [[_ [_ [_ Hws]]] _].
+      destruct Ha' as [[_ [_ [_ [_ Hws]]]] _].
       destruct (wrRqStep_staged _ _ _ _ _ (Hu _) Hws Hst) as [Emi | [[|] Hwr]].
       + apply Hstut; exact Emi.
       + exact (revWrite_commit g s1 s1' s2 mi' addr pkt E1 Hwr Eacc Hg).

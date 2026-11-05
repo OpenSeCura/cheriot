@@ -778,7 +778,7 @@ Section ExecAppend.
         * intros q [e [G' [HG _]]]; rewrite Hch in HG; discriminate HG.
         * eapply AccessRel_frame with (s1 := s1) (s2 := s2m);
             try reflexivity;
-            try (unfold iMemSt, iRequester, iReadRp, iDmSt, iRev, iRegions; rewrite ?Emem, ?Edm; reflexivity);
+            try (unfold iMemSt, iRequester, iReadRp, iRdBufs, iDmSt, iRev, iRegions; rewrite ?Emem, ?Edm; reflexivity);
             [exact Hlc | exact Ham].
       + unfold CnwbRel; cbn [g_cnwb g_chain g_acc].
         unfold iDmSt in *; rewrite Edm.
@@ -881,7 +881,7 @@ Section ExecAppend.
           exists e0, (G' ++ [GInst e])%list; split; [cbn [g_chain]; rewrite HG; reflexivity | exact Hq].
         + eapply AccessRel_frame with (s1 := s1) (s2 := s2);
             try reflexivity;
-            try (unfold iMemSt, iRequester, iReadRp, iRev, iRegions; rewrite ?Emem, ?Edmst; reflexivity);
+            try (unfold iMemSt, iRequester, iReadRp, iRdBufs, iRev, iRegions; rewrite ?Emem, ?Edmst; reflexivity);
             exact Ha.
       - unfold CnwbRel in *; cbn [g_cnwb g_chain g_acc]; rewrite Edmst.
         destruct Hc as [C1 [C2 [C3 C4]]].

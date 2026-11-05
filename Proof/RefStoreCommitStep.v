@@ -444,6 +444,8 @@ Section StoreCommit.
                                   mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iReadRpA := (iReadRp pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                    mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+  Local Abbreviation iRpReadyA := (iRpReady pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                    mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iDmStA := (iDmSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation PQ := (PortsQuiet pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -465,10 +467,10 @@ Section StoreCommit.
   (* The access after the first line of a store was accepted *)
   Lemma acc_storeFirst :
     forall g1 (s1 s1' : IState) (s2m : SState) addr size pkt (cr : bool) sl0,
-      iMemStA s1' = iMemStA s1 -> iReadRpA s1' = iReadRpA s1 -> iDmStA s1' = iDmStA s1 -> iRevA s1' = iRevA s1 ->
+      iMemStA s1' = iMemStA s1 -> iReadRpA s1' = iReadRpA s1 -> iRpReadyA s1' = iRpReadyA s1 -> iDmStA s1' = iDmStA s1 -> iRevA s1' = iRevA s1 ->
       g_acc pcAddrInit g1 = (if cr then AccStore addr size pkt (WrPend true) else AccNone) ->
       g_revOff pcAddrInit g1 = RevEq ->
-      PQ s1' -> optValid (iReadRpA s1) = false ->
+      PQ s1' -> optValid (iReadRpA s1) = false -> optValid (iRpReadyA s1) = false ->
       (if andb (negb false) cr then msWriteRq (iMemStA s1) = true /\ msWriteRqV (iMemStA s1) = stepOf true addr size pkt
        else msIdle (iMemStA s1) = true) ->
       dmLoadRq (iDmStA s1) = true -> RNR s1 ->
@@ -477,19 +479,19 @@ Section StoreCommit.
       sSecondA s2m = (if cr then secondStoreOf addr pkt size else sl0) -> optValid sl0 = false ->
       ACC g1 s1' s2m.
   Proof.
-    intros g1 s1 s1' s2m addr size pkt cr sl0 Emst Erp Edm HR Eacc Eoff HPQ Hrp0 Hst0 Hdlq Hrnr Hsnoop Ecr Ess Hsl.
+    intros g1 s1 s1' s2m addr size pkt cr sl0 Emst Erp Erdy Edm HR Eacc Eoff HPQ Hrp0 Hrdy0 Hst0 Hdlq Hrnr Hsnoop Ecr Ess Hsl.
     unfold AccessRel; rewrite Eacc, Eoff.
     unfold revNotReading, iRevPhase, iScanMsb, iRevSnoopHit in Hrnr, Hsnoop |- *.
     destruct (dmLoadRq_excl _ Hdlq) as [Hx1 [_ Hx3]].
     destruct cr; cbn [andb negb] in Hst0.
     - unfold WrStageRel; cbv beta iota zeta.
-      rewrite ?HR, ?Emst, ?Erp, ?Edm.
+      rewrite ?HR, ?Emst, ?Erp, ?Erdy, ?Edm.
       destruct Hst0 as [Hwq Hwv].
-      exact (conj (conj Hrp0 (conj Hwq (conj Hwv HPQ)))
+      exact (conj (conj Hrp0 (conj Hrdy0 (conj Hwq (conj Hwv HPQ))))
                (conj Hdlq (conj Hrnr (conj eq_refl (conj Hsnoop (conj (eq_sym Ecr) Ess)))))).
     - cbv beta iota zeta; unfold dmNotAccessing.
-      rewrite ?HR, ?Emst, ?Erp, ?Edm, Ess.
-      exact (conj Hst0 (conj Hrp0 (conj HPQ (conj eq_refl (conj (conj Hx1 Hx3) (conj Hrnr Hsl)))))).
+      rewrite ?HR, ?Emst, ?Erp, ?Erdy, ?Edm, Ess.
+      exact (conj Hst0 (conj Hrp0 (conj Hrdy0 (conj HPQ (conj eq_refl (conj (conj Hx1 Hx3) (conj Hrnr Hsl))))))).
   Qed.
   (* The first (or only) line of a store accepted by the memory: the spec performs the store *)
   Lemma storeCommit_first :
@@ -503,7 +505,7 @@ Section StoreCommit.
     intros g s1 s1' s2 mi' addr size pkt E1 Hwr Eacc Hrule Hg.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha; unfold WrStageRel in Ha; cbv beta iota zeta in Ha.
-    destruct Ha as [[Hrp0 [Hst0 [Hlk Hws]]] [Hdlq [Hrnr [Hoff [Hsnoop [Hsec Hhq]]]]]].
+    destruct Ha as [[Hrp0 [Hrdy0 [Hst0 [Hlk Hws]]]] [Hdlq [Hrnr [Hoff [Hsnoop [Hsec Hhq]]]]]].
     destruct Hhq as [q [[e [G' [Hch Hq]]] [Hsto [Ea [Esz Epkt]]]]].
     remember (crossesB addr size) as cr eqn:Ecr.
     pose proof (proj1 Hc Hdlq) as Hcn.
@@ -567,8 +569,8 @@ Section StoreCommit.
       - rewrite Eg1, Ers; reflexivity.
       - rewrite Eg1; intros d v Hcn'; discriminate Hcn'.
       - apply (acc_storeFirst g1 s1 s1' s2m addr size pkt cr (sSecondA s2));
-          [rewrite E1; reflexivity | rewrite E1; reflexivity | rewrite E1; reflexivity | exact HR
-          | rewrite Eg1, Eacc'; reflexivity | rewrite Eg1; exact Hoff | exact HPQ | exact Hrp0
+          [rewrite E1; reflexivity | rewrite E1; reflexivity | rewrite E1; reflexivity | rewrite E1; reflexivity | exact HR
+          | rewrite Eg1, Eacc'; reflexivity | rewrite Eg1; exact Hoff | exact HPQ | exact Hrp0 | exact Hrdy0
           | exact Hst0 | exact Hdlq | exact Hrnr | exact Hsnoop
           | exact Ecr | exact Ess | exact Hsec].
       - rewrite Eg1; unfold CnwbRel; cbn [g_cnwb g_chain g_acc].
@@ -603,18 +605,18 @@ Section StoreCommit.
   (* The access after the second line of a store was accepted *)
   Lemma acc_storeSecond :
     forall g1 (s1 s1' : IState) (s2m : SState),
-      iMemStA s1' = iMemStA s1 -> iReadRpA s1' = iReadRpA s1 -> iDmStA s1' = iDmStA s1 -> iRevA s1' = iRevA s1 ->
+      iMemStA s1' = iMemStA s1 -> iReadRpA s1' = iReadRpA s1 -> iRpReadyA s1' = iRpReadyA s1 -> iDmStA s1' = iDmStA s1 -> iRevA s1' = iRevA s1 ->
       g_acc pcAddrInit g1 = AccNone -> g_revOff pcAddrInit g1 = RevEq ->
-      PQ s1' -> optValid (iReadRpA s1) = false -> msIdle (iMemStA s1) = true ->
+      PQ s1' -> optValid (iReadRpA s1) = false -> optValid (iRpReadyA s1) = false -> msIdle (iMemStA s1) = true ->
       dmLoadRq (iDmStA s1) = true -> RNR s1 -> optValid (sSecondA s2m) = false ->
       ACC g1 s1' s2m.
   Proof.
-    intros g1 s1 s1' s2m Emst Erp Edm HR Eacc Eoff HPQ Hrp0 Hidle Hdlq Hrnr Hsl.
+    intros g1 s1 s1' s2m Emst Erp Erdy Edm HR Eacc Eoff HPQ Hrp0 Hrdy0 Hidle Hdlq Hrnr Hsl.
     unfold AccessRel; rewrite Eacc, Eoff.
     unfold revNotReading, iRevPhase in Hrnr |- *; unfold dmNotAccessing.
     destruct (dmLoadRq_excl _ Hdlq) as [Hx1 [_ Hx3]].
-    rewrite ?HR, ?Emst, ?Erp, ?Edm.
-    exact (conj Hidle (conj Hrp0 (conj HPQ (conj eq_refl (conj (conj Hx1 Hx3) (conj Hrnr Hsl)))))).
+    rewrite ?HR, ?Emst, ?Erp, ?Erdy, ?Edm.
+    exact (conj Hidle (conj Hrp0 (conj Hrdy0 (conj HPQ (conj eq_refl (conj (conj Hx1 Hx3) (conj Hrnr Hsl))))))).
   Qed.
 
   (* The second line of a crossing store accepted by the memory: the spec performs it
@@ -630,7 +632,7 @@ Section StoreCommit.
     intros g s1 s1' s2 mi' addr size pkt E1 Hwr Eacc Hrule Hg.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha; unfold WrStageRel in Ha; cbv beta iota zeta in Ha.
-    destruct Ha as [[Hrp0 [Hst0 [Hlk Hws]]] [Hdlq [Hrnr [Hoff [Hsnoop [Hcr Hsec]]]]]].
+    destruct Ha as [[Hrp0 [Hrdy0 [Hst0 [Hlk Hws]]]] [Hdlq [Hrnr [Hoff [Hsnoop [Hcr Hsec]]]]]].
     cbn [andb negb] in Hst0.
     pose proof (proj1 Hc Hdlq) as Hcn.
     destruct Hrf as [R1 [R2 [R3 R4]]].
@@ -670,8 +672,8 @@ Section StoreCommit.
       - rewrite Eg1, Ers, R1; reflexivity.
       - rewrite Eg1; intros d v Hcn'; discriminate Hcn'.
       - apply (acc_storeSecond g1 s1 s1' s2m);
-          [rewrite E1; reflexivity | rewrite E1; reflexivity | rewrite E1; reflexivity | exact HR
-          | rewrite Eg1; reflexivity | rewrite Eg1; exact Hoff | exact HPQ | exact Hrp0
+          [rewrite E1; reflexivity | rewrite E1; reflexivity | rewrite E1; reflexivity | rewrite E1; reflexivity | exact HR
+          | rewrite Eg1; reflexivity | rewrite Eg1; exact Hoff | exact HPQ | exact Hrp0 | exact Hrdy0
           | exact Hst0 | exact Hdlq | exact Hrnr | rewrite Ess; reflexivity].
       - rewrite Eg1; unfold CnwbRel; cbn [g_cnwb g_chain g_acc].
         assert (Edm : iDmSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity

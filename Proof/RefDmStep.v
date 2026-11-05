@@ -108,6 +108,11 @@ Section DmStep.
                                   mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iReadRpA := (iReadRp pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                   mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+  Local Abbreviation iRpReadyA := (iRpReady pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+  Local Abbreviation ARR := (AccessRel_rpReady pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                               mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
+                               initLine).
   Local Abbreviation iD2aA := (iD2a pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                   mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iExecEpochA := (iExecEpoch pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -141,7 +146,7 @@ Section DmStep.
       olderWritersA s1 = ((if negb (Zmod.eqb d Zmod.zero) then [d] else []) ++ olderWritersA s1')%list.
   Proof.
     intros s1 s1' d v Hw Hin.
-    destruct Hw as [_ _ _ _ _ _ _ _ _ Hmd Hdmf Hdmst].
+    destruct Hw as [_ _ _ _ _ _ _ _ _ _ Hmd Hdmf Hdmst].
     pose proof (dmInFlightDst_loadRq s1' Hdmst) as Hin'.
     unfold olderWriters; rewrite Hin, Hin'.
     unfold iDmBuf; rewrite Hdmf, Hmd.
@@ -164,7 +169,7 @@ Section DmStep.
   Proof.
     intros g s1 s1' s2 d v Hg Hcn Hrp0 HPQ Hoff HrnR Hsec Htake Hw.
     pose proof Hw as Hw0.
-    destruct Hw0 as [Erf Ewb Ereg Erq Erp Eidle Efe Ede Eex Emd Edmf Edmst].
+    destruct Hw0 as [Erf Ewb Ereg Erq Erp Eidle Erdy Efe Ede Eex Emd Edmf Edmst].
     destruct Hg as [Hrf Hm Hl Hrpl He Ha Hc Hd Hf Hs Hfr Hwf Hrk].
     assert (Hin : dmInFlightDstA s1 = [d]) by (eapply cnwb_dmInFlightDst; eassumption).
     pose proof (olderWriters_dmWb s1 s1' d v Hw Hin) as Eow.
@@ -216,7 +221,7 @@ Section DmStep.
     - exact He.
     - (* rr_acc *)
       unfold AccessRel; cbn [gWb g_acc g_revOff].
-      split; [exact Eidle |]; split; [rewrite Erp; exact Hrp0 |].
+      split; [exact Eidle |]; split; [rewrite Erp; exact Hrp0 |]; split; [exact Erdy |].
       split; [unfold PortsQuiet in *; rewrite Ereg; exact HPQ |]; split; [reflexivity |].
       split; [unfold dmNotAccessing; rewrite Elrp, Errp; split; reflexivity |].
       split; [unfold revNotReading, iRevPhase in *; rewrite Erev; exact HrnR | exact Hsec].
@@ -306,10 +311,10 @@ Section DmStep.
     exists s2; split; [apply NilAction; reflexivity |].
     pose proof Hg as Hg0; destruct Hg0 as [_ _ _ _ _ Ha _ _ _ _ _ _ _].
     destruct (dmRevRp_excl3 _ Hrv) as [Elrq [Elrp Errq]].
-    destruct (msReadRpReady_excl2 _ Hr1) as [Emrq Emsent].
+    destruct (msReadRpReady_excl2 _ (ARR g s1 s2 Ha Hr1)) as [Emrq Emsent].
     unfold AccessRel in Ha.
     destruct (g_acc pcAddrInit g) as [| addr size pkt st | ld pkt0 st | rc st | st | st | addr pkt st] eqn:Eacc.
-    - destruct Ha as [_ [_ [_ [_ [[_ E] _]]]]]; rewrite Hrv in E; discriminate E.
+    - destruct Ha as [_ [_ [_ [_ [_ [[_ E] _]]]]]]; rewrite Hrv in E; discriminate E.
     - destruct Ha as [_ [E _]]; rewrite Elrq in E; discriminate E.
     - destruct Ha as [_ [_ [E _]]]; rewrite Elrp in E; discriminate E.
     - destruct Ha as [Hst [_ [_ [Erc [HrnR [Hoff [Hsec [Hcn [_ [_ Hval]]]]]]]]]].
@@ -318,9 +323,10 @@ Section DmStep.
       + destruct Hst as [[E _] _]; rewrite Emsent in E; discriminate E.
       + destruct Hst as [[E _] _]; rewrite Emsent in E; discriminate E.
       + destruct Hst as [[E _] _]; rewrite Emsent in E; discriminate E.
-      + destruct Hst as [_ [Eres [Hrp0 HPQ]]].
-        exists (gWb g (fst (revWbVal config (dmRevRpV (iDmStA s1)) (msReadRpReadyV (iMemStA s1))))
-                       (snd (revWbVal config (dmRevRpV (iDmStA s1)) (msReadRpReadyV (iMemStA s1))))).
+      + destruct Hst as [_ [Eres0 [Hrp0 HPQ]]].
+        assert (Eres : optData (iRpReadyA s1) = res) by (rewrite Eres0; reflexivity); clear Eres0.
+        exists (gWb g (fst (revWbVal config (dmRevRpV (iDmStA s1)) (optData (iRpReadyA s1))))
+                       (snd (revWbVal config (dmRevRpV (iDmStA s1)) (optData (iRpReadyA s1))))).
         apply (RefRelG_dmWb g s1 s1' s2); [exact Hg | | exact Hrp0 | exact HPQ | exact Hoff | exact HrnR |
                                            exact Hsec | rewrite Eacc; reflexivity | exact Hw].
         cbv beta iota in Hval.
@@ -402,7 +408,7 @@ Section DmStep.
   Local Abbreviation SLW := (specLoadWb config pre post revBase revPfB revPfA initLine).
   Local Abbreviation RWB := (revWb config pre post revBase revPfB revPfA initLine).
   Local Abbreviation OUT s1 :=
-    (evalLetExpr (dispatchLoadResponse config (ldPending (dmLoadRpV (iDmStA s1))) (msReadRpReadyV (iMemStA s1)))).
+    (evalLetExpr (dispatchLoadResponse config (ldPending (dmLoadRpV (iDmStA s1))) (optData (iRpReadyA s1)))).
 
   Lemma specLoadWb_rev :
     forall m pl v, outIsRev (evalLetExpr (dispatchLoadResponse config pl v)) = true ->
@@ -428,19 +434,19 @@ Section DmStep.
   (* A load response waits in `state` for dataMem: the access in flight is that load's *)
   Lemma accLoad_ready :
     forall (g : GhostT) (s1 : IState) (s2 : SState),
-      ACCREL g s1 s2 -> dmLoadRp (iDmStA s1) = true -> msReadRpReady (iMemStA s1) = true ->
+      ACCREL g s1 s2 -> dmLoadRp (iDmStA s1) = true -> optValid (iRpReadyA s1) = true ->
       exists pkt0,
-        g_acc pcAddrInit g = AccLoad (dmLoadRpV (iDmStA s1)) pkt0 (RdReady (msReadRpReadyV (iMemStA s1))) /\
+        g_acc pcAddrInit g = AccLoad (dmLoadRpV (iDmStA s1)) pkt0 (RdReady (optData (iRpReadyA s1))) /\
         optValid (iReadRpA s1) = false /\ PortsQuietA s1 /\ g_revOff pcAddrInit g = RevEq /\
         revNotReadingA s1 /\ optValid (sSecondA s2) = false /\
-        g_cnwb pcAddrInit g = Some (SLW (sMemA s2) (ldPending (dmLoadRpV (iDmStA s1))) (msReadRpReadyV (iMemStA s1))).
+        g_cnwb pcAddrInit g = Some (SLW (sMemA s2) (ldPending (dmLoadRpV (iDmStA s1))) (optData (iRpReadyA s1))).
   Proof.
     intros g s1 s2 Ha Hlrp Hr1.
     destruct (dmLoadRp_excl3 _ Hlrp) as [Elrq [Errq Errp]].
-    destruct (msReadRpReady_excl2 _ Hr1) as [Emrq Emsent].
+    destruct (msReadRpReady_excl2 _ (ARR g s1 s2 Ha Hr1)) as [Emrq Emsent].
     unfold AccessRel in Ha.
     destruct (g_acc pcAddrInit g) as [| addr size pkt st | ld pkt0 st | rc st | st | st | addr pkt st] eqn:Eacc.
-    - destruct Ha as [_ [_ [_ [_ [[E _] _]]]]]; rewrite Hlrp in E; discriminate E.
+    - destruct Ha as [_ [_ [_ [_ [_ [[E _] _]]]]]]; rewrite Hlrp in E; discriminate E.
     - destruct Ha as [_ [E _]]; rewrite Elrq in E; discriminate E.
     - destruct Ha as [Hst [_ [_ [Eld [HrnR [Hoff Hmt]]]]]].
       destruct st as [b | b | b | b rp | res]; unfold RdStageRel in Hst; cbv zeta in Hst.
@@ -448,7 +454,8 @@ Section DmStep.
       + destruct Hst as [[E _] _]; rewrite Emsent in E; discriminate E.
       + destruct Hst as [[E _] _]; rewrite Emsent in E; discriminate E.
       + destruct Hst as [[E _] _]; rewrite Emsent in E; discriminate E.
-      + destruct Hst as [_ [Eres [Hrp HPQ]]]; cbv beta iota zeta in Hmt; destruct Hmt as [Hsec Hcn].
+      + destruct Hst as [_ [Eres0 [Hrp HPQ]]]; cbv beta iota zeta in Hmt; destruct Hmt as [Hsec Hcn].
+        assert (Eres : optData (iRpReadyA s1) = res) by (rewrite Eres0; reflexivity); clear Eres0.
         exists pkt0; subst ld res.
         split; [reflexivity |]; split; [exact Hrp |]; split; [exact HPQ |]; split; [exact Hoff |].
         split; [exact HrnR |]; split; [exact Hsec | exact Hcn].
@@ -477,12 +484,12 @@ Section DmStep.
   Lemma RefRelG_revRq :
     forall (g : GhostT) (s1 s1' : IState) (s2 : SState) pkt0,
       RELG g s1 s2 ->
-      g_acc pcAddrInit g = AccLoad (dmLoadRpV (iDmStA s1)) pkt0 (RdReady (msReadRpReadyV (iMemStA s1))) ->
+      g_acc pcAddrInit g = AccLoad (dmLoadRpV (iDmStA s1)) pkt0 (RdReady (optData (iRpReadyA s1))) ->
       dmLoadRp (iDmStA s1) = true ->
       outIsRev (OUT s1) = true -> RRQ s1 s1' (outRevV (OUT s1)) ->
       RELG (gNone g) s1' s2.
   Proof.
-    intros g s1 s1' s2 pkt0 Hg Eacc Hlrp Hrev [Hfr' [Erq [Eidle [Hrq' Erc']]]].
+    intros g s1 s1' s2 pkt0 Hg Eacc Hlrp Hrev [Hfr' [Erq [Eidle [Erdy' [Hrq' Erc']]]]].
     pose proof Hg as Hg0; destruct Hg0 as [_ _ _ _ _ Ha _ _ _ _ _ _ Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha.
     destruct Ha as [[_ [_ [Hrp HPQ]]] [_ [_ [_ [HrnR [Hoff [Hsec Hcn]]]]]]].
@@ -498,6 +505,7 @@ Section DmStep.
       rewrite Elrp', Hrq', Erc', Hlrp, Edmf, Emd, Edst; reflexivity.
     - unfold AccessRel; cbn [gNone g_acc g_revOff].
       split; [exact Eidle |]; split; [destruct Hfr' as [_ _ _ E _ _ _ _ _]; rewrite E; exact Hrp |].
+      split; [exact Erdy' |].
       split; [unfold PortsQuiet in *; rewrite Ereg; exact HPQ |]; split; [reflexivity |].
       split; [unfold dmNotAccessing; rewrite Elrp', Errp'; split; reflexivity |].
       split; [unfold revNotReading, iRevPhase in *; rewrite Erev; exact HrnR | exact Hsec].
@@ -519,10 +527,10 @@ Section DmStep.
       ISS s1 s1' (dmRevRqV (iDmStA s1)) ->
       RELG (gIssue g (dmRevRqV (iDmStA s1))) s1' s2.
   Proof.
-    intros g s1 s1' s2 Hg Eacc Hrq [Hfr' [Hmrq [Emv [Hreq [Hrp' Erc']]]]].
+    intros g s1 s1' s2 Hg Eacc Hrq [Hfr' [Erdy [Hmrq [Emv [Hreq [Hrp' Erc']]]]]].
     pose proof Hg as Hg0; destruct Hg0 as [_ _ _ _ _ Ha Hc _ _ _ _ _ Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha.
-    destruct Ha as [Hidle [Hrp [HPQ [Hoff [Hdna [HrnR Hsec]]]]]].
+    destruct Ha as [Hidle [Hrp [Hrdy [HPQ [Hoff [Hdna [HrnR Hsec]]]]]]].
     destruct Hc as [_ [C2 [C3 _]]].
     destruct (dmRevRq_excl3 _ Hrq) as [Elrq [Elrp Errp]].
     destruct (dmRevRp_excl3 _ Hrp') as [Elrq' [Elrp' Errq']].
@@ -535,7 +543,8 @@ Section DmStep.
       rewrite Elrp', Errq', Hrp', Erc', Elrp, Hrq, Edmf, Emd; reflexivity.
     - unfold AccessRel; cbn [gIssue g_acc g_revOff g_cnwb].
       split; [unfold RdStageRel; split; [exact Hmrq | split; [exact Emv | split;
-                [rewrite Erp; exact Hrp | unfold PortsQuiet in *; rewrite Ereg; exact HPQ]]] |].
+                [rewrite Erp; exact Hrp | split; [rewrite Erdy; exact Hrdy |
+                 unfold PortsQuiet in *; rewrite Ereg; exact HPQ]]]] |].
       split; [exact Hreq |]; split; [exact Hrp' |]; split; [exact Erc' |].
       split; [unfold revNotReading, iRevPhase in *; rewrite Erev; exact HrnR |].
       split; [exact Hoff |]; split; [exact Hsec |]; split; [exact (C2 Hrq) |].
@@ -580,8 +589,8 @@ Section DmStep.
       + destruct Hst as [[E _] _]; rewrite Emsent in E; discriminate E.
       + destruct Hst as [E _]; rewrite Emrdy in E; discriminate E.
     - destruct Ha as [Hst _]; destruct st as [b | b]; unfold WrStageRel in Hst.
-      + destruct Hst as [_ [E _]]; rewrite Emwr in E; discriminate E.
-      + destruct Hst as [_ [_ [Hk HPW]]].
+      + destruct Hst as [_ [_ [E _]]]; rewrite Emwr in E; discriminate E.
+      + destruct Hst as [_ [_ [_ [Hk HPW]]]].
         unfold PortsWriteStaged in HPW.
         rewrite (noPortWriteB_false _ (buildW b addr pkt capSz) implRegions (iRegionsA s1) Hk) in Hnp; [discriminate Hnp |].
         revert HPW; apply AllPorts_impl; intros r y [_ Hif] HL; rewrite HL in Hif; exact Hif.

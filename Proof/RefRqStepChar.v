@@ -54,21 +54,21 @@ Section RqStepChar.
 
   (* The write step: nothing happens, or line `lineOf b addr` is handed to the regions *)
   Lemma writeRqStep_char :
-    forall env mr mst mrq mrp m' v b addr size pkt,
+    forall env mr mst mrq mrp mrdy m' v b addr size pkt,
       msWriteRqV mst = stepOf b addr size pkt ->
-      SemAction env (@implMemWriteRqStep implRegions type) (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) m' v ->
-      m' = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) \/
+      SemAction env (@implMemWriteRqStep implRegions type) (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) m' v ->
+      m' = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) \/
       (msWriteRq mst = true /\ noPortWriteB implRegions mr = true /\
        exists mr' rdy st',
-         SemAction (subEnv child0Path env (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))))
+         SemAction (subEnv child0Path env (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))))
            (@implRegionsLineWriteRq type implRegions (buildW b addr pkt size)) mr mr' rdy /\
-         m' = (mr' ,, (st' ,, (mrq ,, (mrp ,, tt)))) /\
+         m' = (mr' ,, (st' ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) /\
          (rdy = false -> st' = mst) /\
          (rdy = true -> if andb (negb b) (crossesB addr size)
                         then msWriteRq st' = true /\ msWriteRqV st' = stepOf true addr size pkt
                         else msIdle st' = true)).
   Proof.
-    intros env mr mst mrq mrp m' v b addr size pkt Ev H.
+    intros env mr mst mrq mrp mrdy m' v b addr size pkt Ev H.
     rewrite SemAction_iff_evalActionPropGen in H.
     unfold implMemWriteRqStep, implMemNoPortWriteRq in H.
     cbn [evalActionPropGen] in H.
@@ -243,21 +243,21 @@ Section RqStepChar.
   Proof. intros b addr size; reflexivity. Qed.
 
   Lemma readRqStep_char :
-    forall env mr mst mrq mrp m' v b addr size pkt,
+    forall env mr mst mrq mrp mrdy m' v b addr size pkt,
       msReadRqV mst = stepOf b addr size pkt ->
-      SemAction env (@implMemReadRqStep implRegions type) (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) m' v ->
-      m' = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) \/
+      SemAction env (@implMemReadRqStep implRegions type) (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) m' v ->
+      m' = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) \/
       (msReadRq mst = true /\ optValid mrp = false /\
        exists mr' (res : type LineReadRqRes) st' mrp',
-         SemAction (subEnv child0Path env (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))))
+         SemAction (subEnv child0Path env (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))))
            (@implRegionsLineReadRq type implRegions (rdLineOf b addr) (rdMaskOf b addr size)) mr mr' res /\
-         m' = (mr' ,, (st' ,, (mrq ,, (mrp' ,, tt)))) /\
+         m' = (mr' ,, (st' ,, (mrq ,, (mrp' ,, (mrdy ,, tt))))) /\
          (res.(Fst) = false -> st' = mst /\ mrp' = mrp) /\
          (res.(Fst) = true -> msReadRqSent st' = true /\
                               msReadRqSentV st' = (crossesB addr size ,, (stepOf b addr size pkt ,, tt)) /\
                               mrp' = (if optValid res.(Snd).(Fst) then res.(Snd).(Fst) else mrp))).
   Proof.
-    intros env mr mst mrq mrp m' v b addr size pkt Ev H.
+    intros env mr mst mrq mrp mrdy m' v b addr size pkt Ev H.
     rewrite SemAction_iff_evalActionPropGen in H.
     unfold implMemReadRqStep in H.
     cbn [evalActionPropGen] in H.

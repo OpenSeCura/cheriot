@@ -96,22 +96,28 @@ Definition memIdleV : type MemState := evalExpr (UNION (MemStateList, "Idle" ::=
 Lemma msIdle_idleV : msIdle memIdleV = true.
 Proof. reflexivity. Qed.
 
+(* The memory after `implMemDeqRp`: `state` Idle and `rpReady` empty *)
+Definition memDeqOf {regions} (m : TS (implMemTree regions)) : TS (implMemTree regions) :=
+  (m.(Fst) ,, (memIdleV ,, (m.(Snd).(Snd).(Fst) ,, (m.(Snd).(Snd).(Snd).(Fst) ,,
+     (getDefault (Option FullCapWithTag) ,, tt))))).
+
 Lemma getDeqRevDm_char :
   forall config regions env base (m m' : TS (implMemTree regions)) r,
     SemAction env (@implGetDeqRevBitRpFor config regions type ReqDataMem base) m m' r ->
-    (andb (msReadRpReady m.(Snd).(Fst)) (isReqDataMem m.(Snd).(Snd).(Fst)) = false /\ m' = m /\ optValid r = false) \/
-    (msReadRpReady m.(Snd).(Fst) = true /\ isReqDataMem m.(Snd).(Snd).(Fst) = true /\
-     m' = (m.(Fst) ,, (memIdleV ,, m.(Snd).(Snd))) /\
-     r = (revBitOfVal config base (msReadRpReadyV m.(Snd).(Fst)) ,, (true ,, tt))).
+    (andb (optValid m.(Snd).(Snd).(Snd).(Snd).(Fst)) (isReqDataMem m.(Snd).(Snd).(Fst)) = false /\ m' = m /\
+     optValid r = false) \/
+    (optValid m.(Snd).(Snd).(Snd).(Snd).(Fst) = true /\ isReqDataMem m.(Snd).(Snd).(Fst) = true /\
+     m' = memDeqOf m /\
+     r = (revBitOfVal config base (optData m.(Snd).(Snd).(Snd).(Snd).(Fst)) ,, (true ,, tt))).
 Proof.
-  intros config regions env base [mr [mst [mrq [mrp []]]]] m' r H; cbn [Fst Snd].
+  intros config regions env base [mr [mst [mrq [mrp [mrdy []]]]]] m' r H; cbn [Fst Snd].
   rewrite SemAction_iff_evalActionPropGen in H.
   unfold implGetDeqRevBitRpFor, implMemReadRp in H; cbn [evalActionPropGen] in H.
   apply evalActionPropGen_toAction in H; dm_cbn H; rewrite ?evalExpr_Var' in H.
   match type of H with context [if ?c then _ else _] => destruct c eqn:Erp end.
   - match type of H with context [if ?c then _ else _] => destruct c eqn:Ev end.
     2: { exfalso; cbn in Ev; discriminate Ev. }
-    assert (Hr : andb (msReadRpReady mst) (isReqDataMem mrq) = true) by exact Erp.
+    assert (Hr : andb (optValid mrdy) (isReqDataMem mrq) = true) by exact Erp.
     apply andb_prop in Hr as [Hr1 Hr2].
     unfold implMemDeqRp in H; dm_cbn H; rewrite ?evalExpr_Var' in H.
     destruct H as [H1 H2]; subst m' r.
@@ -131,7 +137,7 @@ Lemma readRevBitRqDm_char :
        msReadRqV st' = stepOf false (revByteAddrOf config base) byteSz (getDefault CapPacket) /\
        isReqDataMem rq' = true).
 Proof.
-  intros config regions env base [mr [mst [mrq [mrp []]]]] m' r H; cbn [Fst Snd].
+  intros config regions env base [mr [mst [mrq [mrp [mrdy []]]]]] m' r H; cbn [Fst Snd].
   rewrite SemAction_iff_evalActionPropGen in H.
   unfold implReadRevBitRqFor, implMemReadRq, implMemNoPortWriteRq in H.
   cbn [evalActionPropGen] in H.
@@ -151,25 +157,25 @@ Qed.
 Lemma memReadRpDm_char :
   forall regions env (m m' : TS (implMemTree regions)) r,
     SemAction env (@implMemReadRp regions type ReqDataMem) m m' r ->
-    m' = m /\ optValid r = andb (msReadRpReady m.(Snd).(Fst)) (isReqDataMem m.(Snd).(Snd).(Fst)) /\
-    optData r = (if andb (msReadRpReady m.(Snd).(Fst)) (isReqDataMem m.(Snd).(Snd).(Fst))
-                 then msReadRpReadyV m.(Snd).(Fst) else getDefault FullCapWithTag).
+    m' = m /\ optValid r = andb (optValid m.(Snd).(Snd).(Snd).(Snd).(Fst)) (isReqDataMem m.(Snd).(Snd).(Fst)) /\
+    optData r = (if andb (optValid m.(Snd).(Snd).(Snd).(Snd).(Fst)) (isReqDataMem m.(Snd).(Snd).(Fst))
+                 then optData m.(Snd).(Snd).(Snd).(Snd).(Fst) else getDefault FullCapWithTag).
 Proof.
-  intros regions env [mr [mst [mrq [mrp []]]]] m' r H; cbn [Fst Snd].
+  intros regions env [mr [mst [mrq [mrp [mrdy []]]]]] m' r H; cbn [Fst Snd].
   rewrite SemAction_iff_evalActionPropGen in H.
   unfold implMemReadRp in H; cbn [evalActionPropGen] in H; dm_cbn H; rewrite ?evalExpr_Var' in H.
   match type of H with context [if ?c then _ else _] => destruct c eqn:Erp end;
     destruct H as [H1 H2]; subst m' r; (split; [reflexivity |]);
     (match type of Erp with ?L = _ =>
-       assert (Hr : andb (msReadRpReady mst) (isReqDataMem mrq) = L) by reflexivity end);
+       assert (Hr : andb (optValid mrdy) (isReqDataMem mrq) = L) by reflexivity end);
     rewrite Hr, Erp; split; reflexivity.
 Qed.
 
 Lemma memDeqRp_char :
   forall regions env (m m' : TS (implMemTree regions)) r,
-    SemAction env (@implMemDeqRp regions type) m m' r -> m' = (m.(Fst) ,, (memIdleV ,, m.(Snd).(Snd))).
+    SemAction env (@implMemDeqRp regions type) m m' r -> m' = memDeqOf m.
 Proof.
-  intros regions env [mr [mst [mrq [mrp []]]]] m' r H; cbn [Fst Snd].
+  intros regions env [mr [mst [mrq [mrp [mrdy []]]]]] m' r H; cbn [Fst Snd].
   rewrite SemAction_iff_evalActionPropGen in H.
   unfold implMemDeqRp in H; cbn [evalActionPropGen] in H; dm_cbn H.
   destruct H as [H1 _]; subst m'; reflexivity.
@@ -214,6 +220,9 @@ Section DmImpl.
   Local Abbreviation iReadRpA :=
     (iReadRp pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
              mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+  Local Abbreviation iRpReadyA :=
+    (iRpReady pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+              mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iFetchA :=
     (iFetch pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
             mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
@@ -246,6 +255,7 @@ Section DmImpl.
     dw_rq    : iRequesterA s1' = iRequesterA s1 ;
     dw_rp    : iReadRpA s1' = iReadRpA s1 ;
     dw_idle  : msIdle (iMemStA s1') = true ;
+    dw_rdy   : optValid (iRpReadyA s1') = false ;
     dw_fetch : iFetchA s1' = iFetchA s1 ;
     dw_dec   : iDecodeA s1' = iDecodeA s1 ;
     dw_exec  : iExecA s1' = iExecA s1 ;
@@ -305,11 +315,11 @@ Section DmImpl.
       writeSubTreeState NPCORE s1
         (writeSubTreeState NPDM
            (ECW d v (writeSubTreeState NPMEM (readSubTreeState NPCORE s1)
-                       (Fst (iMemA s1) ,, (memIdleV ,, Snd (Snd (iMemA s1))))))
+                       (@memDeqOf implRegions (iMemA s1))))
            (writeTreeState (getNode NPDM)
               (readSubTreeState NPDM
                  (ECW d v (writeSubTreeState NPMEM (readSubTreeState NPCORE s1)
-                             (Fst (iMemA s1) ,, (memIdleV ,, Snd (Snd (iMemA s1)))))))
+                             (@memDeqOf implRegions (iMemA s1)))))
               (regPath (pState dataMemCapacity))
               (castStateRegInv (pState dataMemCapacity) dmLoadRqV))) = s1' ->
       DmWbStep s1 s1' d v.
@@ -328,9 +338,9 @@ Section DmImpl.
     forall env (s1 s1' : IState) r,
       SemAction env REVRP s1 s1' r ->
       s1' = s1 \/
-      (dmRevRp (iDmStA s1) = true /\ msReadRpReady (iMemStA s1) = true /\ isReqDataMem (iRequesterA s1) = true /\
-       DmWbStep s1 s1' (fst (revWbVal (dmRevRpV (iDmStA s1)) (msReadRpReadyV (iMemStA s1))))
-                       (snd (revWbVal (dmRevRpV (iDmStA s1)) (msReadRpReadyV (iMemStA s1))))).
+      (dmRevRp (iDmStA s1) = true /\ optValid (iRpReadyA s1) = true /\ isReqDataMem (iRequesterA s1) = true /\
+       DmWbStep s1 s1' (fst (revWbVal (dmRevRpV (iDmStA s1)) (optData (iRpReadyA s1))))
+                       (snd (revWbVal (dmRevRpV (iDmStA s1)) (optData (iRpReadyA s1))))).
   Proof.
     intros env s1 s1' r H.
     rewrite SemAction_iff_evalActionPropGen in H.
@@ -348,7 +358,7 @@ Section DmImpl.
     cbn [mem_getDeqRevBitRp implMemIfc] in Hm.
     apply getDeqRevDm_char in Hm.
     change (readSubTreeState NPMEM (readSubTreeState NPCORE s1)) with (iMemA s1) in Hm, H.
-    change (Fst (Snd (iMemA s1))) with (iMemStA s1) in Hm.
+    change (Fst (Snd (Snd (Snd (Snd (iMemA s1)))))) with (iRpReadyA s1) in Hm.
     change (Fst (Snd (Snd (iMemA s1)))) with (iRequesterA s1) in Hm.
     destruct Hm as [[Hn [-> Hv]] | [Hr1 [Hr2 [-> ->]]]].
     - left.
@@ -379,7 +389,7 @@ Section DmImpl.
 
   (* dataMem hands the rev-bit read of command `rc` to the memory *)
   Definition IssueStep (s1 s1' : IState) (rc : type RevCmd) : Prop :=
-    DmFrame s1 s1' /\ msReadRq (iMemStA s1') = true /\
+    DmFrame s1 s1' /\ iRpReadyA s1' = iRpReadyA s1 /\ msReadRq (iMemStA s1') = true /\
     msReadRqV (iMemStA s1') = stepOf false (revByteAddrOf config (rcBase rc)) byteSz (getDefault CapPacket) /\
     isReqDataMem (iRequesterA s1') = true /\ dmRevRp (iDmStA s1') = true /\ dmRevRpV (iDmStA s1') = rc.
 
@@ -432,7 +442,7 @@ Section DmImpl.
       rewrite evalActionPropGen_liftAction in H; unfold writeState in H; cbn [evalActionPropGen] in H.
       destruct H as [H _]; subst c'.
       destruct (dmRevRpOf_facts (dmRevRqV (iDmStA s1))) as [F1 F2].
-      split; [constructor; reflexivity |].
+      split; [constructor; reflexivity |]; split; [reflexivity |].
       split; [exact Hst1 | split; [exact Hst2 | split; [exact Hrq' | split; [exact F1 | exact F2]]]].
   Qed.
 
@@ -446,7 +456,7 @@ Section DmImpl.
   (* dataMem takes a load response that needs a rev-bit lookup for command `rc` *)
   Definition RevRqStep (s1 s1' : IState) (rc : type RevCmd) : Prop :=
     DmFrame s1 s1' /\ iRequesterA s1' = iRequesterA s1 /\ msIdle (iMemStA s1') = true /\
-    dmRevRq (iDmStA s1') = true /\ dmRevRqV (iDmStA s1') = rc.
+    optValid (iRpReadyA s1') = false /\ dmRevRq (iDmStA s1') = true /\ dmRevRqV (iDmStA s1') = rc.
 
   Definition dmRevRqOf (rc : type RevCmd) : type DataMemState :=
     evalExpr (UNION (DataMemStateList, "RevRq" ::= Var type RevCmd rc)).
@@ -465,8 +475,8 @@ Section DmImpl.
     forall cenv (s1 : IState) c' r,
       SemAction cenv LOADRP (readSubTreeState NPCORE s1) c' r ->
       writeSubTreeState NPCORE s1 c' = s1 \/
-      (dmLoadRp (iDmStA s1) = true /\ msReadRpReady (iMemStA s1) = true /\ isReqDataMem (iRequesterA s1) = true /\
-       let out := evalLetExpr (dispatchLoadResponse config (ldPending (dmLoadRpV (iDmStA s1))) (msReadRpReadyV (iMemStA s1))) in
+      (dmLoadRp (iDmStA s1) = true /\ optValid (iRpReadyA s1) = true /\ isReqDataMem (iRequesterA s1) = true /\
+       let out := evalLetExpr (dispatchLoadResponse config (ldPending (dmLoadRpV (iDmStA s1))) (optData (iRpReadyA s1))) in
        ((outIsRev out = true /\ RevRqStep s1 (writeSubTreeState NPCORE s1 c') (outRevV out)) \/
         (outIsRev out = false /\ DmWbStep s1 (writeSubTreeState NPCORE s1 c') (fst (outWb out)) (snd (outWb out))))).
   Proof.
@@ -485,12 +495,12 @@ Section DmImpl.
     cbn [mem_getMemRp implMemIfc] in Hm.
     apply memReadRpDm_char in Hm.
     change (readSubTreeState NPMEM (readSubTreeState NPCORE s1)) with (iMemA s1) in Hm, H.
-    change (Fst (Snd (iMemA s1))) with (iMemStA s1) in Hm.
+    change (Fst (Snd (Snd (Snd (Snd (iMemA s1)))))) with (iRpReadyA s1) in Hm.
     change (Fst (Snd (Snd (iMemA s1)))) with (iRequesterA s1) in Hm.
     destruct Hm as [-> [Hv Hd]].
     change (iMemA s1) with (readSubTreeState NPMEM (readSubTreeState NPCORE s1)) in H at 1.
     rewrite writeSubTreeState_readSubTreeState in H.
-    destruct (andb (msReadRpReady (iMemStA s1)) (isReqDataMem (iRequesterA s1))) eqn:Erp.
+    destruct (andb (optValid (iRpReadyA s1)) (isReqDataMem (iRequesterA s1))) eqn:Erp.
     2: { left; apply fw_ifFalse in H; [| exact Hv].
          cbn [evalActionPropGen] in H; destruct H as [H _]; subst c'.
          apply writeSubTreeState_readSubTreeState. }
@@ -504,7 +514,7 @@ Section DmImpl.
     apply fw_letLGen in H as [out [Eout H]].
     match type of Eout with _ = evalLetExpr (dispatchLoadResponse _ ?pl ?mvx) =>
       assert (Epl : pl = ldPending (dmLoadRpV (iDmStA s1))) by reflexivity; rewrite Epl in Eout;
-      assert (Emv : mvx = msReadRpReadyV (iMemStA s1)) by (rewrite <- Hd; reflexivity); rewrite Emv in Eout
+      assert (Emv : mvx = optData (iRpReadyA s1)) by (rewrite <- Hd; reflexivity); rewrite Emv in Eout
     end.
     cbv zeta; rewrite <- Eout.
     apply fw_ifTF in H as [[Hc H] | [Hc H]].
@@ -513,7 +523,7 @@ Section DmImpl.
       rewrite evalActionPropGen_liftAction in H; unfold writeState in H; cbn [evalActionPropGen] in H.
       destruct H as [H _]; subst c'.
       split; [constructor; reflexivity |].
-      split; [reflexivity | split; [reflexivity | split; [reflexivity |]]].
+      split; [reflexivity | split; [reflexivity | split; [reflexivity | split; [reflexivity |]]]].
       exact (proj2 (dmRevRqOf_facts (outRevV out))).
     - right; split; [exact Hc |].
       do 4 (apply fw_letExp in H).

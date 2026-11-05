@@ -992,7 +992,7 @@ Section RegionEnvs.
                     (envNodeCons (implRegionsEnv (fun i => fwcs (S i)) rs) envCtxTrue)
     end.
 
-  (* `implMemTree`: [ implRegionsTree; state; requester; readRp ] *)
+  (* `implMemTree`: [ implRegionsTree; state; requester; readRp; rpReady ] *)
   Definition implMemEnv (fwcs : nat -> nat -> nat) (regions : list MemRegion)
     : Env (implMemTree regions) :=
     envNodeCons (implRegionsEnv fwcs regions) envCtxTrue.

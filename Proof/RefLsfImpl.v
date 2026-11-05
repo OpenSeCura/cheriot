@@ -46,7 +46,7 @@ Lemma memReadRqDm_char :
      exists st' rq', m' = (m.(Fst) ,, (st' ,, (rq' ,, m.(Snd).(Snd).(Snd)))) /\ msReadRq st' = true /\
        msReadRqV st' = stepOf false addr sz (getDefault CapPacket) /\ isReqDataMem rq' = true).
 Proof.
-  intros regions env addr sz [mr [mst [mrq [mrp []]]]] m' r H; cbn [Fst Snd].
+  intros regions env addr sz [mr [mst [mrq [mrp [mrdy []]]]]] m' r H; cbn [Fst Snd].
   rewrite SemAction_iff_evalActionPropGen in H.
   unfold implMemReadRq, implMemNoPortWriteRq in H.
   cbn [evalActionPropGen] in H.
@@ -193,7 +193,7 @@ Lemma fenceIReq_char :
      exists env' mr' v', SemAction env' (@implRegionsSendFenceIRq type regions) m.(Fst) mr' v' /\
        m' = (mr' ,, m.(Snd))).
 Proof.
-  intros regions env [mr [mst [mrq [mrp []]]]] m' r H; cbn [Fst Snd].
+  intros regions env [mr [mst [mrq [mrp [mrdy []]]]]] m' r H; cbn [Fst Snd].
   rewrite SemAction_iff_evalActionPropGen in H.
   unfold implFenceIReq, implMemNoPendingWrite, implMemNoWriteRq, implMemNoPortWriteRq in H.
   cbn [evalActionPropGen] in H.
@@ -237,17 +237,17 @@ Section WriteMem.
     rewrite ?setRevR_setRevR in H.
 
   Lemma writeMem_char :
-    forall env addr v sz mr mst mrq mrp m' r b t c e ist ir sa st ph sc sb sh,
+    forall env addr v sz mr mst mrq mrp mrdy m' r b t c e ist ir sa st ph sc sb sh,
       revOfRA mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ->
-      SemAction env (@implWriteMem implRegions type revI addr v sz) (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) m' r ->
-      (andb (msIdle mst) (noPortWriteB implRegions mr) = false /\ m' = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) /\ r = false) \/
+      SemAction env (@implWriteMem implRegions type revI addr v sz) (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) m' r ->
+      (andb (msIdle mst) (noPortWriteB implRegions mr) = false /\ m' = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) /\ r = false) \/
       (msIdle mst = true /\ noPortWriteB implRegions mr = true /\ r = true /\
        exists st',
          m' = (setRevRA mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,,
-                 (orb (snoopHitsB addr sz sa) sh ,, tt)))))))))))) ,, (st' ,, (mrq ,, (mrp ,, tt)))) /\
+                 (orb (snoopHitsB addr sz sa) sh ,, tt)))))))))))) ,, (st' ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) /\
          msWriteRq st' = true /\ msWriteRqV st' = stepOf false addr sz (disassembleW addr v sz)).
   Proof.
-    intros env addr v sz mr mst mrq mrp m' r b t c e ist ir sa st ph sc sb sh Ex H.
+    intros env addr v sz mr mst mrq mrp mrdy m' r b t c e ist ir sa st ph sc sb sh Ex H.
     rewrite SemAction_iff_evalActionPropGen in H.
     unfold implWriteMem, implMemWrite, implMemNoPortWriteRq in H.
     cbn [evalActionPropGen] in H.
@@ -275,8 +275,8 @@ Section WriteMem.
        exists st', m' = (setRevRA m.(Fst) (snoopRev addr sz (revOfRA m.(Fst))) ,, (st' ,, m.(Snd).(Snd))) /\
          msWriteRq st' = true /\ msWriteRqV st' = stepOf false addr sz (disassembleW addr v sz)).
   Proof.
-    intros env addr v sz [mr [mst [mrq [mrp []]]]] m' r H.
-    exact (writeMem_char env addr v sz mr mst mrq mrp m' r _ _ _ _ _ _ _ _ _ _ _ _ (revEta (revOfRA mr)) H).
+    intros env addr v sz [mr [mst [mrq [mrp [mrdy []]]]]] m' r H.
+    exact (writeMem_char env addr v sz mr mst mrq mrp mrdy m' r _ _ _ _ _ _ _ _ _ _ _ _ (revEta (revOfRA mr)) H).
   Qed.
 End WriteMem.
 
@@ -317,6 +317,9 @@ Section LsfImpl.
   Local Abbreviation iReadRpA :=
     (iReadRp pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
              mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+  Local Abbreviation iRpReadyA :=
+    (iRpReady pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+              mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iFetchA :=
     (iFetch pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
             mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
@@ -394,7 +397,8 @@ Section LsfImpl.
                 stepOf false (stAddrOf (storeCmdOf q)) (stSizeOf (storeCmdOf q))
                   (disassembleW (stAddrOf (storeCmdOf q)) (stValOf (storeCmdOf q)) (stSizeOf (storeCmdOf q))) ;
     sa_rq   : iRequesterA s1' = iRequesterA s1 ;
-    sa_rp   : iReadRpA s1' = iReadRpA s1
+    sa_rp   : iReadRpA s1' = iReadRpA s1 ;
+    sa_rdy  : iRpReadyA s1' = iRpReadyA s1
   }.
 
   Record LoadAcc (s1 s1' : IState) (q : type MemFenceReq) : Prop := {
@@ -409,7 +413,8 @@ Section LsfImpl.
     la_msv  : msReadRqV (iMemStA s1') =
                 stepOf false (ldAddr (loadCmdOf q)) (plSize (ldPending (loadCmdOf q))) (getDefault CapPacket) ;
     la_rq   : isReqDataMem (iRequesterA s1') = true ;
-    la_rp   : iReadRpA s1' = iReadRpA s1
+    la_rp   : iReadRpA s1' = iReadRpA s1 ;
+    la_rdy  : iRpReadyA s1' = iRpReadyA s1
   }.
 
   Record PlainAcc (s1 s1' : IState) : Prop := {
@@ -501,7 +506,7 @@ Section LsfImpl.
           right; exists q, rest; split; [exact El | split; [exact Hlrq |]].
           left; split; [exact Em | split; [exact Es |]].
           split; [split; reflexivity | reflexivity | reflexivity | exact Hi | exact Hnp | reflexivity |
-                  exact Hw1 | exact Hw2 | reflexivity | reflexivity].
+                  exact Hw1 | exact Hw2 | reflexivity | reflexivity | reflexivity].
       + assert (Es : maStore q = false) by exact Hs; clear Hs.
         do 4 apply fw_letExp in H.
         apply fw_liftSem in H; destruct H as [sm' [acc [Hmem H]]].
@@ -522,7 +527,7 @@ Section LsfImpl.
           right; left; split; [exact Em | split; [exact Es |]].
           split; [split; reflexivity | reflexivity | exact (proj1 (dmLoadRpOf_facts _)) |
                   exact (proj2 (dmLoadRpOf_facts _)) | exact Hi | exact Hnp | reflexivity |
-                  exact Hr1 | exact Hr2 | exact Hr3 | reflexivity].
+                  exact Hr1 | exact Hr2 | exact Hr3 | reflexivity | reflexivity].
     - assert (Em : mfMem q = false) by exact Hm; clear Hm.
       do 2 apply fw_letExp in H.
       apply fw_ifTF in H as [[Hf H] | [Hf H]].

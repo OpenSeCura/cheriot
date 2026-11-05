@@ -294,19 +294,19 @@ Section RevLens.
     rewrite ?setRevR_setRevR in H; rev_fold H Ex.
 
   Lemma waitRevBitRq_char :
-    forall env mr mst mrq mrp m' v b t c e ist ir sa st ph sc sb sh,
+    forall env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh,
       revOfR mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ->
       SemAction env (@implRevokerWaitRevBitRqStep config implRegions type revI)
-        (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) m' v ->
-      m' = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) \/
+        (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) m' v ->
+      m' = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) \/
       (rpWaitRevBitRq ph = true /\ msIdle mst = true /\ noPortWriteB implRegions mr = true /\
        exists st' rq' ph',
          m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,,
-               (st' ,, (rq' ,, (mrp ,, tt)))) /\
+               (st' ,, (rq' ,, (mrp ,, (mrdy ,, tt))))) /\
          msReadRq st' = true /\ msReadRqV st' = stepOf false (revByteAddrOf config sb) byteSz (getDefault CapPacket) /\
          isReqRevoker rq' = true /\ rpWaitRevBitRp ph' = true).
   Proof.
-    intros env mr mst mrq mrp m' v b t c e ist ir sa st ph sc sb sh Ex H.
+    intros env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh Ex H.
     rewrite SemAction_iff_evalActionPropGen in H.
     unfold implRevokerWaitRevBitRqStep, implRevokerWaitRevBitRq, ImplDevice.liftRevoker in H.
     cbn [evalActionPropGen] in H.
@@ -332,31 +332,31 @@ Section RevLens.
     rewrite msReadRqV_build; reflexivity.
   Qed.
   Lemma idle_char :
-    forall env mr mst mrq mrp m' v b t c e ist ir sa st ph sc sb sh,
+    forall env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh,
       revOfR mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ->
-      SemAction env (@implRevokerIdleStep implRegions type revI) (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) m' v ->
-      m' = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) \/
+      SemAction env (@implRevokerIdleStep implRegions type revI) (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) m' v ->
+      m' = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) \/
       (andb (negb (msWriteRq mst)) (noPortWriteB implRegions mr) = true /\ rpIdle ph = true /\
        epochOdd e = true /\ scanDone sa st = false /\ msIdle mst = true /\
        exists st' rq' ph',
          m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (false ,, tt)))))))))))) ,,
-               (st' ,, (rq' ,, (mrp ,, tt)))) /\
+               (st' ,, (rq' ,, (mrp ,, (mrdy ,, tt))))) /\
          msReadRq st' = true /\ msReadRqV st' = stepOf false (scanFull sa) capSz (getDefault CapPacket) /\
          isReqRevoker rq' = true /\ rpWaitCapRp ph' = true) \/
       (andb (negb (msWriteRq mst)) (noPortWriteB implRegions mr) = true /\ rpIdle ph = true /\
        epochOdd e = true /\ scanDone sa st = true /\
        m' = (setRevR mr (b ,, (t ,, (c ,, (epochInc e ,, ((if ir then true else ist) ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,,
-             (mst ,, (mrq ,, (mrp ,, tt))))) \/
+             (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt)))))) \/
       (andb (negb (msWriteRq mst)) (noPortWriteB implRegions mr) = true /\ rpIdle ph = true /\
        epochOdd e = false /\ c = true /\
        m' = (setRevR mr (b ,, (t ,, (false ,, (epochMkOdd e ,, (false ,, (ir ,, (b ,, (t ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,,
-             (mst ,, (mrq ,, (mrp ,, tt))))) \/
+             (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt)))))) \/
       (andb (negb (msWriteRq mst)) (noPortWriteB implRegions mr) = true /\ rpIdle ph = true /\
        epochOdd e = false /\ c = false /\
        m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (false ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,,
-             (mst ,, (mrq ,, (mrp ,, tt))))).
+             (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt)))))).
   Proof.
-    intros env mr mst mrq mrp m' v b t c e ist ir sa st ph sc sb sh Ex H.
+    intros env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh Ex H.
     rewrite SemAction_iff_evalActionPropGen in H.
     unfold implRevokerIdleStep, implMemNoPendingWrite, implMemNoWriteRq, implMemNoPortWriteRq in H.
     cbn [evalActionPropGen] in H.
@@ -420,24 +420,24 @@ Section RevLens.
     evalExpr (extractRevBit lookup (TruncLsb (AddrSz - 8) 8 (##v`"addr"))).
 
   Lemma waitCapRp_char :
-    forall env mr mst mrq mrp m' v b t c e ist ir sa st ph sc sb sh,
+    forall env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh,
       revOfR mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ->
       SemAction env (@implRevokerWaitCapRpStep config implRegions type revI)
-        (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) m' v ->
-      m' = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) \/
-      (rpWaitCapRp ph = true /\ msReadRpReady mst = true /\ isReqRevoker mrq = true /\
-       capNeedsCheck config (msReadRpReadyV mst) = true /\
+        (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) m' v ->
+      m' = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) \/
+      (rpWaitCapRp ph = true /\ optValid mrdy = true /\ isReqRevoker mrq = true /\
+       capNeedsCheck config (optData mrdy) = true /\
        exists st' ph',
-         m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (msReadRpReadyV mst ,, (capBase (msReadRpReadyV mst) ,, (sh ,, tt)))))))))))) ,,
-               (st' ,, (mrq ,, (mrp ,, tt)))) /\
+         m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (optData mrdy ,, (capBase (optData mrdy) ,, (sh ,, tt)))))))))))) ,,
+               (st' ,, (mrq ,, (mrp ,, (getDefault (Option FullCapWithTag) ,, tt))))) /\
          msIdle st' = true /\ rpWaitRevBitRq ph' = true) \/
-      (rpWaitCapRp ph = true /\ msReadRpReady mst = true /\ isReqRevoker mrq = true /\
-       capNeedsCheck config (msReadRpReadyV mst) = false /\
+      (rpWaitCapRp ph = true /\ optValid mrdy = true /\ isReqRevoker mrq = true /\
+       capNeedsCheck config (optData mrdy) = false /\
        exists st' ph',
-         m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (scanNext sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,, (st' ,, (mrq ,, (mrp ,, tt)))) /\
+         m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (scanNext sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,, (st' ,, (mrq ,, (mrp ,, (getDefault (Option FullCapWithTag) ,, tt))))) /\
          msIdle st' = true /\ rpIdle ph' = true).
   Proof.
-    intros env mr mst mrq mrp m' v b t c e ist ir sa st ph sc sb sh Ex H.
+    intros env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh Ex H.
     rewrite SemAction_iff_evalActionPropGen in H.
     unfold implRevokerWaitCapRpStep, implRevokerWaitCapRp, ImplDevice.liftRevoker in H.
     cbn [evalActionPropGen] in H.
@@ -449,7 +449,7 @@ Section RevLens.
     match type of H with context [if ?c then _ else _] => destruct c eqn:Erp end.
     - match type of H with context [if ?c then _ else _] => destruct c eqn:Ev end.
       2: { exfalso; cbn in Ev; discriminate Ev. }
-      assert (Hr : andb (msReadRpReady mst) (isReqRevoker mrq) = true) by exact Erp.
+      assert (Hr : andb (optValid mrdy) (isReqRevoker mrq) = true) by exact Erp.
       apply andb_prop in Hr as [Hr1 Hr2].
       unfold implMemDeqRp in H; rev_cbn H; rewrite ?evalExpr_Var in H.
       apply evalActionPropGen_toAction in H; rev_cbn H; rewrite ?evalExpr_Var in H.
@@ -470,22 +470,22 @@ Section RevLens.
   Qed.
 
   Lemma waitRevBitRp_char :
-    forall env mr mst mrq mrp m' v b t c e ist ir sa st ph sc sb sh,
+    forall env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh,
       revOfR mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ->
       SemAction env (@implRevokerWaitRevBitRpStep config implRegions type revI)
-        (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) m' v ->
-      m' = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) \/
-      (rpWaitRevBitRp ph = true /\ msReadRpReady mst = true /\ isReqRevoker mrq = true /\
+        (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) m' v ->
+      m' = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) \/
+      (rpWaitRevBitRp ph = true /\ optValid mrdy = true /\ isReqRevoker mrq = true /\
        exists st' ph',
          msIdle st' = true /\
          ((sh = true /\ rpIdle ph' = true /\
-           m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,, (st' ,, (mrq ,, (mrp ,, tt))))) \/
-          (sh = false /\ revBitOfVal sb (msReadRpReadyV mst) = true /\ rpWriteCap ph' = true /\
-           m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,, (st' ,, (mrq ,, (mrp ,, tt))))) \/
-          (sh = false /\ revBitOfVal sb (msReadRpReadyV mst) = false /\ rpIdle ph' = true /\
-           m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (scanNext sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,, (st' ,, (mrq ,, (mrp ,, tt))))))).
+           m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,, (st' ,, (mrq ,, (mrp ,, (getDefault (Option FullCapWithTag) ,, tt)))))) \/
+          (sh = false /\ revBitOfVal sb (optData mrdy) = true /\ rpWriteCap ph' = true /\
+           m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,, (st' ,, (mrq ,, (mrp ,, (getDefault (Option FullCapWithTag) ,, tt)))))) \/
+          (sh = false /\ revBitOfVal sb (optData mrdy) = false /\ rpIdle ph' = true /\
+           m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (scanNext sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,, (st' ,, (mrq ,, (mrp ,, (getDefault (Option FullCapWithTag) ,, tt)))))))).
   Proof.
-    intros env mr mst mrq mrp m' v b t c e ist ir sa st ph sc sb sh Ex H.
+    intros env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh Ex H.
     rewrite SemAction_iff_evalActionPropGen in H.
     unfold implRevokerWaitRevBitRpStep, implRevokerWaitRevBitRp, ImplDevice.liftRevoker in H.
     cbn [evalActionPropGen] in H.
@@ -498,7 +498,7 @@ Section RevLens.
     match type of H with context [if ?c then _ else _] => destruct c eqn:Erp end.
     - match type of H with context [if ?c then _ else _] => destruct c eqn:Ev end.
       2: { exfalso; cbn in Ev; discriminate Ev. }
-      assert (Hr : andb (msReadRpReady mst) (isReqRevoker mrq) = true) by exact Erp.
+      assert (Hr : andb (optValid mrdy) (isReqRevoker mrq) = true) by exact Erp.
       apply andb_prop in Hr as [Hr1 Hr2].
       unfold implMemDeqRp in H; rev_cbn H; rewrite ?evalExpr_Var in H.
       match type of H with context [if ?c then _ else _] => destruct c eqn:Ev2 end.
@@ -529,22 +529,22 @@ Section RevLens.
   Qed.
 
   Lemma writeCap_char :
-    forall env mr mst mrq mrp m' v b t c e ist ir sa st ph sc sb sh,
+    forall env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh,
       revOfR mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ->
       SemAction env (@implRevokerWriteCapStep implRegions type revI)
-        (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) m' v ->
-      m' = (mr ,, (mst ,, (mrq ,, (mrp ,, tt)))) \/
+        (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) m' v ->
+      m' = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) \/
       (rpWriteCap ph = true /\ sh = true /\
        exists ph', rpIdle ph' = true /\
-         m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,, (mst ,, (mrq ,, (mrp ,, tt))))) \/
+         m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt)))))) \/
       (rpWriteCap ph = true /\ sh = false /\ msIdle mst = true /\ noPortWriteB implRegions mr = true /\
        exists st' ph',
-         m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (scanNext sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,, (st' ,, (mrq ,, (mrp ,, tt)))) /\
+         m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (scanNext sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ,, (st' ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) /\
          msWriteRq st' = true /\
          msWriteRqV st' = stepOf false (scanFull sa) capSz (disassembleW (scanFull sa) (untagCap sc) capSz) /\
          rpIdle ph' = true).
   Proof.
-    intros env mr mst mrq mrp m' v b t c e ist ir sa st ph sc sb sh Ex H.
+    intros env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh Ex H.
     rewrite SemAction_iff_evalActionPropGen in H.
     unfold implRevokerWriteCapStep, implRevokerWriteCap, ImplDevice.liftRevoker in H.
     cbn [evalActionPropGen] in H.

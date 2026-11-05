@@ -293,7 +293,7 @@ Section LsfFenceI.
     assert (Ereg : iRegionsA s1' = sendAllI implRegions (iRegionsA s1)) by (unfold iRegions; rewrite Emem; reflexivity).
     assert (Emst : iMemStA s1' = iMemStA s1) by (unfold iMemSt; rewrite Emem; reflexivity).
     assert (Erq : ACCF iRequester s1' = ACCF iRequester s1) by (unfold iRequester; rewrite Emem; reflexivity).
-    assert (Erp : ACCF iReadRp s1' = ACCF iReadRp s1) by (unfold iReadRp; rewrite Emem; reflexivity).
+    assert (Erp : ACCF iRdBufs s1' = ACCF iRdBufs s1) by (unfold iRdBufs; rewrite Emem; reflexivity).
     assert (Erev : ACCF iRev s1' = ACCF iRev s1)
       by (unfold iRev, implRevState; rewrite Ereg; rewrite regionStateAtI_send by exact I; reflexivity).
     assert (Epcc : ACCF iPcc s1' = ACCF iPcc s1) by (unfold iPcc; rewrite Erf; reflexivity).

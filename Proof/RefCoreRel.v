@@ -49,7 +49,6 @@ Definition msReadRpReady (st : type MemState) : bool := evalExpr ((Var type MemS
 Definition msWriteRq (st : type MemState) : bool := evalExpr ((Var type MemState st) `? "WriteRq").
 Definition msReadRqV (st : type MemState) : type MemStepOp := evalExpr ((Var type MemState st) `! "ReadRq").
 Definition msReadRqSentV (st : type MemState) : type MemReadRqSent := evalExpr ((Var type MemState st) `! "ReadRqSent").
-Definition msReadRpReadyV (st : type MemState) : type FullCapWithTag := evalExpr ((Var type MemState st) `! "ReadRpReady").
 Definition msWriteRqV (st : type MemState) : type MemStepOp := evalExpr ((Var type MemState st) `! "WriteRq").
 
 Definition dmLoadRq (st : type DataMemState) : bool := evalExpr ((Var type DataMemState st) `? "LoadRq").
@@ -139,7 +138,7 @@ Inductive RdStage :=
 | RdStaged (second : bool)                        (* request staged in the region's portRq *)
 | RdOut (second : bool)                           (* request accepted, response not arrived *)
 | RdArrived (second : bool) (rp : type LineReadRp) (* response in the data response buffer *)
-| RdReady (res : type FullCapWithTag).            (* `state` = ReadRpReady *)
+| RdReady (res : type FullCapWithTag).            (* `state` = ReadRpReady, `res` in rpReady *)
 
 (* Progress of the line being written *)
 Inductive WrStage :=
@@ -235,6 +234,9 @@ Section CoreRel.
   Definition iMemSt (s1 : IState) : type MemState := (iMem s1).(Snd).(Fst).
   Definition iRequester (s1 : IState) : type Requester := (iMem s1).(Snd).(Snd).(Fst).
   Definition iReadRp (s1 : IState) : type (Option LineReadRp) := (iMem s1).(Snd).(Snd).(Snd).(Fst).
+  Definition iRpReady (s1 : IState) : type (Option FullCapWithTag) := (iMem s1).(Snd).(Snd).(Snd).(Snd).(Fst).
+  (* the two read buffers: `readRp` and `rpReady` *)
+  Definition iRdBufs (s1 : IState) := (iMem s1).(Snd).(Snd).(Snd).
 
   Definition iFetchPc (s1 : IState) : type Addr :=
     fetch_pc pcAddrInit fetchCapacity instCapacity (iFetch s1).
@@ -459,24 +461,24 @@ Section CoreRel.
     match st with
     | RdPend b =>
         msReadRq (iMemSt s1) = true /\ msReadRqV (iMemSt s1) = stepOf b addr size pkt0 /\
-        optValid (iReadRp s1) = false /\ PortsQuiet s1
+        optValid (iReadRp s1) = false /\ optValid (iRpReady s1) = false /\ PortsQuiet s1
     | RdStaged b =>
-        sent b /\ optValid (iReadRp s1) = false /\ lineKind implRegions (lineOf b addr) = Some true /\
-        PortsReadStaged (lineOf b addr) s1
+        sent b /\ optValid (iReadRp s1) = false /\ optValid (iRpReady s1) = false /\
+        lineKind implRegions (lineOf b addr) = Some true /\ PortsReadStaged (lineOf b addr) s1
     | RdOut b =>
-        sent b /\ optValid (iReadRp s1) = false /\ lineKind implRegions (lineOf b addr) = Some true /\
-        PortsReadOut (lineOf b addr) s1
+        sent b /\ optValid (iReadRp s1) = false /\ optValid (iRpReady s1) = false /\
+        lineKind implRegions (lineOf b addr) = Some true /\ PortsReadOut (lineOf b addr) s1
     | RdArrived b rp =>
-        sent b /\ iReadRp s1 = (rp ,, (true ,, tt)) /\ PortsQuiet s1
+        sent b /\ iReadRp s1 = (rp ,, (true ,, tt)) /\ optValid (iRpReady s1) = false /\ PortsQuiet s1
     | RdReady res =>
-        msReadRpReady (iMemSt s1) = true /\ msReadRpReadyV (iMemSt s1) = res /\
+        msReadRpReady (iMemSt s1) = true /\ iRpReady s1 = (res ,, (true ,, tt)) /\
         optValid (iReadRp s1) = false /\ PortsQuiet s1
     end.
 
   (* The impl memory while line `second` of a write of `size` bytes at `addr` progresses *)
   Definition WrStageRel (addr : type Addr) (size : type (Bit LgLgNumBytesFullCapSz)) (pkt : type CapPacket)
     (st : WrStage) (s1 : IState) : Prop :=
-    optValid (iReadRp s1) = false /\
+    optValid (iReadRp s1) = false /\ optValid (iRpReady s1) = false /\
     match st with
     | WrPend b =>
         msWriteRq (iMemSt s1) = true /\ msWriteRqV (iMemSt s1) = stepOf b addr size pkt /\ PortsQuiet s1
@@ -641,8 +643,8 @@ Section CoreRel.
   Definition AccessRel (g : Ghost) (s1 : IState) (s2 : SState) : Prop :=
     match g_acc g with
     | AccNone =>
-        msIdle (iMemSt s1) = true /\ optValid (iReadRp s1) = false /\ PortsQuiet s1 /\
-        g_revOff g = RevEq /\ dmNotAccessing s1 /\ revNotReading s1 /\ optValid (sSecond s2) = false
+        msIdle (iMemSt s1) = true /\ optValid (iReadRp s1) = false /\ optValid (iRpReady s1) = false /\
+        PortsQuiet s1 /\ g_revOff g = RevEq /\ dmNotAccessing s1 /\ revNotReading s1 /\ optValid (sSecond s2) = false
     | AccStore addr size pkt st =>
         WrStageRel addr size pkt st s1 /\ dmLoadRq (iDmSt s1) = true /\ revNotReading s1 /\ g_revOff g = RevEq /\
         (snoopHitsB addr size (iScanMsb s1) = true -> iRevSnoopHit s1 = true) /\
@@ -1249,12 +1251,14 @@ Section CoreRel.
   Lemma AccessRel_frame :
     forall g (s1 s1' : IState) (s2 s2' : SState),
       (forall P, AllPorts P implRegions (iRegions s1') = AllPorts P implRegions (iRegions s1)) ->
-      iRev s1' = iRev s1 -> iMemSt s1' = iMemSt s1 -> iReadRp s1' = iReadRp s1 ->
+      iRev s1' = iRev s1 -> iMemSt s1' = iMemSt s1 -> iRdBufs s1' = iRdBufs s1 ->
       iRequester s1' = iRequester s1 -> iDmSt s1' = iDmSt s1 -> sSecond s2' = sSecond s2 ->
       (forall L, lineContent specRegions (sMem s2') L = lineContent specRegions (sMem s2) L) ->
       AccessRel g s1 s2 -> AccessRel g s1' s2'.
   Proof.
-    intros g s1 s1' s2 s2' HP HR Emst Erp Ereq Edm Esec Hlc Ha.
+    intros g s1 s1' s2 s2' HP HR Emst Ebuf Ereq Edm Esec Hlc Ha.
+    assert (Erp : iReadRp s1' = iReadRp s1) by exact (f_equal (fun b => b.(Fst)) Ebuf).
+    assert (Erdy : iRpReady s1' = iRpReady s1) by exact (f_equal (fun b => b.(Snd).(Fst)) Ebuf).
     assert (Hslw : forall pl v, specLoadWb (sMem s2') pl v = specLoadWb (sMem s2) pl v)
       by (intros pl v; apply specLoadWb_ext; exact Hlc).
     assert (Hrw : forall rc, revWb (sMem s2') rc = revWb (sMem s2) rc)
@@ -1271,9 +1275,25 @@ Section CoreRel.
     all: unfold WrStageRel, RdStageRel, PortsQuiet, PortsReadStaged, PortsReadOut, PortsWriteStaged,
            revNotReading, dmNotAccessing, iRevPhase, iScanAddr, iRevScanBase, iScanMsb, iRevSnoopHit in *.
     all: cbv beta iota zeta in *.
-    all: rewrite ?HP, ?HR, ?Hrw, ?Hmv, ?Emst, ?Erp, ?Ereq, ?Edm, ?Esec.
+    all: rewrite ?HP, ?HR, ?Hrw, ?Hmv, ?Emst, ?Erp, ?Erdy, ?Ereq, ?Edm, ?Esec.
     all: try (lazymatch goal with |- context [specLoadWb] => setoid_rewrite Hslw end).
     all: exact Ha.
+  Qed.
+
+  (* A valid `rpReady` means `state` = ReadRpReady *)
+  Lemma AccessRel_rpReady :
+    forall g (s1 : IState) (s2 : SState),
+      AccessRel g s1 s2 -> optValid (iRpReady s1) = true -> msReadRpReady (iMemSt s1) = true.
+  Proof.
+    intros g s1 s2 Ha Hv.
+    unfold AccessRel in Ha.
+    destruct (g_acc g) as [| addr size pkt [b|b] | ld pkt0 [b|b|b|b rp|res]
+                          | rc [b|b|b|b rp|res] | [b|b|b|b rp|res]
+                          | [b|b|b|b rp|res] | addr pkt [b|b]];
+      unfold WrStageRel, RdStageRel in Ha; cbv beta iota zeta in Ha;
+      repeat match goal with H : _ /\ _ |- _ => destruct H end;
+      first [ assumption
+            | exfalso; match goal with H : optValid (iRpReady s1) = false |- _ => rewrite H in Hv; discriminate Hv end ].
   Qed.
 
   (* The revoker facts read only the revoker state, the access in flight and the line contents *)
@@ -1422,12 +1442,14 @@ Section CoreRel.
       (forall L, PortsReadStaged L s1' = PortsReadStaged L s1) ->
       (forall L, PortsReadOut L s1' = PortsReadOut L s1) ->
       (forall L rq, PortsWriteStaged L rq s1' = PortsWriteStaged L rq s1) ->
-      iRev s1' = iRev s1 -> iMemSt s1' = iMemSt s1 -> iReadRp s1' = iReadRp s1 ->
+      iRev s1' = iRev s1 -> iMemSt s1' = iMemSt s1 -> iRdBufs s1' = iRdBufs s1 ->
       iRequester s1' = iRequester s1 -> iDmSt s1' = iDmSt s1 -> sSecond s2' = sSecond s2 ->
       (forall L, lineContent specRegions (sMem s2') L = lineContent specRegions (sMem s2) L) ->
       AccessRel g s1 s2 -> AccessRel g s1' s2'.
   Proof.
-    intros g s1 s1' s2 s2' Q1 Q2 Q3 Q4 HR Emst Erp Ereq Edm Esec Hlc Ha.
+    intros g s1 s1' s2 s2' Q1 Q2 Q3 Q4 HR Emst Ebuf Ereq Edm Esec Hlc Ha.
+    assert (Erp : iReadRp s1' = iReadRp s1) by exact (f_equal (fun b => b.(Fst)) Ebuf).
+    assert (Erdy : iRpReady s1' = iRpReady s1) by exact (f_equal (fun b => b.(Snd).(Fst)) Ebuf).
     assert (Hslw : forall pl v, specLoadWb (sMem s2') pl v = specLoadWb (sMem s2) pl v)
       by (intros pl v; apply specLoadWb_ext; exact Hlc).
     assert (Hrw : forall rc, revWb (sMem s2') rc = revWb (sMem s2) rc)
@@ -1444,7 +1466,7 @@ Section CoreRel.
     all: unfold WrStageRel, RdStageRel, revNotReading, dmNotAccessing, iRevPhase, iScanAddr, iRevScanBase,
            iScanMsb, iRevSnoopHit in *.
     all: cbv beta iota zeta in *.
-    all: rewrite ?Q1, ?Q2, ?Q3, ?Q4, ?HR, ?Hrw, ?Hmv, ?Emst, ?Erp, ?Ereq, ?Edm, ?Esec.
+    all: rewrite ?Q1, ?Q2, ?Q3, ?Q4, ?HR, ?Hrw, ?Hmv, ?Emst, ?Erp, ?Erdy, ?Ereq, ?Edm, ?Esec.
     all: try (lazymatch goal with |- context [specLoadWb] => setoid_rewrite Hslw end).
     all: exact Ha.
   Qed.

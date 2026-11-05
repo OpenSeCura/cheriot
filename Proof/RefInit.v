@@ -472,9 +472,10 @@ Section RefInitMain.
     - (* AccessRel *)
       unfold AccessRel; cbn [g_acc ghost0 g_revOff].
       pose proof (proj1 (proj2 Hm)) as Hst; pose proof (proj1 (proj2 (proj2 (proj2 Hm)))) as Hrp.
-      cbn in Hst, Hrp.
-      unfold iMemSt, iReadRp, iMem; rewrite Hst, Hrp.
-      split; [reflexivity |]; split; [reflexivity |].
+      pose proof (proj1 (proj2 (proj2 (proj2 (proj2 Hm))))) as Hrdy.
+      cbn in Hst, Hrp, Hrdy.
+      unfold iMemSt, iReadRp, iRpReady, iMem; rewrite Hst, Hrp, Hrdy.
+      split; [reflexivity |]; split; [reflexivity |]; split; [reflexivity |].
       split.
       { unfold PortsQuiet.
         apply AllPorts_init; [| exact init_regions].

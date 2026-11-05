@@ -245,7 +245,7 @@ Section LsfStep.
       + intros P; rewrite Ereg; reflexivity.
       + unfold iRev; rewrite Ereg; reflexivity.
       + unfold iMemSt; rewrite Emem; reflexivity.
-      + unfold iReadRp; rewrite Emem; reflexivity.
+      + unfold iRdBufs; rewrite Emem; reflexivity.
       + unfold iRequester; rewrite Emem; reflexivity.
       + exact Edmst.
       + intros L; reflexivity.
@@ -270,11 +270,11 @@ Section LsfStep.
       RELG (gLoad g q) s1' s2.
   Proof.
     intros g s1 s1' s2 q rest Hg Hla Eb Hlrq Hm Hs.
-    destruct Hla as [[Erf Ewb Efe Ede Emd Edmf] Eex Edm Edmv Hi Hnp Ereg Hms Hmsv Hrq Erp].
+    destruct Hla as [[Erf Ewb Efe Ede Emd Edmf] Eex Edm Edmv Hi Hnp Ereg Hms Hmsv Hrq Erp Erdy].
     pose proof Hg as Hg0; destruct Hg0 as [_ Hmem _ _ He Ha Hc Hd _ _ _ [_ [_ [_ [Hwd _]]]] Hr].
     assert (Hacc : g_acc pcAddrInit g = AccNone) by (eapply AccessRel_rdy_none; eassumption).
     pose proof Ha as Ha0; unfold AccessRel in Ha0; rewrite Hacc in Ha0.
-    destruct Ha0 as [Hidle [Hrp0 [HPQ [Hoff [Hdna [Hrnr Hsec]]]]]].
+    destruct Ha0 as [Hidle [Hrp0 [Hrdy0 [HPQ [Hoff [Hdna [Hrnr Hsec]]]]]]].
     assert (Hcn : g_cnwb pcAddrInit g = None) by (exact (proj1 Hc Hlrq)).
     assert (Hpl : isPlainFence q = false) by (unfold isPlainFence; rewrite Hm; reflexivity).
     assert (HH : HeadReq pcAddrInit g q)
@@ -291,7 +291,7 @@ Section LsfStep.
     - unfold MemRelC in *; cbn [gLoad g_revOff]; rewrite Ereg; exact Hmem.
     - unfold AccessRel, RdStageRel; cbn [gLoad g_acc g_revOff g_cnwb g_chain]; cbv zeta.
       split; [split; [exact Hms | split; [exact Hmsv | split; [rewrite Erp; exact Hrp0 |
-               unfold PortsQuiet in *; rewrite Ereg; exact HPQ]]] |].
+               split; [rewrite Erdy; exact Hrdy0 | unfold PortsQuiet in *; rewrite Ereg; exact HPQ]]]] |].
       split; [exact Hrq | split; [exact Edm | split; [exact Edmv |]]].
       split; [unfold revNotReading, iRevPhase, iRev in *; rewrite Ereg; exact Hrnr |].
       split; [exact Hoff |].
@@ -329,11 +329,11 @@ Section LsfStep.
       RELG (gStore g q) s1' s2.
   Proof.
     intros g s1 s1' s2 q rest Hg Hsa Eb Hlrq Hm Hs.
-    destruct Hsa as [[Erf Ewb Efe Ede Emd Edmf] Eex Edmst Hi Hnp Ereg Hms Hmsv Erq Erp].
+    destruct Hsa as [[Erf Ewb Efe Ede Emd Edmf] Eex Edmst Hi Hnp Ereg Hms Hmsv Erq Erp Erdy].
     pose proof Hg as Hg0; destruct Hg0 as [_ Hmem _ _ He Ha Hc Hd _ _ _ [_ [_ [_ [Hwd _]]]] Hr].
     assert (Hacc : g_acc pcAddrInit g = AccNone) by (eapply AccessRel_rdy_none; eassumption).
     pose proof Ha as Ha0; unfold AccessRel in Ha0; rewrite Hacc in Ha0.
-    destruct Ha0 as [Hidle [Hrp0 [HPQ [Hoff [Hdna [Hrnr Hsec]]]]]].
+    destruct Ha0 as [Hidle [Hrp0 [Hrdy0 [HPQ [Hoff [Hdna [Hrnr Hsec]]]]]]].
     destruct Hc as [C1 [C2 [C3 C4]]].
     assert (Hcn : g_cnwb pcAddrInit g = None) by (exact (C1 Hlrq)).
     assert (Hpl : isPlainFence q = false) by (unfold isPlainFence; rewrite Hm; reflexivity).
@@ -355,8 +355,8 @@ Section LsfStep.
         [reflexivity | exact Ereg | | exact Hmem].
       destruct Hmem as [[_ [_ [_ Hrv]]] _]; exact Hrv.
     - unfold AccessRel, WrStageRel; cbn [gStore g_acc g_revOff g_chain].
-      split; [split; [rewrite Erp; exact Hrp0 | split; [exact Hms | split; [exact Hmsv |
-               unfold PortsQuiet in *; rewrite HP; exact HPQ]]] |].
+      split; [split; [rewrite Erp; exact Hrp0 | split; [rewrite Erdy; exact Hrdy0 | split; [exact Hms | split; [exact Hmsv |
+               unfold PortsQuiet in *; rewrite HP; exact HPQ]]]] |].
       split; [rewrite Edmst; exact Hlrq |].
       split; [unfold revNotReading, iRevPhase in *; rewrite Erev; rewrite Erev0 in Hrnr; exact Hrnr |].
       split; [exact Hoff |].

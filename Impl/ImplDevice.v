@@ -106,11 +106,13 @@ Definition MemReadRqSent : Kind :=
     "step"    :: MemStepOp
   }.
 
+(* `ReadRpReady` carries no data: the read's value waits in the separate `rpReady` register,
+ * so that it shares no bits with the `ReadRq` payload *)
 Definition MemStateList : list (string * Kind) :=
   [ ("Idle",        Bit 0) ;
     ("ReadRq",      MemStepOp) ;
     ("ReadRqSent",  MemReadRqSent) ;
-    ("ReadRpReady", FullCapWithTag) ;
+    ("ReadRpReady", Bit 0) ;
     ("WriteRq",     MemStepOp) ].
 
 Definition MemState : Kind :=
@@ -604,13 +606,15 @@ Section ImplDevice.
   Arguments implRegionsSendFenceIRq {ty} regions.
 
   (* The memory: the regions, the `state` machine that serves one data request at a time (its
-   * requester), and the single data response buffer `readRp` *)
+   * requester), the single data response buffer `readRp`, and `rpReady`, the value of the
+   * completed read (valid exactly while `state` = ReadRpReady) *)
   Definition implMemTree (regions : list MemRegion) : Tree Elem :=
     Node ""
       [ implRegionsTree regions ;
         Leaf "state"     (EReg (Build_Reg MemState (Some (getDefault _)))) ;
         Leaf "requester" (EReg (Build_Reg Requester (Some (getDefault _)))) ;
-        Leaf "readRp"    (EReg (Build_Reg (Option LineReadRp) (Some (getDefault _)))) ].
+        Leaf "readRp"    (EReg (Build_Reg (Option LineReadRp) (Some (getDefault _)))) ;
+        Leaf "rpReady"   (EReg (Build_Reg (Option FullCapWithTag) (Some (getDefault _)))) ].
 
   Definition implNthRegionAction
     {ty : Kind -> Type}
@@ -634,6 +638,7 @@ Section ImplDevice.
     Local Definition pMemState     : RegPath implMemTree := Eval cbn in (getChildRegPathTree implMemTree "state").
     Local Definition pMemRequester : RegPath implMemTree := Eval cbn in (getChildRegPathTree implMemTree "requester").
     Local Definition pMemReadRp    : RegPath implMemTree := Eval cbn in (getChildRegPathTree implMemTree "readRp").
+    Local Definition pMemRpReady   : RegPath implMemTree := Eval cbn in (getChildRegPathTree implMemTree "rpReady").
 
     Section Ty.
       Variable ty : Kind -> Type.
@@ -746,7 +751,8 @@ Section ImplDevice.
           ) Else (
             Let  mergedPkt : CapPacket      <- ITE #isSecond (memMergeCapPacket #addr #savedPkt #pkt) #pkt ;
             LetL res       : FullCapWithTag <- memAssembleCapRead #addr #memSize #mergedPkt ;
-            WriteReg pMemState (UNION (MemStateList, "ReadRpReady" ::= #res)) Retv
+            Act (WriteReg pMemState (UNION (MemStateList, "ReadRpReady" ::= ($0 : Expr ty (Bit 0)))) Retv) ;
+            WriteReg pMemRpReady (mkSome #res) Retv
           ) ;
           Retv
         ) ;
@@ -769,16 +775,17 @@ Section ImplDevice.
       Definition implMemReadRp
                  (req : MemRequester)
                  : Action ty implMemTree (Option FullCapWithTag) :=
-        ReadReg "state" pMemState (fun state =>
+        ReadReg "rpReady" pMemRpReady (fun rpReady =>
         ReadReg "requester" pMemRequester (fun requester =>
         LetIf resOpt : Option FullCapWithTag <-
-          If (And [ ##state `? "ReadRpReady" ; isRequesterMatch requester req ]) Then (
-            Let res : FullCapWithTag <- ##state `! "ReadRpReady" ;
+          If (And [ ##rpReady`"valid" ; isRequesterMatch requester req ]) Then (
+            Let res : FullCapWithTag <- ##rpReady`"data" ;
             Return (mkSome #res)
           ) ;
         Return #resOpt)).
 
       Definition implMemDeqRp : Action ty implMemTree (Bit 0) :=
+        Act (WriteReg pMemRpReady ConstDef Retv) ;
         WriteReg pMemState (UNION (MemStateList, "Idle" ::= ($0 : Expr ty (Bit 0)))) Retv.
 
       Definition implMemWrite

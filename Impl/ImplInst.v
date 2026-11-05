@@ -31,7 +31,7 @@ Local Open Scope guru_scope.
  * Fully Instantiated System Tree and Implementation Mod
  * =========================================================================== *)
 
-Definition DefaultIssueWidth      : nat := 2%nat.
+Definition DefaultIssueWidth      : nat := 1%nat.
 Definition DefaultFetchCapacity   : nat := 1%nat.
 Definition DefaultInstCapacity    : nat := DefaultIssueWidth.
 Definition DefaultDecodeCapacity  : nat := DefaultIssueWidth.
@@ -39,7 +39,7 @@ Definition DefaultDataMemCapacity : nat := 1%nat.
 Definition DefaultMulCapacity     : nat := 1%nat.
 Definition DefaultDivCapacity     : nat := 1%nat.
 
-Definition ImplMulStages  : nat := 2%nat.
+Definition ImplMulStages  : nat := 4%nat.
 Definition ImplDivStages  : nat := 16%nat.
 Definition ImplMulDivMode : MulDivMode := PipelinedMul_IterDiv.
 

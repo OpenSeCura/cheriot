@@ -543,7 +543,7 @@ Section ExecLive.
         apply some_eq_fst in Hcn2; cbn [fst] in Hcn2; rewrite fst_revWb in Hcn2; subst d; reflexivity.
     - unfold AccessRel in Hacc.
       destruct (g_acc pcAddrInit g) as [| addr size pkt st | ld pkt0 st | rc st | st | st | addr pkt st].
-      + destruct Hacc as [_ [_ [_ [_ [[Elrp Errp] _]]]]].
+      + destruct Hacc as [_ [_ [_ [_ [_ [[Elrp Errp] _]]]]]].
         destruct (dmLoadRq (iDmStA s1)) eqn:Elrq; [rewrite (Hcn1 eq_refl) in Hcn; discriminate |].
         pose proof (dmState_tags_exhaust _ Elrq Elrp Errq) as E; rewrite E in Errp; discriminate.
       + destruct Hacc as [_ [Elrq _]]; rewrite (Hcn1 Elrq) in Hcn; discriminate.
