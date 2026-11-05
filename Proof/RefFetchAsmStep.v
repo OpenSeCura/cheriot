@@ -475,22 +475,25 @@ Section FetchAsmStep.
   Lemma or2v_eval : forall a b : bool, evalExpr (Or [Var type Bool a; Var type Bool b]) = orb a b.
   Proof. intros [|] [|]; reflexivity. Qed.
 
+  (* fetch's PCC copy has the architectural PCC's bounds and permissions (item 3.4) *)
+  Definition PccOK (s1 : IState) : Prop := ACC aECap s1 = (iPccA s1).(Snd).(Fst).
+
   Lemma fo_of :
     forall (s1 : IState) fp raw topv,
-      ACC aPktExc s1 = preExcAt (iPccA s1) fp -> ACC aRaw s1 = raw -> ACC aTop s1 = topv ->
+      PccOK s1 -> ACC aPktExc s1 = preExcAt (iPccA s1) fp -> ACC aRaw s1 = raw -> ACC aTop s1 = topv ->
       ACC aFo s1 = specFetchOutOf (pccWithAddr (iPccA s1) fp) (evalLetExpr (preDecode (ty := type) raw)) topv.
   Proof.
-    intros s1 fp raw topv Hx Hr Ht.
+    intros s1 fp raw topv Hpok Hx Hr Ht.
     rewrite aFo_eq, aComb_eq, Hx; unfold aExp; rewrite Hr, Ht.
     unfold specFetchOutOf; cbv zeta; rewrite pccWithAddr_addr, pccWithAddr_ecap, pccWithAddr_tag, or2v_eval.
     unfold preExcAt; cbv zeta; cbn [Fst Snd].
-    unfold aECap; reflexivity.
+    rewrite Hpok; reflexivity.
   Qed.
 
   Lemma aTop_eq :
-    forall (s1 : IState) fp c, ACC aInstPc s1 = fp -> ACC aIsCompI s1 = c -> ACC aTop s1 = topExcAt (iPccA s1) fp c.
+    forall (s1 : IState) fp c, PccOK s1 -> ACC aInstPc s1 = fp -> ACC aIsCompI s1 = c -> ACC aTop s1 = topExcAt (iPccA s1) fp c.
   Proof.
-    intros s1 fp c Hpc Hc; unfold aTop, aEnd, aLg, aECap, topExcAt, pccTopOf; cbv zeta; rewrite Hpc, Hc; reflexivity.
+    intros s1 fp c Hpok Hpc Hc; unfold aTop, aEnd, aLg, topExcAt, pccTopOf; cbv zeta; rewrite Hpok, Hpc, Hc; reflexivity.
   Qed.
 
   Lemma fp_bound :
@@ -512,11 +515,11 @@ Section FetchAsmStep.
   (* A pre-faulted head: the instruction reads as 0 and faults as the spec's pre-faulted fetch *)
   Lemma allowed_pre :
     forall (s1 : IState) (s2 : SState) fp,
-      ACC aPre s1 = true -> ACC aHasSh s1 = false -> ACC aInstPc s1 = fp ->
+      PccOK s1 -> ACC aPre s1 = true -> ACC aHasSh s1 = false -> ACC aInstPc s1 = fp ->
       ACC aPreExc s1 = preExcAt (iPccA s1) fp -> pcAligned fp ->
       FetchAllowedInst initLine fwcs specRegions (sMemA s2) (pccWithAddr (iPccA s1) fp) (ACC aFo s1).
   Proof.
-    intros s1 s2 fp Hpre Hsh Hpc Hexc Hal.
+    intros s1 s2 fp Hpok Hpre Hsh Hpc Hexc Hal.
     pose proof (ACC aPre_excAny s1) as Hx; rewrite Hpre, <- (ACC aPreExc_eq s1), Hexc in Hx.
     unfold FetchAllowedInst; cbv zeta.
     rewrite specPreFault_eq, <- Hx.
@@ -535,7 +538,7 @@ Section FetchAsmStep.
     assert (HpX : ACC aPktExc s1 = preExcAt (iPccA s1) fp).
     { unfold aPktExc; rewrite evalExpr_ITE; change (evalExpr (Var type Bool (ACC aHasSh s1))) with (ACC aHasSh s1).
       rewrite Hsh; exact Hexc. }
-    rewrite (fo_of s1 fp Zmod.zero _ HpX Hraw (aTop_eq s1 fp true Hpc HiCI)).
+    rewrite (fo_of s1 fp Zmod.zero _ Hpok HpX Hraw (aTop_eq s1 fp true Hpok Hpc HiCI)).
     rewrite preDecode_zero, specPreFaultTopExc_eq by exact (fp_bound fp Hal).
     reflexivity.
   Qed.
@@ -556,7 +559,7 @@ Section FetchAsmStep.
   (* Common facts of a non-faulting head without a straddle *)
   Lemma noSh_facts :
     forall (s1 : IState) fp rp,
-      ACC aPre s1 = false -> ACC aHasSh s1 = false -> ACC aPktD s1 = fetchPktOf rp ->
+      PccOK s1 -> ACC aPre s1 = false -> ACC aHasSh s1 = false -> ACC aPktD s1 = fetchPktOf rp ->
       fp = parcelAddrOf (ACC aAligned s1) (ACC aK s1) -> ACC aPreExc s1 = preExcAt (iPccA s1) fp ->
       Zmod.unsigned fp mod 2 ^ LgLineBytes = 2 * Zmod.unsigned (ACC aK s1) /\
       excAny (preExcAt (iPccA s1) fp) = false /\
@@ -570,7 +573,7 @@ Section FetchAsmStep.
       (ACC aCross s1 = true -> ACC aHigh s1 = Zmod.zero) /\
       lineAddrOf fp = ACC aAligned s1.
   Proof.
-    intros s1 fp rp Hpre Hsh HpD Hfp Hexc.
+    intros s1 fp rp Hpok Hpre Hsh HpD Hfp Hexc.
     destruct invariant_fetch as [HN [HL [HC [HI [_ [_ [_ [HF _]]]]]]]].
     pose proof (lineAddr_aligned (fbPcAddr (aEA s1))) as HA; rewrite <- (ACC aAligned_eq s1) in HA.
     pose proof (parcelAddr_off (ACC aAligned s1) (ACC aK s1) HA) as Hoff; rewrite <- Hfp in Hoff.
@@ -584,7 +587,7 @@ Section FetchAsmStep.
     - unfold aPktExc; rewrite evalExpr_ITE; change (evalExpr (Var type Bool (ACC aHasSh s1))) with (ACC aHasSh s1).
       rewrite Hsh; exact Hexc.
     - unfold aRaw; rewrite isCompressed_concat_parcels, Hlow; unfold aIsComp; rewrite HpK; reflexivity.
-    - apply (aTop_eq s1 fp (ACC aIsComp s1)); [| exact HiCI].
+    - apply (aTop_eq s1 fp (ACC aIsComp s1) Hpok); [| exact HiCI].
       unfold aInstPc; rewrite evalExpr_ITE; change (evalExpr (Var type Bool (ACC aHasSh s1))) with (ACC aHasSh s1).
       rewrite Hsh; exact (eq_sym Hfp).
     - unfold aCross; rewrite and3n_eval, Hsh; reflexivity.
@@ -602,7 +605,7 @@ Section FetchAsmStep.
    * cross its line *)
   Lemma allowed_of_noCross :
     forall (s1 : IState) (s2 : SState) fp rp raw,
-      excAny (preExcAt (iPccA s1) fp) = false ->
+      PccOK s1 -> excAny (preExcAt (iPccA s1) fp) = false ->
       LineAllowed initLine fwcs specRegions (sMemA s2) (lineAddrOf fp) rp ->
       specWord fp (specPkt fp rp) = raw ->
       specCrosses fp raw = false ->
@@ -610,7 +613,7 @@ Section FetchAsmStep.
       ACC aTop s1 = topExcAt (iPccA s1) fp (evalExpr (@isCompressed type raw)) ->
       FetchAllowedInst initLine fwcs specRegions (sMemA s2) (pccWithAddr (iPccA s1) fp) (ACC aFo s1).
   Proof.
-    intros s1 s2 fp rp raw Hx Hla Hw Hcr HpX Hraw Htop.
+    intros s1 s2 fp rp raw Hpok Hx Hla Hw Hcr HpX Hraw Htop.
     unfold FetchAllowedInst; cbv zeta.
     rewrite pccWithAddr_addr, specPreFault_eq, Hx, pccTopOf_withAddr.
     exists rp, rp; split; [exact Hla |].
@@ -619,23 +622,23 @@ Section FetchAsmStep.
     rewrite evalExpr_ITE; change (evalExpr (Var type Bool false)) with false; cbv iota.
     change (evalExpr (Var type CapPacket (specPkt fp rp))) with (specPkt fp rp); rewrite Hw.
     rewrite specTopExc_eq.
-    exact (fo_of s1 fp raw _ HpX Hraw Htop).
+    exact (fo_of s1 fp raw _ Hpok HpX Hraw Htop).
   Qed.
 
   (* A non-faulting head without a straddle whose instruction stays in its line *)
   Lemma allowed_inline :
     forall (s1 : IState) (s2 : SState) fp rp,
-      ACC aPre s1 = false -> ACC aHasSh s1 = false -> ACC aCross s1 = false ->
+      PccOK s1 -> ACC aPre s1 = false -> ACC aHasSh s1 = false -> ACC aCross s1 = false ->
       ACC aPktD s1 = fetchPktOf rp -> LineAllowed initLine fwcs specRegions (sMemA s2) (ACC aAligned s1) rp ->
       fp = parcelAddrOf (ACC aAligned s1) (ACC aK s1) -> ACC aPreExc s1 = preExcAt (iPccA s1) fp ->
       FetchAllowedInst initLine fwcs specRegions (sMemA s2) (pccWithAddr (iPccA s1) fp) (ACC aFo s1).
   Proof.
-    intros s1 s2 fp rp Hpre Hsh Hcross HpD Hla Hfp Hexc.
+    intros s1 s2 fp rp Hpok Hpre Hsh Hcross HpD Hla Hfp Hexc.
     destruct invariant_fetch as [HN [HL [HC [HI [_ [_ [_ [HF _]]]]]]]].
     pose proof lineBytes_parcels as HL2.
     pose proof (pow2_pos LgFetchParcels HF) as HFp.
     pose proof (bits.unsigned_range (ACC aK s1) HF) as Hk.
-    destruct (noSh_facts s1 fp rp Hpre Hsh HpD Hfp Hexc)
+    destruct (noSh_facts s1 fp rp Hpok Hpre Hsh HpD Hfp Hexc)
       as [Hoff [Hx [HpX [Hlow [Hcomp [Htop [HcrossE [HlastE [Hhigh [_ HlA]]]]]]]]]].
     rewrite <- HlA in Hla.
     pose proof Hcross as Hcross0; rewrite HcrossE in Hcross.
@@ -668,24 +671,24 @@ Section FetchAsmStep.
           by (intros E; rewrite (proj2 HlastE E) in Hcross; discriminate Hcross). lia. }
       rewrite (specCross_inline fp (ACC aK s1) Hoff HkLt); reflexivity. }
     rewrite <- Hcomp in Htop.
-    exact (allowed_of_noCross s1 s2 fp rp (ACC aRaw s1) Hx Hla Hw Hcr HpX eq_refl Htop).
+    exact (allowed_of_noCross s1 s2 fp rp (ACC aRaw s1) Hpok Hx Hla Hw Hcr HpX eq_refl Htop).
   Qed.
 
   (* A non-faulting head without a straddle whose 4-byte instruction spills into the next line but
    * fails the top check: its upper parcel reads 0 on both sides *)
   Lemma allowed_lastTop :
     forall (s1 : IState) (s2 : SState) fp rp,
-      ACC aPre s1 = false -> ACC aHasSh s1 = false -> ACC aCross s1 = true -> ACC aInit s1 = false ->
+      PccOK s1 -> ACC aPre s1 = false -> ACC aHasSh s1 = false -> ACC aCross s1 = true -> ACC aInit s1 = false ->
       ACC aPktD s1 = fetchPktOf rp -> LineAllowed initLine fwcs specRegions (sMemA s2) (ACC aAligned s1) rp ->
       fp = parcelAddrOf (ACC aAligned s1) (ACC aK s1) -> ACC aPreExc s1 = preExcAt (iPccA s1) fp ->
       FetchAllowedInst initLine fwcs specRegions (sMemA s2) (pccWithAddr (iPccA s1) fp) (ACC aFo s1).
   Proof.
-    intros s1 s2 fp rp Hpre Hsh Hcross Hinit HpD Hla Hfp Hexc.
+    intros s1 s2 fp rp Hpok Hpre Hsh Hcross Hinit HpD Hla Hfp Hexc.
     destruct invariant_fetch as [HN [HL [HC [HI [_ [_ [_ [HF _]]]]]]]].
     pose proof lineBytes_parcels as HL2.
     pose proof (pow2_pos LgFetchParcels HF) as HFp.
     pose proof (bits.unsigned_range (ACC aK s1) HF) as Hk.
-    destruct (noSh_facts s1 fp rp Hpre Hsh HpD Hfp Hexc)
+    destruct (noSh_facts s1 fp rp Hpok Hpre Hsh HpD Hfp Hexc)
       as [Hoff [Hx [HpX [Hlow [Hcomp [Htop [HcrossE [HlastE [_ [Hhigh HlA]]]]]]]]]].
     rewrite <- HlA in Hla.
     pose proof Hcross as Hcross0; rewrite HcrossE in Hcross.
@@ -713,13 +716,13 @@ Section FetchAsmStep.
     rewrite evalExpr_ITE; change (evalExpr (Var type Bool true)) with true; cbv iota.
     rewrite specWord_lastTop by exact Ho.
     rewrite <- Hraw.
-    exact (fo_of s1 fp _ true HpX eq_refl Htrue).
+    exact (fo_of s1 fp _ true Hpok HpX eq_refl Htrue).
   Qed.
 
   (* A straddle completed with the next line's packet *)
   Lemma allowed_sh :
     forall (s1 : IState) (s2 : SState) fp rp rpPrev,
-      ACC aPre s1 = false -> ACC aHasSh s1 = true -> ACC aInstPc s1 = fp ->
+      PccOK s1 -> ACC aPre s1 = false -> ACC aHasSh s1 = true -> ACC aInstPc s1 = fp ->
       Zmod.unsigned fp mod 2 ^ LgLineBytes = 2 ^ LgLineBytes - 2 ->
       fbPcAddr (aEA s1) = evalExpr (memNextLineAddr (Var type Addr fp)) ->
       (ACC aSh s1).(Snd).(Fst) = preExcAt (iPccA s1) fp -> excAny (preExcAt (iPccA s1) fp) = false ->
@@ -729,14 +732,14 @@ Section FetchAsmStep.
       ACC aPktD s1 = fetchPktOf rp -> LineAllowed initLine fwcs specRegions (sMemA s2) (ACC aAligned s1) rp ->
       FetchAllowedInst initLine fwcs specRegions (sMemA s2) (pccWithAddr (iPccA s1) fp) (ACC aFo s1).
   Proof.
-    intros s1 s2 fp rp rpPrev Hpre Hsh Hpc Ho Hnext Hexc Hx Ht Hu HlaP HshLow HpD Hla.
+    intros s1 s2 fp rp rpPrev Hpok Hpre Hsh Hpc Ho Hnext Hexc Hx Ht Hu HlaP HshLow HpD Hla.
     destruct invariant_fetch as [HN [HL [HC [HI [_ [_ [_ [HF _]]]]]]]].
     pose proof lineBytes_parcels as HL2.
     assert (HlA : ACC aAligned s1 = evalExpr (memNextLineAddr (Var type Addr fp)))
       by (rewrite (ACC aAligned_eq s1), Hnext; apply lineAddr_nextLine).
     rewrite HlA in Hla.
     assert (HiCI : ACC aIsCompI s1 = false) by (unfold aIsCompI; rewrite and2nv_eval, Hsh; reflexivity).
-    pose proof (aTop_eq s1 fp false Hpc HiCI) as Htop; rewrite Ht in Htop.
+    pose proof (aTop_eq s1 fp false Hpok Hpc HiCI) as Htop; rewrite Ht in Htop.
     assert (HpX : ACC aPktExc s1 = preExcAt (iPccA s1) fp).
     { unfold aPktExc; rewrite evalExpr_ITE; change (evalExpr (Var type Bool (ACC aHasSh s1))) with (ACC aHasSh s1).
       rewrite Hsh; exact Hexc. }
@@ -762,7 +765,7 @@ Section FetchAsmStep.
     rewrite evalExpr_ITE; change (evalExpr (Var type Bool true)) with true; cbv iota.
     rewrite specWord_straddle by exact Ho.
     rewrite <- Hraw.
-    exact (fo_of s1 fp _ false HpX eq_refl Htop).
+    exact (fo_of s1 fp _ false Hpok HpX eq_refl Htop).
   Qed.
 
   Lemma MemRelC_fetchDeq :
@@ -1233,14 +1236,14 @@ Section FetchAsmStep.
 
   Lemma head_facts :
     forall g (s1 : IState) (s2 : SState) rest p,
-      RELG g s1 s2 -> iFetchBufA s1 = aEA s1 :: rest -> fbLiveA s1 (aEA s1) = true ->
+      PccOK s1 -> RELG g s1 s2 -> iFetchBufA s1 = aEA s1 :: rest -> fbLiveA s1 (aEA s1) = true ->
       (ACC aPkt s1).(Snd).(Fst) = true -> FRONTIER s1 s2 p ->
       ACC aInstPc s1 = p /\ pcAligned p /\ ACC aPktExc s1 = preExcAt (iPccA s1) p /\
       evalExpr (@isCompressed type (ACC aExp s1)) = ACC aIsCompI s1 /\
       (ACC aInit s1 = false ->
          FetchAllowedInst initLine fwcs specRegions (sMemA s2) (pccWithAddr (iPccA s1) p) (ACC aFo s1)).
   Proof.
-    intros g s1 s2 rest p Hg Efb Hl Hpv Hfr.
+    intros g s1 s2 rest p Hpok Hg Efb Hl Hpv Hfr.
     destruct invariant_fetch as [_ [_ [HC [HI _]]]].
     destruct (ACC aHasSh s1) eqn:Hsh.
     - destruct (frontier_sh s1 s2 p rest Efb Hl Hsh Hfr)
@@ -1269,7 +1272,7 @@ Section FetchAsmStep.
           [reflexivity | exact (bits.unsigned_range (ACC aLow s1) ltac:(lia))].
       + intros _.
         destruct (head_packet g s1 s2 rest Hg Efb Hl Hpre Hpv) as [rp [HpD Hla]].
-        exact (allowed_sh s1 s2 p rp rpPrev Hpre Hsh Hpc Ho Hnext Hexc Hx Ht Hu HlaP HshLow HpD Hla).
+        exact (allowed_sh s1 s2 p rp rpPrev Hpok Hpre Hsh Hpc Ho Hnext Hexc Hx Ht Hu HlaP HshLow HpD Hla).
     - destruct (frontier_noSh s1 s2 p rest Efb Hl Hsh Hfr) as [Hfp [Hexc Hal]].
       assert (Hpc : ACC aInstPc s1 = p).
       { unfold aInstPc; rewrite evalExpr_ITE; change (evalExpr (Var type Bool (ACC aHasSh s1))) with (ACC aHasSh s1).
@@ -1291,16 +1294,16 @@ Section FetchAsmStep.
         { unfold aLow; rewrite evalExpr_ITE; change (evalExpr (Var type Bool (ACC aHasSh s1))) with (ACC aHasSh s1).
           rewrite Hsh; exact HpK. }
         assert (Hraw : ACC aRaw s1 = Zmod.zero) by (unfold aRaw; rewrite Hhigh, Hlow; exact implWord_zero).
-        split; [| intros _; exact (allowed_pre s1 s2 p Hpre Hsh Hpc Hexc Hal)].
+        split; [| intros _; exact (allowed_pre s1 s2 p Hpok Hpre Hsh Hpc Hexc Hal)].
         rewrite HiCI; unfold aExp; rewrite Hraw, preDecode_zero; vm_compute; reflexivity.
       + destruct (head_packet g s1 s2 rest Hg Efb Hl Hpre Hpv) as [rp [HpD Hla]].
-        destruct (noSh_facts s1 p rp Hpre Hsh HpD Hfp Hexc) as [_ [_ [_ [_ [Hcomp _]]]]].
+        destruct (noSh_facts s1 p rp Hpok Hpre Hsh HpD Hfp Hexc) as [_ [_ [_ [_ [Hcomp _]]]]].
         assert (HiCI : ACC aIsCompI s1 = ACC aIsComp s1) by (unfold aIsCompI; rewrite and2nv_eval, Hsh; reflexivity).
         split; [rewrite HiCI; unfold aExp; rewrite preDecode_isCompressed; exact Hcomp |].
         intros Hinit.
         destruct (ACC aCross s1) eqn:Hcross.
-        * exact (allowed_lastTop s1 s2 p rp Hpre Hsh Hcross Hinit HpD Hla Hfp Hexc).
-        * exact (allowed_inline s1 s2 p rp Hpre Hsh Hcross HpD Hla Hfp Hexc).
+        * exact (allowed_lastTop s1 s2 p rp Hpok Hpre Hsh Hcross Hinit HpD Hla Hfp Hexc).
+        * exact (allowed_inline s1 s2 p rp Hpok Hpre Hsh Hcross HpD Hla Hfp Hexc).
   Qed.
 
   (* --- A parcel that stays in its line: the next parcel is the sequential PC, with the
@@ -1433,13 +1436,13 @@ Section FetchAsmStep.
   (* The relation after a parcel that stays in its line *)
   Lemma asm_stay_rel :
     forall g (s1 s1' : IState) (s2 : SState) cp,
-      FASM s1 s1' (iMemA s1) (ACC fStay s1 cp (ACC aSeqPc s1)) ->
+      PccOK s1 -> FASM s1 s1' (iMemA s1) (ACC fStay s1 cp (ACC aSeqPc s1)) ->
       (ACC aHead s1).(Snd).(Fst) = true -> (ACC aPkt s1).(Snd).(Fst) = true -> ACC aMatch s1 = true ->
       ACC aIbFull s1 = false ->
       evalExpr (isAllOnes (Var type (Bit LgFetchParcels) (ACC aLastP s1))) = false ->
       RELG g s1 s2 -> RELG g s1' s2.
   Proof.
-    intros g s1 s1' s2 cp Hst Hv Hpv Hm Hf Hlast H.
+    intros g s1 s1' s2 cp Hpok Hst Hv Hpv Hm Hf Hlast H.
     pose proof Hst as [Erf [Ewb [Emem [Efe [ED [Eex [Edm Emd]]]]]]].
     destruct (decode_core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
@@ -1500,7 +1503,7 @@ Section FetchAsmStep.
         refine (LiveChainG_mono pre post revBase revPfB revPfA initLine fwcs _ _ _ _ _ _ _
                   (proj2 (proj2 Cm)) (FetchViewExt_refl _ _) _ F6).
         intros p Hp.
-        destruct (head_facts g s1 s2 rest p H Efb0 Hlh Hpv Hp) as [Hpc [Hal [HpX [Hcomp Hallow]]]].
+        destruct (head_facts g s1 s2 rest p Hpok H Efb0 Hlh Hpv Hp) as [Hpc [Hal [HpX [Hcomp Hallow]]]].
         split; [exact (Hallow Hinit) |].
         rewrite foFault_aFo; destruct (ACC aFault s1) eqn:Hfault; [exact I |].
         split; [intros _; symmetry; exact (seqPc_aFo s1 p Hpc Hcomp) |].
@@ -1525,14 +1528,14 @@ Section FetchAsmStep.
    * saved half *)
   Lemma frontier_strad :
     forall g (s1 s1' : IState) (s2 : SState) fp rest l2,
-      RELG g s1 s2 -> iFetchBufA s1 = aEA s1 :: rest -> fbLiveA s1 (aEA s1) = true ->
+      PccOK s1 -> RELG g s1 s2 -> iFetchBufA s1 = aEA s1 :: rest -> fbLiveA s1 (aEA s1) = true ->
       (ACC aPkt s1).(Snd).(Fst) = true -> ACC aInit s1 = true -> l2 = ACC aNextLine s1 ->
       iFetchBufA s1' = rest -> iPccA s1' = iPccA s1 -> ACC iStraddle s1' = ACC aSomeSh s1 ->
       filter (fbLiveA s1') rest = (if ACC aMis s1 l2 then [] else filter (fbLiveA s1) rest) ->
       ACC iFetchPc s1' = (if ACC aMis s1 l2 then l2 else ACC iFetchPc s1) ->
       FRONTIER s1 s2 fp -> FRONTIER s1' s2 fp.
   Proof.
-    intros g s1 s1' s2 fp rest l2 Hg Efb0 Hl Hpv Hinit Hl2 Efb Epcc Estr Hlive Efpc H.
+    intros g s1 s1' s2 fp rest l2 Hpok Hg Efb0 Hl Hpv Hinit Hl2 Efb Epcc Estr Hlive Efpc H.
     destruct invariant_fetch as [HN [HL [HC [HI [_ [_ [_ [HF _]]]]]]]].
     pose proof lineBytes_parcels as HL2; pose proof parcels_ge2 as HF2.
     pose proof invariant_LineBytes as HLB; pose proof lineBytes_lt_addrBytes as HLA; pose proof lineBytes_pos as Hlb.
@@ -1560,7 +1563,7 @@ Section FetchAsmStep.
     assert (Hpc : ACC aInstPc s1 = fp).
     { unfold aInstPc; rewrite evalExpr_ITE; change (evalExpr (Var type Bool (ACC aHasSh s1))) with (ACC aHasSh s1).
       rewrite Hsh, Hfp; reflexivity. }
-    pose proof (aTop_eq s1 fp false Hpc HiCI) as HtopE; rewrite Htop in HtopE.
+    pose proof (aTop_eq s1 fp false Hpok Hpc HiCI) as HtopE; rewrite Htop in HtopE.
     assert (HpX : excAny (preExcAt (iPccA s1) fp) = false)
       by (rewrite <- Hexc, (ACC aPreExc_eq s1), <- (ACC aPre_excAny s1); exact Hpre).
     assert (HlA : lineAddrOf fp = ACC aAligned s1) by (rewrite Hfp; apply lineAddr_parcelAddr; exact HaA).
@@ -1627,7 +1630,7 @@ Section FetchAsmStep.
    * is enqueued with the level-2 prediction `l2` *)
   Lemma asm_eol_rel :
     forall g (s1 s1' : IState) (s2 : SState) l2 mr',
-      (ACC aPre s1 = true -> mr' = iRegionsA s1) ->
+      PccOK s1 -> (ACC aPre s1 = true -> mr' = iRegionsA s1) ->
       (ACC aPre s1 = false -> FetchDeqAtL (ACC aAligned s1) implRegions (iRegionsA s1) mr') ->
       FASM s1 s1' (mr' ,, (iMemA s1).(Snd)) (ACC fEol s1 l2) ->
       (ACC aHead s1).(Snd).(Fst) = true -> (ACC aPkt s1).(Snd).(Fst) = true -> ACC aMatch s1 = true ->
@@ -1637,7 +1640,7 @@ Section FetchAsmStep.
          pcAligned l2 /\ (ACC aNeeds s1 = false -> l2 = clearBit0 (ACC aSeqPc s1))) ->
       RELG g s1 s2 -> RELG g s1' s2.
   Proof.
-    intros g s1 s1' s2 l2 mr' Hmr1 Hmr2 Hst Hv Hpv Hm Hf Hl2a Hl2b H.
+    intros g s1 s1' s2 l2 mr' Hpok Hmr1 Hmr2 Hst Hv Hpv Hm Hf Hl2a Hl2b H.
     pose proof Hst as [Erf [Ewb [Emem [Efe [ED [Eex [Edm Emd]]]]]]].
     pose proof (fun A => lineUnique_implRegions pre post revBase revPfB revPfA A (Is_true_eq_true _ Hdisj)) as Hu.
     pose proof (iFlush_ext pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -1768,7 +1771,7 @@ Section FetchAsmStep.
           refine (LiveChainG_mono pre post revBase revPfB revPfA initLine fwcs _ _ _ _ _ _ _
                     (proj2 (proj2 Cm)) (FetchViewExt_refl _ _) _ F6).
           intros p Hp.
-          exact (frontier_strad g s1 s1' s2 p rest l2 H Efb0 Hlh Hpv Hinit (Hinit_nl eq_refl) Efb Epcc Estr Hlive Efpc Hp).
+          exact (frontier_strad g s1 s1' s2 p rest l2 Hpok H Efb0 Hlh Hpv Hinit (Hinit_nl eq_refl) Efb Epcc Estr Hlive Efpc Hp).
         * assert (Elive : liveInstsA g s1' = (liveInstsA g s1 ++ [(ACC aFo s1, l2)])%list).
           { unfold liveInsts; rewrite Ed2a, Eib, Edl, Eal; cbv beta iota; rewrite filter_app, map_app, app_assoc.
             cbn [filter map]; rewrite Ha; reflexivity. }
@@ -1777,7 +1780,7 @@ Section FetchAsmStep.
           refine (LiveChainG_mono pre post revBase revPfB revPfA initLine fwcs _ _ _ _ _ _ _
                     (proj2 (proj2 Cm)) (FetchViewExt_refl _ _) _ F6).
           intros p Hp.
-          destruct (head_facts g s1 s2 rest p H Efb0 Hlh Hpv Hp) as [Hpc [Hal [HpX [Hcomp Hallow]]]].
+          destruct (head_facts g s1 s2 rest p Hpok H Efb0 Hlh Hpv Hp) as [Hpc [Hal [HpX [Hcomp Hallow]]]].
           split; [exact (Hallow Hinit) |].
           rewrite foFault_aFo; destruct (ACC aFault s1) eqn:Hfault; [exact I |].
           destruct (Hl2b eq_refl) as [Hal2 Hseq].
@@ -1802,11 +1805,15 @@ Section FetchAsmStep.
    * The theorem: one `fetchAssembleStage` step is matched by a spec stutter
    * ========================================================================= *)
 
-  Theorem stepOK_fetchAssembleStage : STEPOK STAGE.
+  (* With no redirect pending, fetch's PCC copy stands for the architectural PCC *)
+  Theorem fetchAsm_live :
+    forall g (s1 s1' : IState) (s2 : SState),
+      SemAction (implEnv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                   mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions initLine fwcs)
+        STAGE s1 s1' Zmod.zero ->
+      PccOK s1 -> RELG g s1 s2 -> RELG g s1' s2.
   Proof.
-    intros s1 s1' s2 Hsem [g Hg].
-    exists s2; split; [apply NilAction; reflexivity |].
-    exists g.
+    intros g s1 s1' s2 Hsem Hpok Hg.
     pose proof (fun A => lineUnique_implRegions pre post revBase revPfB revPfA A (Is_true_eq_true _ Hdisj)) as Hu.
     destruct (ACC aCp s1) eqn:Hcp.
     2: { rewrite (asm_idle pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -1836,7 +1843,7 @@ Section FetchAsmStep.
     - pose proof (asm_seq pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                     mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
                     _ Hu s1 s1' Hsem Hcp Hv Hpv Hm Hf Hseq) as Hst.
-      refine (asm_stay_rel g s1 s1' s2 true Hst Hv Hpv Hm Hf _ Hg).
+      refine (asm_stay_rel g s1 s1' s2 true Hpok Hst Hv Hpv Hm Hf _ Hg).
       unfold aIsSeq in Hseq; rewrite and3E_eval in Hseq.
       apply andb_prop in Hseq as [Hseq _]; apply andb_prop in Hseq as [Hseq _].
       rewrite notE_eval in Hseq; apply negb_true_iff in Hseq; exact Hseq.
@@ -1844,12 +1851,12 @@ Section FetchAsmStep.
                   mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
                   _ Hu s1 s1' Hsem Hcp Hv Hpv Hm Hf Hseq) as [l2 [mr' [Hl2a [Hl2b [Hmr1 [Hmr2 [Heol Hstay]]]]]]].
       destruct (ACC aEol s1 l2) eqn:He.
-      + exact (asm_eol_rel g s1 s1' s2 l2 mr' Hmr1 (fun Hp => Hmr2 Hp eq_refl) (Heol eq_refl) Hv Hpv Hm Hf Hl2a Hl2b Hg).
+      + exact (asm_eol_rel g s1 s1' s2 l2 mr' Hpok Hmr1 (fun Hp => Hmr2 Hp eq_refl) (Heol eq_refl) Hv Hpv Hm Hf Hl2a Hl2b Hg).
       + pose proof (Hstay eq_refl) as Hst.
         unfold aEol in He; rewrite or2_eval, notE_eval, eqAddrE_eval in He.
         apply orb_false_iff in He as [He1 He2]; apply negb_false_iff, Zmod.eqb_eq in He1.
         change (l2 = ACC aSeqPc s1) in He1; rewrite He1 in Hst.
-        exact (asm_stay_rel g s1 s1' s2 false Hst Hv Hpv Hm Hf He2 Hg).
+        exact (asm_stay_rel g s1 s1' s2 false Hpok Hst Hv Hpv Hm Hf He2 Hg).
   Qed.
 
 End FetchAsmStep.

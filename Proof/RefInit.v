@@ -17,7 +17,8 @@
 From Stdlib Require Import String List ZArith Zmod Lia Bool.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems HelperLemmas.
 From Cheriot.Proof Require Import TreeLemmas StateRel SimDevices SimFetchDecode SimExecute GhostListLemmas.
-From Cheriot.Proof Require Import RefRel RefRegion RefGhost RefFetch FifoGen RefMemRel RefCoreRel.
+From Cheriot.Proof Require Import RefRel RefRegion RefGhost RefFetch FifoGen RefMemRel RefCoreRel RefRedirect.
+From Cheriot Require Import ImplCommon.
 
 Unset Implicit Arguments.
 Unset Strict Implicit.
@@ -226,7 +227,7 @@ Section RegionInit.
       RevRel RevEq xs xi.
   Proof.
     intros [b [t [c [ep [ist [irq [sc [st []]]]]]]]]
-           [b' [t' [c' [ep' [ist' [irq' [sc' [st' [ph [cap [bs [hit []]]]]]]]]]]]]
+           [b' [t' [c' [ep' [ist' [irq' [sc' [st' [ph [cap [bs [hit [cp []]]]]]]]]]]]]]
            Hxs Hxi.
     cbn in Hxs, Hxi.
     destruct Hxs as [Hb [Ht [Hc [Hep [Hist [Hirq [Hsc [Hst _]]]]]]]].
@@ -268,6 +269,19 @@ Proof.
   rewrite evalReadRegsListHelper_above by (rewrite ?Zmod.to_Z_0; lia).
   cbn [fold_left].
   rewrite evalOrBinary_getDefault_l.
+  reflexivity.
+Qed.
+
+Lemma readPcc_init_val :
+  forall (pcAddrInit : Z) (rf : TS (rfTree pcAddrInit)),
+    InitStateConsistent (rfTree pcAddrInit) rf -> readPcc pcAddrInit rf = ExecRoot pcAddrInit.
+Proof.
+  intros pcAddrInit rf Hrf.
+  rewrite (allTreeInitDet_InitState _ rf (allTreeInitDet_RfTree pcAddrInit) Hrf).
+  unfold readPcc, readGpr, gprPathsWithKind.
+  rewrite evalReadRegsList_head by (cbn; lia).
+  unfold readRegOfKind.
+  rewrite eq_rect_Kind_refl.
   reflexivity.
 Qed.
 
@@ -501,7 +515,7 @@ Section RefInitMain.
                       (nth_error_app_cons_len pre (implRevRegion revBase revPfB revPfA) post)
                       IMEM.(Fst)).(Fst)) in *.
         clearbody xi.
-        destruct xi as [b [t [c [ep [ist [irq [sc [st [ph [cap [bs [hit []]]]]]]]]]]]].
+        destruct xi as [b [t [c [ep [ist [irq [sc [st [ph [cap [bs [hit [cp []]]]]]]]]]]]]].
         cbn in Hrev.
         destruct Hrev as [_ [_ [_ [_ [_ [_ [_ [_ [Hph _]]]]]]]]].
         cbn; rewrite Hph.
@@ -513,7 +527,10 @@ Section RefInitMain.
       split; [intros _; reflexivity |].
       pose proof (proj2 Hdm) as Hdst; cbn in Hdst.
       unfold iDmSt, iDm, dataMem_state; rewrite (proj1 Hdst).
-      split; [intros Hc; discriminate Hc | split; intros Hc; discriminate Hc].
+      split; [intros Hc; discriminate Hc |]; split; [intros Hc; discriminate Hc |].
+      split; [intros Hc; discriminate Hc |]; split; [intros Hc; discriminate Hc |].
+      split; [intros Hc; discriminate Hc |].
+      reflexivity.
     - (* DmQueueRel *)
       unfold DmQueueRel, iDmBuf, iDm, dataMem_fifo; cbn [g_chain g_acc ghost0].
       rewrite (InitStateConsistent_fifo_to_list dataMemCapacity MemFenceReq _ (proj1 (proj1 Hdm))).
@@ -634,7 +651,7 @@ Section RefInitMain.
                     (nth_error_app_cons_len pre (implRevRegion revBase revPfB revPfA) post)
                     IMEM.(Fst)).(Fst)) in *.
       clearbody xi.
-      destruct xi as [b [t [c [ep [ist [irq [sc [st [ph [cap [bs [hit []]]]]]]]]]]]].
+      destruct xi as [b [t [c [ep [ist [irq [sc [st [ph [cap [bs [hit [cp []]]]]]]]]]]]]].
       cbn in Hrev.
       destruct Hrev as [_ [_ [_ [_ [_ [_ [_ [_ [Hph _]]]]]]]]].
       cbn [Fst Snd]; rewrite Hph.
@@ -642,6 +659,29 @@ Section RefInitMain.
       split; [intros Hc; discriminate Hc |].
       split; [intros Hc; discriminate Hc |].
       split; [intros Hc; discriminate Hc | exact I].
+  Qed.
+
+  (* No redirect is pending initially; fetch's PCC copy is the initial PCC, its fence.i copy clear *)
+  Theorem RefRelR_init :
+    RefRelR pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+      mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
+      clintS clint plicS plic initLine fwcs s1 s2.
+  Proof.
+    pose proof init_fetch as Hf.
+    pose proof init_exec as He.
+    assert (Hv : iRedirValid pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                   mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1 = false).
+    { unfold iRedirValid, ex_redirValid, ex_redirect, iExec.
+      rewrite (proj1 (proj2 (proj2 (proj2 He)))); reflexivity. }
+    split.
+    - apply RedirInv_np_of; [exact Hv | |].
+      + unfold iFetchPcc, fetch_pccCopy, iFetch, iPcc.
+        rewrite (proj1 Hf).
+        exact (f_equal tagEcap (eq_sym (readPcc_init_val pcAddrInit _ init_rf))).
+      + unfold iFenceIPending, exec_fenceIPending, iExec.
+        rewrite (proj1 (proj2 He)); intros C; discriminate C.
+    - destruct RefRel_init as [g Hg]; exists g.
+      erewrite effS_false by exact Hv; exact Hg.
   Qed.
 
 End RefInitMain.

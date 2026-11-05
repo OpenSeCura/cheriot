@@ -308,6 +308,108 @@ Section ExecFrame.
     rewrite Edm, Emd; reflexivity.
   Qed.
 
+  (* The relation reads the fetch subtree only through these projections (not fetch's PCC and
+   * fence.i copies, item 3.4) *)
+  Local Abbreviation FPROJ s1 :=
+    (fetch_pc pcAddrInit fetchCapacity instCapacity (iFetchA s1),
+     fetch_predEpoch pcAddrInit fetchCapacity instCapacity (iFetchA s1),
+     fetch_curParcelOpt pcAddrInit fetchCapacity instCapacity (iFetchA s1),
+     fetch_straddleOpt pcAddrInit fetchCapacity instCapacity (iFetchA s1),
+     fetch_fetchBufFifo pcAddrInit fetchCapacity instCapacity (iFetchA s1),
+     fetch_instFifo pcAddrInit fetchCapacity instCapacity (iFetchA s1)).
+
+  (* The equalities `RefRelNE_fetch_ext` assumes; one lemma per relation part below keeps each
+   * kernel check small *)
+  Local Abbreviation CR L := (L pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post
+                                revBase revPfB revPfA).
+  Local Abbreviation FEXT s1 s1' :=
+    (iRfA s1' = iRfA s1 /\ iWbA s1' = iWbA s1 /\ iMemA s1' = iMemA s1 /\ FPROJ s1' = FPROJ s1 /\
+     iDecodeA s1' = iDecodeA s1 /\ iDmA s1' = iDmA s1 /\ iMdA s1' = iMdA s1 /\
+     iExecEpochA s1' = iExecEpochA s1 /\ iFenceIPendingA s1' = iFenceIPendingA s1).
+
+  Ltac fext_intro s1 s1' :=
+    intros [Erf [Ewb [Emem [Efp [Ede [Edm [Emd [Eep Efip]]]]]]]];
+    injection Efp as Epc Epe Ecp Estr Efb Eib;
+    pose proof (iFlush_ext s1 s1' Erf Emd) as Efl;
+    pose proof (olderWriters_ext s1 s1' Edm Emd) as Eow;
+    assert (Ereg : iRegionsA s1' = iRegionsA s1) by (unfold iRegions; rewrite Emem; reflexivity);
+    assert (Ed2a : iD2aA s1' = iD2aA s1) by (unfold iD2a; rewrite Ede; reflexivity).
+
+  Lemma fext_fence :
+    forall g (s1 s1' : IState), FEXT s1 s1' -> CR FenceRel g s1 -> CR FenceRel g s1'.
+  Proof.
+    intros g s1 s1'; fext_intro s1 s1'; intros Hf.
+    unfold FenceRel, NoLive, NoFenceIWait, daLive, aiLive, fbLive,
+           iStraddle, iInstBuf, iFetchBuf, iPredEpoch in *;
+      rewrite Ereg, Estr, Eib, Efb, Epe, Ed2a, Eep, Efip; exact Hf.
+  Qed.
+
+  Lemma fext_score :
+    forall g (s1 s1' : IState), FEXT s1 s1' -> CR ScoreRel g s1 -> CR ScoreRel g s1'.
+  Proof.
+    intros g s1 s1'; fext_intro s1 s1'; intros Hs.
+    unfold ScoreRel, daLive in *;
+      rewrite Eow, Ed2a, Ewb, Efl, Eep; exact Hs.
+  Qed.
+
+  Lemma fext_front :
+    forall g (s1 s1' : IState) (s2 : SState), FEXT s1 s1' ->
+      CR FrontRel initLine fwcs g s1 s2 -> CR FrontRel initLine fwcs g s1' s2.
+  Proof.
+    intros g s1 s1' s2; fext_intro s1 s1'; intros Hfr.
+    (* rewrite each conjunct on its own: the motive of every rewrite is then that conjunct only *)
+    unfold FrontRel in Hfr |- *; destruct Hfr as [F1 [F2 [F3 [F4 [F5 [F6 F7]]]]]].
+    split; [| split; [| split; [| split; [| split; [| split]]]]];
+      [ revert F1 | revert F2 | revert F3 | revert F4 | revert F5 | revert F6 | revert F7 ];
+      unfold LiveChain, FrontierRel, FetchRespRel, fbInRegion, liveInsts,
+             daLive, aiLive, fbLive, iPcc, iFetchPc, iPredEpoch, iCurParcel, iStraddle,
+             iFetchBuf, iInstBuf;
+      rewrite ?Erf, ?Ereg, ?Epc, ?Epe, ?Ecp, ?Estr, ?Efb, ?Eib, ?Ed2a, ?Eep; exact (fun H => H).
+  Qed.
+
+  Lemma fext_wf :
+    forall g (s1 s1' : IState) (s2 : SState), FEXT s1 s1' -> CR WfRel g s1 s2 -> CR WfRel g s1' s2.
+  Proof.
+    intros g s1 s1' s2; fext_intro s1 s1'; intros Hw.
+    unfold WfRel, iCurParcel, iFetchBuf, iPcc, liveInsts, daLive, aiLive, iInstBuf in *;
+      rewrite ?Erf, ?Ed2a, ?Eep, ?Ecp, ?Efb, ?Eib, ?Ede, ?Edm, ?Emd, ?Ereg; exact Hw.
+  Qed.
+
+  Lemma RefRelNE_fetch_ext :
+    forall g (s1 s1' : IState) (s2 : SState),
+      iRfA s1' = iRfA s1 -> iWbA s1' = iWbA s1 -> iMemA s1' = iMemA s1 -> FPROJ s1' = FPROJ s1 ->
+      iDecodeA s1' = iDecodeA s1 -> iDmA s1' = iDmA s1 -> iMdA s1' = iMdA s1 ->
+      iExecEpochA s1' = iExecEpochA s1 -> iFenceIPendingA s1' = iFenceIPendingA s1 ->
+      RELNE g s1 s2 -> RELNE g s1' s2.
+  Proof.
+    intros g s1 s1' s2 Erf Ewb Emem Efp Ede Edm Emd Eep Efip H.
+    pose proof (conj Erf (conj Ewb (conj Emem (conj Efp (conj Ede (conj Edm (conj Emd (conj Eep Efip))))))))
+      as HX.
+    pose proof (iFlush_ext s1 s1' Erf Emd) as Efl.
+    assert (Ereg : iRegionsA s1' = iRegionsA s1) by (unfold iRegions; rewrite Emem; reflexivity).
+    destruct H as [Hrf Hm Hl Hrp Ha Hc Hd Hf Hs Hfr Hw Hrk].
+    constructor.
+    - unfold RfRel in *; rewrite Efl; exact Hrf.
+    - unfold MemRelC in *; rewrite Ereg; exact Hm.
+    - exact Hl.
+    - exact Hrp.
+    - eapply AccessRel_frame with (s1 := s1) (s2 := s2);
+        try reflexivity;
+        try (unfold iMemSt, iRequester, iReadRp, iRdBufs, iDmSt, iRevPhase, iRev, iRegions; rewrite ?Emem, ?Edm; reflexivity);
+        exact Ha.
+    - unfold CnwbRel in *; unfold iDmSt in *; rewrite Edm; exact Hc.
+    - unfold DmQueueRel, iDmBuf in *; rewrite Edm; exact Hd.
+    - exact (fext_fence g s1 s1' HX Hf).
+    - exact (fext_score g s1 s1' HX Hs).
+    - exact (fext_front g s1 s1' s2 HX Hfr).
+    - exact (fext_wf g s1 s1' s2 HX Hw).
+    - eapply RevokerRel_frame with (g := g) (s1 := s1) (s2 := s2);
+        try reflexivity;
+        try (unfold iRev, iRegions; rewrite Emem; reflexivity);
+        exact Hrk.
+  Qed.
+
   Lemma RefRelNE_impl_ext :
     forall g (s1 s1' : IState) (s2 : SState),
       iRfA s1' = iRfA s1 ->
@@ -323,37 +425,8 @@ Section ExecFrame.
       RELNE g s1' s2.
   Proof.
     intros g s1 s1' s2 Erf Ewb Emem Efe Ede Edm Emd Eep Efip H.
-    pose proof (iFlush_ext s1 s1' Erf Emd) as Efl.
-    pose proof (olderWriters_ext s1 s1' Edm Emd) as Eow.
-    assert (Ereg : iRegionsA s1' = iRegionsA s1) by (unfold iRegions; rewrite Emem; reflexivity).
-    assert (Ed2a : iD2aA s1' = iD2aA s1) by (unfold iD2a; rewrite Ede; reflexivity).
-    destruct H as [Hrf Hm Hl Hrp Ha Hc Hd Hf Hs Hfr Hw Hrk].
-    constructor.
-    - unfold RfRel in *; rewrite Efl; exact Hrf.
-    - unfold MemRelC in *; rewrite Ereg; exact Hm.
-    - exact Hl.
-    - exact Hrp.
-    - eapply AccessRel_frame with (s1 := s1) (s2 := s2);
-        try reflexivity;
-        try (unfold iMemSt, iRequester, iReadRp, iRdBufs, iDmSt, iRevPhase, iRev, iRegions; rewrite ?Emem, ?Edm; reflexivity);
-        exact Ha.
-    - unfold CnwbRel in *; unfold iDmSt in *; rewrite Edm; exact Hc.
-    - unfold DmQueueRel, iDmBuf in *; rewrite Edm; exact Hd.
-    - unfold FenceRel, NoLive, NoFenceIWait, daLive, aiLive, fbLive,
-             iStraddle, iInstBuf, iFetchBuf, iPredEpoch in *;
-        rewrite Ereg, Efe, Ed2a, Eep, Efip; exact Hf.
-    - unfold ScoreRel, daLive in *;
-        rewrite Eow, Ed2a, Ewb, Efl, Eep; exact Hs.
-    - unfold FrontRel, LiveChain, FrontierRel, FetchRespRel, fbInRegion, liveInsts,
-             daLive, aiLive, fbLive, iPcc, iFetchPc, iPredEpoch, iCurParcel, iStraddle,
-             iFetchBuf, iInstBuf in *;
-        rewrite Erf, Ereg, Efe, Ed2a, Eep; exact Hfr.
-    - unfold WfRel, iCurParcel, iFetchBuf, iPcc, liveInsts, daLive, aiLive, iInstBuf in *;
-        rewrite ?Erf, ?Ed2a, ?Eep, ?Efe, ?Ede, ?Edm, ?Emd, ?Ereg; exact Hw.
-    - eapply RevokerRel_frame with (g := g) (s1 := s1) (s2 := s2);
-        try reflexivity;
-        try (unfold iRev, iRegions; rewrite Emem; reflexivity);
-        exact Hrk.
+    apply (RefRelNE_fetch_ext g s1 s1' s2 Erf Ewb Emem); try assumption.
+    rewrite Efe; reflexivity.
   Qed.
 
   Lemma RefRelG_impl_ext :
@@ -373,6 +446,20 @@ Section ExecFrame.
     intros g s1 s1' s2 Erf Ewb Emem Efe Ede Edm Emd Eep Efip Hg.
     apply RefRelG_of_NE.
     - refine (RefRelNE_impl_ext g s1 s1' s2 Erf Ewb Emem Efe Ede Edm Emd Eep Efip _).
+      eapply RefRelNE_of_G; exact Hg.
+    - pose proof Hg as Hg0; destruct Hg0 as [_ _ _ _ He _ _ _ _ _ _ _ _]; exact He.
+  Qed.
+
+  Lemma RefRelG_fetch_ext :
+    forall g (s1 s1' : IState) (s2 : SState),
+      iRfA s1' = iRfA s1 -> iWbA s1' = iWbA s1 -> iMemA s1' = iMemA s1 -> FPROJ s1' = FPROJ s1 ->
+      iDecodeA s1' = iDecodeA s1 -> iDmA s1' = iDmA s1 -> iMdA s1' = iMdA s1 ->
+      iExecEpochA s1' = iExecEpochA s1 -> iFenceIPendingA s1' = iFenceIPendingA s1 ->
+      RELG g s1 s2 -> RELG g s1' s2.
+  Proof.
+    intros g s1 s1' s2 Erf Ewb Emem Efp Ede Edm Emd Eep Efip Hg.
+    apply RefRelG_of_NE.
+    - refine (RefRelNE_fetch_ext g s1 s1' s2 Erf Ewb Emem Efp Ede Edm Emd Eep Efip _).
       eapply RefRelNE_of_G; exact Hg.
     - pose proof Hg as Hg0; destruct Hg0 as [_ _ _ _ He _ _ _ _ _ _ _ _]; exact He.
   Qed.

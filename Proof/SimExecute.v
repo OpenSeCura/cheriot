@@ -114,6 +114,42 @@ Section ExecuteTreeHelpers.
     intros env ex P; reflexivity.
   Qed.
 
+  (* Execute's redirect register (applied by `applyRedirect`) *)
+  Definition ex_redirect (ex : TreeState ElemState eTree) : type (Option FullECapWithTag) :=
+    ex.(Snd).(Snd).(Snd).(Fst).
+
+  Definition ex_redirValid (ex : TreeState ElemState eTree) : bool :=
+    (ex_redirect ex).(Snd).(Fst).
+
+  Definition ex_withRedirect (ex : TreeState ElemState eTree) (v : type (Option FullECapWithTag))
+    : TreeState ElemState eTree :=
+    (ex.(Fst) ,, (ex.(Snd).(Fst) ,, (ex.(Snd).(Snd).(Fst) ,, (v ,, ex.(Snd).(Snd).(Snd).(Snd))))).
+
+  (* The redirect Execute sets: new PCC `p` (the target is `p`'s address) *)
+  Definition redirOf (p : type FullECapWithTag) : type (Option FullECapWithTag) :=
+    evalExpr (mkSome (Var type FullECapWithTag p)).
+
+  Lemma evalActionPropGen_redirectPending :
+    forall {env : Env eTree} (ex : TreeState ElemState eTree) P,
+      evalActionPropGen env (@redirectPending type) ex P <-> P ex (ex_redirValid ex).
+  Proof. intros env ex P; reflexivity. Qed.
+
+  Lemma evalActionPropGen_readRedirect :
+    forall {env : Env eTree} (ex : TreeState ElemState eTree) P,
+      evalActionPropGen env (@readRedirect type) ex P <-> P ex (ex_redirect ex).
+  Proof. intros env ex P; reflexivity. Qed.
+
+  Lemma evalActionPropGen_setRedirect :
+    forall {env : Env eTree} (p : type FullECapWithTag) (ex : TreeState ElemState eTree) P,
+      evalActionPropGen env (@setRedirect type p) ex P <-> P (ex_withRedirect ex (redirOf p)) Zmod.zero.
+  Proof. intros env p ex P; reflexivity. Qed.
+
+  Lemma evalActionPropGen_clearRedirect :
+    forall {env : Env eTree} (ex : TreeState ElemState eTree) P,
+      evalActionPropGen env (@clearRedirect type) ex P <->
+      P (ex_withRedirect ex (getDefault (Option FullECapWithTag))) Zmod.zero.
+  Proof. intros env ex P; reflexivity. Qed.
+
   (* Wait-bit helpers on `waitBitsTree` *)
   Definition evalReadWaitBit (idx : bits RegIdxSzReal)
     (wb : TreeState ElemState waitBitsTree) : bool :=

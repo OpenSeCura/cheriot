@@ -448,7 +448,10 @@ Section FetchRqImpl.
 
   (* What the stage reads and computes *)
   Definition frFull (s1 : IState) : bool := Zmod.eqb (fifo_size (FBF s1)) (Zmod.of_Z _ (Z.of_nat fetchCapacity)).
-  Definition frExc (s1 : IState) : type FetchException := preExcAt (iPccA s1) (iFetchPcA s1).
+  (* fetch's PCC copy and fence.i copy (item 3.4) *)
+  Definition frPcc (s1 : IState) : type FullECapWithTag := fetch_pccCopy pcAddrInit fetchCapacity instCapacity (iFetchA s1).
+  Definition frFip (s1 : IState) : bool := fetch_fipCopy pcAddrInit fetchCapacity instCapacity (iFetchA s1).
+  Definition frExc (s1 : IState) : type FetchException := preExcAt (frPcc s1) (iFetchPcA s1).
   Definition frEntry (s1 : IState) (nio : type NoInstPredOut) : type FetchBufEntry :=
     (iFetchPcA s1 ,, (clearBit0 nio.(Snd).(Fst) ,, (nio.(Fst) ,, (iExecEpochA s1 ,, (iPredEpochA s1 ,, (frExc s1 ,, tt)))))).
   Definition frNoPred (s1 : IState) : type NoInstPredOut :=
@@ -475,7 +478,9 @@ Section FetchRqImpl.
     cbv beta in H.
   Ltac frq_fip H :=
     eapply fw_liftRead in H;
-    [| intros env_ sub_ Q_ HQ_; exact (proj1 (evalActionPropGen_readFenceIPending _ _) HQ_)]; cbv beta in H.
+    [| intros env_ sub_ Q_ HQ_;
+       exact (proj1 (evalActionPropGen_readFetchFenceIPending pcAddrInit fetchCapacity instCapacity _ _) HQ_)];
+    cbv beta in H.
   Ltac frq_wait H :=
     eapply fw_liftRead in H; [| intros env_ sub_ Q_ HQ_; exact (memReadFenceIWait_read _ _ _ _ HQ_)]; cbv beta in H.
   Ltac frq_pc H :=
@@ -491,8 +496,8 @@ Section FetchRqImpl.
        exact (proj1 (evalActionPropGen_readPredEpoch pcAddrInit fetchCapacity instCapacity _ _) HQ_)]; cbv beta in H.
   Ltac frq_pcc H :=
     eapply fw_liftRead in H;
-    [| intros env_ sub_ Q_ HQ_; apply (proj1 (evalActionPropGen_readRegsList _ _ _ _)) in HQ_;
-       rewrite (readPcc_idx0 pcAddrInit) in HQ_; exact HQ_]; cbv beta in H.
+    [| intros env_ sub_ Q_ HQ_;
+       exact (proj1 (evalActionPropGen_readFetchPcc pcAddrInit fetchCapacity instCapacity _ _) HQ_)]; cbv beta in H.
   Ltac frq_lets H :=
     repeat (lazymatch type of H with
             | evalActionPropGen _ (LetExp _ _ _) _ _ => apply fw_letExp in H
@@ -516,7 +521,7 @@ Section FetchRqImpl.
   Lemma fetchRq_idle :
     forall (s1 s1' : IState),
       SemAction envI STAGE s1 s1' Zmod.zero ->
-      andb (negb (frFull s1)) (andb (negb (iFenceIPendingA s1)) (negb (anyWait implRegions (iRegionsA s1)))) = false ->
+      andb (negb (frFull s1)) (andb (negb (frFip s1)) (negb (anyWait implRegions (iRegionsA s1)))) = false ->
       s1' = s1.
   Proof.
     intros s1 s1' H Hc.
@@ -529,7 +534,7 @@ Section FetchRqImpl.
   Lemma fetchRq_pre :
     forall (s1 s1' : IState),
       SemAction envI STAGE s1 s1' Zmod.zero ->
-      frFull s1 = false -> iFenceIPendingA s1 = false -> anyWait implRegions (iRegionsA s1) = false ->
+      frFull s1 = false -> frFip s1 = false -> anyWait implRegions (iRegionsA s1) = false ->
       excAny (frExc s1) = true ->
       FrqStep s1 s1' (iMemA s1) (frEnqF s1 (frEntry s1 (frNoPred s1))).
   Proof.
@@ -550,7 +555,7 @@ Section FetchRqImpl.
     forall (s1 s1' : IState),
       (forall A, lineUnique implRegions A) ->
       SemAction envI STAGE s1 s1' Zmod.zero ->
-      frFull s1 = false -> iFenceIPendingA s1 = false -> anyWait implRegions (iRegionsA s1) = false ->
+      frFull s1 = false -> frFip s1 = false -> anyWait implRegions (iRegionsA s1) = false ->
       excAny (frExc s1) = false ->
       exists mr' rdy,
         FetchRqAtL (lineAddrOf (iFetchPcA s1)) rdy implRegions (iRegionsA s1) mr' /\

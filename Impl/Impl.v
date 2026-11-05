@@ -183,6 +183,13 @@ Section ImplDom.
         implPlicSteps ++ implTimerSteps.
 
       (* =====================================================================
+       * Execute's redirect, applied first in the cycle
+       * ===================================================================== *)
+
+      Definition applyRedirectStage : Action ty sysTree (Bit 0) :=
+        liftAction np_core (@applyRedirect pcAddrInit fetchCapacity instCapacity withInstIfc memIfc executeIfc decTree dmTree mdTree ty).
+
+      (* =====================================================================
        * STAGE 1: Fetch Request
        * ===================================================================== *)
 
@@ -226,10 +233,14 @@ Section ImplDom.
       Definition setExecuteCanProceedStage : Action ty sysTree (Bit 0) :=
         liftAction np_execute (@setExecuteCanProceed ty).
 
+      Definition setRevokerCanProceedStage : Action ty sysTree (Bit 0) :=
+        liftAction np_mem (@implRevokerSetCanProceedStep regions ty rev).
+
       Definition setCanProceedSteps : list (Action ty sysTree (Bit 0)) :=
         [ setFetchCanProceedStage ;
           setDecodeCanProceedStage ;
-          setExecuteCanProceedStage ].
+          setExecuteCanProceedStage ;
+          setRevokerCanProceedStage ].
 
       (* =====================================================================
        * STAGE 5: Execute DataMem Stages (Load / Store / Fence / Rev) & MulDiv
@@ -244,8 +255,8 @@ Section ImplDom.
       Definition issueRevRqStage : Action ty sysTree (Bit 0) :=
         liftAction np_core (@issueRevRq dataMemCapacity pcAddrInit bpTree fTree decTree mdTree executeIfc memIfc ty).
 
-      Definition loadRpAndIssueRevRqStage : Action ty sysTree (Bit 0) :=
-        liftAction np_core (@loadRpAndIssueRevRq dataMemCapacity pcAddrInit bpTree fTree decTree mdTree executeIfc memIfc ty config).
+      Definition checkRevocationStage : Action ty sysTree (Bit 0) :=
+        liftAction np_core (@checkRevocation dataMemCapacity pcAddrInit bpTree fTree decTree mdTree executeIfc memIfc ty config).
 
       Definition revRpAndWriteBackStage : Action ty sysTree (Bit 0) :=
         liftAction np_core (@revRpAndWriteBack dataMemCapacity pcAddrInit bpTree fTree decTree mdTree executeIfc memIfc ty).
@@ -303,7 +314,8 @@ Section ImplDom.
 
     Definition forwardDatapathList (ty : Kind -> Type) : list (Action ty sysTree (Bit 0)) :=
       (
-        implPeripheralSteps ty
+        [ applyRedirectStage ty ]
+        ++ implPeripheralSteps ty
         ++ [ fetchRqStage ty ]
         ++ fetchLineRpPorts ty
         ++ [ fetchAssembleStage ty ;
@@ -314,7 +326,7 @@ Section ImplDom.
         ++ [ writeRqStep ty ] ++ writeRqPorts ty
         ++ [ readRqStep ty ] ++ readRqPorts ty ++ readRpPorts ty ++ [ readRpStep ty ]
         ++ [ readRqStep ty ] ++ readRqPorts ty ++ readRpPorts ty ++ [ readRpStep ty ]
-        ++ [ loadRpAndIssueRevRqStage ty ]
+        ++ [ loadRpAndWritebackStage ty ; checkRevocationStage ty ; issueRevRqStage ty ]
         ++ [ readRqStep ty ] ++ readRqPorts ty ++ readRpPorts ty ++ [ readRpStep ty ]
         ++ [ revRpAndWriteBackStage ty ]
         ++ mulDivStageActions ty
@@ -332,14 +344,17 @@ Section ImplDom.
 
     Definition pipelinedList (ty : Kind -> Type) : list (Action ty sysTree (Bit 0)) :=
       (
-        fetchLineRpPorts ty ++ readRpPorts ty ++ [ readRpStep ty ]
+        [ applyRedirectStage ty ]
+        ++ fetchLineRpPorts ty ++ readRpPorts ty ++ [ readRpStep ty ]
         ++ List.rev (
              [ fetchRqStage ty ]
              ++ repeat (fetchAssembleStage ty) issueWidth
              ++ repeat (decodeAndRegReadStage ty) issueWidth
              ++ repeat (aluAndExecuteNonDeferredStage ty) issueWidth
              ++ [ loadRqOrStoreOrFenceStage ty ;
-                  loadRpAndIssueRevRqStage ty ;
+                  loadRpAndWritebackStage ty ;
+                  checkRevocationStage ty ;
+                  issueRevRqStage ty ;
                   revRpAndWriteBackStage ty ]
              ++ mulDivStageActions ty
            )

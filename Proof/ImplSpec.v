@@ -63,7 +63,10 @@ Section ModuleActionDecomposition.
   Lemma map_snd_pipelinedMod :
     forall (ty : Kind -> Type),
       pipeMod ty =
-      (@fetchRps pcAddrInit fetchCapacity instCapacity decodeCapacity
+      ([ @applyRedirectStage pcAddrInit fetchCapacity instCapacity decodeCapacity
+           dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
+           config regions rev ty ]
+       ++ @fetchRps pcAddrInit fetchCapacity instCapacity decodeCapacity
           dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
           config regions ty
        ++ @dataReadRps pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -85,7 +88,13 @@ Section ModuleActionDecomposition.
             ++ [ @loadRqOrStoreOrFenceStage pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                     config regions rev ty ;
-                 @loadRpAndIssueRevRqStage pcAddrInit fetchCapacity instCapacity decodeCapacity
+                 @loadRpAndWritebackStage pcAddrInit fetchCapacity instCapacity decodeCapacity
+                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
+                    config regions rev ty ;
+                 @checkRevocationStage pcAddrInit fetchCapacity instCapacity decodeCapacity
+                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
+                    config regions rev ty ;
+                 @issueRevRqStage pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                     config regions rev ty ;
                  @revRpAndWriteBackStage pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -118,7 +127,7 @@ Section ModuleActionDecomposition.
              config regions ty
        ++ @setCanProceedSteps pcAddrInit fetchCapacity instCapacity decodeCapacity
              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
-             config regions ty)%list.
+             config regions rev ty)%list.
   Proof.
     intros ty; unfold pipelinedMod, pipelinedList.
     unfold fetchRps, dataReadRps.
@@ -132,6 +141,11 @@ Section ModuleActionDecomposition.
       In act (@implPeripheralSteps pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                 config regions clint plic ty) ->
+      ImplActionKind ty act
+  | IA_ApplyRedirect :
+      act = @applyRedirectStage pcAddrInit fetchCapacity instCapacity decodeCapacity
+              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
+              config regions rev ty ->
       ImplActionKind ty act
   | IA_FetchRqStage :
       act = @fetchRqStage pcAddrInit fetchCapacity instCapacity decodeCapacity
@@ -178,8 +192,18 @@ Section ModuleActionDecomposition.
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                 config regions ty) ->
       ImplActionKind ty act
-  | IA_LoadRpAndIssueRevRqStage :
-      act = @loadRpAndIssueRevRqStage pcAddrInit fetchCapacity instCapacity decodeCapacity
+  | IA_LoadRpAndWritebackStage :
+      act = @loadRpAndWritebackStage pcAddrInit fetchCapacity instCapacity decodeCapacity
+              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
+              config regions rev ty ->
+      ImplActionKind ty act
+  | IA_CheckRevocationStage :
+      act = @checkRevocationStage pcAddrInit fetchCapacity instCapacity decodeCapacity
+              dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
+              config regions rev ty ->
+      ImplActionKind ty act
+  | IA_IssueRevRqStage :
+      act = @issueRevRqStage pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
               config regions rev ty ->
       ImplActionKind ty act
@@ -206,7 +230,7 @@ Section ModuleActionDecomposition.
   | IA_SetCanProceedSteps :
       In act (@setCanProceedSteps pcAddrInit fetchCapacity instCapacity decodeCapacity
                 dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
-                config regions ty) ->
+                config regions rev ty) ->
       ImplActionKind ty act.
 
   (* --- 2C. Sub-Group Decompositions (`implPeripheralSteps`, `implRevokerStepsSys`, `setCanProceedSteps`) --- *)
@@ -260,6 +284,13 @@ Section ModuleActionDecomposition.
     intros A x y1 y2 y3; cbn [In]; intuition congruence.
   Qed.
 
+  Lemma in_five_iff :
+    forall (A : Type) (x y1 y2 y3 y4 y5 : A),
+      In x [y1; y2; y3; y4; y5] <-> x = y1 \/ x = y2 \/ x = y3 \/ x = y4 \/ x = y5.
+  Proof.
+    intros A x y1 y2 y3 y4 y5; cbn [In]; intuition congruence.
+  Qed.
+
   Theorem In_pipelinedMod_ImplActionKind :
     forall (ty : Kind -> Type) (act : Action ty iTree (Bit 0)),
       In act (pipeMod ty) ->
@@ -269,17 +300,20 @@ Section ModuleActionDecomposition.
     rewrite map_snd_pipelinedMod in Hin.
     rewrite !in_app_iff in Hin.
     repeat rewrite <- in_rev in Hin.
-    rewrite !in_app_iff, !in_three_iff, !in_two_iff, !in_singleton_iff in Hin.
+    rewrite !in_app_iff, ?in_five_iff, ?in_three_iff, ?in_two_iff, ?in_singleton_iff in Hin.
     repeat lazymatch type of Hin with
     | _ \/ _ => destruct Hin as [Hin | Hin]
     end;
       try (apply repeat_spec in Hin);
+      try (apply IA_ApplyRedirect; exact Hin);
       try (apply IA_FetchRqStage; exact Hin);
       try (apply IA_FetchAssembleStage; exact Hin);
       try (apply IA_DecodeAndRegReadStage; exact Hin);
       try (apply IA_AluAndExecuteStage; exact Hin);
       try (apply IA_LoadRqOrStoreOrFenceStage; exact Hin);
-      try (apply IA_LoadRpAndIssueRevRqStage; exact Hin);
+      try (apply IA_LoadRpAndWritebackStage; exact Hin);
+      try (apply IA_CheckRevocationStage; exact Hin);
+      try (apply IA_IssueRevRqStage; exact Hin);
       try (apply IA_RevRpAndWriteBackStage; exact Hin);
       try (apply IA_Peripheral; exact Hin);
       try (apply IA_FetchRps; exact Hin);

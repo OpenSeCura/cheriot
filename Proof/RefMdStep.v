@@ -303,6 +303,58 @@ Section MdStep.
     (@mulDivStageActions pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
        mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions type).
 
+  (* A mulDiv rule changes mulDiv's state, or writes a result back *)
+  Definition MdQ (s1 s1' : IState) : Prop :=
+    (exists smd, s1' = mdSet s1 smd /\ MDWF smd /\ EXTA smd = EXTA (iMdA s1)) \/
+    (exists smd l1 l2 d v, s1' = mdWbSet s1 smd d v /\ MDWF smd /\
+                           EXTA (iMdA s1) = (l1 ++ (d, v) :: l2)%list /\ EXTA smd = (l1 ++ l2)%list).
+
+  Lemma md_char :
+    forall a, In a MDACTS -> forall env (s1 s1' : IState),
+      SemAction env a s1 s1' Zmod.zero -> MDWF (iMdA s1) -> MdQ s1 s1'.
+  Proof.
+    intros a Hin env s1 s1' Hsem Hwf.
+    unfold mulDivStageActions in Hin; apply in_map_iff in Hin as [cAct [<- Hc]].
+    apply liftSem in Hsem; destruct Hsem as [c' [Hc' ->]].
+    unfold mulDivRules in Hc; apply in_app_or in Hc as [Hc | Hc]; [| apply in_app_or in Hc as [Hc | Hc]].
+    - unfold mulDivIssueCoreRules in Hc; apply in_map_iff in Hc as [r [<- Hr]].
+      apply liftSem in Hc'; destruct Hc' as [smd' [Hr' ->]].
+      destruct (md_rule_ok mulCapacity divCapacity mulStages divStages Hmd mulDivMode r
+                  (in_or_app _ _ _ (or_introl Hr)) _ _ _ _ Hwf Hr') as [Hwf' Hex].
+      left; exists smd'; split; [reflexivity | exact (conj Hwf' Hex)].
+    - unfold mulDivStageRules in Hc; apply in_map_iff in Hc as [r [<- Hr]].
+      apply liftSem in Hc'; destruct Hc' as [smd' [Hr' ->]].
+      destruct (md_rule_ok mulCapacity divCapacity mulStages divStages Hmd mulDivMode r
+                  (in_or_app _ _ _ (or_intror Hr)) _ _ _ _ Hwf Hr') as [Hwf' Hex].
+      left; exists smd'; split; [reflexivity | exact (conj Hwf' Hex)].
+    - assert (Hwb : forall popResp,
+                 (forall env smd smd' r, MDWF smd -> SemAction env popResp smd smd' r ->
+                    PopOK mulCapacity divCapacity mulStages divStages mulDivMode smd smd' r) ->
+                 forall env, SemAction env
+                   (@ImplMulDiv.mulDivWriteBack mulCapacity divCapacity mulStages divStages mulDivMode pcAddrInit
+                      (withInst_BpTree bp) (implMemTree implRegions) (implFetchTree pcAddrInit fetchCapacity instCapacity)
+                      (implDecodeTree decodeCapacity) implExecuteTree (implDataMemTree dataMemCapacity) type popResp)
+                   (readSubTreeState NPCORE s1) c' Zmod.zero ->
+                 MdQ s1 (writeSubTreeState NPCORE s1 c')).
+      { intros popResp Hok env0 Hs.
+        destruct (wb_step _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hs) as [env' [smd' [res [Hp ->]]]].
+        pose proof (Hok _ _ _ _ Hwf Hp) as Hpop; unfold PopOK in Hpop.
+        destruct (res.(Snd).(Fst)).
+        - destruct Hpop as [l1 [l2 [E1 [E2 Hwf']]]].
+          right; exists smd', l1, l2, res.(Fst).(Fst), (mkMulDivCap res.(Fst).(Snd).(Fst)).
+          split; [| exact (conj Hwf' (conj E1 E2))].
+          unfold mdWbSet, evalCommitMulDivWb, writeGprVal, wbClr.
+          destruct (negb (Zmod.eqb res.(Fst).(Fst) Zmod.zero)); reflexivity.
+        - subst smd'; left; eexists; split; [reflexivity | split; [exact Hwf | reflexivity]]. }
+      unfold mulDivWriteBackRules in Hc; destruct Hc as [<- | Hc].
+      + exact (Hwb _ (popMul_ok mulCapacity divCapacity mulStages divStages mulDivMode) _ Hc').
+      + assert (cAct = @divWriteBack mulCapacity divCapacity mulStages divStages mulDivMode pcAddrInit
+                         (withInst_BpTree bp) (implMemTree implRegions) (implFetchTree pcAddrInit fetchCapacity instCapacity)
+                         (implDecodeTree decodeCapacity) implExecuteTree (implDataMemTree dataMemCapacity) type) as ->.
+        { clear - Hc; destruct mulDivMode; [destruct Hc as [<- | []]; reflexivity | destruct Hc as [<- | []]; reflexivity | destruct Hc]. }
+        exact (Hwb _ (popDiv_ok mulCapacity divCapacity mulStages divStages mulDivMode) _ Hc').
+  Qed.
+
   (* Milestone 5: every mulDiv rule (issue, engine step, write-back); the spec stutters *)
   Theorem stepOK_mulDivStageActions :
     forall a, In a MDACTS ->
@@ -313,50 +365,9 @@ Section MdStep.
     intros a Hin s1 s1' s2 Hsem [g Hg].
     exists s2; split; [apply NilAction; reflexivity |].
     pose proof Hg as Hg0; destruct Hg0 as [_ _ _ _ _ _ _ _ _ _ _ [_ [_ [_ [_ [Hwf _]]]]] _].
-    unfold mulDivStageActions in Hin; apply in_map_iff in Hin as [cAct [<- Hc]].
-    apply liftSem in Hsem; destruct Hsem as [c' [Hc' ->]].
-    unfold mulDivRules in Hc; apply in_app_or in Hc as [Hc | Hc]; [| apply in_app_or in Hc as [Hc | Hc]].
-    - unfold mulDivIssueCoreRules in Hc; apply in_map_iff in Hc as [r [<- Hr]].
-      apply liftSem in Hc'; destruct Hc' as [smd' [Hr' ->]].
-      destruct (md_rule_ok mulCapacity divCapacity mulStages divStages Hmd mulDivMode r
-                  (in_or_app _ _ _ (or_introl Hr)) _ _ _ _ Hwf Hr') as [Hwf' Hex].
-      exists g; exact (RefRelG_mdFrame g s1 s2 smd' Hg Hwf' Hex).
-    - unfold mulDivStageRules in Hc; apply in_map_iff in Hc as [r [<- Hr]].
-      apply liftSem in Hc'; destruct Hc' as [smd' [Hr' ->]].
-      destruct (md_rule_ok mulCapacity divCapacity mulStages divStages Hmd mulDivMode r
-                  (in_or_app _ _ _ (or_intror Hr)) _ _ _ _ Hwf Hr') as [Hwf' Hex].
-      exists g; exact (RefRelG_mdFrame g s1 s2 smd' Hg Hwf' Hex).
-    - assert (Hwb : forall popResp,
-                 (forall env smd smd' r, MDWF smd -> SemAction env popResp smd smd' r ->
-                    PopOK mulCapacity divCapacity mulStages divStages mulDivMode smd smd' r) ->
-                 forall env, SemAction env
-                   (@ImplMulDiv.mulDivWriteBack mulCapacity divCapacity mulStages divStages mulDivMode pcAddrInit
-                      (withInst_BpTree bp) (implMemTree implRegions) (implFetchTree pcAddrInit fetchCapacity instCapacity)
-                      (implDecodeTree decodeCapacity) implExecuteTree (implDataMemTree dataMemCapacity) type popResp)
-                   (readSubTreeState NPCORE s1) c' Zmod.zero ->
-                 RefRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                   mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
-                   clintS clint plicS plic initLine fwcs (writeSubTreeState NPCORE s1 c') s2).
-      { intros popResp Hok env Hs.
-        destruct (wb_step _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hs) as [env' [smd' [res [Hp ->]]]].
-        pose proof (Hok _ _ _ _ Hwf Hp) as Hpop; unfold PopOK in Hpop.
-        destruct (res.(Snd).(Fst)).
-        - destruct Hpop as [l1 [l2 [E1 [E2 Hwf']]]]; exists g.
-          pose proof (RefRelG_mdWb g s1 s2 smd' l1 l2 _ _ Hg Hwf' E1 E2) as R.
-          match goal with |- _ (writeSubTreeState ?p ?s ?x) _ =>
-            assert (Es : writeSubTreeState p s x = mdWbSet s1 smd' res.(Fst).(Fst) (mkMulDivCap res.(Fst).(Snd).(Fst)))
-          end.
-          { unfold mdWbSet, evalCommitMulDivWb, writeGprVal, wbClr.
-            destruct (negb (Zmod.eqb res.(Fst).(Fst) Zmod.zero)); reflexivity. }
-          rewrite Es; exact R.
-        - subst smd'; exists g; exact (RefRelG_mdFrame g s1 s2 _ Hg Hwf eq_refl). }
-      unfold mulDivWriteBackRules in Hc; destruct Hc as [<- | Hc].
-      + exact (Hwb _ (popMul_ok mulCapacity divCapacity mulStages divStages mulDivMode) _ Hc').
-      + assert (cAct = @divWriteBack mulCapacity divCapacity mulStages divStages mulDivMode pcAddrInit
-                         (withInst_BpTree bp) (implMemTree implRegions) (implFetchTree pcAddrInit fetchCapacity instCapacity)
-                         (implDecodeTree decodeCapacity) implExecuteTree (implDataMemTree dataMemCapacity) type) as ->.
-        { clear - Hc; destruct mulDivMode; [destruct Hc as [<- | []]; reflexivity | destruct Hc as [<- | []]; reflexivity | destruct Hc]. }
-        exact (Hwb _ (popDiv_ok mulCapacity divCapacity mulStages divStages mulDivMode) _ Hc').
+    destruct (md_char a Hin _ s1 s1' Hsem Hwf) as [[smd [-> [Hwf' Hex]]] | [smd [l1 [l2 [d [v [-> [Hwf' [E1 E2]]]]]]]]].
+    - exists g; exact (RefRelG_mdFrame g s1 s2 smd Hg Hwf' Hex).
+    - exists g; exact (RefRelG_mdWb g s1 s2 smd l1 l2 d v Hg Hwf' E1 E2).
   Qed.
 
 End MdStep.

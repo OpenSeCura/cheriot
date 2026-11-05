@@ -36,7 +36,9 @@ Definition DataMemStateList : list (string * Kind) :=
   [ ("LoadRq", Bit 0) ;
     ("LoadRp", LoadCmd) ;
     ("RevRq",  RevCmd) ;
-    ("RevRp",  RevCmd) ].
+    ("RevRp",  RevCmd) ;
+    (* a tagged capability load response, before its revocation check (`checkRevocation`) *)
+    ("Check",  RevCmd) ].
 
 Definition DataMemState : Kind := TaggedUnion DataMemStateList.
 
@@ -194,15 +196,45 @@ Section DataMemStages.
     ) ;
     Retv.
 
+  (* A tagged capability load: its revocation check is left to the next cycle *)
+  Definition isTaggedCapLoad (pl : ty PendingLoad) (memVal : ty FullCapWithTag) : Expr ty Bool :=
+    And [ Eq (##pl`"memSize") ($LgNumBytesFullCapSz : Expr ty (Bit LgLgNumBytesFullCapSz)) ;
+          ##memVal`"tag" ].
+
+  (* The revocation command of a load response (state Check): the base, the destination and the
+   * decoded, attenuated capability, as `dispatchLoadResponse` computes them *)
+  Definition loadCheckCmd (pl : ty PendingLoad) (memVal : ty FullCapWithTag) : LetExpr ty RevCmd :=
+    LetE dstIdx     : Bit RegIdxSzReal <- ##pl`"dstIdx" ;
+    LetE isLM       : Bool             <- ##pl`"isLM" ;
+    LetE isLG       : Bool             <- ##pl`"isLG" ;
+    LetE rawTag     : Bool             <- ##memVal`"tag" ;
+    LetE rawCap     : Cap              <- ##memVal`"cap" ;
+    LetE rawDataLsb : Addr             <- ##memVal`"addr" ;
+    LETE ldECap     : ECap             <- decodeAndAttenuateCap rawCap rawDataLsb rawTag isLM isLG ;
+    LetE capVal     : FullECapWithTag  <- STRUCT {
+      "tag"  ::= #rawTag ;
+      "ecap" ::= #ldECap ;
+      "addr" ::= #rawDataLsb
+    } ;
+    LetE pr         : PendingRev       <- STRUCT {
+      "dstIdx" ::= #dstIdx ;
+      "capVal" ::= #capVal
+    } ;
+    @RetE _ RevCmd (STRUCT {
+      "base"       ::= ##ldECap`"base" ;
+      "pendingRev" ::= #pr
+    }).
+
   (* =========================================================================
    * STAGE 2a: loadRpAndWriteback
    *
    * - Active when state is "LoadRp". Peeks load response via mem_getMemRp.
-   * - Unconditionally dequeues mem_deqMemRp when valid, and uses
-   *   dispatchLoadResponse:
-   *   - RevLookup: transitions state to "RevRq".
-   *   - Writeback: writes back to RF, clears waitBit[dstIdx], and transitions
-   *                state to "LoadRq".
+   * - Unconditionally dequeues mem_deqMemRp when valid. The next state depends only on the
+   *   pending load and the response's tag bit, not on the decoded capability:
+   *   - tagged capability: stores the revocation command, state "Check" (`checkRevocation`
+   *     decides in the next cycle);
+   *   - otherwise: writes back to RF the `Writeback` outcome of `dispatchLoadResponse`,
+   *     clears waitBit[dstIdx], and transitions state to "LoadRq".
    * ========================================================================= *)
   Definition loadRpAndWriteback (config : RevConfig) : Action ty coreTree (Bit 0) :=
     LetA state : DataMemState <- liftAction np_dataMem (@readState ty) ;
@@ -215,21 +247,61 @@ Section DataMemStages.
       If (##memValOpt`"valid") Then (
         Act (liftAction np_mem ((memIfc ty).(mem_deqMemRp))) ;
         Let  memVal  : FullCapWithTag <- ##memValOpt`"data" ;
-        LetL outcome : LoadOutcome    <- dispatchLoadResponse config pl memVal ;
 
-        If (#outcome `? "RevLookup") Then (
-          Let revInfo   : RevCmd       <- #outcome `! "RevLookup" ;
-          Let nextState : DataMemState <- UNION (DataMemStateList, "RevRq" ::= #revInfo) ;
+        If (isTaggedCapLoad pl memVal) Then (
+          LetL revInfo   : RevCmd       <- loadCheckCmd pl memVal ;
+          Let  nextState : DataMemState <- UNION (DataMemStateList, "Check" ::= #revInfo) ;
           liftAction np_dataMem (@writeState ty nextState)
         ) Else (
-          Let wbInfo    : WbCmd            <- #outcome `! "Writeback" ;
-          Let dstIdxV   : Bit RegIdxSzReal <- ##wbInfo`"dstIdx" ;
-          Let dstValV   : FullECapWithTag  <- ##wbInfo`"dstVal" ;
-          Let nextState : DataMemState     <- UNION (DataMemStateList, "LoadRq" ::= ($0 : Expr ty (Bit 0))) ;
+          LetL outcome   : LoadOutcome      <- dispatchLoadResponse config pl memVal ;
+          Let  wbInfo    : WbCmd            <- #outcome `! "Writeback" ;
+          Let  dstIdxV   : Bit RegIdxSzReal <- ##wbInfo`"dstIdx" ;
+          Let  dstValV   : FullECapWithTag  <- ##wbInfo`"dstVal" ;
+          Let  nextState : DataMemState     <- UNION (DataMemStateList, "LoadRq" ::= ($0 : Expr ty (Bit 0))) ;
           Act (commitWb dstIdxV dstValV) ;
           liftAction np_dataMem (@writeState ty nextState)
         ) ;
         Retv
+      ) ;
+      Retv
+    ) ;
+    Retv.
+
+  (* =========================================================================
+   * STAGE 2c: checkRevocation
+   *
+   * - Active when state is "Check"; reads only dataMem's state. Computes
+   *   `needsRevocationCheck` of the stored capability:
+   *   - needed: issues mem_readRevBitRq; state "RevRp" if accepted, else "RevRq"
+   *     (`issueRevRq` retries);
+   *   - not needed: writes back the stored capability (the `Writeback` outcome of
+   *     `dispatchLoadResponse`), clears waitBit[dstIdx], state "LoadRq".
+   * ========================================================================= *)
+  Definition checkRevocation (config : RevConfig) : Action ty coreTree (Bit 0) :=
+    LetA state : DataMemState <- liftAction np_dataMem (@readState ty) ;
+
+    If (#state `? "Check") Then (
+      Let revInfo : RevCmd           <- #state `! "Check" ;
+      Let revBase : Bit (AddrSz + 1) <- ##revInfo`"base" ;
+      Let pr      : PendingRev       <- ##revInfo`"pendingRev" ;
+      Let capVal  : FullECapWithTag  <- ##pr`"capVal" ;
+      Let capECap : ECap             <- ##capVal`"ecap" ;
+      Let capTag  : Bool             <- ##capVal`"tag" ;
+      If (needsRevocationCheck config capECap capTag) Then (
+        LetA accepted : Bool <- liftAction np_mem ((memIfc ty).(mem_readRevBitRq) revBase) ;
+        If #accepted Then (
+          Let nextState : DataMemState <- UNION (DataMemStateList, "RevRp" ::= #revInfo) ;
+          liftAction np_dataMem (@writeState ty nextState)
+        ) Else (
+          Let nextState : DataMemState <- UNION (DataMemStateList, "RevRq" ::= #revInfo) ;
+          liftAction np_dataMem (@writeState ty nextState)
+        ) ;
+        Retv
+      ) Else (
+        Let dstIdxV   : Bit RegIdxSzReal <- ##pr`"dstIdx" ;
+        Let nextState : DataMemState     <- UNION (DataMemStateList, "LoadRq" ::= ($0 : Expr ty (Bit 0))) ;
+        Act (commitWb dstIdxV capVal) ;
+        liftAction np_dataMem (@writeState ty nextState)
       ) ;
       Retv
     ) ;
@@ -255,15 +327,6 @@ Section DataMemStages.
       Retv
     ) ;
     Retv.
-
-  (* =========================================================================
-   * STAGE 2: loadRpAndIssueRevRq
-   *
-   * - Linearly combines loadRpAndWriteback and issueRevRq.
-   * ========================================================================= *)
-  Definition loadRpAndIssueRevRq (config : RevConfig) : Action ty coreTree (Bit 0) :=
-    Act (loadRpAndWriteback config) ;
-    issueRevRq.
 
   (* =========================================================================
    * STAGE 3: revRpAndWriteBack

@@ -783,8 +783,12 @@ Section ExecAppend.
       + unfold CnwbRel; cbn [g_cnwb g_chain g_acc].
         unfold iDmSt in *; rewrite Edm.
         pose proof (dmLoadRq_excl _ Hlrq) as [Hlrp [Hrrq _]].
+        pose proof (dmNotCheck _ (orb_true_intro _ _ (or_introl Hlrq))) as Hnck.
         split; [intros _; reflexivity | split; [rewrite Hrrq; intros H; discriminate H |
-                split; [rewrite Hrrq; intros H; discriminate H | rewrite Hlrp; intros H; discriminate H]]].
+                split; [rewrite Hrrq; intros H; discriminate H | split; [rewrite Hlrp; intros H; discriminate H |]]]].
+        split; [rewrite Hnck; intros H; discriminate H |].
+        split; [rewrite Hnck; intros H; discriminate H |].
+        unfold dmValid; rewrite Hlrq; reflexivity.
       + unfold DmQueueRel, iDmBuf in *; cbn [g_chain g_acc]; rewrite Edm; rewrite Hch in Hdmqm; exact Hdmqm.
       + unfold FenceRel, NoFenceIWait; cbn [g_chain]; rewrite Efip', Ereg.
         split; [intros H; discriminate H | split; [| intros G1 e0 G2 H; destruct G1; discriminate H]].
@@ -884,8 +888,8 @@ Section ExecAppend.
             try (unfold iMemSt, iRequester, iReadRp, iRdBufs, iRev, iRegions; rewrite ?Emem, ?Edmst; reflexivity);
             exact Ha.
       - unfold CnwbRel in *; cbn [g_cnwb g_chain g_acc]; rewrite Edmst.
-        destruct Hc as [C1 [C2 [C3 C4]]].
-        split; [exact C1 | split; [exact C2 | split; [exact C3 |]]].
+        destruct Hc as [C1 [C2 [C3 [C4 C5]]]].
+        split; [exact C1 | split; [exact C2 | split; [exact C3 | split; [| exact C5]]]].
         intros Hlrp Hcn Hat.
         apply (RefExecFrame.ChainAvoids_app (g_chain pcAddrInit g) [GInst e]
                  (ldPending (dmLoadRpV (iDmStA s1))).(Fst) (C4 Hlrp Hcn Hat)).

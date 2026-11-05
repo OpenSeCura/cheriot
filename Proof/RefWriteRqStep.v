@@ -590,7 +590,7 @@ Section WriteRqStep.
         assert (Edm : iDmStA s1' = iDmStA s1) by (rewrite E1; reflexivity).
         rewrite Edm, Hx1, Hx2.
         split; [intros _; reflexivity |]; split; [intros H; discriminate H |]; split; [intros H; discriminate H |].
-        intros H; discriminate H.
+        split; [intros H; discriminate H |]. cnwb_fin.
       - rewrite Eg1; unfold DmQueueRel in Hd |- *; cbn [g_chain g_acc]; cbv zeta in Hd |- *.
         rewrite Eacc, Hch in Hd; cbn [accTakesHead] in Hd.
         rewrite (chainReqs_store_head e q G' Hq' Hsto) in Hd.
@@ -682,7 +682,7 @@ Section WriteRqStep.
         assert (Edm : iDmStA s1' = iDmStA s1) by (rewrite E1; reflexivity).
         rewrite Edm, Hx1, Hx2.
         split; [intros _; reflexivity |]; split; [intros H; discriminate H |]; split; [intros H; discriminate H |].
-        intros H; discriminate H.
+        split; [intros H; discriminate H |]. cnwb_fin.
       - rewrite Eg1; unfold DmQueueRel in Hd |- *; cbn [g_chain g_acc]; cbv zeta in Hd |- *.
         rewrite Eacc in Hd; cbn [accTakesHead] in Hd |- *.
         rewrite E1; exact Hd.

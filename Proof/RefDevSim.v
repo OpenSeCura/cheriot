@@ -278,7 +278,7 @@ Section RevSim.
     assert (HS : SimAt _ _ (RevArchR (revExtraOf xi) (revKeyOf xi)) env1 env2 xi (projImplRevokerArchState xi)
                    (@revokerLineWriteAction implRevokerExtraChildren base type addr data mask)
                    (@revokerLineWriteAction [] base type addr data mask)).
-    { destruct xi as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh []]]]]]]]]]]]].
+    { destruct xi as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh [cp []]]]]]]]]]]]]].
       unfold revokerLineWriteAction, readRevokerLine.
       apply simAt_letExp.
       do 6 (apply simAt_readReg; cbv beta).
@@ -310,7 +310,7 @@ Section RevSim.
   Proof.
     intros env1 env2 xi xi' addr mask v H.
     rewrite SemAction_iff_evalActionPropGen in H.
-    destruct xi as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh []]]]]]]]]]]]].
+    destruct xi as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh [cp []]]]]]]]]]]]]].
     unfold revokerLineReadAction, readRevokerLine in H;
       cbn -[evalExpr getMemOffset lineOffsetOf slotOf byteOf ArrayBuilder] in H.
     destruct H as [<- <-]; split; [reflexivity |].

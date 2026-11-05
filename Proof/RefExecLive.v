@@ -41,29 +41,15 @@ Local Abbreviation TS t := (TreeState ElemState t).
 
 Lemma dmState_tags_exhaust :
   forall st : type DataMemState,
+    dmValid st = true ->
     dmLoadRq st = false ->
     dmLoadRp st = false ->
     dmRevRq st = false ->
+    dmCheck st = false ->
     dmRevRp st = true.
 Proof.
-  intros [d tg].
-  unfold dmLoadRq, dmLoadRp, dmRevRq, dmRevRp; cbn.
-  intros H0 H1 H2.
-  pose proof (Zmod.to_Z_range tg) as Hrng.
-  assert (Hneq0 : Zmod.to_Z tg <> 0)
-    by (intros He; assert (Ht : tg = Zmod.of_Z _ 0) by (rewrite <- (Zmod.of_Z_to_Z tg), He; reflexivity);
-        subst tg; discriminate H0).
-  assert (Hneq1 : Zmod.to_Z tg <> 1)
-    by (intros He; assert (Ht : tg = Zmod.of_Z _ 1) by (rewrite <- (Zmod.of_Z_to_Z tg), He; reflexivity);
-        subst tg; discriminate H1).
-  assert (Hneq2 : Zmod.to_Z tg <> 2)
-    by (intros He; assert (Ht : tg = Zmod.of_Z _ 2) by (rewrite <- (Zmod.of_Z_to_Z tg), He; reflexivity);
-        subst tg; discriminate H2).
-  assert (Hbd : 0 <= Zmod.to_Z tg < 4)
-    by (rewrite <- Zmod.mod_to_Z; apply Z.mod_pos_bound; lia).
-  assert (He3 : Zmod.to_Z tg = 3) by lia.
-  assert (Ht3 : tg = Zmod.of_Z _ 3) by (rewrite <- (Zmod.of_Z_to_Z tg), He3; reflexivity).
-  subst tg; reflexivity.
+  intros st Hv H0 H1 H2 H4; unfold dmValid in Hv; rewrite H0, H1, H2, H4 in Hv.
+  destruct (dmRevRp st); [reflexivity | discriminate Hv].
 Qed.
 
 Lemma dmLoadRp_excl :
@@ -534,8 +520,15 @@ Section ExecLive.
       dmInFlightDst pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
         mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1 = [d].
   Proof.
-    intros g s1 s2 d v [Hcn1 [Hcn2 _]] Hacc Hcn.
+    intros g s1 s2 d v [Hcn1 [Hcn2 [_ [_ [Hcn5 [_ Hval]]]]]] Hacc Hcn.
     unfold dmInFlightDst; cbv zeta.
+    destruct (dmCheck (iDmStA s1)) eqn:Eck.
+    { destruct (dmCheck_excl _ Eck) as [_ [Elrp [Errq Errp]]]; rewrite Elrp, Errq, Errp.
+      specialize (Hcn5 eq_refl); rewrite Hcn in Hcn5.
+      apply some_eq_fst in Hcn5; cbn [fst] in Hcn5.
+      destruct (checkNeeds config (dmCheckV (iDmStA s1))) in Hcn5.
+      - rewrite fst_revWb in Hcn5; subst d; reflexivity.
+      - subst d; reflexivity. }
     destruct (dmRevRq (iDmStA s1)) eqn:Errq.
     - destruct (dmLoadRp (iDmStA s1)) eqn:Elrp.
       + destruct (dmLoadRp_excl _ Elrp) as [_ [E _]]; rewrite E in Errq; discriminate.
@@ -545,7 +538,7 @@ Section ExecLive.
       destruct (g_acc pcAddrInit g) as [| addr size pkt st | ld pkt0 st | rc st | st | st | addr pkt st].
       + destruct Hacc as [_ [_ [_ [_ [_ [[Elrp Errp] _]]]]]].
         destruct (dmLoadRq (iDmStA s1)) eqn:Elrq; [rewrite (Hcn1 eq_refl) in Hcn; discriminate |].
-        pose proof (dmState_tags_exhaust _ Elrq Elrp Errq) as E; rewrite E in Errp; discriminate.
+        pose proof (dmState_tags_exhaust _ Hval Elrq Elrp Errq Eck) as E; rewrite E in Errp; discriminate.
       + destruct Hacc as [_ [Elrq _]]; rewrite (Hcn1 Elrq) in Hcn; discriminate.
       + destruct Hacc as [_ [_ [Elrp [-> [_ [_ Hst]]]]]]; rewrite Elrp; cbv zeta in Hst.
         destruct st as [[|] | [|] | [|] | [|] rp | res].
@@ -567,13 +560,13 @@ Section ExecLive.
         * rewrite Errp; rewrite E in Hcn; apply some_eq_fst in Hcn; cbn [fst] in Hcn; rewrite fst_revWb in Hcn; subst d; reflexivity.
       + destruct Hacc as [_ [_ [_ [[Elrp Errp] _]]]].
         destruct (dmLoadRq (iDmStA s1)) eqn:Elrq; [rewrite (Hcn1 eq_refl) in Hcn; discriminate |].
-        pose proof (dmState_tags_exhaust _ Elrq Elrp Errq) as E; rewrite E in Errp; discriminate.
+        pose proof (dmState_tags_exhaust _ Hval Elrq Elrp Errq Eck) as E; rewrite E in Errp; discriminate.
       + destruct Hacc as [_ [_ [_ [[Elrp Errp] _]]]].
         destruct (dmLoadRq (iDmStA s1)) eqn:Elrq; [rewrite (Hcn1 eq_refl) in Hcn; discriminate |].
-        pose proof (dmState_tags_exhaust _ Elrq Elrp Errq) as E; rewrite E in Errp; discriminate.
+        pose proof (dmState_tags_exhaust _ Hval Elrq Elrp Errq Eck) as E; rewrite E in Errp; discriminate.
       + destruct Hacc as [_ [_ [[Elrp Errp] _]]].
         destruct (dmLoadRq (iDmStA s1)) eqn:Elrq; [rewrite (Hcn1 eq_refl) in Hcn; discriminate |].
-        pose proof (dmState_tags_exhaust _ Elrq Elrp Errq) as E; rewrite E in Errp; discriminate.
+        pose proof (dmState_tags_exhaust _ Hval Elrq Elrp Errq Eck) as E; rewrite E in Errp; discriminate.
   Qed.
 
   Lemma cnwb_in_olderWriters :

@@ -21,7 +21,7 @@ From Cheriot Require Import SpecDefines Decoder FunctionalUnits Alu SpecFetchDef
 From Cheriot Require Import Impl ImplCommon ImplDevice ImplRevoker ImplFetch ImplDecode ImplExecute ImplDataMem ImplMulDiv ImplMulDivProof ImplBranchPredictor.
 From Cheriot.Proof Require Import TreeLemmas StateRel DecodeFacts SimDevices SimFetchDecode SimExecute SimDataMem GhostListLemmas.
 From Cheriot.Proof Require Import RefRel RefRegion RefGhost RefFetch FifoGen RefMemRel RefCoreRel RefFrame RefPeriph RefSpecRead RefSpecFetch RefRevoker RefReplay.
-From Cheriot.Proof Require Import RefExec RefExecImpl.
+From Cheriot.Proof Require Import RefExec RefExecImpl RefRedirect RefRevBitRule RefRedirStep.
 From Cheriot.Proof Require Import RefPcEven.
 
 Unset Implicit Arguments.
@@ -1338,6 +1338,11 @@ Section ExecMain.
                                   mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post
                                   revBase revPfB revPfA).
 
+  Local Abbreviation applyPA := (IMPL applyP).
+  Local Abbreviation effSA := (IMPL effS).
+  Local Abbreviation stRedirA := (IMPL stRedir).
+  Local Abbreviation stEffA := (IMPL stEff).
+
   Local Abbreviation iRfA := (iRf pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                   mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iFlushA := (iFlush pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -1489,41 +1494,71 @@ Section ExecMain.
 
   (* --- 2. No Spec Step --- *)
 
+  (* the redirect register is unchanged from a state without one: the applied view is the state *)
+  Lemma eff_np :
+    forall (s1 s1' : IState),
+      stRedirA s1 = false -> ex_redirect (iExecA s1') = ex_redirect (iExecA s1) -> effSA s1' = s1'.
+  Proof.
+    intros s1 s1' Hrd Erd; apply (IMPL effS_false).
+    unfold iRedirValid, ex_redirValid; rewrite Erd; exact Hrd.
+  Qed.
+
   Lemma exec_noCanProceed :
     forall g (s1 s1' : IState) (s2 : SState),
-      RELG g s1 s2 -> SemAction envI STAGE s1 s1' Zmod.zero ->
+      RELG g s1 s2 -> SemAction envI STAGE s1 s1' Zmod.zero -> stRedirA s1 = false ->
       ex_canProceed (iExecA s1) = false ->
-      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' s1' s2'.
+      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' (effSA s1') s2'.
   Proof.
-    intros g s1 s1' s2 Hg Hsem Hcp.
-    rewrite (IMPL impl_noCanProceed clint plic envI s1 s1' Hsem Hcp).
+    intros g s1 s1' s2 Hg Hsem Hrd Hcp.
+    rewrite (IMPL impl_noCanProceed clint plic envI s1 s1' Hsem Hcp), (IMPL effS_false s1 Hrd).
     exists g, s2; split; [apply NilAction; reflexivity | exact Hg].
   Qed.
 
   Lemma exec_stutter :
     forall g (s1 s1' : IState) (s2 : SState),
-      RELG g s1 s2 -> IMPL ExecStutter s1 s1' ->
-      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' s1' s2'.
+      RELG g s1 s2 -> IMPL ExecStutter s1 s1' -> stRedirA s1 = false ->
+      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' (effSA s1') s2'.
   Proof.
-    intros g s1 s1' s2 Hg [Erf [Ewb [Emem [Efe [Ede [Edm [Emd [Eep Efip]]]]]]]].
+    intros g s1 s1' s2 Hg [Erf [Ewb [Emem [Efe [Ede [Edm [Emd [Eep [Efip Erd]]]]]]]]] Hrd.
+    rewrite (eff_np s1 s1' Hrd Erd).
     exact (IMPL stutter_step clintS clint plicS plic initLine fwcs g s1 s1' s2 Hg Erf Ewb Emem Efe Ede Eep Efip Edm Emd).
   Qed.
 
-  Lemma exec_stale :
+  (* a stale head is dropped, given the stage's effect *)
+  Lemma exec_stale_of :
     forall g (s1 s1' : IState) (s2 : SState),
-      RELG g s1 s2 -> SemAction envI STAGE s1 s1' Zmod.zero ->
-      ex_canProceed (iExecA s1) = true -> (stHeadA s1).(Snd).(Fst) = true ->
-      daLiveA s1 (stHeadA s1).(Fst) = false ->
-      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' s1' s2'.
+      RELG g s1 s2 -> (stHeadA s1).(Snd).(Fst) = true -> daLiveA s1 (stHeadA s1).(Fst) = false ->
+      iRfA s1' = iRfA s1 ->
+      iWbA s1' = evalSetDstWaitBits (aluInWritesCd (daAluIn (stHeadA s1).(Fst))) (aluInCd (daAluIn (stHeadA s1).(Fst)))
+                   false (iWbA s1) ->
+      iMemA s1' = iMemA s1 -> iFetchA s1' = iFetchA s1 -> D2AF s1' = fifoDeqState (D2AF s1) ->
+      iDmA s1' = iDmA s1 -> iMdA s1' = iMdA s1 ->
+      iExecEpochA s1' = iExecEpochA s1 -> iFenceIPendingA s1' = iFenceIPendingA s1 ->
+      exists g', RELG g' s1' s2.
   Proof.
-    intros g s1 s1' s2 Hg Hsem Hcp Hv Hst.
-    destruct (IMPL impl_stale clint plic envI s1 s1' Hsem Hcp Hv Hst)
-      as [Erf [Ewb [Emem [Efe [Ed2a' [Edm [Emd [Eep Efip]]]]]]]].
+    intros g s1 s1' s2 Hg Hv Hst Erf Ewb Emem Efe Ed2a' Edm Emd Eep Efip.
     pose proof (wf_d2a g s1 s2 Hg) as Hwf.
     pose proof (head_of_valid s1 Hwf Hv) as Ed2a.
     destruct (d2a_of_deq s1 s1' Hwf Ed2a') as [Ed2a2 Hwf'].
     destruct (IMPL step_stale_drop clintS clint plicS plic initLine fwcs g s1 s1' s2 (stJA s1) (tl (iD2aA s1))
                 Hg Ed2a Ed2a2 Hst Ewb Hwf' Erf Emem Efe Edm Emd Eep Efip) as [g' Hg'].
+    exists g'; exact Hg'.
+  Qed.
+
+  Lemma exec_stale :
+    forall g (s1 s1' : IState) (s2 : SState),
+      RELG g s1 s2 -> SemAction envI STAGE s1 s1' Zmod.zero -> stRedirA s1 = false ->
+      ex_canProceed (iExecA s1) = true -> (stHeadA s1).(Snd).(Fst) = true ->
+      daLiveA s1 (stHeadA s1).(Fst) = false ->
+      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' (effSA s1') s2'.
+  Proof.
+    intros g s1 s1' s2 Hg Hsem Hrd Hcp Hv Hst.
+    assert (Hst' : Zmod.eqb (daExecEpoch (stHeadA s1).(Fst)) (stEffA s1) = false)
+      by (rewrite (IMPL stEff_false s1 Hrd); exact Hst).
+    destruct (IMPL impl_stale clint plic envI s1 s1' Hsem Hcp Hv Hst')
+      as [Erf [Ewb [Emem [Efe [Ed2a' [Edm [Emd [Eep [Efip Erd]]]]]]]]].
+    rewrite (eff_np s1 s1' Hrd Erd).
+    destruct (exec_stale_of g s1 s1' s2 Hg Hv Hst Erf Ewb Emem Efe Ed2a' Edm Emd Eep Efip) as [g' Hg'].
     exists g', s2; split; [apply NilAction; reflexivity | exact Hg'].
   Qed.
 
@@ -1541,16 +1576,36 @@ Section ExecMain.
   Qed.
 
   Lemma exec_interrupt :
-    forall g (s1 s1' : IState) (s2 : SState),
-      RELG g s1 s2 -> SemAction envI STAGE s1 s1' Zmod.zero ->
+    forall g (s1 s1r : IState) (s2 : SState),
+      RELG g s1 s2 -> SemAction envI STAGE s1 s1r Zmod.zero -> stRedirA s1 = false ->
       ex_canProceed (iExecA s1) = true -> (stHeadA s1).(Snd).(Fst) = true ->
       daLiveA s1 (stHeadA s1).(Fst) = true -> stIntA s1 = true ->
       andb (stDmEmptyA s1) (stNoWrA s1) = true ->
-      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' s1' s2'.
+      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' (effSA s1r) s2'.
   Proof.
-    intros g s1 s1' s2 Hg Hsem Hcp Hv Hlive Hint Hq.
-    destruct (IMPL impl_interrupt clint plic envI s1 s1' Hsem Hcp Hv Hlive Hint Hq)
-      as [rfMid [execOut [Hex [Erf [Ewb [Emem [Efe [Ed2a' [Edm [Emd [Eep Efip]]]]]]]]]]].
+    intros g s1 s1r s2 Hg Hsem Hrd Hcp Hv Hlive Hint Hq.
+    destruct (IMPL impl_interrupt clint plic envI s1 s1r Hsem Hcp Hrd Hv Hlive Hint Hq)
+      as [rfMid [execOut [Hex [Erf [Ewb [Emem [Efe0 [Ed2a' [Edm [Emd [Eep0 [Efip Erd]]]]]]]]]]]].
+    (* the redirect is pending: the relation sees it applied *)
+    assert (Hv1 : IMPL iRedirValid s1r = true) by (unfold iRedirValid, ex_redirValid; rewrite Erd; reflexivity).
+    rewrite (IMPL effS_true s1r Hv1).
+    assert (Efe : iFetchA (applyPA s1r) =
+                  fetch_withPc pcAddrInit fetchCapacity instCapacity
+                    (fetch_withStraddleOpt pcAddrInit fetchCapacity instCapacity (iFetchA s1)
+                       (getDefault (Option StraddleHalf)))
+                    (defNextPcc execOut).(Snd).(Snd).(Fst))
+      by (rewrite (IMPL applyP_fetch s1r), Efe0; unfold redirTarget, redirPcc, iRedirect; rewrite Erd; reflexivity).
+    assert (Eep : iExecEpochA (applyPA s1r) = evalExpr (Add [ Var type Epoch (iExecEpochA s1) ; ($1 : Expr type Epoch) ]))
+      by (rewrite (IMPL applyP_epoch s1r), Eep0; reflexivity).
+    clear Efe0 Eep0 Erd Hv1 Hsem.
+    change (iRfA s1r) with (iRfA (applyPA s1r)) in Erf.
+    change (iWbA s1r) with (iWbA (applyPA s1r)) in Ewb.
+    change (iMemA s1r) with (iMemA (applyPA s1r)) in Emem.
+    change (D2AF s1r) with (D2AF (applyPA s1r)) in Ed2a'.
+    change (iDmA s1r) with (iDmA (applyPA s1r)) in Edm.
+    change (iMdA s1r) with (iMdA (applyPA s1r)) in Emd.
+    change (iFenceIPendingA s1r) with (iFenceIPendingA (applyPA s1r)) in Efip.
+    set (s1' := applyPA s1r) in *; clearbody s1'.
     assert (Hpc : pcAligned (iPccA s1').(Snd).(Snd).(Fst)).
     { unfold iPcc; rewrite Erf, readPcc_writePcc.
       exact (executeInterrupt_nextPcc_even pcAddrInit _ _ _ _ _ _ Hex). }
@@ -1827,16 +1882,17 @@ Section ExecMain.
 
   Lemma exec_seq :
     forall g (s1 s1' : IState) (s2 : SState) (a : type AluOutUnion),
-      RELG g s1 s2 -> SemAction envI STAGE s1 s1' Zmod.zero ->
+      RELG g s1 s2 -> SemAction envI STAGE s1 s1' Zmod.zero -> stRedirA s1 = false ->
       ex_canProceed (iExecA s1) = true -> (stHeadA s1).(Snd).(Fst) = true ->
       daLiveA s1 (stHeadA s1).(Fst) = true -> stIntA s1 = false ->
       a = stAluOutA s1 -> aluIsSeq a = true ->
       seqGuardV (aluIsMul a) (aluIsDiv a) (stMulFullA s1) (stDivFullA s1) = true ->
-      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' s1' s2'.
+      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' (effSA s1') s2'.
   Proof.
-    intros g s1 s1' s2 a Hg Hsem Hcp Hv Hlive Hint Ha Hseq Hgd.
-    destruct (IMPL impl_seq clint plic envI s1 s1' a Hsem Hcp Hv Hlive Hint Ha Hseq Hgd)
-      as [rfMid [mdOpt [Hex [Erf [Emem [Efe [Ed2a' [Edm [Eep [Efip Hmd]]]]]]]]]].
+    intros g s1 s1' s2 a Hg Hsem Hrd Hcp Hv Hlive Hint Ha Hseq Hgd.
+    destruct (IMPL impl_seq clint plic envI s1 s1' a Hsem Hcp Hrd Hv Hlive Hint Ha Hseq Hgd)
+      as [rfMid [mdOpt [Hex [Erf [Emem [Efe [Ed2a' [Edm [Eep [Efip [Erd Hmd]]]]]]]]]]].
+    rewrite (eff_np s1 s1' Hrd Erd).
     pose proof (wf_d2a g s1 s2 Hg) as Hwf.
     pose proof (head_of_valid s1 Hwf Hv) as Ed2a.
     destruct (d2a_of_deq s1 s1' Hwf Ed2a') as [Ed2a2 Hwf'].
@@ -2087,8 +2143,8 @@ Section ExecMain.
   (* Non-sequential, no virtual CSR read: ghost append. ALU facts A1 and A2 are premises until
    * proven (guide: plan b). *)
   Lemma exec_nonSeq_append :
-    forall g (s1 s1' : IState) (s2 : SState) (a : type AluOutUnion),
-      RELG g s1 s2 -> SemAction envI STAGE s1 s1' Zmod.zero ->
+    forall g (s1 s1r : IState) (s2 : SState) (a : type AluOutUnion),
+      RELG g s1 s2 -> SemAction envI STAGE s1 s1r Zmod.zero -> stRedirA s1 = false ->
       ex_canProceed (iExecA s1) = true -> (stHeadA s1).(Snd).(Fst) = true ->
       daLiveA s1 (stHeadA s1).(Fst) = true -> stIntA s1 = false ->
       a = stAluOutA s1 -> aluIsSeq a = false ->
@@ -2096,11 +2152,33 @@ Section ExecMain.
       isVirtualCsrAluOut a = false ->
       (aluIsMemOrFence a = true -> opIsLoad (nsDm a) = false -> aluDstIdx a = Zmod.zero) ->
       (aluIsExc a = false -> nsIsCf a = true -> CfOK (iPccA s1) (nsCf a)) ->
-      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' s1' s2'.
+      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' (effSA s1r) s2'.
   Proof.
-    intros g s1 s1' s2 a Hg Hsem Hcp Hv Hlive Hint Ha Hns Hgd Hnv HA1 HA2.
-    destruct (IMPL impl_nonSeq clint plic envI s1 s1' a Hsem Hcp Hv Hlive Hint Ha Hns Hgd)
-      as [rfMid [x [Hex [Erf [Emem [Ed2a' [Emd [Hred [Efip Hdmc]]]]]]]]].
+    intros g s1 s1r s2 a Hg Hsem Hrd Hcp Hv Hlive Hint Ha Hns Hgd Hnv HA1 HA2.
+    destruct (IMPL impl_nonSeq clint plic envI s1 s1r a Hsem Hcp Hrd Hv Hlive Hint Ha Hns Hgd)
+      as [rfMid [x [Hex [Erf [Emem [Ed2a' [Emd [Eep0 [Efe0 [Erd [Efip Hdmc]]]]]]]]]]].
+    (* the state the relation sees: with the redirect applied when there is one *)
+    assert (Hred : if execRedirect a x (daPredPc (stJA s1))
+                   then iExecEpochA (effSA s1r) = evalExpr (Add [ Var type Epoch (iExecEpochA s1) ; ($1 : Expr type Epoch) ]) /\
+                        iFetchA (effSA s1r) = fetch_withPc pcAddrInit fetchCapacity instCapacity
+                                                (fetch_withStraddleOpt pcAddrInit fetchCapacity instCapacity (iFetchA s1)
+                                                   (getDefault (Option StraddleHalf)))
+                                                (defNextPcc x).(Snd).(Snd).(Fst)
+                   else iExecEpochA (effSA s1r) = iExecEpochA s1 /\ iFetchA (effSA s1r) = iFetchA s1).
+    { destruct (execRedirect a x (daPredPc (stJA s1))) eqn:Er.
+      - assert (Hv1 : IMPL iRedirValid s1r = true) by (unfold iRedirValid, ex_redirValid; rewrite Erd; reflexivity).
+        rewrite (IMPL effS_true s1r Hv1); split.
+        + rewrite (IMPL applyP_epoch s1r), Eep0; reflexivity.
+        + rewrite (IMPL applyP_fetch s1r), Efe0; unfold redirTarget, redirPcc, iRedirect; rewrite Erd; reflexivity.
+      - rewrite (eff_np s1 s1r Hrd Erd); split; [exact Eep0 | exact Efe0]. }
+    clear Eep0 Efe0 Erd Hsem.
+    rewrite <- (IMPL effS_rf s1r) in Erf.
+    rewrite <- (IMPL effS_mem s1r) in Emem.
+    rewrite <- (IMPL effS_decode s1r) in Ed2a'.
+    rewrite <- (IMPL effS_md s1r) in Emd.
+    rewrite <- (IMPL effS_fip s1r) in Efip.
+    rewrite <- (IMPL effS_wb s1r), <- (IMPL effS_dm s1r) in Hdmc.
+    set (s1' := effSA s1r) in *; clearbody s1'.
     assert (Hpc : pcAligned (iPccA s1').(Snd).(Snd).(Fst)).
     { pose proof Hg as HgW; destruct HgW as [_ _ _ _ _ _ _ _ _ _ _ [[_ [_ [Hpc0 _]]] _] _].
       unfold iPcc; rewrite Erf, readPcc_writePcc.
@@ -2238,19 +2316,41 @@ Section ExecMain.
 
   (* Non-sequential virtual CSR read: lockstep (dataMem is empty, so the spec catches up first) *)
   Lemma exec_nonSeq_virt :
-    forall g (s1 s1' : IState) (s2 : SState) (a : type AluOutUnion),
-      RELG g s1 s2 -> SemAction envI STAGE s1 s1' Zmod.zero ->
+    forall g (s1 s1r : IState) (s2 : SState) (a : type AluOutUnion),
+      RELG g s1 s2 -> SemAction envI STAGE s1 s1r Zmod.zero -> stRedirA s1 = false ->
       ex_canProceed (iExecA s1) = true -> (stHeadA s1).(Snd).(Fst) = true ->
       daLiveA s1 (stHeadA s1).(Fst) = true -> stIntA s1 = false ->
       a = stAluOutA s1 -> aluIsSeq a = false ->
       nonSeqGuardV (aluIsMemOrFence a) (stDmFullA s1) (aluIsVirtCsr a) (stDmEmptyA s1) (stNoWrA s1) = true ->
       aluIsVirtCsr a = true ->
       (aluIsExc a = false -> nsIsCf a = true -> CfOK (iPccA s1) (nsCf a)) ->
-      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' s1' s2'.
+      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' (effSA s1r) s2'.
   Proof.
-    intros g s1 s1' s2 a Hg Hsem Hcp Hv Hlive Hint Ha Hns Hgd Hvc HA2.
-    destruct (IMPL impl_nonSeq clint plic envI s1 s1' a Hsem Hcp Hv Hlive Hint Ha Hns Hgd)
-      as [rfMid [x [Hex [Erf [Emem [Ed2a' [Emd [Hred [Efip Hdmc]]]]]]]]].
+    intros g s1 s1r s2 a Hg Hsem Hrd Hcp Hv Hlive Hint Ha Hns Hgd Hvc HA2.
+    destruct (IMPL impl_nonSeq clint plic envI s1 s1r a Hsem Hcp Hrd Hv Hlive Hint Ha Hns Hgd)
+      as [rfMid [x [Hex [Erf [Emem [Ed2a' [Emd [Eep0 [Efe0 [Erd [Efip Hdmc]]]]]]]]]]].
+    (* the state the relation sees: with the redirect applied when there is one *)
+    assert (Hred : if execRedirect a x (daPredPc (stJA s1))
+                   then iExecEpochA (effSA s1r) = evalExpr (Add [ Var type Epoch (iExecEpochA s1) ; ($1 : Expr type Epoch) ]) /\
+                        iFetchA (effSA s1r) = fetch_withPc pcAddrInit fetchCapacity instCapacity
+                                                (fetch_withStraddleOpt pcAddrInit fetchCapacity instCapacity (iFetchA s1)
+                                                   (getDefault (Option StraddleHalf)))
+                                                (defNextPcc x).(Snd).(Snd).(Fst)
+                   else iExecEpochA (effSA s1r) = iExecEpochA s1 /\ iFetchA (effSA s1r) = iFetchA s1).
+    { destruct (execRedirect a x (daPredPc (stJA s1))) eqn:Er.
+      - assert (Hv1 : IMPL iRedirValid s1r = true) by (unfold iRedirValid, ex_redirValid; rewrite Erd; reflexivity).
+        rewrite (IMPL effS_true s1r Hv1); split.
+        + rewrite (IMPL applyP_epoch s1r), Eep0; reflexivity.
+        + rewrite (IMPL applyP_fetch s1r), Efe0; unfold redirTarget, redirPcc, iRedirect; rewrite Erd; reflexivity.
+      - rewrite (eff_np s1 s1r Hrd Erd); split; [exact Eep0 | exact Efe0]. }
+    clear Eep0 Efe0 Erd Hsem.
+    rewrite <- (IMPL effS_rf s1r) in Erf.
+    rewrite <- (IMPL effS_mem s1r) in Emem.
+    rewrite <- (IMPL effS_decode s1r) in Ed2a'.
+    rewrite <- (IMPL effS_md s1r) in Emd.
+    rewrite <- (IMPL effS_fip s1r) in Efip.
+    rewrite <- (IMPL effS_wb s1r), <- (IMPL effS_dm s1r) in Hdmc.
+    set (s1' := effSA s1r) in *; clearbody s1'.
     assert (Hpc : pcAligned (iPccA s1').(Snd).(Snd).(Fst)).
     { pose proof Hg as HgW; destruct HgW as [_ _ _ _ _ _ _ _ _ _ _ [[_ [_ [Hpc0 _]]] _] _].
       unfold iPcc; rewrite Erf, readPcc_writePcc.
@@ -2386,81 +2486,266 @@ Section ExecMain.
    * any decoded instruction; the theorem passes their proofs. *)
   Lemma exec_step :
     forall g (s1 s1' : IState) (s2 : SState),
-      RELG g s1 s2 -> SemAction envI STAGE s1 s1' Zmod.zero ->
+      RELG g s1 s2 -> SemAction envI STAGE s1 s1' Zmod.zero -> stRedirA s1 = false ->
       (forall (pcc : type FullECapWithTag) (fo : type FetchOut) (rf : RfState pcAddrInit),
          let a := evalAluOut pcc (evalRegRead pcAddrInit (evalDecode fo) rf) in
          aluIsMemOrFence a = true -> opIsLoad (nsDm a) = false -> aluDstIdx a = Zmod.zero) ->
       (forall (pcc : type FullECapWithTag) (fo : type FetchOut) (rf : RfState pcAddrInit),
          let a := evalAluOut pcc (evalRegRead pcAddrInit (evalDecode fo) rf) in
          aluIsSeq a = false -> aluIsExc a = false -> nsIsCf a = true -> CfOK pcc (nsCf a)) ->
-      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' s1' s2'.
+      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' (effSA s1') s2'.
   Proof.
-    intros g s1 s1' s2 Hg Hsem HA1g HA2g.
-    destruct (ex_canProceed (iExecA s1)) eqn:Hcp; [| exact (exec_noCanProceed g s1 s1' s2 Hg Hsem Hcp)].
+    intros g s1 s1' s2 Hg Hsem Hrd HA1g HA2g.
+    destruct (ex_canProceed (iExecA s1)) eqn:Hcp; [| exact (exec_noCanProceed g s1 s1' s2 Hg Hsem Hrd Hcp)].
     destruct ((stHeadA s1).(Snd).(Fst)) eqn:Hv;
-      [| exact (exec_stutter g s1 s1' s2 Hg (IMPL impl_noHead clint plic envI s1 s1' Hsem Hcp Hv))].
-    destruct (daLiveA s1 (stHeadA s1).(Fst)) eqn:Hlive; [| exact (exec_stale g s1 s1' s2 Hg Hsem Hcp Hv Hlive)].
+      [| exact (exec_stutter g s1 s1' s2 Hg (IMPL impl_noHead clint plic envI s1 s1' Hsem Hcp Hv) Hrd)].
+    destruct (daLiveA s1 (stHeadA s1).(Fst)) eqn:Hlive; [| exact (exec_stale g s1 s1' s2 Hg Hsem Hrd Hcp Hv Hlive)].
     destruct (stIntA s1) eqn:Hint.
     - destruct (andb (stDmEmptyA s1) (stNoWrA s1)) eqn:Hq.
-      + exact (exec_interrupt g s1 s1' s2 Hg Hsem Hcp Hv Hlive Hint Hq).
-      + exact (exec_stutter g s1 s1' s2 Hg (IMPL impl_intStall clint plic envI s1 s1' Hsem Hcp Hv Hlive Hint Hq)).
+      + exact (exec_interrupt g s1 s1' s2 Hg Hsem Hrd Hcp Hv Hlive Hint Hq).
+      + exact (exec_stutter g s1 s1' s2 Hg (IMPL impl_intStall clint plic envI s1 s1' Hsem Hcp Hrd Hv Hlive Hint Hq) Hrd).
     - destruct (liveHead_aluOut g s1 s2 Hg Hv Hlive) as [fo0 Hfo].
       pose proof (HA1g (iPccA s1) fo0 (iFlushA s1)) as HA1; pose proof (HA2g (iPccA s1) fo0 (iFlushA s1)) as HA2.
       cbv zeta in HA1, HA2; rewrite <- Hfo in HA1, HA2.
       destruct (aluIsSeq (stAluOutA s1)) eqn:Hseq.
       + destruct (seqGuardV (aluIsMul (stAluOutA s1)) (aluIsDiv (stAluOutA s1)) (stMulFullA s1) (stDivFullA s1)) eqn:Hgd.
-        * exact (exec_seq g s1 s1' s2 _ Hg Hsem Hcp Hv Hlive Hint eq_refl Hseq Hgd).
+        * exact (exec_seq g s1 s1' s2 _ Hg Hsem Hrd Hcp Hv Hlive Hint eq_refl Hseq Hgd).
         * exact (exec_stutter g s1 s1' s2 Hg
-                   (IMPL impl_seqStall clint plic envI s1 s1' _ Hsem Hcp Hv Hlive Hint eq_refl Hseq Hgd)).
+                   (IMPL impl_seqStall clint plic envI s1 s1' _ Hsem Hcp Hrd Hv Hlive Hint eq_refl Hseq Hgd) Hrd).
       + destruct (nonSeqGuardV (aluIsMemOrFence (stAluOutA s1)) (stDmFullA s1) (aluIsVirtCsr (stAluOutA s1))
                     (stDmEmptyA s1) (stNoWrA s1)) eqn:Hgd.
         * assert (Hdec : aluIsVirtCsr (stAluOutA s1) = true \/ aluIsVirtCsr (stAluOutA s1) = false)
             by (destruct (aluIsVirtCsr (stAluOutA s1)); [left | right]; reflexivity).
           destruct Hdec as [Hvc | Hvc].
-          -- exact (exec_nonSeq_virt g s1 s1' s2 _ Hg Hsem Hcp Hv Hlive Hint eq_refl Hseq Hgd Hvc
+          -- exact (exec_nonSeq_virt g s1 s1' s2 _ Hg Hsem Hrd Hcp Hv Hlive Hint eq_refl Hseq Hgd Hvc
                       (HA2 ltac:(first [exact Hseq | reflexivity]))).
-          -- exact (exec_nonSeq_append g s1 s1' s2 _ Hg Hsem Hcp Hv Hlive Hint eq_refl Hseq Hgd
+          -- exact (exec_nonSeq_append g s1 s1' s2 _ Hg Hsem Hrd Hcp Hv Hlive Hint eq_refl Hseq Hgd
                       (eq_trans (eq_sym (virtCsr_eq _)) Hvc) HA1 (HA2 ltac:(first [exact Hseq | reflexivity]))).
         * exact (exec_stutter g s1 s1' s2 Hg
-                   (IMPL impl_nonSeqStall clint plic envI s1 s1' _ Hsem Hcp Hv Hlive Hint eq_refl Hseq Hgd)).
+                   (IMPL impl_nonSeqStall clint plic envI s1 s1' _ Hsem Hcp Hrd Hv Hlive Hint eq_refl Hseq Hgd) Hrd).
   Qed.
 
-  (* The stage's `StepOK` obligation (RefPeriph.v `StepOK` with `REL = RefRel`, unfolded), given the
-   * ALU facts A1 and A2; the theorem is this lemma applied to their proofs. *)
-  Lemma stepOK_exec_of_facts :
-    (forall (pcc : type FullECapWithTag) (fo : type FetchOut) (rf : RfState pcAddrInit),
-       let a := evalAluOut pcc (evalRegRead pcAddrInit (evalDecode fo) rf) in
-       aluIsMemOrFence a = true -> opIsLoad (nsDm a) = false -> aluDstIdx a = Zmod.zero) ->
-    (forall (pcc : type FullECapWithTag) (fo : type FetchOut) (rf : RfState pcAddrInit),
-       let a := evalAluOut pcc (evalRegRead pcAddrInit (evalDecode fo) rf) in
-       aluIsSeq a = false -> aluIsExc a = false -> nsIsCf a = true -> CfOK pcc (nsCf a)) ->
-    forall (s1 s1' : IState) (s2 : SState),
-      SemAction envI STAGE s1 s1' Zmod.zero -> (exists g, RELG g s1 s2) ->
-      exists s2', SemActions envS specActs s2 s2' /\ (exists g', RELG g' s1' s2').
+  (* The stage from a state without a pending redirect (ALU facts A1 and A2 proven) *)
+  Theorem exec_live_ok :
+    forall g (s1 s1' : IState) (s2 : SState),
+      RELG g s1 s2 -> SemAction envI STAGE s1 s1' Zmod.zero -> stRedirA s1 = false ->
+      exists g' s2', SemActions envS specActs s2 s2' /\ RELG g' (effSA s1') s2'.
   Proof.
-    intros HA1 HA2 s1 s1' s2 Hsem [g Hg].
-    destruct (exec_step g s1 s1' s2 Hg Hsem HA1 HA2) as [g' [s2' [Hss Hg']]].
-    exists s2'; split; [exact Hss | exists g'; exact Hg'].
+    intros g s1 s1' s2 Hg Hsem Hrd.
+    exact (exec_step g s1 s1' s2 Hg Hsem Hrd (aluFact_A1 pcAddrInit) (aluFact_A2 pcAddrInit)).
   Qed.
 
-  (* With A1 proven, only A2 is left *)
-  Lemma stepOK_exec_of_A2 :
-    (forall (pcc : type FullECapWithTag) (fo : type FetchOut) (rf : RfState pcAddrInit),
-       let a := evalAluOut pcc (evalRegRead pcAddrInit (evalDecode fo) rf) in
-       aluIsSeq a = false -> aluIsExc a = false -> nsIsCf a = true -> CfOK pcc (nsCf a)) ->
-    forall (s1 s1' : IState) (s2 : SState),
-      SemAction envI STAGE s1 s1' Zmod.zero -> (exists g, RELG g s1 s2) ->
-      exists s2', SemActions envS specActs s2 s2' /\ (exists g', RELG g' s1' s2').
-  Proof. intros HA2; apply stepOK_exec_of_facts; [exact (aluFact_A1 pcAddrInit) | exact HA2]. Qed.
+  (* --- 8. A Pending Redirect --- *)
 
-  (* Milestone 7: the execute stage's StepOK theorem *)
-  Theorem stepOK_aluAndExecuteNonDeferredStage :
-    StepOK pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-           mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
-           clintS clint plicS plic initLine fwcs STAGE.
+  (* With a redirect pending every decode-to-ALU entry is stale: the stage stutters or drops one *)
+  Theorem exec_pending_ok :
+    forall g (s1 s1' : IState) (s2 : SState),
+      RELG g (applyPA s1) s2 -> SemAction envI STAGE s1 s1' Zmod.zero -> stRedirA s1 = true ->
+      Forall (fun j => daExecEpoch j = iExecEpochA s1) (iD2aA s1) ->
+      exists g', RELG g' (applyPA s1') s2.
   Proof.
-    intros s1 s1' s2 Hsem Hrel.
-    exact (stepOK_exec_of_A2 (aluFact_A2 pcAddrInit) s1 s1' s2 Hsem Hrel).
+    intros g s1 s1' s2 Hg Hsem Hrd Hep.
+    destruct (ex_canProceed (iExecA s1)) eqn:Hcp.
+    2: { rewrite (IMPL impl_noCanProceed clint plic envI s1 s1' Hsem Hcp); exists g; exact Hg. }
+    destruct ((stHeadA s1).(Snd).(Fst)) eqn:Hv.
+    2: { destruct (IMPL impl_noHead clint plic envI s1 s1' Hsem Hcp Hv)
+           as [Erf [Ewb [Emem [Efe [Ede [Edm [Emd [Eep [Efip Erd]]]]]]]]].
+         exists g.
+         apply (IMPL RefRelG_impl_ext clintS clint plicS plic initLine fwcs g (applyPA s1) (applyPA s1') s2);
+           try assumption.
+         - rewrite !(IMPL applyP_fetch), Efe; unfold redirTarget, redirPcc, iRedirect; rewrite Erd; reflexivity.
+         - rewrite !(IMPL applyP_epoch), Eep; reflexivity. }
+    pose proof (wf_d2a g (applyPA s1) s2 Hg) as Hwf.
+    pose proof (head_of_valid s1 Hwf Hv) as Ed2a.
+    rewrite Ed2a in Hep; apply Forall_inv in Hep.
+    assert (Hst' : Zmod.eqb (daExecEpoch (stHeadA s1).(Fst)) (stEffA s1) = false).
+    { rewrite (IMPL stEff_true s1 Hrd).
+      change (Zmod.eqb (daExecEpoch (stJA s1)) (evalExpr (Add [ Var type Epoch (iExecEpochA s1) ; ($1 : Expr type Epoch) ]))
+              = false).
+      rewrite Hep; apply zmod_epoch_add1_neq. }
+    destruct (IMPL impl_stale clint plic envI s1 s1' Hsem Hcp Hv Hst')
+      as [Erf [Ewb [Emem [Efe [Ed2a' [Edm [Emd [Eep [Efip Erd]]]]]]]]].
+    assert (Hst : daLiveA (applyPA s1) (stHeadA (applyPA s1)).(Fst) = false).
+    { change (Zmod.eqb (daExecEpoch (stJA s1)) (evalExpr (Add [ Var type Epoch (iExecEpochA s1) ; ($1 : Expr type Epoch) ]))
+              = false).
+      rewrite Hep; apply zmod_epoch_add1_neq. }
+    apply (exec_stale_of g (applyPA s1) (applyPA s1') s2 Hg Hv Hst); try assumption.
+    - rewrite !(IMPL applyP_fetch), Efe; unfold redirTarget, redirPcc, iRedirect; rewrite Erd; reflexivity.
+    - rewrite !(IMPL applyP_epoch), Eep; reflexivity.
+  Qed.
+
+  (* --- 9. The Redirect Invariant --- *)
+
+  Local Abbreviation InvA := (IMPL RedirInv).
+
+  Lemma inv_np_frame :
+    forall (s1 s1' : IState),
+      stRedirA s1 = false -> InvA s1 -> ex_redirect (iExecA s1') = ex_redirect (iExecA s1) ->
+      iFetchA s1' = iFetchA s1 -> tagEcap (iPccA s1') = tagEcap (iPccA s1) ->
+      iFenceIPendingA s1' = iFenceIPendingA s1 -> InvA s1'.
+  Proof.
+    intros s1 s1' Hrd [I1 [I2 _]] Erd Efe Ep Efip.
+    apply (IMPL RedirInv_np_of).
+    - unfold iRedirValid, ex_redirValid; rewrite Erd; exact Hrd.
+    - unfold iFetchPcc; rewrite Efe, Ep; exact (I1 Hrd).
+    - intros H; unfold iFetchFip; rewrite Efe; apply (I2 Hrd); rewrite <- Efip; exact H.
+  Qed.
+
+  (* after a redirect from a live head: everything still in the frontend is in the old epoch *)
+  Lemma inv_after_redirect :
+    forall g (s1 s1' : IState) (s2 : SState) j tl0,
+      RELG g s1 s2 -> iD2aA s1 = j :: tl0 -> daLiveA s1 j = true -> iD2aA s1' = tl0 ->
+      iFetchA s1' = iFetchA s1 -> iExecEpochA s1' = iExecEpochA s1 ->
+      IMPL iRedirValid s1' = true -> tagEcap (IMPL redirPcc s1') = tagEcap (iPccA s1') -> InvA s1'.
+  Proof.
+    intros g s1 s1' s2 j tl0 Hg Ed2a Hlive Ed2a' Efe Eep Hv Hp.
+    pose proof Hg as Hg0; destruct Hg0 as [_ _ _ _ _ _ _ _ _ _ Hfr _ _].
+    destruct Hfr as [F1 [_ [_ [F4 [F5 _]]]]].
+    rewrite Ed2a in F1, F4, F5.
+    pose proof (StalePrefix_live_head (daLiveA s1) j tl0 F1 Hlive) as Htl.
+    assert (Hex : Exists (fun x => daLiveA s1 x = true) (j :: tl0)) by (left; exact Hlive).
+    apply (IMPL RedirInv_p_of); [exact Hv | exact Hp | | |].
+    - rewrite Ed2a', Eep; eapply Forall_impl; [| exact Htl]; intros y Hy; apply Zmod.eqb_eq; exact Hy.
+    - unfold iInstBuf; rewrite Efe, Eep; eapply Forall_impl; [| exact (F4 Hex)]; intros y Hy; apply Zmod.eqb_eq; exact Hy.
+    - unfold iFetchBuf; rewrite Efe, Eep; eapply Forall_impl; [| exact (F5 (or_introl Hex))]; intros y Hy;
+        apply Zmod.eqb_eq; exact Hy.
+  Qed.
+
+  Lemma inv_stutter :
+    forall (s1 s1' : IState), InvA s1 -> IMPL ExecStutter s1 s1' -> InvA s1'.
+  Proof.
+    intros s1 s1' Hi [Erf [Ewb [Emem [Efe [Ede [Edm [Emd [Eep [Efip Erd]]]]]]]]].
+    refine (IMPL RedirInv_frame s1 s1' _ _ _ Efip _ _ Eep _ _ _ Hi).
+    - unfold iRedirValid, ex_redirValid; rewrite Erd; reflexivity.
+    - unfold iFetchPcc; rewrite Efe; reflexivity.
+    - unfold iFetchFip; rewrite Efe; reflexivity.
+    - unfold redirPcc, iRedirect; rewrite Erd; reflexivity.
+    - unfold iPcc; rewrite Erf; reflexivity.
+    - unfold iD2a; rewrite Ede; reflexivity.
+    - unfold iInstBuf; rewrite Efe; reflexivity.
+    - unfold iFetchBuf; rewrite Efe; reflexivity.
+  Qed.
+
+  Theorem exec_inv :
+    forall g (s1 s1' : IState) (s2 : SState),
+      RELG g (effSA s1) s2 -> InvA s1 -> SemAction envI STAGE s1 s1' Zmod.zero -> InvA s1'.
+  Proof.
+    intros g s1 s1' s2 Hg Hi Hsem.
+    destruct (ex_canProceed (iExecA s1)) eqn:Hcp.
+    2: { rewrite (IMPL impl_noCanProceed clint plic envI s1 s1' Hsem Hcp); exact Hi. }
+    destruct ((stHeadA s1).(Snd).(Fst)) eqn:Hv.
+    2: { exact (inv_stutter s1 s1' Hi (IMPL impl_noHead clint plic envI s1 s1' Hsem Hcp Hv)). }
+    destruct (stRedirA s1) eqn:Hrd.
+    - (* pending: the head is stale (its epoch is the old one) *)
+      erewrite (IMPL effS_true) in Hg by exact Hrd.
+      pose proof Hi as [_ [_ I3]]; destruct (I3 Hrd) as [Ip [Hep [Hib Hfb]]].
+      pose proof (wf_d2a g (applyPA s1) s2 Hg) as Hwf.
+      pose proof (head_of_valid s1 Hwf Hv) as Ed2a.
+      pose proof Hep as Hep0; rewrite Ed2a in Hep0; apply Forall_inv in Hep0.
+      assert (Hst' : Zmod.eqb (daExecEpoch (stHeadA s1).(Fst)) (stEffA s1) = false).
+      { rewrite (IMPL stEff_true s1 Hrd).
+        change (Zmod.eqb (daExecEpoch (stJA s1)) (evalExpr (Add [ Var type Epoch (iExecEpochA s1) ; ($1 : Expr type Epoch) ]))
+                = false).
+        rewrite Hep0; apply zmod_epoch_add1_neq. }
+      destruct (IMPL impl_stale clint plic envI s1 s1' Hsem Hcp Hv Hst')
+        as [Erf [Ewb [Emem [Efe [Ed2a' [Edm [Emd [Eep [Efip Erd]]]]]]]]].
+      destruct (d2a_of_deq s1 s1' Hwf Ed2a') as [Ed2a2 _].
+      apply (IMPL RedirInv_p_of).
+      + unfold iRedirValid, ex_redirValid; rewrite Erd; exact Hrd.
+      + unfold redirPcc, iRedirect, iPcc; rewrite Erd, Erf; exact Ip.
+      + rewrite Ed2a2, Eep; rewrite Ed2a in Hep; exact (Forall_inv_tail Hep).
+      + unfold iInstBuf; rewrite Efe, Eep; exact Hib.
+      + unfold iFetchBuf; rewrite Efe, Eep; exact Hfb.
+    - erewrite (IMPL effS_false) in Hg by exact Hrd.
+      pose proof (wf_d2a g s1 s2 Hg) as Hwf.
+      pose proof (head_of_valid s1 Hwf Hv) as Ed2a.
+      destruct (daLiveA s1 (stHeadA s1).(Fst)) eqn:Hlive.
+      2: { assert (Hst' : Zmod.eqb (daExecEpoch (stHeadA s1).(Fst)) (stEffA s1) = false)
+             by (rewrite (IMPL stEff_false s1 Hrd); exact Hlive).
+           destruct (IMPL impl_stale clint plic envI s1 s1' Hsem Hcp Hv Hst')
+             as [Erf [Ewb [Emem [Efe [Ed2a' [Edm [Emd [Eep [Efip Erd]]]]]]]]].
+           apply (inv_np_frame s1 s1' Hrd Hi Erd Efe); [unfold iPcc; rewrite Erf; reflexivity | exact Efip]. }
+      assert (Hlive' : daLiveA s1 (stJA s1) = true) by exact Hlive.
+      destruct (stIntA s1) eqn:Hint.
+      + destruct (andb (stDmEmptyA s1) (stNoWrA s1)) eqn:Hq.
+        2: { exact (inv_stutter s1 s1' Hi (IMPL impl_intStall clint plic envI s1 s1' Hsem Hcp Hrd Hv Hlive Hint Hq)). }
+        destruct (IMPL impl_interrupt clint plic envI s1 s1' Hsem Hcp Hrd Hv Hlive Hint Hq)
+          as [rfMid [execOut [Hex [Erf [Ewb [Emem [Efe [Ed2a' [Edm [Emd [Eep [Efip Erd]]]]]]]]]]]].
+        destruct (d2a_of_deq s1 s1' Hwf Ed2a') as [Ed2a2 _].
+        apply (inv_after_redirect g s1 s1' s2 (stJA s1) (tl (iD2aA s1)) Hg Ed2a Hlive' Ed2a2 Efe Eep).
+        * unfold iRedirValid, ex_redirValid; rewrite Erd; reflexivity.
+        * unfold redirPcc, iRedirect, iPcc; rewrite Erd, Erf, readPcc_writePcc; reflexivity.
+      + destruct (liveHead_aluOut g s1 s2 Hg Hv Hlive) as [fo0 Hfo].
+        destruct (aluIsSeq (stAluOutA s1)) eqn:Hseq.
+        * destruct (seqGuardV (aluIsMul (stAluOutA s1)) (aluIsDiv (stAluOutA s1)) (stMulFullA s1) (stDivFullA s1)) eqn:Hgd.
+          2: { exact (inv_stutter s1 s1' Hi
+                        (IMPL impl_seqStall clint plic envI s1 s1' _ Hsem Hcp Hrd Hv Hlive Hint eq_refl Hseq Hgd)). }
+          destruct (IMPL impl_seq clint plic envI s1 s1' _ Hsem Hcp Hrd Hv Hlive Hint eq_refl Hseq Hgd)
+            as [rfMid [mdOpt [Hex [Erf [Emem [Efe [Ed2a' [Edm [Eep [Efip [Erd Hmd]]]]]]]]]]].
+          apply (inv_np_frame s1 s1' Hrd Hi Erd Efe); [| exact Efip].
+          unfold iPcc; rewrite Erf, readPcc_writePcc; reflexivity.
+        * destruct (nonSeqGuardV (aluIsMemOrFence (stAluOutA s1)) (stDmFullA s1) (aluIsVirtCsr (stAluOutA s1))
+                      (stDmEmptyA s1) (stNoWrA s1)) eqn:Hgd.
+          2: { exact (inv_stutter s1 s1' Hi
+                        (IMPL impl_nonSeqStall clint plic envI s1 s1' _ Hsem Hcp Hrd Hv Hlive Hint eq_refl Hseq Hgd)). }
+          destruct (IMPL impl_nonSeq clint plic envI s1 s1' _ Hsem Hcp Hrd Hv Hlive Hint eq_refl Hseq Hgd)
+            as [rfMid [x [Hex [Erf [Emem [Ed2a' [Emd [Eep [Efe [Erd [Efip Hdmc]]]]]]]]]]].
+          destruct (execRedirect (stAluOutA s1) x (daPredPc (stJA s1))) eqn:Er.
+          -- destruct (d2a_of_deq s1 s1' Hwf Ed2a') as [Ed2a2 _].
+             apply (inv_after_redirect g s1 s1' s2 (stJA s1) (tl (iD2aA s1)) Hg Ed2a Hlive' Ed2a2 Efe Eep).
+             ++ unfold iRedirValid, ex_redirValid; rewrite Erd; reflexivity.
+             ++ unfold redirPcc, iRedirect, iPcc; rewrite Erd, Erf, readPcc_writePcc; reflexivity.
+          -- destruct (noRedirect_facts _ x _ Er) as [Hexc [_ [Hfi _]]].
+             pose proof (aluFact_A2 pcAddrInit (iPccA s1) fo0 (iFlushA s1)) as HA2; cbv zeta in HA2.
+             rewrite <- Hfo in HA2.
+             destruct (nonSeq_pcc pcAddrInit _ _ _ _ _ _ x _ Hseq (HA2 Hseq Hexc) Hex Er) as [Et Ee].
+             apply (inv_np_frame s1 s1' Hrd Hi Erd Efe).
+             ++ unfold iPcc at 1; rewrite Erf, readPcc_writePcc; unfold tagEcap; f_equal; [exact Et | exact Ee].
+             ++ rewrite Efip, Hfi; reflexivity.
+  Qed.
+
+
+  (* With a redirect pending the stage stutters or drops a stale head: the redirect stays *)
+  Lemma exec_pending_valid :
+    forall (s1 s1' : IState),
+      SemAction envI STAGE s1 s1' Zmod.zero -> stRedirA s1 = true -> fifo_wf (D2AF s1) ->
+      Forall (fun j => daExecEpoch j = iExecEpochA s1) (iD2aA s1) ->
+      stRedirA s1' = true.
+  Proof.
+    intros s1 s1' Hsem Hrd Hwf Hep.
+    destruct (ex_canProceed (iExecA s1)) eqn:Hcp.
+    2: { rewrite (IMPL impl_noCanProceed clint plic envI s1 s1' Hsem Hcp); exact Hrd. }
+    destruct ((stHeadA s1).(Snd).(Fst)) eqn:Hv.
+    2: { destruct (IMPL impl_noHead clint plic envI s1 s1' Hsem Hcp Hv) as [_ [_ [_ [_ [_ [_ [_ [_ [_ Erd]]]]]]]]].
+         unfold stRedir, ex_redirValid; rewrite Erd; exact Hrd. }
+    pose proof (head_of_valid s1 Hwf Hv) as Ed2a.
+    rewrite Ed2a in Hep; apply Forall_inv in Hep.
+    assert (Hst' : Zmod.eqb (daExecEpoch (stHeadA s1).(Fst)) (stEffA s1) = false).
+    { rewrite (IMPL stEff_true s1 Hrd).
+      change (Zmod.eqb (daExecEpoch (stJA s1)) (evalExpr (Add [ Var type Epoch (iExecEpochA s1) ; ($1 : Expr type Epoch) ]))
+              = false).
+      rewrite Hep; apply zmod_epoch_add1_neq. }
+    destruct (IMPL impl_stale clint plic envI s1 s1' Hsem Hcp Hv Hst') as [_ [_ [_ [_ [_ [_ [_ [_ [_ Erd]]]]]]]]].
+    unfold stRedir, ex_redirValid; rewrite Erd; exact Hrd.
+  Qed.
+
+  Theorem stepOK_exec :
+    StepOKRR pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+             mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
+             clintS clint plicS plic initLine fwcs STAGE.
+  Proof.
+    intros s1 s1' s2 Hsem _ [Hi [g Hg]].
+    pose proof (exec_inv g s1 s1' s2 Hg Hi Hsem) as Hi'.
+    destruct (stRedirA s1) eqn:Hrd.
+    - erewrite (IMPL effS_true) in Hg by exact Hrd.
+      pose proof Hi as [_ [_ I3]]; destruct (I3 Hrd) as [_ [Hep _]].
+      pose proof (wf_d2a g (applyPA s1) s2 Hg) as Hwf.
+      destruct (exec_pending_ok g s1 s1' s2 Hg Hsem Hrd Hep) as [g' Hg'].
+      exists s2; split; [apply NilAction; reflexivity |]; split; [exact Hi' | exists g'].
+      erewrite (IMPL effS_true) by exact (exec_pending_valid s1 s1' Hsem Hrd Hwf Hep); exact Hg'.
+    - erewrite (IMPL effS_false) in Hg by exact Hrd.
+      destruct (exec_live_ok g s1 s1' s2 Hg Hsem Hrd) as [g' [s2' [Hss Hg']]].
+      exists s2'; split; [exact Hss |]; split; [exact Hi' | exists g'; exact Hg'].
   Qed.
 
 End ExecMain.

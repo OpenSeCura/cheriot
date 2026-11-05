@@ -1763,18 +1763,7 @@ Section Periph.
     exists g; destruct Hg; constructor; assumption.
   Qed.
 
-  Theorem stepOK_setCanProceedSteps :
-    forall act,
-      In act (@setCanProceedSteps pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions type) ->
-      StepOK act.
-  Proof.
-    intros act Hin; cbn [setCanProceedSteps In] in Hin.
-    destruct Hin as [<- | [<- | [<- | []]]].
-    - apply stepOK_setFetchCanProceed.
-    - apply stepOK_setDecodeCanProceed.
-    - apply stepOK_setExecuteCanProceed.
-  Qed.
+  (* `stepOK_setCanProceedSteps` (with the revoker's `canProceed`) is in RefRevokerStep.v *)
 
   (* --- 2. Positions of the Devices --- *)
 

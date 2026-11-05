@@ -118,6 +118,10 @@ Section TopLevelGlue.
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                   config implRegions clint plic type) ->
         ActStepSim act ;
+    ob_applyRedirect :
+      ActStepSim (@applyRedirectStage pcAddrInit fetchCapacity instCapacity decodeCapacity
+                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
+                    config implRegions rev type) ;
     ob_fetchRqStage :
       ActStepSim (@fetchRqStage pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
@@ -162,8 +166,16 @@ Section TopLevelGlue.
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                   config implRegions type) ->
         ActStepSim act ;
-    ob_loadRpAndIssueRevRqStage :
-      ActStepSim (@loadRpAndIssueRevRqStage pcAddrInit fetchCapacity instCapacity decodeCapacity
+    ob_loadRpAndWritebackStage :
+      ActStepSim (@loadRpAndWritebackStage pcAddrInit fetchCapacity instCapacity decodeCapacity
+                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
+                    config implRegions rev type) ;
+    ob_checkRevocationStage :
+      ActStepSim (@checkRevocationStage pcAddrInit fetchCapacity instCapacity decodeCapacity
+                    dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
+                    config implRegions rev type) ;
+    ob_issueRevRqStage :
+      ActStepSim (@issueRevRqStage pcAddrInit fetchCapacity instCapacity decodeCapacity
                     dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
                     config implRegions rev type) ;
     ob_revRpAndWriteBackStage :
@@ -192,7 +204,7 @@ Section TopLevelGlue.
       forall act,
         In act (@setCanProceedSteps pcAddrInit fetchCapacity instCapacity decodeCapacity
                   dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
-                  config implRegions type) ->
+                  config implRegions rev type) ->
         ActStepSim act
   }.
 
@@ -216,8 +228,9 @@ Section TopLevelGlue.
                   mulCapacity divCapacity mulStages divStages mulDivMode bp
                   config implRegions clint rev plic type a Hin) as Hkind.
     destruct Hkind as
-      [Hin' | -> | Hin' | -> | -> | -> | -> | Hin' | Hin' | Hin' | -> | -> | Hin' | Hin' | Hin' | Hin'].
+      [Hin' | -> | -> | Hin' | -> | -> | -> | -> | Hin' | Hin' | Hin' | -> | -> | -> | -> | Hin' | Hin' | Hin' | Hin'].
     - exact (ob_peripheral Hob a Hin' p s1 s1' s2 Ha Hrule Hr).
+    - exact (ob_applyRedirect Hob p s1 s1' s2 Ha Hrule Hr).
     - exact (ob_fetchRqStage Hob p s1 s1' s2 Ha Hrule Hr).
     - exact (ob_fetchRps Hob a Hin' p s1 s1' s2 Ha Hrule Hr).
     - exact (ob_fetchAssembleStage Hob p s1 s1' s2 Ha Hrule Hr).
@@ -227,7 +240,9 @@ Section TopLevelGlue.
     - exact (ob_dataWriteRqs Hob a Hin' p s1 s1' s2 Ha Hrule Hr).
     - exact (ob_dataReadRqs Hob a Hin' p s1 s1' s2 Ha Hrule Hr).
     - exact (ob_dataReadRps Hob a Hin' p s1 s1' s2 Ha Hrule Hr).
-    - exact (ob_loadRpAndIssueRevRqStage Hob p s1 s1' s2 Ha Hrule Hr).
+    - exact (ob_loadRpAndWritebackStage Hob p s1 s1' s2 Ha Hrule Hr).
+    - exact (ob_checkRevocationStage Hob p s1 s1' s2 Ha Hrule Hr).
+    - exact (ob_issueRevRqStage Hob p s1 s1' s2 Ha Hrule Hr).
     - exact (ob_revRpAndWriteBackStage Hob p s1 s1' s2 Ha Hrule Hr).
     - exact (ob_mulDivStageActions Hob a Hin' p s1 s1' s2 Ha Hrule Hr).
     - exact (ob_revokerStepsSys Hob a Hin' p s1 s1' s2 Ha Hrule Hr).

@@ -573,7 +573,29 @@ Section ExecImpl.
   Definition ExecStutter (s1 s1' : IState) : Prop :=
     iRfA s1' = iRfA s1 /\ iWbA s1' = iWbA s1 /\ iMemA s1' = iMemA s1 /\ iFetchA s1' = iFetchA s1 /\
     iDecodeA s1' = iDecodeA s1 /\ iDmA s1' = iDmA s1 /\ iMdA s1' = iMdA s1 /\
-    iExecEpochA s1' = iExecEpochA s1 /\ iFenceIPendingA s1' = iFenceIPendingA s1.
+    iExecEpochA s1' = iExecEpochA s1 /\ iFenceIPendingA s1' = iFenceIPendingA s1 /\
+    ex_redirect (iExecA s1') = ex_redirect (iExecA s1).
+
+  (* A redirect of the stage not applied yet *)
+  Definition stRedir (s1 : IState) : bool := ex_redirValid (iExecA s1).
+
+  (* The epoch the stage compares entries with: a pending redirect already counts *)
+  Definition stPendE (s1 : IState) : type Epoch :=
+    evalExpr (FromBit Epoch (ToBit (k := Bool) (Var type Bool (stRedir s1)))).
+  Definition stEff (s1 : IState) : type Epoch :=
+    evalExpr (Add [ Var type Epoch (iExecEpochA s1) ; Var type Epoch (stPendE s1) ]).
+
+  Lemma stEff_false : forall s1, stRedir s1 = false -> stEff s1 = iExecEpochA s1.
+  Proof.
+    intros s1 H; unfold stEff, stPendE; rewrite H.
+    change (Zmod.add (Zmod.add Zmod.zero (iExecEpochA s1)) Zmod.zero = iExecEpochA s1).
+    rewrite Zmod.add_0_l, Zmod.add_0_r; reflexivity.
+  Qed.
+
+  Lemma stEff_true :
+    forall s1, stRedir s1 = true ->
+      stEff s1 = evalExpr (Add [ Var type Epoch (iExecEpochA s1) ; ($1 : Expr type Epoch) ]).
+  Proof. intros s1 H; unfold stEff, stPendE; rewrite H; reflexivity. Qed.
 
   Local Abbreviation iPlicA :=
     (iPlic pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -609,8 +631,7 @@ Section ExecImpl.
     apply (proj1 (evalActionPropGen_liftAction _ _ _ _)) in H;
     unfold aluAndExecuteNonDeferred in H;
     cbn [decode_first decode_deq implDecodeIfc dataMem_isFull dataMem_isEmpty dataMem_enq implDataMemIfc
-         mem_noWriteRq implMemIfc mulDiv_isFullMul mulDiv_isFullDiv mulDiv_enqMul mulDiv_enqDiv implMulDivIfc
-         fetch_clearStraddle fetch_writeFetchPc implFetchIfc] in H.
+         mem_noWriteRq implMemIfc mulDiv_isFullMul mulDiv_isFullDiv mulDiv_enqMul mulDiv_enqDiv implMulDivIfc] in H.
 
   (* The reads and writes of the stage.  Each keeps the state term linear: reads leave it
    * unchanged, writes wrap it in a folded `updSub`. *)
@@ -648,7 +669,9 @@ Section ExecImpl.
     [| exact (read_of_sem _ _ (mdFullDiv_sem mulCapacity divCapacity mulStages divStages mulDivMode))]; cbv beta in H.
   Ltac exec_r_epoch H :=
     eapply fw_liftRead in H;
-    [| intros env_ sub_ Q_ HQ_; exact (proj1 (evalActionPropGen_readExecEpoch _ _) HQ_)]; cbv beta in H.
+    [| intros env_ sub_ Q_ HQ_; exact (proj1 (evalActionPropGen_readExecEpoch _ _) HQ_)]; cbv beta in H;
+    eapply fw_liftRead in H;
+    [| intros env_ sub_ Q_ HQ_; exact (proj1 (evalActionPropGen_redirectPending _ _) HQ_)]; cbv beta in H.
   (* the PCC read, as `readPcc` (the unifier does not see `evalExpr $0 = Zmod.zero` next to the ALU) *)
   Ltac exec_r_pcc H :=
     eapply fw_liftRead in H;
@@ -696,6 +719,9 @@ Section ExecImpl.
     eapply fw_liftUpd in H;
     [| intros env_ sub_ Q_ HQ_;
        exact (proj1 (evalActionPropGen_writeFetchPc pcAddrInit fetchCapacity instCapacity _ _ _) HQ_)]; cbv beta in H.
+  Ltac exec_setRedir H :=
+    eapply fw_liftUpd in H;
+    [| intros env_ sub_ Q_ HQ_; exact (proj1 (evalActionPropGen_setRedirect _ _ _) HQ_)]; cbv beta in H.
   (* an execute sub-action on the register file: fresh `rfMid` and output *)
   Tactic Notation "exec_sem" hyp(H) ident(rfMid) ident(out) ident(Hex) :=
     apply fw_liftSem in H; destruct H as [rfMid [out [Hex H]]]; cbv beta in H;
@@ -733,13 +759,15 @@ Section ExecImpl.
             end; cbv beta in H).
 
   (* the common prefix: `canProceed`, the reads, the `Let`s, the valid and the epoch tests *)
-  Ltac exec_prefix H Hcp Hv Hlive :=
+  Ltac exec_prefix H Hcp Hrd Hv Hlive :=
     exec_open H; exec_canProceed H;
     apply fw_ifTrue in H; [| exact Hcp];
     exec_reads H; exec_lets2 H;
     apply fw_ifTrue in H; [| exact Hv];
     apply fw_ifFalse in H;
-    [| lazymatch type of Hlive with ?l = true => change (negb l = false); rewrite Hlive; reflexivity end].
+    [| lazymatch type of Hlive with ?l = true => lazymatch type of Hrd with stRedir ?s = false =>
+         change (negb (Zmod.eqb (daExecEpoch (stHead s).(Fst)) (stEff s)) = false);
+         rewrite (stEff_false s Hrd); change (negb l = false); rewrite Hlive; reflexivity end end].
 
   Lemma impl_noCanProceed :
     forall (s1 s1' : IState),
@@ -775,13 +803,14 @@ Section ExecImpl.
       SemAction envI STAGE s1 s1' Zmod.zero ->
       ex_canProceed (iExecA s1) = true ->
       (stHead s1).(Snd).(Fst) = true ->
-      daLiveA s1 (stHead s1).(Fst) = false ->
+      Zmod.eqb (daExecEpoch (stHead s1).(Fst)) (stEff s1) = false ->
       iRfA s1' = iRfA s1 /\
       iWbA s1' = evalSetDstWaitBits (aluInWritesCd (daAluIn (stHead s1).(Fst))) (aluInCd (daAluIn (stHead s1).(Fst)))
                    false (iWbA s1) /\
       iMemA s1' = iMemA s1 /\ iFetchA s1' = iFetchA s1 /\ D2AF s1' = fifoDeqState (D2AF s1) /\
       iDmA s1' = iDmA s1 /\ iMdA s1' = iMdA s1 /\
-      iExecEpochA s1' = iExecEpochA s1 /\ iFenceIPendingA s1' = iFenceIPendingA s1.
+      iExecEpochA s1' = iExecEpochA s1 /\ iFenceIPendingA s1' = iFenceIPendingA s1 /\
+      ex_redirect (iExecA s1') = ex_redirect (iExecA s1).
   Proof.
     intros s1 s1' H Hcp Hv Hst.
     exec_open H. exec_canProceed H.
@@ -789,7 +818,7 @@ Section ExecImpl.
     exec_reads H.
     exec_lets2 H.
     apply fw_ifTrue in H; [| exact Hv].
-    apply fw_ifTrue in H; [| change (negb (daLiveA s1 (stHead s1).(Fst)) = true); rewrite Hst; reflexivity].
+    apply fw_ifTrue in H; [| change (negb (Zmod.eqb (daExecEpoch (stHead s1).(Fst)) (stEff s1)) = true); rewrite Hst; reflexivity].
     exec_deq H. exec_wbLast H.
     exec_ret H.
     destruct H as [<- _]; repeat split; reflexivity.
@@ -799,15 +828,15 @@ Section ExecImpl.
   Lemma impl_intStall :
     forall (s1 s1' : IState),
       SemAction envI STAGE s1 s1' Zmod.zero ->
-      ex_canProceed (iExecA s1) = true ->
+      ex_canProceed (iExecA s1) = true -> stRedir s1 = false ->
       (stHead s1).(Snd).(Fst) = true ->
       daLiveA s1 (stHead s1).(Fst) = true ->
       stInt s1 = true ->
       andb (stDmEmpty s1) (stNoWr s1) = false ->
       ExecStutter s1 s1'.
   Proof.
-    intros s1 s1' H Hcp Hv Hlive Hint Hq.
-    exec_prefix H Hcp Hv Hlive.
+    intros s1 s1' H Hcp Hrd Hv Hlive Hint Hq.
+    exec_prefix H Hcp Hrd Hv Hlive.
     apply fw_ifTrue in H; [| exact Hint].
     apply fw_ifFalse in H; [| exact Hq].
     exec_ret H.
@@ -818,7 +847,7 @@ Section ExecImpl.
   Lemma impl_seqStall :
     forall (s1 s1' : IState) (a : type AluOutUnion),
       SemAction envI STAGE s1 s1' Zmod.zero ->
-      ex_canProceed (iExecA s1) = true ->
+      ex_canProceed (iExecA s1) = true -> stRedir s1 = false ->
       (stHead s1).(Snd).(Fst) = true ->
       daLiveA s1 (stHead s1).(Fst) = true ->
       stInt s1 = false ->
@@ -827,8 +856,8 @@ Section ExecImpl.
       seqGuardV (aluIsMul a) (aluIsDiv a) (stMulFull s1) (stDivFull s1) = false ->
       ExecStutter s1 s1'.
   Proof.
-    intros s1 s1' a H Hcp Hv Hlive Hint Ha Hseq Hg.
-    exec_prefix H Hcp Hv Hlive.
+    intros s1 s1' a H Hcp Hrd Hv Hlive Hint Ha Hseq Hg.
+    exec_prefix H Hcp Hrd Hv Hlive.
     exec_aluEq s1. rewrite <- Ha in Ealu. rewrite <- Ealu in Hseq, Hg.
     apply fw_ifFalse in H; [| exact Hint].
     apply fw_ifTrue in H; [| exact Hseq].
@@ -841,7 +870,7 @@ Section ExecImpl.
   Lemma impl_nonSeqStall :
     forall (s1 s1' : IState) (a : type AluOutUnion),
       SemAction envI STAGE s1 s1' Zmod.zero ->
-      ex_canProceed (iExecA s1) = true ->
+      ex_canProceed (iExecA s1) = true -> stRedir s1 = false ->
       (stHead s1).(Snd).(Fst) = true ->
       daLiveA s1 (stHead s1).(Fst) = true ->
       stInt s1 = false ->
@@ -850,8 +879,8 @@ Section ExecImpl.
       nonSeqGuardV (aluIsMemOrFence a) (stDmFull s1) (aluIsVirtCsr a) (stDmEmpty s1) (stNoWr s1) = false ->
       ExecStutter s1 s1'.
   Proof.
-    intros s1 s1' a H Hcp Hv Hlive Hint Ha Hseq Hg.
-    exec_prefix H Hcp Hv Hlive.
+    intros s1 s1' a H Hcp Hrd Hv Hlive Hint Ha Hseq Hg.
+    exec_prefix H Hcp Hrd Hv Hlive.
     exec_aluEq s1. rewrite <- Ha in Ealu. rewrite <- Ealu in Hseq, Hg.
     apply fw_ifFalse in H; [| exact Hint].
     apply fw_ifFalse in H; [| exact Hseq].
@@ -864,7 +893,7 @@ Section ExecImpl.
   Lemma impl_interrupt :
     forall (s1 s1' : IState),
       SemAction envI STAGE s1 s1' Zmod.zero ->
-      ex_canProceed (iExecA s1) = true ->
+      ex_canProceed (iExecA s1) = true -> stRedir s1 = false ->
       (stHead s1).(Snd).(Fst) = true ->
       daLiveA s1 (stHead s1).(Fst) = true ->
       stInt s1 = true ->
@@ -875,22 +904,20 @@ Section ExecImpl.
         iRfA s1' = writePcc pcAddrInit (defNextPcc execOut) rfMid /\
         iWbA s1' = stWb s1 /\
         iMemA s1' = iMemA s1 /\
-        iFetchA s1' = fetch_withPc pcAddrInit fetchCapacity instCapacity
-                        (fetch_withStraddleOpt pcAddrInit fetchCapacity instCapacity (iFetchA s1)
-                           (getDefault (Option StraddleHalf)))
-                        (defNextPcc execOut).(Snd).(Snd).(Fst) /\
+        iFetchA s1' = iFetchA s1 /\
         D2AF s1' = fifoDeqState (D2AF s1) /\
         iDmA s1' = iDmA s1 /\ iMdA s1' = iMdA s1 /\
-        iExecEpochA s1' = evalExpr (Add [ Var type Epoch (iExecEpochA s1) ; ($1 : Expr type Epoch) ]) /\
-        iFenceIPendingA s1' = iFenceIPendingA s1.
+        iExecEpochA s1' = iExecEpochA s1 /\
+        iFenceIPendingA s1' = iFenceIPendingA s1 /\
+        ex_redirect (iExecA s1') = redirOf (defNextPcc execOut).
   Proof.
-    intros s1 s1' H Hcp Hv Hlive Hint Hq.
-    exec_prefix H Hcp Hv Hlive.
+    intros s1 s1' H Hcp Hrd Hv Hlive Hint Hq.
+    exec_prefix H Hcp Hrd Hv Hlive.
     apply fw_ifTrue in H; [| exact Hint].
     apply fw_ifTrue in H; [| exact Hq].
     exec_deq H.
     exec_sem H rfMid execOut Hex.
-    exec_lets H. exec_pccW H. exec_lets H. exec_epochW H. exec_clrStr H. exec_wrPc H. exec_wbLast H.
+    exec_lets H. exec_pccW H. exec_lets H. exec_setRedir H. exec_wbLast H.
     exec_ret H.
     destruct H as [<- _].
     exists rfMid, execOut; split; [exact Hex |].
@@ -910,6 +937,9 @@ Section ExecImpl.
     eapply fw_liftUpdLast in H;
     [| intros env_ sub_ Q_ HQ_;
        exact (proj1 (evalActionPropGen_writeFetchPc pcAddrInit fetchCapacity instCapacity _ _ _) HQ_)]; cbv beta in H.
+  Ltac exec_setRedirLast H :=
+    eapply fw_liftUpdLast in H;
+    [| intros env_ sub_ Q_ HQ_; exact (proj1 (evalActionPropGen_setRedirect _ _ _) HQ_)]; cbv beta in H.
   Ltac exec_setFipLast H :=
     eapply fw_liftUpdLast in H;
     [| intros env_ sub_ Q_ HQ_; exact (proj1 (evalActionPropGen_setFenceIPending _ _) HQ_)]; cbv beta in H.
@@ -927,7 +957,7 @@ Section ExecImpl.
   Lemma impl_seq :
     forall (s1 s1' : IState) (a : type AluOutUnion),
       SemAction envI STAGE s1 s1' Zmod.zero ->
-      ex_canProceed (iExecA s1) = true ->
+      ex_canProceed (iExecA s1) = true -> stRedir s1 = false ->
       (stHead s1).(Snd).(Fst) = true ->
       daLiveA s1 (stHead s1).(Fst) = true ->
       stInt s1 = false ->
@@ -941,6 +971,7 @@ Section ExecImpl.
         D2AF s1' = fifoDeqState (D2AF s1) /\
         iDmA s1' = iDmA s1 /\
         iExecEpochA s1' = iExecEpochA s1 /\ iFenceIPendingA s1' = iFenceIPendingA s1 /\
+        ex_redirect (iExecA s1') = ex_redirect (iExecA s1) /\
         (if optValid mdOpt
          then iWbA s1' = iWbA s1 /\
               iMdA s1' = (if mdIsMul (optData mdOpt)
@@ -950,8 +981,8 @@ Section ExecImpl.
                                  (aluDstIdx a) (aluDstVal a).(Snd).(Snd).(Fst) (mdDivOf (optData mdOpt)) (iMdA s1))
          else iWbA s1' = stWb s1 /\ iMdA s1' = iMdA s1).
   Proof.
-    intros s1 s1' a H Hcp Hv Hlive Hint Ha Hseq Hg.
-    exec_prefix H Hcp Hv Hlive.
+    intros s1 s1' a H Hcp Hrd Hv Hlive Hint Ha Hseq Hg.
+    exec_prefix H Hcp Hrd Hv Hlive.
     exec_aluEq s1. rewrite <- Ha in Ealu. subst aluOut.
     apply fw_ifFalse in H; [| exact Hint].
     apply fw_ifTrue in H; [| exact Hseq].
@@ -980,7 +1011,7 @@ Section ExecImpl.
   Lemma impl_nonSeq :
     forall (s1 s1' : IState) (a : type AluOutUnion),
       SemAction envI STAGE s1 s1' Zmod.zero ->
-      ex_canProceed (iExecA s1) = true ->
+      ex_canProceed (iExecA s1) = true -> stRedir s1 = false ->
       (stHead s1).(Snd).(Fst) = true ->
       daLiveA s1 (stHead s1).(Fst) = true ->
       stInt s1 = false ->
@@ -994,13 +1025,11 @@ Section ExecImpl.
         iMemA s1' = iMemA s1 /\
         D2AF s1' = fifoDeqState (D2AF s1) /\
         iMdA s1' = iMdA s1 /\
-        (if execRedirect a execOut (daPredPc (stJ s1))
-         then iExecEpochA s1' = evalExpr (Add [ Var type Epoch (iExecEpochA s1) ; ($1 : Expr type Epoch) ]) /\
-              iFetchA s1' = fetch_withPc pcAddrInit fetchCapacity instCapacity
-                              (fetch_withStraddleOpt pcAddrInit fetchCapacity instCapacity (iFetchA s1)
-                                 (getDefault (Option StraddleHalf)))
-                              (defNextPcc execOut).(Snd).(Snd).(Fst)
-         else iExecEpochA s1' = iExecEpochA s1 /\ iFetchA s1' = iFetchA s1) /\
+        iExecEpochA s1' = iExecEpochA s1 /\ iFetchA s1' = iFetchA s1 /\
+        ex_redirect (iExecA s1') =
+          (if execRedirect a execOut (daPredPc (stJ s1))
+           then redirOf (defNextPcc execOut)
+           else ex_redirect (iExecA s1)) /\
         iFenceIPendingA s1' = (if execIsFenceIRq execOut then true else iFenceIPendingA s1) /\
         (if optValid (execDataMem execOut)
          then iWbA s1' = iWbA s1 /\
@@ -1008,8 +1037,8 @@ Section ExecImpl.
                            (fifoEnqState (dm_inputFifo dataMemCapacity (iDmA s1)) (execDmReq a execOut))
          else iWbA s1' = stWb s1 /\ iDmA s1' = iDmA s1).
   Proof.
-    intros s1 s1' a H Hcp Hv Hlive Hint Ha Hseq Hg.
-    exec_prefix H Hcp Hv Hlive.
+    intros s1 s1' a H Hcp Hrd Hv Hlive Hint Ha Hseq Hg.
+    exec_prefix H Hcp Hrd Hv Hlive.
     exec_aluEq s1. rewrite <- Ha in Ealu. subst aluOut.
     apply fw_ifFalse in H; [| exact Hint].
     apply fw_ifFalse in H; [| exact Hseq].
@@ -1022,7 +1051,7 @@ Section ExecImpl.
     exists rfMid, execOut; split; [exact Hex |].
     (* the three tests, then the leaves *)
     apply fw_ifTF in H; destruct H as [[Hred H] | [Hred H]];
-      [exec_lets H; exec_epochW H; exec_clrStr H; exec_wrPcLast H | exec_skip H];
+      [exec_lets H; exec_setRedirLast H | exec_skip H];
       apply fw_ifTF in H; destruct H as [[Hfi H] | [Hfi H]];
       [exec_setFipLast H | exec_skip H | exec_setFipLast H | exec_skip H];
       exec_lets H;

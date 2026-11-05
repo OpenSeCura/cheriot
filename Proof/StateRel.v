@@ -238,8 +238,9 @@ Section StateProjections.
     se.(Snd).(Snd).(Fst).
 
   (* 2. Fetch stage (`implFetchTree`) *)
+  (* the fetch PC is the `addr` of fetch's PCC (`fetchPcc` = { tag; ecap; addr }) *)
   Definition fetch_pc (sf : FetchState) : type Addr :=
-    sf.(Fst).
+    sf.(Fst).(Snd).(Snd).(Fst).
 
   Definition fetch_predEpoch (sf : FetchState) : type Epoch :=
     sf.(Snd).(Fst).

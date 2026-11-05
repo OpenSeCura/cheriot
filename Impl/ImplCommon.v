@@ -75,9 +75,7 @@ Definition DecodeToAluEntry := STRUCT_TYPE {
 Record FetchIfc {ty : Kind -> Type} := {
   fetchTree           : Tree Elem ;
   fetch_instFirst     : Action ty fetchTree (Option AssembledInst) ;
-  fetch_instDeq       : Action ty fetchTree (Bit 0) ;
-  fetch_clearStraddle : Action ty fetchTree (Bit 0) ;
-  fetch_writeFetchPc  : ty Addr -> Action ty fetchTree (Bit 0)
+  fetch_instDeq       : Action ty fetchTree (Bit 0)
 }.
 
 Record DecodeIfc {ty : Kind -> Type} := {
@@ -90,7 +88,12 @@ Record ExecuteIfc {ty : Kind -> Type} := {
   executeTree             : Tree Elem ;
   execute_readExecEpoch   : Action ty executeTree Epoch ;
   execute_readFenceIPend  : Action ty executeTree Bool ;
-  execute_clearFenceIPend : Action ty executeTree (Bit 0)
+  execute_clearFenceIPend : Action ty executeTree (Bit 0) ;
+  execute_writeExecEpoch  : ty Epoch -> Action ty executeTree (Bit 0) ;
+  (* Execute's redirect (the new PCC; its `addr` is the next fetch PC), applied by
+   * `applyRedirect` at the start of the next cycle *)
+  execute_readRedirect    : Action ty executeTree (Option FullECapWithTag) ;
+  execute_clearRedirect   : Action ty executeTree (Bit 0)
 }.
 
 Record DataMemIfc {ty : Kind -> Type} := {

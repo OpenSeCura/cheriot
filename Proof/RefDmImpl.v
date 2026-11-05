@@ -468,6 +468,27 @@ Section DmImpl.
              (Var type RevCmd rc) eq_refl).
   Qed.
 
+  (* dataMem takes a tagged capability load response: its revocation command `rc` waits in
+   * state Check (`checkRevocation`) *)
+  Definition CheckStep (s1 s1' : IState) (rc : type RevCmd) : Prop :=
+    DmFrame s1 s1' /\ iRequesterA s1' = iRequesterA s1 /\ msIdle (iMemStA s1') = true /\
+    optValid (iRpReadyA s1') = false /\ dmCheck (iDmStA s1') = true /\ dmCheckV (iDmStA s1') = rc.
+
+  Definition dmCheckOf (rc : type RevCmd) : type DataMemState :=
+    evalExpr (UNION (DataMemStateList, "Check" ::= Var type RevCmd rc)).
+
+  Lemma dmCheckOf_facts : forall rc, dmCheck (dmCheckOf rc) = true /\ dmCheckV (dmCheckOf rc) = rc.
+  Proof.
+    intros rc; split; [reflexivity |].
+    exact (evalExpr_ReadUnionData_BuildUnion DataMemStateList (@Build_FinType (length DataMemStateList) 4 I)
+             (Var type RevCmd rc) eq_refl).
+  Qed.
+
+  (* A tagged capability load response, and the revocation command dataMem keeps for it *)
+  Definition tcLoad (pl : type PendingLoad) (v : type FullCapWithTag) : bool := evalExpr (@isTaggedCapLoad type pl v).
+  Definition checkCmdOf (pl : type PendingLoad) (v : type FullCapWithTag) : type RevCmd :=
+    evalLetExpr (@loadCheckCmd type pl v).
+
   Local Abbreviation LOADRP :=
     (@loadRpAndWriteback dataMemCapacity pcAddrInit (withInst_BpTree bp) FT DT MDT EIFC MIFC type config).
 
@@ -476,9 +497,12 @@ Section DmImpl.
       SemAction cenv LOADRP (readSubTreeState NPCORE s1) c' r ->
       writeSubTreeState NPCORE s1 c' = s1 \/
       (dmLoadRp (iDmStA s1) = true /\ optValid (iRpReadyA s1) = true /\ isReqDataMem (iRequesterA s1) = true /\
-       let out := evalLetExpr (dispatchLoadResponse config (ldPending (dmLoadRpV (iDmStA s1))) (optData (iRpReadyA s1))) in
-       ((outIsRev out = true /\ RevRqStep s1 (writeSubTreeState NPCORE s1 c') (outRevV out)) \/
-        (outIsRev out = false /\ DmWbStep s1 (writeSubTreeState NPCORE s1 c') (fst (outWb out)) (snd (outWb out))))).
+       ((tcLoad (ldPending (dmLoadRpV (iDmStA s1))) (optData (iRpReadyA s1)) = true /\
+         CheckStep s1 (writeSubTreeState NPCORE s1 c')
+           (checkCmdOf (ldPending (dmLoadRpV (iDmStA s1))) (optData (iRpReadyA s1)))) \/
+        (tcLoad (ldPending (dmLoadRpV (iDmStA s1))) (optData (iRpReadyA s1)) = false /\
+         let out := evalLetExpr (dispatchLoadResponse config (ldPending (dmLoadRpV (iDmStA s1))) (optData (iRpReadyA s1))) in
+         DmWbStep s1 (writeSubTreeState NPCORE s1 c') (fst (outWb out)) (snd (outWb out))))).
   Proof.
     intros cenv s1 c' r H.
     rewrite SemAction_iff_evalActionPropGen in H.
@@ -511,26 +535,128 @@ Section DmImpl.
     cbn [mem_deqMemRp implMemIfc] in Hdq; apply memDeqRp_char in Hdq; subst sm2.
     cbv iota in Hd.
     apply fw_letExp in H.
-    apply fw_letLGen in H as [out [Eout H]].
-    match type of Eout with _ = evalLetExpr (dispatchLoadResponse _ ?pl ?mvx) =>
-      assert (Epl : pl = ldPending (dmLoadRpV (iDmStA s1))) by reflexivity; rewrite Epl in Eout;
-      assert (Emv : mvx = optData (iRpReadyA s1)) by (rewrite <- Hd; reflexivity); rewrite Emv in Eout
-    end.
-    cbv zeta; rewrite <- Eout.
-    apply fw_ifTF in H as [[Hc H] | [Hc H]].
+    apply fw_ifTF in H as [[Hc H] | [Hc H]];
+      (match type of Hc with evalExpr (@isTaggedCapLoad _ ?pl ?mvx) = _ =>
+         assert (Epl : pl = ldPending (dmLoadRpV (iDmStA s1))) by reflexivity;
+         assert (Emv : mvx = optData (iRpReadyA s1)) by (rewrite <- Hd; reflexivity);
+         rewrite Epl, Emv in Hc
+       end).
     - left; split; [exact Hc |].
-      do 2 (apply fw_letExp in H).
+      apply fw_letLGen in H as [rc [Erc H]].
+      rewrite Epl, Emv in Erc.
+      apply fw_letExp in H.
       rewrite evalActionPropGen_liftAction in H; unfold writeState in H; cbn [evalActionPropGen] in H.
+      cbn [evalActionPropGen] in H.
       destruct H as [H _]; subst c'.
       split; [constructor; reflexivity |].
       split; [reflexivity | split; [reflexivity | split; [reflexivity | split; [reflexivity |]]]].
-      exact (proj2 (dmRevRqOf_facts (outRevV out))).
+      exact (eq_trans (proj2 (dmCheckOf_facts rc)) Erc).
     - right; split; [exact Hc |].
+      apply fw_letLGen in H as [out [Eout H]].
+      rewrite Epl, Emv in Eout.
+      cbv zeta; rewrite <- Eout.
       do 4 (apply fw_letExp in H).
       apply fw_letAction in H; timeout 10 (apply commitWb_here in H); cbv beta in H.
       rewrite evalActionPropGen_liftAction in H; unfold writeState in H; cbn [evalActionPropGen] in H.
+      cbn [evalActionPropGen] in H.
       destruct H as [H _]; rewrite <- H.
       exact (dmWb_final s1 _ _ _ eq_refl).
+  Qed.
+
+  (* A write-back from dataMem's state alone (the memory is not touched) *)
+  Record DmWbKStep (s1 s1' : IState) (d : bits RegIdxSzReal) (v : type FullECapWithTag) : Prop := {
+    dk_rf    : iRfA s1' = writeGprVal pcAddrInit d v (iRfA s1) ;
+    dk_wb    : iWbA s1' = wbClr d (iWbA s1) ;
+    dk_mem   : iMemA s1' = iMemA s1 ;
+    dk_fetch : iFetchA s1' = iFetchA s1 ;
+    dk_dec   : iDecodeA s1' = iDecodeA s1 ;
+    dk_exec  : iExecA s1' = iExecA s1 ;
+    dk_md    : iMdA s1' = iMdA s1 ;
+    dk_dmf   : dataMem_fifo dataMemCapacity (iDmA s1') = dataMem_fifo dataMemCapacity (iDmA s1) ;
+    dk_dmst  : dmLoadRq (iDmStA s1') = true
+  }.
+
+  Lemma dmWbK_final :
+    forall (s1 s1' : IState) d v,
+      writeSubTreeState NPCORE s1
+        (writeSubTreeState NPDM (ECW d v (readSubTreeState NPCORE s1))
+           (writeTreeState (getNode NPDM) (readSubTreeState NPDM (ECW d v (readSubTreeState NPCORE s1)))
+              (regPath (pState dataMemCapacity))
+              (castStateRegInv (pState dataMemCapacity) dmLoadRqV))) = s1' ->
+      DmWbKStep s1 s1' d v.
+  Proof.
+    intros s1 s1' d v <-.
+    unfold evalCommitWb; destruct (negb (Zmod.eqb d Zmod.zero)) eqn:Ez;
+      (constructor; [unfold writeGprVal, wbClr; rewrite Ez; reflexivity
+                    | unfold writeGprVal, wbClr; rewrite Ez; reflexivity | ..]); reflexivity.
+  Qed.
+
+  (* dataMem moves a command from Check to RevRq: the memory is not touched *)
+  Definition RevRqKeep (s1 s1' : IState) (rc : type RevCmd) : Prop :=
+    DmFrame s1 s1' /\ iMemA s1' = iMemA s1 /\ dmRevRq (iDmStA s1') = true /\ dmRevRqV (iDmStA s1') = rc.
+
+  Local Abbreviation CHECKREV :=
+    (@checkRevocation dataMemCapacity pcAddrInit (withInst_BpTree bp) FT DT MDT EIFC MIFC type config).
+
+  Lemma checkRev_char :
+    forall cenv (s1 : IState) c' r,
+      SemAction cenv CHECKREV (readSubTreeState NPCORE s1) c' r ->
+      writeSubTreeState NPCORE s1 c' = s1 \/
+      (dmCheck (iDmStA s1) = true /\
+       ((checkNeeds config (dmCheckV (iDmStA s1)) = true /\ msIdle (iMemStA s1) = true /\
+         noPortWriteB implRegions (iRegionsA s1) = true /\
+         IssueStep s1 (writeSubTreeState NPCORE s1 c') (dmCheckV (iDmStA s1))) \/
+        (checkNeeds config (dmCheckV (iDmStA s1)) = true /\
+         RevRqKeep s1 (writeSubTreeState NPCORE s1 c') (dmCheckV (iDmStA s1))) \/
+        (checkNeeds config (dmCheckV (iDmStA s1)) = false /\
+         DmWbKStep s1 (writeSubTreeState NPCORE s1 c') (fst (checkWbVal (dmCheckV (iDmStA s1))))
+                                                       (snd (checkWbVal (dmCheckV (iDmStA s1))))))).
+  Proof.
+    intros cenv s1 c' r H.
+    rewrite SemAction_iff_evalActionPropGen in H.
+    unfold checkRevocation in H.
+    eapply fw_liftRead in H; [| intros env_ sub_ Q_ HQ_; exact (proj1 (evalActionPropGen_readState _ _ _) HQ_)];
+      cbv beta in H.
+    change (dm_state dataMemCapacity (readSubTreeState NPDM (readSubTreeState NPCORE s1))) with (iDmStA s1) in H.
+    apply fw_ifTF in H as [[Hc H] | [Hc H]].
+    2: { left; cbn [evalActionPropGen] in H; destruct H as [H _]; subst c'.
+         apply writeSubTreeState_readSubTreeState. }
+    assert (Hck : dmCheck (iDmStA s1) = true) by exact Hc; clear Hc.
+    right; split; [exact Hck |].
+    do 6 (apply fw_letExp in H).
+    apply fw_ifTF in H as [[Hn H] | [Hn H]].
+    - assert (Hn' : checkNeeds config (dmCheckV (iDmStA s1)) = true) by exact Hn; clear Hn.
+      apply fw_liftSem in H as [sm' [acc [Hm H]]].
+      cbn [mem_readRevBitRq implMemIfc] in Hm.
+      apply readRevBitRqDm_char in Hm.
+      change (readSubTreeState NPMEM (readSubTreeState NPCORE s1)) with (iMemA s1) in Hm, H.
+      change (Fst (Snd (iMemA s1))) with (iMemStA s1) in Hm.
+      change (Fst (iMemA s1)) with (iRegionsA s1) in Hm.
+      destruct Hm as [[Hnr [-> ->]] | [Hi [Hnp [-> [st' [rq' [-> [Hst1 [Hst2 Hrq']]]]]]]]].
+      + right; left; split; [exact Hn' |].
+        apply fw_ifFalse in H; [| reflexivity].
+        apply fw_letExp in H.
+        rewrite evalActionPropGen_liftAction in H; unfold writeState in H; cbn [evalActionPropGen] in H.
+        cbn [evalActionPropGen] in H.
+        destruct H as [H _]; subst c'.
+        destruct (dmRevRqOf_facts (dmCheckV (iDmStA s1))) as [F1 F2].
+        split; [constructor; reflexivity |]; split; [reflexivity |]; split; [exact F1 | exact F2].
+      + left; split; [exact Hn' | split; [exact Hi | split; [exact Hnp |]]].
+        apply fw_ifTrue in H; [| reflexivity].
+        apply fw_letExp in H.
+        rewrite evalActionPropGen_liftAction in H; unfold writeState in H; cbn [evalActionPropGen] in H.
+        cbn [evalActionPropGen] in H.
+        destruct H as [H _]; subst c'.
+        destruct (dmRevRpOf_facts (dmCheckV (iDmStA s1))) as [F1 F2].
+        split; [constructor; reflexivity |]; split; [reflexivity |].
+        split; [exact Hst1 | split; [exact Hst2 | split; [exact Hrq' | split; [exact F1 | exact F2]]]].
+    - right; right; split; [exact Hn |].
+      do 2 (apply fw_letExp in H).
+      apply fw_letAction in H; timeout 10 (apply commitWb_here in H); cbv beta in H.
+      rewrite evalActionPropGen_liftAction in H; unfold writeState in H; cbn [evalActionPropGen] in H.
+      cbn [evalActionPropGen] in H.
+      destruct H as [H _]; subst c'.
+      exact (dmWbK_final s1 _ _ _ eq_refl).
   Qed.
 
 End DmImpl.

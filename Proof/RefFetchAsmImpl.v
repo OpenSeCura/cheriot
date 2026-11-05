@@ -637,7 +637,7 @@ Section FetchAsmImpl.
       LetA predEpoch          : Epoch                      <- liftAction (NP ImplFetch.np_fetch) (FA readPredEpoch) ;
       LetA curParcelOpt       : Option (Bit LgFetchParcels) <- liftAction (NP ImplFetch.np_fetch) (FA readCurParcelOpt) ;
       LetA straddleOpt        : Option StraddleHalf        <- liftAction (NP ImplFetch.np_fetch) (FA readStraddleOpt) ;
-      LetA pcc                : FullECapWithTag            <- liftAction (NP ImplFetch.np_rf) (readRegsList (gprPathsWithKind pcAddrInit) ($0 : Expr ty (Bit RegIdxSzReal))) ;
+      LetA pcc                : FullECapWithTag            <- liftAction (NP ImplFetch.np_fetch) (FA readFetchPcc) ;
       asmLets fetchHead instBuf_isFull execEpoch predEpoch curParcelOpt straddleOpt pcc.
 
   End AsmTy.
@@ -712,7 +712,9 @@ Section FetchAsmImpl.
     evalExpr (ITE (Var type Bool (aIsCompI s1))
                   ($(Z.log2 (CompInstSz / 8)) : Expr type (Bit LgLgNumBytesFullCapSz)) $(Z.log2 (InstSz / 8))).
   Definition aEnd (s1 : IState) : type (Bit (AddrSz + 2)) := evalLetExpr (AdderAccessEnd (ty := type) (aInstPc s1) (aLg s1)).
-  Definition aECap (s1 : IState) : type ECap := evalExpr ((Var type FullECapWithTag (ACC iPcc s1))`"ecap").
+  (* fetch's PCC copy (item 3.4); only its ecap is used *)
+  Definition aPcc (s1 : IState) : type FullECapWithTag := fetch_pccCopy pcAddrInit fetchCapacity instCapacity (iFetchA s1).
+  Definition aECap (s1 : IState) : type ECap := evalExpr ((Var type FullECapWithTag (aPcc s1))`"ecap").
   Definition aTop (s1 : IState) : bool :=
     evalExpr (memFetchTopExc (Var type (Bit (AddrSz + 2)) (aEnd s1)) ((Var type ECap (aECap s1))`"top")).
   Definition aCross (s1 : IState) : bool :=
@@ -843,8 +845,8 @@ Section FetchAsmImpl.
        exact (proj1 (evalActionPropGen_readStraddleOpt pcAddrInit fetchCapacity instCapacity _ _) HQ_)]; asm_gen H.
   Ltac asm_pcc H :=
     eapply fw_liftReadGen in H;
-    [| intros env_ sub_ Q_ HQ_; apply (proj1 (evalActionPropGen_readRegsList _ _ _ _)) in HQ_;
-       rewrite (readPcc_idx0 pcAddrInit) in HQ_; exact HQ_]; asm_gen H.
+    [| intros env_ sub_ Q_ HQ_;
+       exact (proj1 (evalActionPropGen_readFetchPcc pcAddrInit fetchCapacity instCapacity _ _) HQ_)]; asm_gen H.
   (* the `Let`s; a `LetL` becomes a fresh variable *)
   Ltac asm_lets H :=
     repeat (lazymatch type of H with
@@ -966,7 +968,7 @@ Section FetchAsmImpl.
     | E : ?v = fetch_predEpoch _ _ _ _ |- _ => change (v = ACC iPredEpoch s1) in E
     | E : ?v = fetch_curParcelOpt _ _ _ _ |- _ => change (v = ACC iCurParcel s1) in E
     | E : ?v = fetch_straddleOpt _ _ _ _ |- _ => change (v = ACC iStraddle s1) in E
-    | E : ?v = readPcc _ _ |- _ => change (v = ACC iPcc s1) in E
+    | E : ?v = fetch_pccCopy _ _ _ _ |- _ => change (v = aPcc s1) in E
     end.
 
   (* the response read is `aPkt` *)

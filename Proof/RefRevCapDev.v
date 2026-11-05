@@ -295,7 +295,7 @@ Section RevCapDev.
     unfold AccessRel in Ha; rewrite Eacc in Ha; unfold RdStageRel in Ha; cbv beta iota zeta in Ha.
     destruct Ha as [[Hrq [_ [Hrp0 [Hrdy0 Hq]]]] [Hreq [Hwc0 [Hdna [Hoff [Hsec _]]]]]].
     assert (Hmr : iRegionsA s1 = mr) by (unfold iRegions; rewrite EM; reflexivity).
-    destruct (iRevA s1) as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh []]]]]]]]]]]]] eqn:Ex.
+    destruct (iRevA s1) as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh [cp []]]]]]]]]]]]]] eqn:Ex.
     pose proof Hwc0 as Hwc; unfold iRevPhase in Hwc; rewrite Ex in Hwc; cbn [Fst Snd] in Hwc.
     destruct (rpWaitCapRp_excl _ Hwc) as [P0 _].
     pose proof Hrk as Hrk0; unfold RevokerRel in Hrk0; destruct Hrk0 as [K1 _].
@@ -305,7 +305,7 @@ Section RevCapDev.
     { destruct Hm as [[_ [_ [_ Hrv]]] _].
       change (RevRel (g_revOff pcAddrInit g) (specRevStateA (sMemA s2)) (iRevA s1)) in Hrv.
       rewrite Ex, Hoff in Hrv.
-      exact (RevRel_eq _ _ _ _ _ _ _ _ _ _ _ _ _ Hrv). }
+      exact (RevRel_eq _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hrv). }
     assert (Esc : iScanAddrA s1 = scanFull sa) by (unfold iScanAddr; rewrite Ex; reflexivity).
     rewrite Esc in Hk, Hreg, Hrt.
     assert (Hmem0 : MemRel pre post revBase revPfB revPfA clintS clint plicS plic RevEq (sMemA s2) mr).

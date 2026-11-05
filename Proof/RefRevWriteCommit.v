@@ -160,11 +160,11 @@ End ZmodCancel.
 
 (* The spec revoker one position behind the impl's *)
 Lemma RevRel_implAhead :
-  forall xs b t c e ist ir sa st ph sc sb sh,
-    RevRel RevImplAhead xs (mkRev12 b t c e ist ir (Zmod.add sa Zmod.one) st ph sc sb sh) ->
+  forall xs b t c e ist ir sa st ph sc sb sh cp,
+    RevRel RevImplAhead xs (mkRev12 b t c e ist ir (Zmod.add sa Zmod.one) st ph sc sb sh cp) ->
     xs = mkRev8 b t c e ist ir sa st.
 Proof.
-  intros xs b t c e ist ir sa st ph sc sb sh HR.
+  intros xs b t c e ist ir sa st ph sc sb sh cp HR.
   destruct xs as [b0 [t0 [c0 [e0 [i0 [r0 [s0 [st0 []]]]]]]]].
   unfold RevRel in HR.
   assert (E7 : Zmod.add sa Zmod.one = Zmod.add s0 Zmod.one)
@@ -266,7 +266,7 @@ Section RevWriteCommit.
       exact (FetchAllowedInst_fetchViewExt initLine fwcs specRegions _ _ _ _ Hsnap Hext (Hrp G1 e G2 rfe Hg Hch)).
     - unfold EagerRel in *; rewrite Ech; rewrite E2; exact He.
     - exact Hacc.
-    - unfold CnwbRel in *; rewrite Ecn, Ech, Eacc; destruct Hc as [Hc1 Hc2]; rewrite Edm, Hrw; exact (conj Hc1 Hc2).
+    - unfold CnwbRel in *; rewrite Ecn, Ech, Eacc; destruct Hc as [Hc1 Hc2]; rewrite Edm, !Hrw; exact (conj Hc1 Hc2).
     - unfold DmQueueRel in *; rewrite Ech, Eacc; rewrite E1; exact Hd.
     - unfold FenceRel, NoFenceIWait in *; rewrite Ech.
       rewrite HP by (intros r y w0 [|]; reflexivity).
@@ -431,7 +431,7 @@ Section RevWriteCommit.
     rewrite crossesB_scanFull in Hst0; cbn [andb negb] in Hst0.
     assert (HR : iRevA s1' = iRevA s1) by (eapply iRev_writeAt; [exact E1 | exact Hwr]).
     remember (iRevA s1) as x eqn:Ex.
-    destruct x as [b [t [c [e [ist [ir [sa1 [st [ph [sc [sb [sh []]]]]]]]]]]]].
+    destruct x as [b [t [c [e [ist [ir [sa1 [st [ph [sc [sb [sh [cp []]]]]]]]]]]]]].
     unfold iRevArch in Esa, Hsw; rewrite <- Ex in Esa, Hsw; cbn [projImplRevokerArchState revScanAddr Fst Snd] in Esa.
     subst sa1.
     destruct Hsw as [Hodd Hnd].
@@ -439,7 +439,7 @@ Section RevWriteCommit.
     pose proof Hm as Hm0; destruct Hm0 as [[_ [_ [_ Hrv]]] _].
     change (RevRel (g_revOff pcAddrInit g) (specRevState pre post revBase revPfB revPfA (sMemA s2)) (iRevA s1)) in Hrv.
     rewrite <- Ex, Hoff in Hrv.
-    pose proof (RevRel_implAhead _ _ _ _ _ _ _ _ _ _ _ _ _ Hrv) as Hxs.
+    pose proof (RevRel_implAhead _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hrv) as Hxs.
     assert (HlkS : lineKind specRegions (lineOf false (scanFull sa)) = Some true) by (rewrite lineKind_revSwap; exact Hlk).
     pose proof (lineUnique_disjoint _ (lineOf false (scanFull sa)) (Is_true_eq_true _ Hdisj)) as Hu.
     assert (Hk2 : lineKind specRegions (lineOf false (revByteAddrOf config (capBase (memValAtA (sMemA s2) (scanFull sa) capSz))))
@@ -454,7 +454,7 @@ Section RevWriteCommit.
     change (setRevS pre post revBase revPfB revPfA _ xs') with (revWriteMem (sMemA s2) ms1 sa xs') in Hsem1.
     exists (writeSubTreeState NPMS s2 (revWriteMem (sMemA s2) ms1 sa xs')).
     destruct (rpIdle_excl _ Hidle) as [Q1 [Q2 [Q3 Q4]]].
-    assert (ER' : iRevA s1' = mkRev12 b t c e ist ir (Zmod.add sa Zmod.one) st ph sc sb sh) by (rewrite HR; try rewrite <- Ex; reflexivity).
+    assert (ER' : iRevA s1' = mkRev12 b t c e ist ir (Zmod.add sa Zmod.one) st ph sc sb sh cp) by (rewrite HR; try rewrite <- Ex; reflexivity).
     split.
     - eapply ConsAction; [apply In_specRevokerStep | | apply NilAction; reflexivity].
       unfold Spec.specRevokerStep.

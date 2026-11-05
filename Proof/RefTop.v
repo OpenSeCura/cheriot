@@ -23,6 +23,7 @@ From Cheriot.Proof Require Import RefRel RefCoreRel RefPcEven RefInit RefPeriph 
 From Cheriot.Proof Require Import RefRevokerStep RefMemStep RefReadRp RefFetchRp RefLoadCommitStep RefRevWriteCommit.
 From Cheriot.Proof Require Import RefWriteRqStep RefReadRqStep RefDmStep RefMdStep RefLsfFenceI RefDecodeStep.
 From Cheriot.Proof Require Import RefFetchRqStep RefFetchAsmStep RefExecMain.
+From Cheriot.Proof Require Import RefRedirect RefRedirStep RefRedirFront RefRedirAsm RefRedirDec RefRedirCore.
 From Cheriot.Proof Require Import RefGhost RefFetch RefMemRel.
 
 Unset Implicit Arguments.
@@ -156,7 +157,7 @@ Section Top.
   Local Abbreviation SRuleL initLine :=
     (SpecRevBitRule pcAddrInit config pre post revBase revPfB revPfA initLine).
   Local Abbreviation RelL initLine fwc :=
-    (RefRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+    (RefRelR pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
             mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
             clintS clint plicS plic initLine fwc).
   (* A section lemma of the StepOK files applied to the common section variables. *)
@@ -174,9 +175,9 @@ Section Top.
          mulCapacity divCapacity mulStages divStages mulDivMode bp config specRegions clintS revSpec plicS
          implRegions (implEnvL initLine fwc) (nat -> nat -> nat) unit (fun o => specEnvL initLine o)
          (fun _ o => o = fwc) (fun _ _ => True) (SRuleL initLine) (fun _ => RelL initLine fwc)).
-    Local Abbreviation STEPOKR := (SEC StepOKR initLine fwc).
+    Local Abbreviation STEPOKRR := (SEC StepOKRR initLine fwc).
 
-    Lemma actStepSim_of : forall act, STEPOKR act -> ACTSTEP act.
+    Lemma actStepSim_of : forall act, STEPOKRR act -> ACTSTEP act.
     Proof.
       intros act H p s1 s1' s2 Ha Hr Hrel.
       destruct (H s1 s1' s2 Ha (Hr fwc eq_refl) Hrel) as [s2' [Hs Hrel']].
@@ -184,6 +185,39 @@ Section Top.
     Qed.
 
     Local Abbreviation OF := (SEC StepOKR_of initLine fwc).
+    Local Abbreviation NPM := (SEC lift_np_mem initLine fwc).
+    Local Abbreviation NPMS := (SEC lift_np_mem_map initLine fwc).
+
+    Lemma lift_peripheral :
+      forall act,
+        In act (@implPeripheralSteps pcAddrInit fetchCapacity instCapacity decodeCapacity
+                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
+                  config implRegions clint plic type) -> STEPOKRR act.
+    Proof.
+      intros act Hin.
+      pose proof (OF _ (SEC stepOK_implPeripheralSteps initLine fwc HclintIdx HplicIdx act Hin)) as H.
+      unfold implPeripheralSteps, implPlicSteps, implTimerSteps in Hin.
+      apply in_app_or in Hin as [Hin | Hin]; [apply in_app_or in Hin as [Hin | Hin] |].
+      - unfold implPlicPendingsSteps in Hin; cbv zeta in Hin.
+        exact (NPMS _ act Hin H).
+      - destruct Hin as [<- | [<- | []]]; exact (NPM _ H).
+      - destruct Hin as [<- | [<- | [<- | []]]]; [exact (SEC lift_tick initLine fwc H) | exact (NPM _ H) | exact (NPM _ H)].
+    Qed.
+
+    Lemma lift_setCp :
+      forall act,
+        In act (@setCanProceedSteps pcAddrInit fetchCapacity instCapacity decodeCapacity
+                  dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp
+                  config implRegions rev type) -> STEPOKRR act.
+    Proof.
+      intros act Hin.
+      pose proof (OF _ (SEC stepOK_setCanProceedSteps initLine fwc act Hin)) as H.
+      destruct Hin as [<- | [<- | [<- | [<- | []]]]].
+      - exact (SEC lift_setFetchCp initLine fwc H).
+      - exact (SEC lift_setDecodeCp initLine fwc H).
+      - exact (SEC lift_setExecCp initLine fwc H).
+      - exact (NPM _ H).
+    Qed.
 
     Lemma pipelinedMod_obligations :
       RefinementObligations pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -195,28 +229,31 @@ Section Top.
       constructor;
         lazymatch goal with |- forall _, In _ _ -> _ => intros act Hin | _ => idtac end;
         apply actStepSim_of.
-      - exact (OF _ (SEC stepOK_implPeripheralSteps initLine fwc HclintIdx HplicIdx act Hin)).
-      - exact (OF _ (SEC stepOK_fetchRqStage initLine fwc Hdisj)).
-      - exact (OF _ (SEC stepOK_fetchLineRpPorts initLine fwc Hdisj act Hin)).
-      - exact (OF _ (SEC stepOK_fetchAssembleStage initLine fwc Hdisj)).
-      - exact (OF _ (SEC stepOK_decodeAndRegReadStage initLine fwc)).
-      - exact (OF _ (SEC stepOK_aluAndExecuteNonDeferredStage initLine fwc Hdisj HclintIdx HplicIdx)).
-      - exact (OF _ (SEC stepOK_loadRqOrStoreOrFenceStage initLine fwc Hdisj)).
-      - destruct Hin as [<- | Hin].
-        + exact (OF _ (SEC stepOK_writeRqStep initLine fwc Hdisj HclintIdx HplicIdx)).
-        + exact (SEC stepOK_writeRqPorts initLine fwc Hdisj HrevTab act Hin).
-      - destruct Hin as [<- | Hin].
-        + exact (OF _ (SEC stepOK_readRqStep initLine fwc Hdisj HrevTab HclintIdx HplicIdx)).
-        + exact (OF _ (SEC stepOK_readRqPorts initLine fwc Hdisj act Hin)).
+      - exact (lift_peripheral act Hin).
+      - exact (SEC stepOK_applyRedirect initLine fwc).
+      - exact (SEC stepOK_fetchRq initLine fwc Hdisj).
+      - exact (NPMS _ act Hin (OF _ (SEC stepOK_fetchLineRpPorts initLine fwc Hdisj act Hin))).
+      - exact (SEC stepOK_fetchAsm initLine fwc Hdisj).
+      - exact (SEC stepOK_decode initLine fwc).
+      - exact (SEC stepOK_exec initLine fwc Hdisj HclintIdx HplicIdx).
+      - exact (SEC stepOK_lsf initLine fwc Hdisj).
+      - pose proof Hin as Hin0; destruct Hin0 as [<- | Hin0].
+        + exact (NPM _ (OF _ (SEC stepOK_writeRqStep initLine fwc Hdisj HclintIdx HplicIdx))).
+        + exact (NPMS _ act Hin0 (SEC stepOK_writeRqPorts initLine fwc Hdisj HrevTab act Hin0)).
+      - pose proof Hin as Hin0; destruct Hin0 as [<- | Hin0].
+        + exact (NPM _ (OF _ (SEC stepOK_readRqStep initLine fwc Hdisj HrevTab HclintIdx HplicIdx))).
+        + exact (NPMS _ act Hin0 (OF _ (SEC stepOK_readRqPorts initLine fwc Hdisj act Hin0))).
       - apply in_app_or in Hin as [Hin | [<- | []]].
-        + exact (OF _ (SEC stepOK_readRpPorts initLine fwc Hdisj HrevTab act Hin)).
-        + exact (OF _ (SEC stepOK_readRpStep initLine fwc)).
-      - exact (OF _ (SEC stepOK_loadRpAndIssueRevRqStage initLine fwc)).
-      - exact (OF _ (SEC stepOK_revRpAndWriteBackStage initLine fwc)).
-      - exact (OF _ (SEC stepOK_mulDivStageActions initLine fwc Hmd act Hin)).
-      - exact (OF _ (SEC stepOK_implRevokerStepsSys initLine fwc Hdisj HrevTab act Hin)).
-      - exact (OF _ (SEC stepOK_fenceIAcks initLine fwc act Hin)).
-      - exact (OF _ (SEC stepOK_setCanProceedSteps initLine fwc act Hin)).
+        + exact (NPMS _ act Hin (OF _ (SEC stepOK_readRpPorts initLine fwc Hdisj HrevTab act Hin))).
+        + exact (NPM _ (OF _ (SEC stepOK_readRpStep initLine fwc))).
+      - exact (SEC stepOK_loadRp initLine fwc).
+      - exact (SEC stepOK_checkRev initLine fwc).
+      - exact (SEC stepOK_issue initLine fwc).
+      - exact (SEC stepOK_revRp initLine fwc).
+      - exact (SEC stepOK_md initLine fwc Hmd act Hin).
+      - exact (NPMS _ act Hin (OF _ (SEC stepOK_implRevokerStepsSys initLine fwc Hdisj HrevTab act Hin))).
+      - exact (NPMS _ act Hin (OF _ (SEC stepOK_fenceIAcks initLine fwc act Hin))).
+      - exact (lift_setCp act Hin).
     Qed.
   End Oracle.
 
@@ -250,7 +287,7 @@ Section Top.
                 (SRuleL initLine) (fun _ => RelL initLine fwc)
                 (pipelinedMod_obligations initLine fwc) tt
                 (fun o1 o2 H1 H2 =>
-                   SEC RefRel_init initLine fwc HdetPre HdetPost HpcEven o1 o2 H1 H2)
+                   SEC RefRelR_init initLine fwc HdetPre HdetPost HpcEven o1 o2 H1 H2)
                 old1 new1 Hsem old2 Hinit2 (fun o Ho => ltac:(cbv beta in Ho; subst o; exact Hrule)))
       as [o [new2 [Hspec [_ Hrel]]]].
     exists o, new2; split; assumption.
@@ -294,18 +331,20 @@ Section Top.
 
   Lemma ObsRegs_of : forall initLine fwc s1 s2, RelL initLine fwc s1 s2 -> ObsRegs initLine fwc s1 s2.
   Proof.
-    intros initLine fwc s1 s2 [g Hg].
-    destruct Hg as [Hrf _ _ Hrp _ _ _ _ _ _ _ _ _].
-    destruct Hrf as [Hs [Hch _]].
-    exists (g_rf0 pcAddrInit g), (g_cnwb pcAddrInit g), (g_chain pcAddrInit g).
+    intros initLine fwc s1 s2 [_ [g Hg]].
+    unfold effS in Hg; destruct (iRedirValid _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ s1);
+    destruct Hg as [Hrf _ _ Hrp _ _ _ _ _ _ _ _ _];
+    destruct Hrf as [Hs [Hch _]];
+    exists (g_rf0 pcAddrInit g), (g_cnwb pcAddrInit g), (g_chain pcAddrInit g);
     exact (conj Hs (conj Hch Hrp)).
   Qed.
 
   Lemma ObsExt_of : forall initLine fwc s1 s2, RelL initLine fwc s1 s2 -> ObsExt s1 s2.
   Proof.
-    intros initLine fwc s1 s2 [g Hg].
-    destruct Hg as [_ Hm _ _ _ _ _ _ _ _ _ _ _].
-    destruct Hm as [[Hpre [_ [Hpl _]]] _].
+    intros initLine fwc s1 s2 [_ [g Hg]].
+    unfold effS in Hg; destruct (iRedirValid _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ s1);
+    destruct Hg as [_ Hm _ _ _ _ _ _ _ _ _ _ _];
+    destruct Hm as [[Hpre [_ [Hpl _]]] _];
     exact (conj (ExtWritesPre_of _ _ _ _ _ _ _ _ _ Hpre) (plicUartOf_rel _ _ _ _ Hpl)).
   Qed.
 

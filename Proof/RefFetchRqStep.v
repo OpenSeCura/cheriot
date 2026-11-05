@@ -287,6 +287,7 @@ Section FetchRqStep.
     forall g (s1 s1' : IState) (s2 : SState) m nio,
       ACC frFull s1 = false -> iFenceIPendingA s1 = false -> anyWait implRegions (iRegionsA s1) = false ->
       ACC FrqStep s1 s1' m (ACC frEnqF s1 (ACC frEntry s1 nio)) ->
+      fbFetchExc (ACC frEntry s1 nio) = preExcAt (iPccA s1) (ACC iFetchPc s1) ->
       RfRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
         mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA g s1' s2 ->
       MEMC g s1' s2 ->
@@ -302,7 +303,7 @@ Section FetchRqStep.
       (iFetchBufA s1' = (iFetchBufA s1 ++ [ACC frEntry s1 nio])%list -> fbLiveA s1' = fbLiveA s1 -> FRREL s1' s2) ->
       RELG g s1 s2 -> RELG g s1' s2.
   Proof.
-    intros g s1 s1' s2 m nio Hf Hfip Hw [Erf [Ewb [Emem [Efe [ED [Eex [Edm Emd]]]]]]] Crf Cm Ca Cc Cd Crk HP Cfr H.
+    intros g s1 s1' s2 m nio Hf Hfip Hw [Erf [Ewb [Emem [Efe [ED [Eex [Edm Emd]]]]]]] Hx Crf Cm Ca Cc Cd Crk HP Cfr H.
     set (e := ACC frEntry s1 nio) in *.
     pose proof (iFlush_ext pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                   mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
@@ -352,13 +353,13 @@ Section FetchRqStep.
     - destruct Hfr as [F1 [F2 [F3 [F4 [F5 [F6 F7]]]]]].
       unfold FrontRel; rewrite Ed2a, Edl, Eib, Eal, Efb, Elv, Eep.
       refine (conj F1 (conj F2 (conj (StalePrefix_snoc _ _ _ F3 He) (conj F4 (conj _ (conj _ (Cfr Efb Elv))))))).
-      + intros Hx; apply Forall_app; split; [exact (F5 Hx) | constructor; [exact (Zmod.eqb_refl _) | constructor]].
+      + intros Hy; apply Forall_app; split; [exact (F5 Hy) | constructor; [exact (Zmod.eqb_refl _) | constructor]].
       + assert (Elive : liveInstsA g s1' = liveInstsA g s1)
           by (unfold liveInsts; rewrite Ed2a, Eib, Edl, Eal; reflexivity).
         unfold LiveChain in *; rewrite Elive, Epcc.
         refine (LiveChainG_mono pre post revBase revPfB revPfA initLine fwcs _ _ _ _ _ _ _
                   (proj2 (proj2 Cm)) (FetchViewExt_refl _ _) _ F6).
-        intros p Hp; exact (FrontierRel_enq s1 s1' s2 e p Efb Efpc eq_refl Ecp Estr Elv He Epcc eq_refl W1b Hp).
+        intros p Hp; exact (FrontierRel_enq s1 s1' s2 e p Efb Efpc eq_refl Ecp Estr Elv He Epcc Hx W1b Hp).
     - unfold WfRel; rewrite Ecp, Efb, Epcc, Ed2a, Eib.
       rewrite HP by (intros r y L rdy; reflexivity).
       split; [split; [rewrite Efe; exact (fifo_wf_enq _ _ _ _ W1a) |] |].
@@ -446,14 +447,14 @@ Section FetchRqStep.
 
   (* The request the line's region accepted is the new entry's *)
   Lemma FetchRespRel_acc :
-    forall (s1 s1' : IState) (s2 : SState) e mr',
-      FetchRqAtL (lineAddrOf (ACC iFetchPc s1)) true implRegions (iRegionsA s1) mr' -> iRegionsA s1' = mr' ->
+    forall (s1 s1' : IState) (s2 : SState) e mr' A,
+      FetchRqAtL (lineAddrOf A) true implRegions (iRegionsA s1) mr' -> iRegionsA s1' = mr' ->
       iFetchBufA s1' = (iFetchBufA s1 ++ [e])%list -> fbLiveA s1' = fbLiveA s1 ->
-      fbPcAddr e = ACC iFetchPc s1 -> excAny (fbFetchExc e) = false ->
+      fbPcAddr e = A -> excAny (fbFetchExc e) = false ->
       FRREL s1 s2 -> FRREL s1' s2.
   Proof.
-    intros s1 s1' s2 e mr' Hat Ereg Efb Elv Epc Hexc H.
-    pose proof (lineUnique_implRegions pre post revBase revPfB revPfA (lineAddrOf (ACC iFetchPc s1))
+    intros s1 s1' s2 e mr' A Hat Ereg Efb Elv Epc Hexc H.
+    pose proof (lineUnique_implRegions pre post revBase revPfB revPfA (lineAddrOf A)
                   (Is_true_eq_true _ Hdisj)) as Hu.
     unfold FetchRespRel in *; rewrite Ereg.
     refine (AllPorts_fetchRqAt_impl _ _ _ _ _ _ _ _ _ Hu Hat H).
@@ -466,7 +467,7 @@ Section FetchRqStep.
       { unfold fbInRegion; rewrite Efb, filter_app; cbn [filter]; rewrite Hexc, Epc, Hm; reflexivity. }
       rewrite EE, Elv.
       exists C; split; [| split; [exact HC2 |]].
-      + change (lineAddrOf (lineAddrOf (ACC iFetchPc s1)) :: implFetchAccRqs r y =
+      + change (lineAddrOf (lineAddrOf A) :: implFetchAccRqs r y =
                 (rev (map (fun f => lineAddrOf (fbPcAddr f))
                           (fbInRegion pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                              mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1 r ++ [e])) ++ C)%list).
@@ -522,46 +523,62 @@ Section FetchRqStep.
     - unfold fbLive, iExecEpoch, iPredEpoch; rewrite Eex, Efe; reflexivity.
   Qed.
 
-  Theorem stepOK_fetchRqStage : STEPOK STAGE.
+  (* The fetch PCC copy agrees with the architectural PCC in what the pre-fault check reads *)
+  Lemma preExcAt_tagEcap :
+    forall (p1 p2 : type FullECapWithTag) pc,
+      p1.(Fst) = p2.(Fst) -> p1.(Snd).(Fst) = p2.(Snd).(Fst) -> preExcAt p1 pc = preExcAt p2 pc.
+  Proof. intros [t1 [e1 r1]] [t2 [e2 r2]] pc E1 E2; cbn in E1, E2; subst t2 e2; reflexivity. Qed.
+
+  (* With no redirect pending, fetch's PCC and fence.i copies stand for the architectural ones *)
+  Theorem fetchRq_live :
+    forall g (s1 s1' : IState) (s2 : SState),
+      SemAction (implEnv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                   mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions initLine fwcs)
+        STAGE s1 s1' Zmod.zero ->
+      (ACC frPcc s1).(Fst) = (iPccA s1).(Fst) -> (ACC frPcc s1).(Snd).(Fst) = (iPccA s1).(Snd).(Fst) ->
+      (iFenceIPendingA s1 = true -> ACC frFip s1 = true) ->
+      RELG g s1 s2 -> RELG g s1' s2.
   Proof.
-    intros s1 s1' s2 Hsem [g Hg].
-    exists s2; split; [apply NilAction; reflexivity |].
+    intros g s1 s1' s2 Hsem Et Ee Hfi Hg.
     pose proof (fun A => lineUnique_implRegions pre post revBase revPfB revPfA A (Is_true_eq_true _ Hdisj)) as Hu.
     pose proof Hg as [_ _ _ _ _ _ _ _ _ _ Hfr0 Hw0 _].
     pose proof (proj1 (proj1 Hw0)) as Wfb.
     pose proof Hfr0 as [_ [_ [_ [_ [_ [_ F7]]]]]].
-    destruct (andb (negb (ACC frFull s1)) (andb (negb (iFenceIPendingA s1)) (negb (anyWait implRegions (iRegionsA s1)))))
+    assert (Hx : forall nio, fbFetchExc (ACC frEntry s1 nio) = preExcAt (iPccA s1) (ACC iFetchPc s1))
+      by (intros nio; exact (preExcAt_tagEcap _ _ _ Et Ee)).
+    destruct (andb (negb (ACC frFull s1)) (andb (negb (ACC frFip s1)) (negb (anyWait implRegions (iRegionsA s1)))))
       eqn:Hgo.
     2: { rewrite (fetchRq_idle pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                     mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
-                    _ s1 s1' Hsem Hgo); exists g; exact Hg. }
-    apply andb_prop in Hgo as [Hf Hgo]; apply andb_prop in Hgo as [Hfip Hw].
-    apply negb_true_iff in Hf, Hfip, Hw.
-    exists g.
+                    _ s1 s1' Hsem Hgo); exact Hg. }
+    apply andb_prop in Hgo as [Hf Hgo]; apply andb_prop in Hgo as [Hfc Hw].
+    apply negb_true_iff in Hf, Hfc, Hw.
+    assert (Hfip : iFenceIPendingA s1 = false)
+      by (destruct (iFenceIPendingA s1) eqn:E; [rewrite (Hfi eq_refl) in Hfc; discriminate Hfc | reflexivity]).
     destruct (excAny (ACC frExc s1)) eqn:Hpre.
     - pose proof (fetchRq_pre pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                     mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
-                    _ s1 s1' Hsem Hf Hfip Hw Hpre) as Hst.
+                    _ s1 s1' Hsem Hf Hfc Hw Hpre) as Hst.
       pose proof Hst as [Erf [_ [Emem [_ [_ [_ [Edm Emd]]]]]]].
       assert (Ereg : iRegionsA s1' = iRegionsA s1) by (unfold iRegions; rewrite Emem; reflexivity).
       destruct (decode_core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                   mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
                   clintS clint plicS plic initLine fwcs g s1 s1' s2 Erf Emem Edm Emd Hg)
         as [Crf [Cm [Ca [Cc [Cd Crk]]]]].
-      refine (fetch_enq g s1 s1' s2 _ _ Hf Hfip Hw Hst Crf Cm Ca Cc Cd Crk _ _ Hg).
+      refine (fetch_enq g s1 s1' s2 _ _ Hf Hfip Hw Hst (Hx _) Crf Cm Ca Cc Cd Crk _ _ Hg).
       + intros P _; rewrite Ereg; reflexivity.
       + intros Efb Elv; exact (FetchRespRel_pre s1 s1' s2 _ Ereg Efb Elv Hpre F7).
     - destruct (fetchRq_noPre pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                   mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
-                  _ s1 s1' Hu Hsem Hf Hfip Hw Hpre) as [mr' [rdy [Hat [Hk Hst]]]].
+                  _ s1 s1' Hu Hsem Hf Hfc Hw Hpre) as [mr' [rdy [Hat [Hk Hst]]]].
       destruct rdy.
       + destruct Hst as [nio Hst].
         pose proof Hst as [Erf [_ [Emem [_ [_ [_ [Edm Emd]]]]]]].
         destruct (core_fetchRq g s1 s1' s2 mr' _ true Erf Emem Edm Emd Hat Hg)
           as [Crf [Cm [Ca [Cc [Cd [Crk HP]]]]]].
         assert (Ereg : iRegionsA s1' = mr') by (unfold iRegions; rewrite Emem; reflexivity).
-        refine (fetch_enq g s1 s1' s2 _ _ Hf Hfip Hw Hst Crf Cm Ca Cc Cd Crk HP _ Hg).
-        intros Efb Elv; exact (FetchRespRel_acc s1 s1' s2 _ mr' Hat Ereg Efb Elv eq_refl Hpre F7).
+        refine (fetch_enq g s1 s1' s2 _ _ Hf Hfip Hw Hst (Hx _) Crf Cm Ca Cc Cd Crk HP _ Hg).
+        intros Efb Elv; exact (FetchRespRel_acc s1 s1' s2 _ mr' _ Hat Ereg Efb Elv eq_refl Hpre F7).
       + pose proof Hst as [Erf [_ [Emem [Efe [_ [Eex [Edm Emd]]]]]]].
         destruct (core_fetchRq g s1 s1' s2 mr' _ false Erf Emem Edm Emd Hat Hg)
           as [Crf [Cm [Ca [Cc [Cd [Crk HP]]]]]].

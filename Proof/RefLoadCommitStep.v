@@ -363,7 +363,11 @@ Section LoadCommit.
       - unfold CnwbRel; cbn [g_cnwb g_chain g_acc g1]; rewrite Edm.
         destruct (dmLoadRp_excl _ Hdlr) as [Hq0 [Hr0 _]]; rewrite Hq0, Hr0.
         split; [intros H; discriminate H |]; split; [intros H; discriminate H |]; split; [intros H; discriminate H |].
-        intros _ _ _; rewrite Hdlv, Hdst; exact Havoid.
+        pose proof (dmNotCheck _ (orb_true_intro _ _ (or_intror (orb_true_intro _ _ (or_introl Hdlr))))) as Hnck.
+        split; [intros _ _ _; rewrite Hdlv, Hdst; exact Havoid |].
+        split; [rewrite Hnck; intros H; discriminate H |].
+        split; [rewrite Hnck; intros H; discriminate H |].
+        unfold dmValid; rewrite Hq0, Hdlr; reflexivity.
       - unfold DmQueueRel in Hd |- *; cbn [g_chain g_acc g1 accTakesHead]; cbv zeta in Hd |- *.
         rewrite Eacc, Hch in Hd; cbn [accTakesHead] in Hd.
         rewrite (chainReqs_load_head e q G' Hq Hld) in Hd.
@@ -447,7 +451,7 @@ Section LoadCommit.
       - unfold CnwbRel; cbn [g_cnwb g_chain g_acc g1]; rewrite Edm.
         destruct (dmLoadRp_excl _ Hdlr) as [Hq0 [Hr0 _]]; rewrite Hq0, Hr0.
         split; [intros H; discriminate H |]; split; [intros H; discriminate H |]; split; [intros H; discriminate H |].
-        intros _ H; discriminate H.
+        split; [intros _ H; discriminate H |]. cnwb_fin.
       - unfold DmQueueRel in Hd |- *; cbn [g_chain g_acc g1 accTakesHead]; cbv zeta in Hd |- *.
         rewrite Eacc in Hd; cbn [accTakesHead] in Hd.
         rewrite E1; exact Hd.

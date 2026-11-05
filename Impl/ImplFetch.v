@@ -38,23 +38,34 @@ Section FetchStage.
 
   Definition implFetchTree : Tree Elem :=
     Node "" [
-      Leaf "fetchPc"      (EReg (Build_Reg Addr (Some (Zmod.of_Z _ pcAddrInit)))) ;
+      (* fetch's PCC: its `addr` is the fetch PC; its tag and bounds are fetch's copy of the
+       * architectural PCC, set by `applyRedirect` *)
+      Leaf "fetchPcc"     (EReg (Build_Reg FullECapWithTag (Some (ExecRoot pcAddrInit)))) ;
       Leaf "predEpoch"    (EReg (Build_Reg Epoch (Some Zmod.zero))) ;
       Leaf "curParcelOpt" (EReg (Build_Reg (Option (Bit LgFetchParcels)) (Some (getDefault _)))) ;
       Leaf "straddleOpt"  (EReg (Build_Reg (Option StraddleHalf) (Some (getDefault _)))) ;
       Leaf "canProceed"   (EReg (Build_Reg Bool (Some true))) ;
       Node "fetchBuf"     [ fifoTree fetchCapacity FetchBufEntry ] ;
-      Node "instBuf"      [ fifoTree instCapacity AssembledInst ]
+      Node "instBuf"      [ fifoTree instCapacity AssembledInst ] ;
+      (* fetch's copy of execute's fenceIPending, refreshed by `applyRedirect` every cycle *)
+      Leaf "fetchFenceIPending" (EReg (Build_Reg Bool (Some false)))
     ].
 
-  Definition pFetchPc : RegPath implFetchTree :=
-    Eval cbn in (getChildRegPathTree implFetchTree "fetchPc").
+  Definition pFetchPcc : RegPath implFetchTree :=
+    Eval cbn in (getChildRegPathTree implFetchTree "fetchPcc").
 
+  Definition readFetchPcc (ty : Kind -> Type) : Action ty implFetchTree FullECapWithTag :=
+    ReadReg "fetchPcc" pFetchPcc (fun v => Return #v).
+
+  Definition writeFetchPcc (ty : Kind -> Type) (val : ty FullECapWithTag) : Action ty implFetchTree (Bit 0) :=
+    WriteReg pFetchPcc #val Retv.
+
+  (* The fetch PC is `fetchPcc.addr` *)
   Definition readFetchPc (ty : Kind -> Type) : Action ty implFetchTree Addr :=
-    ReadReg "fetchPc" pFetchPc (fun v => Return #v).
+    ReadReg "fetchPcc" pFetchPcc (fun v => Return (##v`"addr")).
 
   Definition writeFetchPc (ty : Kind -> Type) (val : ty Addr) : Action ty implFetchTree (Bit 0) :=
-    WriteReg pFetchPc #val Retv.
+    ReadReg "fetchPcc" pFetchPcc (fun v => WriteReg pFetchPcc (#v `{ "addr" <- #val }) Retv).
 
   Definition pPredEpoch : RegPath implFetchTree :=
     Eval cbn in (getChildRegPathTree implFetchTree "predEpoch").
@@ -98,6 +109,15 @@ Section FetchStage.
   Definition clearFetchCanProceed (ty : Kind -> Type) : Action ty implFetchTree (Bit 0) :=
     WriteReg pFetchCanProceed (ConstBool false) Retv.
 
+  Definition pFetchFenceIPending : RegPath implFetchTree :=
+    Eval cbn in (getChildRegPathTree implFetchTree "fetchFenceIPending").
+
+  Definition readFetchFenceIPending (ty : Kind -> Type) : Action ty implFetchTree Bool :=
+    ReadReg "fetchFenceIPending" pFetchFenceIPending (fun v => Return #v).
+
+  Definition writeFetchFenceIPending (ty : Kind -> Type) (val : ty Bool) : Action ty implFetchTree (Bit 0) :=
+    WriteReg pFetchFenceIPending #val Retv.
+
   Definition np_fetchInstFifo : NodePath implFetchTree :=
     Eval cbn in (getNodePath implFetchTree ".instBuf.fifo").
 
@@ -110,9 +130,7 @@ Section FetchStage.
   Definition implFetchIfc (ty : Kind -> Type) : @FetchIfc ty := {|
     fetchTree           := implFetchTree ;
     fetch_instFirst     := @fetchInstFirst ty ;
-    fetch_instDeq       := @fetchInstDeq ty ;
-    fetch_clearStraddle := @clearStraddle ty ;
-    fetch_writeFetchPc  := @writeFetchPc ty
+    fetch_instDeq       := @fetchInstDeq ty
   |}.
 
   Definition alignPacketAddr {ty : Kind -> Type} (addr : ty Addr) : Expr ty Addr :=
@@ -169,7 +187,7 @@ Section FetchStage.
    * STAGE 1: fetchRq
    *
    * - Precondition: fetchBuf is not full (!isFull).
-   * - Action:       Read fetchPc, execEpoch, predEpoch, and global PCC
+   * - Action:       Read fetchPc (fetchPcc.addr), execEpoch, predEpoch, and fetchPcc
    *                 metadata from GPR 0. Perform pre-fetch Tag, Seal,
    *                 EX-perm, and Base-bounds checks. If no fault so far,
    *                 issue aligned packet read mem_readInstRq(alignedPc).
@@ -179,12 +197,12 @@ Section FetchStage.
    * ========================================================================= *)
   Definition fetchRq : Action ty coreTree (Bit 0) :=
     LetA fetchBuf_isFull : Bool            <- liftAction np_fetchFifo (@isFull fetchCapacity FetchBufEntry ty) ;
-    LetA fenceIPending   : Bool            <- liftAction np_execute (executeIfc ty).(execute_readFenceIPend) ;
+    LetA fenceIPending   : Bool            <- liftAction np_fetch (@readFetchFenceIPending ty) ;
     LetA fenceIWait      : Bool            <- liftAction np_mem ((memIfc ty).(mem_readFenceIWait)) ;
     LetA fetchPc         : Addr            <- liftAction np_fetch (@readFetchPc ty) ;
     LetA execEpoch       : Epoch           <- liftAction np_execute (executeIfc ty).(execute_readExecEpoch) ;
     LetA predEpoch       : Epoch           <- liftAction np_fetch (@readPredEpoch ty) ;
-    LetA pcc             : FullECapWithTag <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
+    LetA pcc             : FullECapWithTag <- liftAction np_fetch (@readFetchPcc ty) ;
 
     Let  alignedPc       : Addr            <- alignPacketAddr fetchPc ;
     Let  pccECap         : ECap            <- ##pcc`"ecap" ;
@@ -260,7 +278,7 @@ Section FetchStage.
       LetA predEpoch          : Epoch                      <- liftAction np_fetch (@readPredEpoch ty) ;
       LetA curParcelOpt       : Option (Bit LgFetchParcels) <- liftAction np_fetch (@readCurParcelOpt ty) ;
       LetA straddleOpt        : Option StraddleHalf        <- liftAction np_fetch (@readStraddleOpt ty) ;
-      LetA pcc                : FullECapWithTag            <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
+      LetA pcc                : FullECapWithTag            <- liftAction np_fetch (@readFetchPcc ty) ;
 
       Let  entry              : FetchBufEntry              <- ##fetchHead`"data" ;
       Let  entryPc            : Addr                       <- ##entry`"pcAddr" ;
@@ -428,6 +446,28 @@ Section FetchStage.
         Retv
       ) ;
       Retv
+    ) ;
+    Retv.
+
+  (* =========================================================================
+   * applyRedirect (first in the cycle)
+   *
+   * - Refreshes fetch's copy of fenceIPending.
+   * - Applies a redirect Execute set in the previous cycle: fetch's PCC (whose `addr` is the new
+   *   fetch PC), execEpoch + 1, no straddle; clears the redirect.
+   * ========================================================================= *)
+  Definition applyRedirect : Action ty coreTree (Bit 0) :=
+    LetA redir     : Option FullECapWithTag <- liftAction np_execute (executeIfc ty).(execute_readRedirect) ;
+    LetA execEpoch : Epoch               <- liftAction np_execute (executeIfc ty).(execute_readExecEpoch) ;
+    LetA fip       : Bool                <- liftAction np_execute (executeIfc ty).(execute_readFenceIPend) ;
+    Act (liftAction np_fetch (@writeFetchFenceIPending ty fip)) ;
+    If (##redir`"valid") Then (
+      Let newPcc    : FullECapWithTag <- ##redir`"data" ;
+      Let nextEpoch : Epoch           <- Add [ #execEpoch ; $1 ] ;
+      Act (liftAction np_execute ((executeIfc ty).(execute_writeExecEpoch) nextEpoch)) ;
+      Act (liftAction np_fetch (@clearStraddle ty)) ;
+      Act (liftAction np_fetch (@writeFetchPcc ty newPcc)) ;
+      liftAction np_execute (executeIfc ty).(execute_clearRedirect)
     ) ;
     Retv.
 

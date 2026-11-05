@@ -286,7 +286,8 @@ Section LsfStep.
     apply (RefRelG_lsfFrame g (gLoad g q) s1 s1' s2 Hg eq_refl eq_refl eq_refl eq_refl Erf Ewb Efe Ede Eex Emd).
     - intros P; rewrite Ereg; reflexivity.
     - exact Hwd'.
-    - unfold olderWriters, dmInFlightDst; rewrite Emd, Eb', Eb, Edm, N1, N2, N3, Edmv, (loadCmd_dst q Hm Hs).
+    - pose proof (dmNotCheck _ (orb_true_intro _ _ (or_introl Hlrq))) as N4.
+      unfold olderWriters, dmInFlightDst; rewrite Emd, Eb', Eb, Edm, N1, N2, N3, N4, Edmv, (loadCmd_dst q Hm Hs).
       cbn [filter app map]; rewrite Hld; reflexivity.
     - unfold MemRelC in *; cbn [gLoad g_revOff]; rewrite Ereg; exact Hmem.
     - unfold AccessRel, RdStageRel; cbn [gLoad g_acc g_revOff g_cnwb g_chain]; cbv zeta.
@@ -301,7 +302,7 @@ Section LsfStep.
       split; [intros E; rewrite M1 in E; discriminate E |].
       split; [intros E; rewrite M2 in E; discriminate E |].
       split; [intros E; rewrite M2 in E; discriminate E |].
-      intros _ _ E; discriminate E.
+      split; [intros _ _ E; discriminate E |]. cnwb_fin.
     - unfold DmQueueRel in *; cbn [gLoad g_acc g_chain accTakesHead]; rewrite Eb'.
       rewrite Hacc, Eb in Hd; cbn [accTakesHead filter] in Hd; rewrite Hpl in Hd; cbn [negb] in Hd.
       rewrite <- Hd; reflexivity.
@@ -334,7 +335,7 @@ Section LsfStep.
     assert (Hacc : g_acc pcAddrInit g = AccNone) by (eapply AccessRel_rdy_none; eassumption).
     pose proof Ha as Ha0; unfold AccessRel in Ha0; rewrite Hacc in Ha0.
     destruct Ha0 as [Hidle [Hrp0 [Hrdy0 [HPQ [Hoff [Hdna [Hrnr Hsec]]]]]]].
-    destruct Hc as [C1 [C2 [C3 C4]]].
+    destruct Hc as [C1 [C2 [C3 [C4 C5]]]].
     assert (Hcn : g_cnwb pcAddrInit g = None) by (exact (C1 Hlrq)).
     assert (Hpl : isPlainFence q = false) by (unfold isPlainFence; rewrite Hm; reflexivity).
     assert (HH : HeadReq pcAddrInit g q)
@@ -368,7 +369,7 @@ Section LsfStep.
       split; [intros _; exact Hcn |].
       split; [intros E; rewrite N2 in E; discriminate E |].
       split; [intros E; rewrite N2 in E; discriminate E |].
-      intros E; rewrite N1 in E; discriminate E.
+      split; [intros E; rewrite N1 in E; discriminate E |]. cnwb_fin.
     - unfold DmQueueRel in *; cbn [gStore g_acc g_chain accTakesHead]; rewrite Eb'.
       rewrite Hacc, Eb in Hd; cbn [accTakesHead filter] in Hd; rewrite Hpl in Hd; cbn [negb] in Hd.
       rewrite <- Hd; reflexivity.

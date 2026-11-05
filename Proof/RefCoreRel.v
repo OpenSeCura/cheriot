@@ -58,6 +58,61 @@ Definition dmRevRp (st : type DataMemState) : bool := evalExpr ((Var type DataMe
 Definition dmLoadRpV (st : type DataMemState) : type LoadCmd := evalExpr ((Var type DataMemState st) `! "LoadRp").
 Definition dmRevRqV (st : type DataMemState) : type RevCmd := evalExpr ((Var type DataMemState st) `! "RevRq").
 Definition dmRevRpV (st : type DataMemState) : type RevCmd := evalExpr ((Var type DataMemState st) `! "RevRp").
+Definition dmCheck (st : type DataMemState) : bool := evalExpr ((Var type DataMemState st) `? "Check").
+Definition dmCheckV (st : type DataMemState) : type RevCmd := evalExpr ((Var type DataMemState st) `! "Check").
+(* dataMem's state is one of its five tags (the tag has three bits) *)
+Definition dmValid (st : type DataMemState) : bool :=
+  orb (dmLoadRq st) (orb (dmLoadRp st) (orb (dmRevRq st) (orb (dmRevRp st) (dmCheck st)))).
+
+Lemma dmCheck_excl :
+  forall st, dmCheck st = true ->
+    dmLoadRq st = false /\ dmLoadRp st = false /\ dmRevRq st = false /\ dmRevRp st = false.
+Proof.
+  intros [d tg]; unfold dmCheck, dmLoadRq, dmLoadRp, dmRevRq, dmRevRp; cbn.
+  intros H; apply Zmod.eqb_eq in H; subst tg; repeat split; reflexivity.
+Qed.
+
+Lemma dmNotCheck :
+  forall st, orb (dmLoadRq st) (orb (dmLoadRp st) (orb (dmRevRq st) (dmRevRp st))) = true -> dmCheck st = false.
+Proof.
+  intros st H; destruct (dmCheck st) eqn:E; [| reflexivity].
+  destruct (dmCheck_excl st E) as [E1 [E2 [E3 E4]]]; rewrite E1, E2, E3, E4 in H; discriminate H.
+Qed.
+
+(* The last CnwbRel clauses (Check, validity) in a state that is not Check *)
+Lemma cnwbTail_lrq :
+  forall st (P Q : Prop), dmLoadRq st = true -> (dmCheck st = true -> P) /\ (dmCheck st = true -> Q) /\ dmValid st = true.
+Proof.
+  intros st P Q H; pose proof (dmNotCheck st ltac:(rewrite H; reflexivity)) as E.
+  split; [intros C; rewrite E in C; discriminate C |]; split; [intros C; rewrite E in C; discriminate C |].
+  unfold dmValid; rewrite H; reflexivity.
+Qed.
+Lemma cnwbTail_lrp :
+  forall st (P Q : Prop), dmLoadRp st = true -> (dmCheck st = true -> P) /\ (dmCheck st = true -> Q) /\ dmValid st = true.
+Proof.
+  intros st P Q H; pose proof (dmNotCheck st ltac:(rewrite H, orb_true_r; reflexivity)) as E.
+  split; [intros C; rewrite E in C; discriminate C |]; split; [intros C; rewrite E in C; discriminate C |].
+  unfold dmValid; rewrite H, orb_true_r; reflexivity.
+Qed.
+Lemma cnwbTail_rrq :
+  forall st (P Q : Prop), dmRevRq st = true -> (dmCheck st = true -> P) /\ (dmCheck st = true -> Q) /\ dmValid st = true.
+Proof.
+  intros st P Q H; pose proof (dmNotCheck st ltac:(rewrite H, !orb_true_r; reflexivity)) as E.
+  split; [intros C; rewrite E in C; discriminate C |]; split; [intros C; rewrite E in C; discriminate C |].
+  unfold dmValid; rewrite H, !orb_true_r; reflexivity.
+Qed.
+Lemma cnwbTail_rrp :
+  forall st (P Q : Prop), dmRevRp st = true -> (dmCheck st = true -> P) /\ (dmCheck st = true -> Q) /\ dmValid st = true.
+Proof.
+  intros st P Q H; pose proof (dmNotCheck st ltac:(rewrite H, !orb_true_r; reflexivity)) as E.
+  split; [intros C; rewrite E in C; discriminate C |]; split; [intros C; rewrite E in C; discriminate C |].
+  unfold dmValid; rewrite H, !orb_true_r; reflexivity.
+Qed.
+Ltac cnwb_fin :=
+  first [ apply cnwbTail_lrq; solve [first [reflexivity | assumption]]
+        | apply cnwbTail_lrp; solve [first [reflexivity | assumption]]
+        | apply cnwbTail_rrq; solve [first [reflexivity | assumption]]
+        | apply cnwbTail_rrp; solve [first [reflexivity | assumption]] ].
 
 Definition isReqDataMem (r : type Requester) : bool := evalExpr ((Var type Requester r) `? "DataMem").
 Definition isReqRevoker (r : type Requester) : bool := evalExpr ((Var type Requester r) `? "Revoker").
@@ -535,6 +590,17 @@ Section CoreRel.
       let wb : type WbCmd := evalExpr ((Var type LoadOutcome outcome) `! "Writeback") in
       (evalExpr (##wb`"dstIdx"), evalExpr (##wb`"dstVal")).
 
+  (* A tagged capability load waiting for its revocation check (state Check, `checkRevocation`):
+   * whether the check is needed, and the write-back when it is not *)
+  Definition checkNeeds (rc : type RevCmd) : bool :=
+    let pr : type PendingRev := evalExpr (##rc`"pendingRev") in
+    let cv : type FullECapWithTag := evalExpr (##pr`"capVal") in
+    evalExpr (@needsRevocationCheck type config (evalExpr (##cv`"ecap")) (evalExpr (##cv`"tag"))).
+
+  Definition checkWbVal (rc : type RevCmd) : bits RegIdxSzReal * type FullECapWithTag :=
+    let pr : type PendingRev := evalExpr (##rc`"pendingRev") in
+    (evalExpr (##pr`"dstIdx"), evalExpr (##pr`"capVal")).
+
   Definition revWb (m : TS (specMemTree specRegions)) (rc : type RevCmd) : bits RegIdxSzReal * type FullECapWithTag :=
     let pr : type PendingRev := evalExpr (##rc`"pendingRev") in
     let wb := evalLetExpr (dispatchRevResponse pr (revBitOf m (evalExpr (##rc`"base")))) in
@@ -726,7 +792,14 @@ Section CoreRel.
     (dmRevRq (iDmSt s1) = true -> g_cnwb g = Some (revWb (sMem s2) (dmRevRqV (iDmSt s1)))) /\
     (dmRevRq (iDmSt s1) = true -> baseRevokable (rcBase (dmRevRqV (iDmSt s1))) = true) /\
     (dmLoadRp (iDmSt s1) = true -> g_cnwb g = None -> accTakesHead (g_acc g) = false ->
-       ChainAvoids (g_chain g) (ldPending (dmLoadRpV (iDmSt s1))).(Fst)).
+       ChainAvoids (g_chain g) (ldPending (dmLoadRpV (iDmSt s1))).(Fst)) /\
+    (* a tagged capability load waiting for its revocation check *)
+    (dmCheck (iDmSt s1) = true ->
+       g_cnwb g = Some (if checkNeeds (dmCheckV (iDmSt s1)) then revWb (sMem s2) (dmCheckV (iDmSt s1))
+                        else checkWbVal (dmCheckV (iDmSt s1)))) /\
+    (dmCheck (iDmSt s1) = true -> checkNeeds (dmCheckV (iDmSt s1)) = true ->
+       baseRevokable (rcBase (dmCheckV (iDmSt s1))) = true) /\
+    dmValid (iDmSt s1) = true.
 
   (* --- 9b. The Revoker (C8) --- *)
 
@@ -869,6 +942,7 @@ Section CoreRel.
     if dmLoadRp st then [ (ldPending (dmLoadRpV st)).(Fst) ]
     else if dmRevRq st then [ (dmRevRqV st).(Snd).(Fst).(Fst) ]
     else if dmRevRp st then [ (dmRevRpV st).(Snd).(Fst).(Fst) ]
+    else if dmCheck st then [ (dmCheckV st).(Snd).(Fst).(Fst) ]
     else [].
 
   Definition olderWriters (s1 : IState) : list (bits RegIdxSzReal) :=
@@ -1318,6 +1392,72 @@ Section CoreRel.
       rewrite HR, ?Hmv, ?Hrb; exact H.
   Qed.
 
+  (* The relation reads the impl revoker only through these registers (not `canProceed`) *)
+  Lemma iScanMsb_arch : forall s1, iScanMsb s1 = revScanAddr (iRevArch s1).
+  Proof. reflexivity. Qed.
+
+  Lemma iScanAddr_arch : forall s1, iScanAddr s1 = scanFull (revScanAddr (iRevArch s1)).
+  Proof. reflexivity. Qed.
+
+  (* `RevokerRel_frame` with only the revoker registers it reads *)
+  Lemma RevokerRel_frame_rv :
+    forall g g' (s1 s1' : IState) (s2 s2' : SState),
+      g_acc g' = g_acc g -> g_revOff g' = g_revOff g ->
+      iRevArch s1' = iRevArch s1 -> iRevPhase s1' = iRevPhase s1 -> iRevScanCap s1' = iRevScanCap s1 ->
+      iRevScanBase s1' = iRevScanBase s1 -> iRevSnoopHit s1' = iRevSnoopHit s1 ->
+      (forall L, lineContent specRegions (sMem s2') L = lineContent specRegions (sMem s2) L) ->
+      RevokerRel g s1 s2 -> RevokerRel g' s1' s2'.
+  Proof.
+    intros g g' s1 s1' s2 s2' Eacc Eoff ERA EPh ESC ESB ESH Hlc H.
+    assert (Hmv : forall a sz, memValAt (sMem s2') a sz = memValAt (sMem s2) a sz)
+      by (intros a sz; apply memValAt_ext; exact Hlc).
+    assert (Hrb : forall b, revBitOf (sMem s2') b = revBitOf (sMem s2) b)
+      by (intros b; apply revBitOf_ext; exact Hlc).
+    unfold RevokerRel, RevAccRel, RevCapOK, RevWriteOK in *; rewrite Eacc, Eoff.
+    revert H.
+    destruct (g_acc g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
+                          | rc [[|]|[|]|[|]|[|] rp|res] | [[|]|[|]|[|]|[|] rp|res]
+                          | [[|]|[|]|[|]|[|] rp|res] | addr pkt [[|]|[|]]];
+      intros H; cbv beta iota in *;
+      rewrite ?iScanAddr_arch in *; rewrite ?ERA, ?EPh, ?ESC, ?ESB, ?ESH, ?Hmv, ?Hrb; exact H.
+  Qed.
+
+  (* `AccessRel_frame` with only the revoker registers it reads *)
+  Lemma AccessRel_frame_rv :
+    forall g (s1 s1' : IState) (s2 s2' : SState),
+      (forall P, AllPorts P implRegions (iRegions s1') = AllPorts P implRegions (iRegions s1)) ->
+      iRevArch s1' = iRevArch s1 -> iRevPhase s1' = iRevPhase s1 -> iRevScanBase s1' = iRevScanBase s1 ->
+      iRevSnoopHit s1' = iRevSnoopHit s1 ->
+      iMemSt s1' = iMemSt s1 -> iRdBufs s1' = iRdBufs s1 ->
+      iRequester s1' = iRequester s1 -> iDmSt s1' = iDmSt s1 -> sSecond s2' = sSecond s2 ->
+      (forall L, lineContent specRegions (sMem s2') L = lineContent specRegions (sMem s2) L) ->
+      AccessRel g s1 s2 -> AccessRel g s1' s2'.
+  Proof.
+    intros g s1 s1' s2 s2' HP ERA EPh ESB ESH Emst Ebuf Ereq Edm Esec Hlc Ha.
+    assert (Erp : iReadRp s1' = iReadRp s1) by exact (f_equal (fun b => b.(Fst)) Ebuf).
+    assert (Erdy : iRpReady s1' = iRpReady s1) by exact (f_equal (fun b => b.(Snd).(Fst)) Ebuf).
+    assert (Hslw : forall pl v, specLoadWb (sMem s2') pl v = specLoadWb (sMem s2) pl v)
+      by (intros pl v; apply specLoadWb_ext; exact Hlc).
+    assert (Hrw : forall rc, revWb (sMem s2') rc = revWb (sMem s2) rc)
+      by (intros rc; apply revWb_ext; exact Hlc).
+    assert (Hmv : forall a sz, memValAt (sMem s2') a sz = memValAt (sMem s2) a sz)
+      by (intros a sz; apply memValAt_ext; exact Hlc).
+    unfold AccessRel in *.
+    revert Ha.
+    destruct (g_acc g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
+                          | rc [[|]|[|]|[|]|[|] rp|res] | [[|]|[|]|[|]|[|] rp|res]
+                          | [[|]|[|]|[|]|[|] rp|res] | addr pkt [[|]|[|]]];
+      intros Ha.
+    (* one step per sentence over the 45 cases (compile speed) *)
+    all: unfold WrStageRel, RdStageRel, PortsQuiet, PortsReadStaged, PortsReadOut, PortsWriteStaged,
+           revNotReading, dmNotAccessing in *.
+    all: cbv beta iota zeta in *.
+    all: rewrite ?iScanAddr_arch, ?iScanMsb_arch in Ha |- *.
+    all: rewrite ?HP, ?ERA, ?EPh, ?ESB, ?ESH, ?Hrw, ?Hmv, ?Emst, ?Erp, ?Erdy, ?Ereq, ?Edm, ?Esec.
+    all: try (lazymatch goal with |- context [specLoadWb] => setoid_rewrite Hslw end).
+    all: exact Ha.
+  Qed.
+
   (* A step that changes only the region states (impl) and the spec memory, keeping the
    * ports, the impl revoker, the line contents and (monotonically) the fetch view *)
   Lemma RefRelG_regions_frame :
@@ -1348,7 +1488,7 @@ Section CoreRel.
     - rewrite E2; exact He.
     - refine (AccessRel_frame g s1 s1' s2 s2' HP HR _ _ _ Edm _ Hlc Ha);
         [rewrite E1 | rewrite E1 | rewrite E1 | rewrite E2]; reflexivity.
-    - unfold CnwbRel in *; destruct Hc as [Hc1 Hc2]; rewrite Edm, Hrw; exact (conj Hc1 Hc2).
+    - unfold CnwbRel in *; destruct Hc as [Hc1 Hc2]; rewrite Edm, !Hrw; exact (conj Hc1 Hc2).
     - rewrite E1; exact Hd.
     - unfold FenceRel, NoFenceIWait in *; rewrite HP; rewrite E1; exact Hf.
     - rewrite E1; exact Hs.
@@ -1510,7 +1650,7 @@ Section CoreRel.
       + rewrite E1; reflexivity.
       + rewrite E1; reflexivity.
       + rewrite E2; reflexivity.
-    - unfold CnwbRel in *; destruct Hc as [Hc1 Hc2]; rewrite Edm, Hrw; exact (conj Hc1 Hc2).
+    - unfold CnwbRel in *; destruct Hc as [Hc1 Hc2]; rewrite Edm, !Hrw; exact (conj Hc1 Hc2).
     - rewrite E1; exact Hd.
     - unfold FenceRel; split; [| split].
       + rewrite E1; exact (proj1 Hf).
@@ -1581,7 +1721,7 @@ Section CoreRel.
       exact (FetchAllowedInst_fetchViewExt initLine fwcs specRegions _ _ _ _ Hsnap Hext (Hrp G1 e G2 rfe Hg Hch)).
     - unfold EagerRel in *; rewrite Ech; rewrite E2; exact He.
     - exact Hacc.
-    - unfold CnwbRel in *; rewrite Ecn, Ech, Eacc; destruct Hc as [Hc1 Hc2]; rewrite Edm, Hrw; exact (conj Hc1 Hc2).
+    - unfold CnwbRel in *; rewrite Ecn, Ech, Eacc; destruct Hc as [Hc1 Hc2]; rewrite Edm, !Hrw; exact (conj Hc1 Hc2).
     - unfold DmQueueRel in *; rewrite Ech, Eacc; rewrite E1; exact Hd.
     - unfold FenceRel, NoFenceIWait in *; rewrite Ech, HP; rewrite E1; exact Hf.
     - unfold ScoreRel in *; rewrite Ed2a; rewrite E1; exact Hs.
@@ -1651,7 +1791,7 @@ Section CoreRel.
       exact (FetchAllowedInst_fetchViewExt initLine fwcs specRegions _ _ _ _ Hsnap Hext (Hrp G1 e G2 rfe Hg Hch)).
     - unfold EagerRel in *; rewrite Ech; rewrite E2; exact He.
     - exact Hacc.
-    - unfold CnwbRel in *; rewrite Ecn, Ech, Eacc; destruct Hc as [Hc1 Hc2]; rewrite Edm, Hrw; exact (conj Hc1 Hc2).
+    - unfold CnwbRel in *; rewrite Ecn, Ech, Eacc; destruct Hc as [Hc1 Hc2]; rewrite Edm, !Hrw; exact (conj Hc1 Hc2).
     - unfold DmQueueRel in *; rewrite Ech, Eacc; rewrite E1; exact Hd.
     - unfold FenceRel, NoFenceIWait in *; rewrite Ech, HP by rqins_tac; rewrite E1; exact Hf.
     - unfold ScoreRel in *; rewrite Ed2a; rewrite E1; exact Hs.
@@ -1844,7 +1984,7 @@ Section CoreRel.
     - eapply AccessRel_ghost with (g := g); [reflexivity | reflexivity | reflexivity | | rewrite E1; exact Ha].
       intros q [e [G' [HG Hq]]]; exists e, (G' ++ [GTick])%list; split; [cbn [g_chain]; rewrite HG; reflexivity | exact Hq].
     - unfold CnwbRel in *; cbn [g_chain g_cnwb g_acc]; rewrite E1.
-      destruct Hc as [C1 [C2 [C3 C4]]]; split; [exact C1 | split; [exact C2 | split; [exact C3 |]]].
+      destruct Hc as [C1 [C2 [C3 [C4 C5]]]]; split; [exact C1 | split; [exact C2 | split; [exact C3 | split; [| exact C5]]]].
       intros Hlr Hcn Hat; apply ChainAvoids_app; [exact (C4 Hlr Hcn Hat) |].
       intros e [Hin | []]; discriminate Hin.
     - unfold DmQueueRel in *; cbn [g_chain g_acc]; rewrite chainReqs_snoc_tick; rewrite E1; exact Hd.
@@ -1903,8 +2043,8 @@ Section CoreRel.
       + refine (AccessRel_frame g s1 s1' s2 s2' _ _ _ _ _ _ Hsec _ Ha);
           [intros P | | | | | | intros L; rewrite Hsm]; rewrite ?E1; reflexivity.
     - unfold CnwbRel in *; cbn [g_chain g_cnwb g_acc]; rewrite E1, E2.
-      destruct Hc as [C1 [C2 [C3 _]]]; split; [exact C1 | split; [exact C2 | split; [exact C3 |]]].
-      intros _ _ _ e [].
+      destruct Hc as [C1 [C2 [C3 [_ C5]]]]; split; [exact C1 | split; [exact C2 | split; [exact C3 |]]].
+      split; [intros _ _ _ e [] | exact C5].
     - unfold DmQueueRel in *; cbn [g_chain g_acc]; rewrite Hnil in Hd; rewrite E1; exact Hd.
     - unfold FenceRel in *; cbn [g_chain]; rewrite Hnil in Hf; rewrite E1; exact Hf.
     - eapply ScoreRel_tick; [exact E1 | reflexivity | exact Hs].
@@ -2078,10 +2218,11 @@ Section CoreRel.
         rewrite Hm' in Hmq; discriminate Hmq.
       + exact (AccessRel_frame g s1 s1 s2 s2' (fun P => eq_refl) eq_refl eq_refl eq_refl eq_refl eq_refl Esec Hlc Ha).
     - unfold CnwbRel in *; unfold gPop; cbn [g_cnwb g_chain g_acc].
-      destruct Hc as [C1 [C2 [C3 C4]]].
-      split; [exact C1 | split; [| split; [exact C3 |]]].
+      destruct Hc as [C1 [C2 [C3 [C4 [C5 [C6 C7]]]]]].
+      split; [exact C1 | split; [| split; [exact C3 | split; [| split; [| exact (conj C6 C7)]]]]].
       + intros Hq; rewrite (revWb_ext (sMem s2) (sMem s2') _ Hlc); exact (C2 Hq).
       + intros Hlr Hcn Hat e Hin; rewrite Hch in C4; exact (C4 Hlr Hcn Hat e (or_intror Hin)).
+      + intros Hck; rewrite (revWb_ext (sMem s2) (sMem s2') _ Hlc); exact (C5 Hck).
     - unfold DmQueueRel in *; unfold gPop; cbn [g_chain g_acc]; cbv zeta in *.
       rewrite Hch, (filterReqs_pop it G' Hnb) in Hd; exact Hd.
     - unfold FenceRel in *; unfold gPop; cbn [g_chain].

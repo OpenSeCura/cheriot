@@ -354,7 +354,7 @@ Section LsfFenceI.
       split; [intros _; reflexivity |].
       split; [intros H; rewrite N2 in H; discriminate H |].
       split; [intros H; rewrite N2 in H; discriminate H |].
-      intros H; rewrite N1 in H; discriminate H.
+      split; [intros H; rewrite N1 in H; discriminate H |]. cnwb_fin.
     - (* DmQueueRel: the fence.i left both *)
       unfold DmQueueRel in Hd |- *; cbv zeta in Hd |- *; cbn [g_chain g_acc].
       rewrite Eb', (chainReqs_ticks _ Htk), Hnt.
@@ -429,7 +429,7 @@ Section LsfFenceI.
       opIsMem (mrOp q) = false -> opIsFenceI (mrOp q) = true ->
       exists s2', SemActions envS specActs s2 s2' /\ REL s1' s2'.
   Proof.
-    intros g s1 s1' s2 q rest Hg [Hfr Edmst Hnpw [env' [mr' [v' [Hsend Emem]]]] Efip Eep] Eb Hlrq Hm Hfi.
+    intros g s1 s1' s2 q rest Hg [Hfr Edmst Hnpw [env' [mr' [v' [Hsend Emem]]]] Efip Eep _] Eb Hlrq Hm Hfi.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm0 Hl Hrp He Ha Hc Hd Hf Hs Hfr0 Hw Hrk].
     apply andb_prop in Hnpw as [Hwr Hnpw]; apply negb_true_iff in Hwr.
     destruct (AccessRel_fenceI g s1 s2 Ha Hlrq Hwr Hnpw) as [Hsec Hacc3].
@@ -483,16 +483,21 @@ Section LsfFenceI.
 
   (* Milestone 5: dataMem's request stage. A store or a load enters the memory and a plain fence
    * leaves (the spec stutters); a fence.i commits. *)
-  Theorem stepOK_loadRqOrStoreOrFenceStage :
-    StepOK pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-           mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
-           clintS clint plicS plic initLine fwcs LSF.
+  (* What `lsf_char` gives *)
+  Definition LsfQ (s1 s1' : IState) : Prop :=
+    s1' = s1 \/
+    exists q rest, iDmBufA s1 = q :: rest /\ dmLoadRq (iDmStA s1) = true /\
+      ((mfMem q = true /\ maStore q = true /\ ACCF StoreAcc s1 s1' q) \/
+       (mfMem q = true /\ maStore q = false /\ ACCF LoadAcc s1 s1' q) \/
+       (mfMem q = false /\ fvFenceI q = false /\ ACCF PlainAcc s1 s1') \/
+       (mfMem q = false /\ fvFenceI q = true /\ FIACC s1 s1')).
+
+  Lemma lsf_of :
+    forall g (s1 s1' : IState) (s2 : SState),
+      LsfQ s1 s1' -> RELG g s1 s2 -> exists s2', SemActions envS specActs s2 s2' /\ REL s1' s2'.
   Proof.
-    intros s1 s1' s2 Hsem [g Hg].
-    pose proof Hg as Hg0; destruct Hg0 as [_ _ _ _ _ _ _ _ _ _ _ [_ [_ [_ [Hwd _]]]] _].
-    destruct (lsf_char pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
-                mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
-                _ s1 s1' _ Hwd Hsem) as [-> | [q [rest [Eb [Hlrq Hcase]]]]].
+    intros g s1 s1' s2 HQ Hg.
+    destruct HQ as [-> | [q [rest [Eb [Hlrq Hcase]]]]].
     - exists s2; split; [apply NilAction; reflexivity | exists g; exact Hg].
     - destruct Hcase as [[Hmm [Hst Hacc]] | [[Hmm [Hst Hacc]] | [[Hmm [Hfv Hacc]] | [Hmm [Hfv Hacc]]]]].
       + (* a store *)
@@ -513,5 +518,17 @@ Section LsfFenceI.
         eapply fenceI_commit; [exact Hg | exact Hacc | exact Eb | exact Hlrq | |].
         * rewrite <- mfMem_op; exact Hmm.
         * rewrite <- (fvFenceI_op q Hmm); exact Hfv.
+  Qed.
+
+  Theorem stepOK_loadRqOrStoreOrFenceStage :
+    StepOK pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+           mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
+           clintS clint plicS plic initLine fwcs LSF.
+  Proof.
+    intros s1 s1' s2 Hsem [g Hg].
+    pose proof Hg as Hg0; destruct Hg0 as [_ _ _ _ _ _ _ _ _ _ _ [_ [_ [_ [Hwd _]]]] _].
+    exact (lsf_of g s1 s1' s2 (lsf_char pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
+                                 _ s1 s1' _ Hwd Hsem) Hg).
   Qed.
 End LsfFenceI.

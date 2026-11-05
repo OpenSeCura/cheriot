@@ -903,7 +903,7 @@ Section ImplDevice.
        *    use the memory between two phases of the revoker. The Idle step waits until no store
        *    is pending, so the revoker moves on (to its next read, or to the epoch bump when the
        *    sweep is done) only after its last write has been accepted. *)
-      Definition implRevokerIdleStep (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
+      Definition implRevokerIdleBody (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
         LetA noPendingWrite : Bool <- implMemNoPendingWrite ;
         If #noPendingWrite Then (
           @implRevokerIdle
@@ -914,7 +914,7 @@ Section ImplDevice.
         ) ;
         Retv.
 
-      Definition implRevokerWaitCapRpStep (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
+      Definition implRevokerWaitCapRpBody (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
         @implRevokerWaitCapRp
           ty
           revConfig
@@ -923,26 +923,46 @@ Section ImplDevice.
           (implMemReadRp ReqRevoker)
           implMemDeqRp.
 
-      Definition implRevokerWaitRevBitRqStep (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
+      Definition implRevokerWaitRevBitRqBody (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
         @implRevokerWaitRevBitRq
           ty
           implMemTree
           (liftRevoker rev)
           (implReadRevBitRqFor ReqRevoker).
 
-      Definition implRevokerWaitRevBitRpStep (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
+      Definition implRevokerWaitRevBitRpBody (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
         @implRevokerWaitRevBitRp
           ty
           implMemTree
           (liftRevoker rev)
           (implGetDeqRevBitRpFor ReqRevoker).
 
-      Definition implRevokerWriteCapStep (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
+      Definition implRevokerWriteCapBody (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
         @implRevokerWriteCap
           ty
           implMemTree
           (liftRevoker rev)
           (fun addr stVal sz => implMemWrite addr stVal sz).
+
+      (* Each rule runs only in its own phase and only if no revoker rule has run in this cycle
+       * (`implRevokerGuard`) *)
+      Definition implRevokerIdleStep (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
+        @implRevokerGuard ty implMemTree (liftRevoker rev) (fun p => #p `? "Idle") (implRevokerIdleBody rev).
+
+      Definition implRevokerWaitCapRpStep (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
+        @implRevokerGuard ty implMemTree (liftRevoker rev) (fun p => #p `? "WaitCapRp") (implRevokerWaitCapRpBody rev).
+
+      Definition implRevokerWaitRevBitRqStep (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
+        @implRevokerGuard ty implMemTree (liftRevoker rev) (fun p => #p `? "WaitRevBitRq") (implRevokerWaitRevBitRqBody rev).
+
+      Definition implRevokerWaitRevBitRpStep (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
+        @implRevokerGuard ty implMemTree (liftRevoker rev) (fun p => #p `? "WaitRevBitRp") (implRevokerWaitRevBitRpBody rev).
+
+      Definition implRevokerWriteCapStep (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
+        @implRevokerGuard ty implMemTree (liftRevoker rev) (fun p => #p `? "WriteCap") (implRevokerWriteCapBody rev).
+
+      Definition implRevokerSetCanProceedStep (rev : @RevokerInstance implRevokerExtraChildren regions) : Action ty implMemTree (Bit 0) :=
+        @implRevokerSetCanProceed ty implMemTree (liftRevoker rev).
 
       Definition implRevokerSteps (rev : @RevokerInstance implRevokerExtraChildren regions) : list (Action ty implMemTree (Bit 0)) :=
         [ implRevokerIdleStep rev ;

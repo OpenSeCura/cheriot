@@ -42,9 +42,10 @@ Section FetchDecodeTreeHelpers.
 
   (* --- 1A. `implFetchTree` Updaters & Simplification Lemmas --- *)
 
+  (* the fetch PC is `fetchPcc.addr` *)
   Definition fetch_withPc (sf : TreeState ElemState fTree) (v : type Addr)
     : TreeState ElemState fTree :=
-    (v ,, sf.(Snd)).
+    ((sf.(Fst).(Fst) ,, (sf.(Fst).(Snd).(Fst) ,, (v ,, sf.(Fst).(Snd).(Snd).(Snd)))) ,, sf.(Snd)).
 
   Definition fetch_withPredEpoch (sf : TreeState ElemState fTree) (v : type Epoch)
     : TreeState ElemState fTree :=
@@ -134,6 +135,47 @@ Section FetchDecodeTreeHelpers.
     forall {env : Env fTree} (sf : TreeState ElemState fTree) P,
       evalActionPropGen env (@clearStraddle pcAddrInit fetchCapacity instCapacity type) sf P <->
       P (fetch_withStraddleOpt sf (getDefault (Option StraddleHalf))) Zmod.zero.
+  Proof. reflexivity. Qed.
+
+  (* fetch's copies of PCC and fenceIPending (item 3.4) *)
+  (* fetch's PCC (its `addr` is the fetch PC) and copy of fenceIPending (item 3.4) *)
+  Definition fetch_pccCopy (sf : TreeState ElemState fTree) : type FullECapWithTag :=
+    sf.(Fst).
+
+  Definition fetch_fipCopy (sf : TreeState ElemState fTree) : bool :=
+    sf.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).
+
+  Definition fetch_withPccCopy (sf : TreeState ElemState fTree) (v : type FullECapWithTag)
+    : TreeState ElemState fTree :=
+    (v ,, sf.(Snd)).
+
+  Definition fetch_withFipCopy (sf : TreeState ElemState fTree) (v : bool) : TreeState ElemState fTree :=
+    (sf.(Fst) ,, (sf.(Snd).(Fst) ,, (sf.(Snd).(Snd).(Fst) ,,
+      (sf.(Snd).(Snd).(Snd).(Fst) ,, (sf.(Snd).(Snd).(Snd).(Snd).(Fst) ,,
+      (sf.(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,, (sf.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,,
+      (v ,, sf.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd))))))))).
+
+  Lemma evalActionPropGen_readFetchPcc :
+    forall {env : Env fTree} (sf : TreeState ElemState fTree) P,
+      evalActionPropGen env (@readFetchPcc pcAddrInit fetchCapacity instCapacity type) sf P <-> P sf (fetch_pccCopy sf).
+  Proof. reflexivity. Qed.
+
+  Lemma evalActionPropGen_readFetchFenceIPending :
+    forall {env : Env fTree} (sf : TreeState ElemState fTree) P,
+      evalActionPropGen env (@readFetchFenceIPending pcAddrInit fetchCapacity instCapacity type) sf P <->
+      P sf (fetch_fipCopy sf).
+  Proof. reflexivity. Qed.
+
+  Lemma evalActionPropGen_writeFetchPcc :
+    forall {env : Env fTree} (val : type FullECapWithTag) (sf : TreeState ElemState fTree) P,
+      evalActionPropGen env (@writeFetchPcc pcAddrInit fetchCapacity instCapacity type val) sf P <->
+      P (fetch_withPccCopy sf val) Zmod.zero.
+  Proof. reflexivity. Qed.
+
+  Lemma evalActionPropGen_writeFetchFenceIPending :
+    forall {env : Env fTree} (val : bool) (sf : TreeState ElemState fTree) P,
+      evalActionPropGen env (@writeFetchFenceIPending pcAddrInit fetchCapacity instCapacity type val) sf P <->
+      P (fetch_withFipCopy sf val) Zmod.zero.
   Proof. reflexivity. Qed.
 
   Lemma evalActionPropGen_readFetchCanProceed :

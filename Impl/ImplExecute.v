@@ -33,7 +33,10 @@ Section ExecuteStage.
     Node "" [
       Leaf "execEpoch"     (EReg (Build_Reg Epoch (Some Zmod.zero))) ;
       Leaf "fenceIPending" (EReg (Build_Reg Bool (Some false))) ;
-      Leaf "canProceed"    (EReg (Build_Reg Bool (Some true)))
+      Leaf "canProceed"    (EReg (Build_Reg Bool (Some true))) ;
+      (* this stage's redirect: the new PCC (its `addr` is the next fetch PC), applied at the start
+       * of the next cycle (`applyRedirect`) *)
+      Leaf "redirect"      (EReg (Build_Reg (Option FullECapWithTag) (Some (getDefault _))))
     ].
 
   Definition pExecEpoch : RegPath implExecuteTree :=
@@ -69,11 +72,29 @@ Section ExecuteStage.
   Definition clearExecuteCanProceed (ty : Kind -> Type) : Action ty implExecuteTree (Bit 0) :=
     WriteReg pExecuteCanProceed (ConstBool false) Retv.
 
+  Definition pRedirect : RegPath implExecuteTree :=
+    Eval cbn in (getChildRegPathTree implExecuteTree "redirect").
+
+  Definition readRedirect (ty : Kind -> Type) : Action ty implExecuteTree (Option FullECapWithTag) :=
+    ReadReg "redirect" pRedirect (fun v => Return #v).
+
+  Definition redirectPending (ty : Kind -> Type) : Action ty implExecuteTree Bool :=
+    ReadReg "redirect" pRedirect (fun v => Return (##v`"valid")).
+
+  Definition setRedirect (ty : Kind -> Type) (pcc : ty FullECapWithTag) : Action ty implExecuteTree (Bit 0) :=
+    WriteReg pRedirect (mkSome #pcc) Retv.
+
+  Definition clearRedirect (ty : Kind -> Type) : Action ty implExecuteTree (Bit 0) :=
+    WriteReg pRedirect ConstDef Retv.
+
   Definition implExecuteIfc (ty : Kind -> Type) : @ExecuteIfc ty := {|
     executeTree             := implExecuteTree ;
     execute_readExecEpoch   := @readExecEpoch ty ;
     execute_readFenceIPend  := @readFenceIPending ty ;
-    execute_clearFenceIPend := @clearFenceIPending ty
+    execute_clearFenceIPend := @clearFenceIPending ty ;
+    execute_writeExecEpoch  := @writeExecEpoch ty ;
+    execute_readRedirect    := @readRedirect ty ;
+    execute_clearRedirect   := @clearRedirect ty
   |}.
 
   Variable pcAddrInit : Z.
@@ -137,14 +158,17 @@ Section ExecuteStage.
    *                 accepted store is still waiting in the memory.
    * - Action:       Dequeue d2aEntry { aluIn, predPc, execEpoch } from
    *                 decodeToAluBuf.
-   *                 - If execEpoch != currExecEpoch: drop entry and clear its
-   *                   destination GPR wait bit.
-   *                 - If execEpoch == currExecEpoch: run AluRouting, Alu, and
+   *                 - If execEpoch != currExecEpoch + redirectPending: drop entry
+   *                   and clear its destination GPR wait bit.
+   *                 - Otherwise: run AluRouting, Alu, and
    *                   dispatch to executeInterrupt, executeSequential, or
    *                   executeNonSequential; update branch predictor; on
    *                   ControlFlowAddrECap or committedNextPc != predPc,
-   *                   advance execEpoch, clear straddleOpt, and redirect
-   *                   fetchPc; clear destination GPR wait bit when not
+   *                   set `redirect` (the new PCC); `applyRedirect`
+   *                   applies it at the start of the next cycle (fetchPcc,
+   *                   whose addr is the fetch PC; execEpoch + 1; no
+   *                   straddle); clear
+   *                   destination GPR wait bit when not
    *                   deferred, or enqueue MemFence into dataMemIfc and
    *                   Mul/Div into mulDivIfc.
    * ========================================================================= *)
@@ -161,6 +185,9 @@ Section ExecuteStage.
       LetA mulIn_isFull     : Bool                    <- liftAction np_mulDiv (mulDivIfc ty).(mulDiv_isFullMul) ;
       LetA divIn_isFull     : Bool                    <- liftAction np_mulDiv (mulDivIfc ty).(mulDiv_isFullDiv) ;
       LetA currExecEpoch    : Epoch                   <- liftAction np_execute (@readExecEpoch ty) ;
+      (* A redirect of this stage not applied yet (`applyRedirect`) already counts: its entries are
+       * stale. In the pipeline `applyRedirect` runs first in the cycle, so this is never set here. *)
+      LetA redirPending     : Bool                    <- liftAction np_execute (@redirectPending ty) ;
       LetA pcc              : FullECapWithTag         <- liftAction np_rf (readRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal))) ;
       LetA meip             : Bool                    <- liftAction np_mem meipAct ;
       LetA mtip             : Bool                    <- liftAction np_mem mtipAct ;
@@ -170,6 +197,8 @@ Section ExecuteStage.
       Let  pkg            : AluInInstGroup   <- ##d2aEntry`"aluIn" ;
       Let  predPc         : Addr             <- ##d2aEntry`"predPc" ;
       Let  entryExecEpoch : Epoch            <- ##d2aEntry`"execEpoch" ;
+      Let  pendingEpoch   : Epoch            <- FromBit Epoch (ToBit (k := Bool) #redirPending) ;
+      Let  effExecEpoch   : Epoch            <- Add [ #currExecEpoch ; #pendingEpoch ] ;
 
       Let  instBits        : Inst             <- ##pkg`"inst" ;
       Let  writesCd        : Bool             <- ##pkg`"writesCd" ;
@@ -208,7 +237,7 @@ Section ExecuteStage.
       Let  waitFalse : Bool <- ConstBool false ;
 
       If (##d2aHead`"valid") Then (
-        If (Not (Eq #entryExecEpoch #currExecEpoch)) Then (
+        If (Not (Eq #entryExecEpoch #effExecEpoch)) Then (
           Act (liftAction np_decode (decodeIfc ty).(decode_deq)) ;
           liftAction np_waitBits
             (@setDstWaitBits ty
@@ -220,13 +249,10 @@ Section ExecuteStage.
               Act (liftAction np_decode (decodeIfc ty).(decode_deq)) ;
               LetA execOut         : ExecuteOut      <- liftAction np_rf (executeInterrupt pcc meip mtip) ;
               Let  nextPcc         : FullECapWithTag <- ##execOut`"nextPcc" ;
-              Let  committedNextPc : Addr            <- ##nextPcc`"addr" ;
               Act (liftAction np_rf (writeRegsList gprPathsWithKind ($0 : Expr ty (Bit RegIdxSzReal)) #nextPcc)) ;
 
-              Let nextExecEpoch : Epoch <- Add [ #currExecEpoch ; $1 ] ;
-              Act (liftAction np_execute (@writeExecEpoch ty nextExecEpoch)) ;
-              Act (liftAction np_fetch (fetchIfc ty).(fetch_clearStraddle)) ;
-              Act (liftAction np_fetch ((fetchIfc ty).(fetch_writeFetchPc) committedNextPc)) ;
+              (* the redirect takes effect in the next cycle (`applyRedirect`) *)
+              Act (liftAction np_execute (@setRedirect ty nextPcc)) ;
 
               liftAction np_waitBits
                 (@setDstWaitBits ty
@@ -285,11 +311,9 @@ Section ExecuteStage.
                   liftAction np_bp (withInstIfc.(withInst_updException) pcAddr)
                 ) ;
 
+                (* the redirect takes effect in the next cycle (`applyRedirect`) *)
                 If (Or [ #isExc ; #capChanged ; ##execOut`"isFenceIRq" ; Not (Eq #committedNextPc #predPc) ]) Then (
-                  Let nextExecEpoch : Epoch <- Add [ #currExecEpoch ; $1 ] ;
-                  Act (liftAction np_execute (@writeExecEpoch ty nextExecEpoch)) ;
-                  Act (liftAction np_fetch (fetchIfc ty).(fetch_clearStraddle)) ;
-                  liftAction np_fetch ((fetchIfc ty).(fetch_writeFetchPc) committedNextPc)
+                  liftAction np_execute (@setRedirect ty nextPcc)
                 ) ;
 
                 If (##execOut`"isFenceIRq") Then (

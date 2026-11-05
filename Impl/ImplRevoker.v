@@ -48,7 +48,10 @@ Section ImplRevoker.
     [ Leaf "revPhase"         (EReg (Build_Reg RevPhase (Some (getDefault _)))) ;
       Leaf "revScanCap"       (EReg (Build_Reg FullCapWithTag (Some (getDefault _)))) ;
       Leaf "revScanBase"      (EReg (Build_Reg (Bit (AddrSz + 1)) (Some Zmod.zero))) ;
-      Leaf "revStoreSnoopHit" (EReg (Build_Reg Bool (Some false))) ].
+      Leaf "revStoreSnoopHit" (EReg (Build_Reg Bool (Some false))) ;
+      (* At most one revoker step per cycle: a step clears it when its phase matches;
+       * `implRevokerSetCanProceed` (end of the cycle) sets it again *)
+      Leaf "canProceed"       (EReg (Build_Reg Bool (Some true))) ].
 
   Definition implRevokerTree : Tree Elem :=
     Node "revoker" (revokerChildren implRevokerExtraChildren).
@@ -65,6 +68,7 @@ Section ImplRevoker.
   Local Definition pRevScanCap         : RegPath implRevokerTree := Eval cbv in (getChildRegPathTree implRevokerTree "revScanCap").
   Local Definition pRevScanBase        : RegPath implRevokerTree := Eval cbv in (getChildRegPathTree implRevokerTree "revScanBase").
   Local Definition pRevStoreSnoopHit   : RegPath implRevokerTree := Eval cbv in (getChildRegPathTree implRevokerTree "revStoreSnoopHit").
+  Local Definition pCanProceed         : RegPath implRevokerTree := Eval cbv in (getChildRegPathTree implRevokerTree "canProceed").
 
   Section Ty.
     Variable ty : Kind -> Type.
@@ -102,6 +106,23 @@ Section ImplRevoker.
     Variable readRevBitRq   : ty (Bit (AddrSz + 1)) -> Action ty memTree Bool.
     Variable getDeqRevBitRp : ty (Bit (AddrSz + 1)) -> Action ty memTree (Option Bool).
     Variable writeMem       : ty Addr -> ty FullCapWithTag -> ty (Bit LgLgNumBytesFullCapSz) -> Action ty memTree Bool.
+
+    (* A revoker step runs only if no other revoker step has run in this cycle (`canProceed`) and
+     * the phase is its own (`isPhase`); it then clears `canProceed`, whether or not `step` does
+     * anything, so the step that runs is determined by the phase at the start of the cycle *)
+    Definition implRevokerGuard (isPhase : ty RevPhase -> Expr ty Bool) (step : Action ty memTree (Bit 0))
+      : Action ty memTree (Bit 0) :=
+      LetA cp       : Bool     <- revAct (ReadReg "canProceed" pCanProceed (fun v => Return #v)) ;
+      LetA revPhase : RevPhase <- revAct (ReadReg "revPhase" pRevPhase (fun v => Return #v)) ;
+      If (And [ #cp ; isPhase revPhase ]) Then (
+        Act (revAct (WriteReg pCanProceed (ConstBool false) Retv)) ;
+        step
+      ) ;
+      Retv.
+
+    (* End of the cycle: the revoker may take a step in the next cycle *)
+    Definition implRevokerSetCanProceed : Action ty memTree (Bit 0) :=
+      revAct (WriteReg pCanProceed (ConstBool true) Retv).
 
     Local Definition advanceScanAndReset (nextScanAddrMsb : ty (Bit TagAddrWidth)) : Action ty memTree (Bit 0) :=
       Act (revAct (WriteReg pScanAddr #nextScanAddrMsb Retv)) ;

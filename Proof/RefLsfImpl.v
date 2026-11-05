@@ -80,7 +80,7 @@ Definition snoopRev (addr : type Addr) (sz : type (Bit LgLgNumBytesFullCapSz)) (
    (x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,,
    (x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,,
    (orb (snoopHitsB addr sz x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst))
-        x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,, tt)))))))))))).
+        x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,, (x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,, tt))))))))))))).
 
 Lemma revEta :
   forall x : TS implRevokerTree,
@@ -90,8 +90,8 @@ Lemma revEta :
          (x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,,
          (x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,,
          (x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,,
-         (x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,, tt)))))))))))).
-Proof. intros [a [b [c [d [e [f [g [h [i [j [k [l []]]]]]]]]]]]]; reflexivity. Qed.
+         (x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,, (x.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) ,, tt))))))))))))).
+Proof. intros [a [b [c [d [e [f [g [h [i [j [k [l [m []]]]]]]]]]]]]]; reflexivity. Qed.
 
 Lemma fvFenceI_impl :
   forall q b,
@@ -237,17 +237,17 @@ Section WriteMem.
     rewrite ?setRevR_setRevR in H.
 
   Lemma writeMem_char :
-    forall env addr v sz mr mst mrq mrp mrdy m' r b t c e ist ir sa st ph sc sb sh,
-      revOfRA mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, tt)))))))))))) ->
+    forall env addr v sz mr mst mrq mrp mrdy m' r b t c e ist ir sa st ph sc sb sh cp,
+      revOfRA mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, (cp ,, tt))))))))))))) ->
       SemAction env (@implWriteMem implRegions type revI addr v sz) (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) m' r ->
       (andb (msIdle mst) (noPortWriteB implRegions mr) = false /\ m' = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) /\ r = false) \/
       (msIdle mst = true /\ noPortWriteB implRegions mr = true /\ r = true /\
        exists st',
          m' = (setRevRA mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,,
-                 (orb (snoopHitsB addr sz sa) sh ,, tt)))))))))))) ,, (st' ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) /\
+                 (orb (snoopHitsB addr sz sa) sh ,, (cp ,, tt))))))))))))) ,, (st' ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) /\
          msWriteRq st' = true /\ msWriteRqV st' = stepOf false addr sz (disassembleW addr v sz)).
   Proof.
-    intros env addr v sz mr mst mrq mrp mrdy m' r b t c e ist ir sa st ph sc sb sh Ex H.
+    intros env addr v sz mr mst mrq mrp mrdy m' r b t c e ist ir sa st ph sc sb sh cp Ex H.
     rewrite SemAction_iff_evalActionPropGen in H.
     unfold implWriteMem, implMemWrite, implMemNoPortWriteRq in H.
     cbn [evalActionPropGen] in H.
@@ -276,7 +276,7 @@ Section WriteMem.
          msWriteRq st' = true /\ msWriteRqV st' = stepOf false addr sz (disassembleW addr v sz)).
   Proof.
     intros env addr v sz [mr [mst [mrq [mrp [mrdy []]]]]] m' r H.
-    exact (writeMem_char env addr v sz mr mst mrq mrp mrdy m' r _ _ _ _ _ _ _ _ _ _ _ _ (revEta (revOfRA mr)) H).
+    exact (writeMem_char env addr v sz mr mst mrq mrp mrdy m' r _ _ _ _ _ _ _ _ _ _ _ _ _ (revEta (revOfRA mr)) H).
   Qed.
 End WriteMem.
 
@@ -447,7 +447,8 @@ Section LsfImpl.
     fa_mem  : exists env' mr' v', SemAction env' (@implRegionsSendFenceIRq type implRegions) (iRegionsA s1) mr' v' /\
                 iMemA s1' = (mr' ,, (iMemA s1).(Snd)) ;
     fa_fip  : iFenceIPendingA s1' = false ;
-    fa_ep   : iExecEpochA s1' = iExecEpochA s1
+    fa_ep   : iExecEpochA s1' = iExecEpochA s1 ;
+    fa_redir : ex_redirect (iExecA s1') = ex_redirect (iExecA s1)
   }.
 
   Lemma lsf_char :
@@ -549,7 +550,7 @@ Section LsfImpl.
           cbn [evalActionPropGen] in H; destruct H as [H _]; subst s1'.
           right; exists q, rest; split; [exact El | split; [exact Hlrq |]].
           right; right; right; split; [exact Em | split; [exact Ef |]].
-          split; [split; reflexivity | reflexivity | exact Hnw | | reflexivity | reflexivity].
+          split; [split; reflexivity | reflexivity | exact Hnw | | reflexivity | reflexivity | reflexivity].
           exists env', mr', v'; split; [exact Hs | reflexivity].
       + pose proof (fvFenceI_impl q false Hf) as Ef.
         rewrite evalActionPropGen_liftAction in H; cbn [mem_fence_req implMemIfc] in H.
