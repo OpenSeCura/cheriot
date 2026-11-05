@@ -562,27 +562,53 @@ Section RevSteps.
       + intros L; reflexivity.
   Qed.
 
-  (* A guarded revoker rule (`implRevokerGuard`, `guard_char`) refines the spec if its body does *)
+  Local Abbreviation memPhaseA := (memPhase pre post revBase revPfB revPfA).
+
+  (* `StepOK` for a revoker rule body, from states in which the revoker is in phase `isPh` (the
+   * body runs only under `implRevokerGuard`, which checks it) *)
+  Definition StepOKPh (isPh : type RevPhase -> bool)
+    (act : Action type (ImplTree pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                          mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions) (Bit 0)) : Prop :=
+    forall (s1 s1' : IState) (s2 : SState),
+      isPh (memPhaseA (iMemA s1)) = true ->
+      SemAction (implEnv pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                         mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions initLine fwcs)
+                act s1 s1' Zmod.zero ->
+      RefRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+             mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
+             clintS clint plicS plic initLine fwcs s1 s2 ->
+      exists s2', SemActions (specEnv pcAddrInit specRegions initLine fwcs)
+                             (@spec pcAddrInit config specRegions clintS (revSpecOf pre post revBase revPfB revPfA) plicS type)
+                             s2 s2' /\
+                  RefRel pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                         mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
+                         clintS clint plicS plic initLine fwcs s1' s2'.
+
+  (* A guarded revoker rule (`implRevokerGuard`, `guard_char`) refines the spec if its body does
+   * from states in the rule's phase *)
   Lemma stepOK_guarded :
-    forall (step body : Action type (implMemTree implRegions) (Bit 0)),
+    forall (step body : Action type (implMemTree implRegions) (Bit 0)) (isPh : type RevPhase -> bool),
       (forall env m m' v, SemAction env step m m' v ->
-         m' = m \/ SemAction env body (memWithCp pre post revBase revPfB revPfA false m) m' Zmod.zero) ->
-      STEPOK (liftAction NPMI body) -> STEPOK (liftAction NPMI step).
+         m' = m \/ (isPh (memPhaseA m) = true /\
+                    SemAction env body (memWithCp pre post revBase revPfB revPfA false m) m' Zmod.zero)) ->
+      StepOKPh isPh (liftAction NPMI body) -> STEPOK (liftAction NPMI step).
   Proof.
-    intros step body Hch Hbody s1 s1' s2 Hsem [g Hg].
+    intros step body isPh Hch Hbody s1 s1' s2 Hsem [g Hg].
     apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
     rewrite iMem_read in Hm'.
-    destruct (Hch _ _ _ _ Hm') as [-> | Hb].
+    destruct (Hch _ _ _ _ Hm') as [-> | [Hp Hb]].
     - exists s2; split; [apply NilAction; reflexivity |].
       exists g; assert (Es : s1' = s1) by (rewrite E1; reflexivity); rewrite Es; exact Hg.
     - destruct (iMemA s1) as [mr rest] eqn:EM.
       destruct (revOfRA mr) as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh [cp []]]]]]]]]]]]]] eqn:Ex.
+      assert (Hp' : isPh ph = true) by (unfold memPhase in Hp; cbn [Fst] in Hp; rewrite Ex in Hp; exact Hp).
       assert (Em1 : memWithCp pre post revBase revPfB revPfA false (mr ,, rest) =
                     (setRevRA mr (mkRev12 b t c e ist ir sa st ph sc sb sh false) ,, rest)).
       { unfold memWithCp, revWithCp; cbn [Fst Snd]; rewrite Ex; reflexivity. }
       rewrite Em1 in Hb.
       apply (Hbody (writeSubTreeState NPMI s1 (setRevRA mr (mkRev12 b t c e ist ir sa st ph sc sb sh false) ,, rest))
                    s1' s2).
+      + rewrite iMem_write; unfold memPhase; cbn [Fst]; rewrite revOfR_setRevR; exact Hp'.
       + apply SemAction_liftAction_iff; exists m'; split.
         * rewrite iMem_read, iMem_write.
           rewrite SemAction_iff_evalActionPropGen in Hb |- *.
@@ -594,17 +620,19 @@ Section RevSteps.
   (* --- 3c. WaitRevBitRq: the rev-bit read is issued; the spec stutters --- *)
 
   Lemma stepOK_waitRevBitRq_body :
-    STEPOK (liftAction NPMI (@implRevokerWaitRevBitRqBody config implRegions type revI)).
+    StepOKPh rpWaitRevBitRq (liftAction NPMI (@implRevokerWaitRevBitRqBody config implRegions type revI)).
   Proof.
-    intros s1 s1' s2 Hsem [g Hg].
+    intros s1 s1' s2 Hph0 Hsem [g Hg].
     apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
     rewrite iMem_read in Hm'.
     remember (iMemA s1) as m eqn:EM; symmetry in EM.
     destruct m as [mr [mst [mrq [mrp [mrdy []]]]]].
     remember (revOfRA mr) as x eqn:Ex; symmetry in Ex.
     destruct x as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh [cp []]]]]]]]]]]]]].
+    assert (Hph1 : rpWaitRevBitRq ph = true)
+      by (rewrite ?EM in Hph0; unfold memPhase in Hph0; cbn [Fst] in Hph0; rewrite Ex in Hph0; exact Hph0).
     destruct (waitRevBitRq_char config pre post revBase revPfB revPfA _ mr mst mrq mrp mrdy m' _
-                b t c e ist ir sa st ph sc sb sh cp Ex Hm')
+                b t c e ist ir sa st ph sc sb sh cp Ex Hph1 Hm')
       as [-> | [Hph [Hidle [Hnpw [st' [rq' [ph' [-> [Hrq [HrqV [Hreq Hph']]]]]]]]]]].
     - exists s2; split; [apply NilAction; reflexivity |].
       exists g; replace s1' with s1; [exact Hg |].
@@ -737,9 +765,9 @@ Section RevSteps.
   (* --- 3d. WriteCap: the untagged cap is handed to the memory, or the position is retried --- *)
 
   Lemma stepOK_writeCap_body :
-    STEPOK (liftAction NPMI (@implRevokerWriteCapBody implRegions type revI)).
+    StepOKPh rpWriteCap (liftAction NPMI (@implRevokerWriteCapBody implRegions type revI)).
   Proof.
-    intros s1 s1' s2 Hsem [g Hg].
+    intros s1 s1' s2 Hph0 Hsem [g Hg].
     apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
     rewrite iMem_read in Hm'.
     remember (iMemA s1) as m eqn:EM; symmetry in EM.
@@ -748,8 +776,10 @@ Section RevSteps.
     destruct x as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh [cp []]]]]]]]]]]]]].
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     assert (ER : iRevA s1 = mkRev12 b t c e ist ir sa st ph sc sb sh cp) by (rewrite iRev_eq, iRegions_eq, EM; exact Ex).
+    assert (Hph1 : rpWriteCap ph = true)
+      by (rewrite ?EM in Hph0; unfold memPhase in Hph0; cbn [Fst] in Hph0; rewrite Ex in Hph0; exact Hph0).
     destruct (writeCap_char pre post revBase revPfB revPfA _ mr mst mrq mrp mrdy m' _
-                b t c e ist ir sa st ph sc sb sh cp Ex Hm')
+                b t c e ist ir sa st ph sc sb sh cp Ex Hph1 Hm')
       as [-> | [[Hph [Hsh [ph' [Hph' ->]]]] | [Hph [Hsh [Hidle [Hnpw [st' [ph' [-> [Hwr [HwrV Hph']]]]]]]]]]].
     - exists s2; split; [apply NilAction; reflexivity |].
       exists g; replace s1' with s1; [exact Hg |].
@@ -1075,17 +1105,19 @@ Section RevSteps.
   Qed.
 
   Lemma stepOK_idle_body :
-    STEPOK (liftAction NPMI (@implRevokerIdleBody implRegions type revI)).
+    StepOKPh rpIdle (liftAction NPMI (@implRevokerIdleBody implRegions type revI)).
   Proof.
-    intros s1 s1' s2 Hsem [g Hg].
+    intros s1 s1' s2 Hph0 Hsem [g Hg].
     apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
     rewrite iMem_read in Hm'.
     remember (iMemA s1) as m eqn:EM; symmetry in EM.
     destruct m as [mr [mst [mrq [mrp [mrdy []]]]]].
     remember (revOfRA mr) as x eqn:Ex; symmetry in Ex.
     destruct x as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh [cp []]]]]]]]]]]]]].
+    assert (Hph1 : rpIdle ph = true)
+      by (rewrite ?EM in Hph0; unfold memPhase in Hph0; cbn [Fst] in Hph0; rewrite Ex in Hph0; exact Hph0).
     destruct (idle_char pre post revBase revPfB revPfA _ mr mst mrq mrp mrdy m' _
-                b t c e ist ir sa st ph sc sb sh cp Ex Hm')
+                b t c e ist ir sa st ph sc sb sh cp Ex Hph1 Hm')
       as [-> | [[Hnp [Hph [Hodd [Hnd [Hidle [st' [rq' [ph' [-> [Hrq [HrqV [Hreq Hph']]]]]]]]]]]]
               | [[Hnp [Hph [Hodd [Hdone ->]]]]
               | [[Hnp [Hph [Hev [Hc ->]]]]
@@ -1303,17 +1335,19 @@ Section RevSteps.
   Qed.
 
   Lemma stepOK_waitCapRp_body :
-    STEPOK (liftAction NPMI (@implRevokerWaitCapRpBody config implRegions type revI)).
+    StepOKPh rpWaitCapRp (liftAction NPMI (@implRevokerWaitCapRpBody config implRegions type revI)).
   Proof.
-    intros s1 s1' s2 Hsem [g Hg].
+    intros s1 s1' s2 Hph0 Hsem [g Hg].
     apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
     rewrite iMem_read in Hm'.
     remember (iMemA s1) as m eqn:EM; symmetry in EM.
     destruct m as [mr [mst [mrq [mrp [mrdy []]]]]].
     remember (revOfRA mr) as x eqn:Ex; symmetry in Ex.
     destruct x as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh [cp []]]]]]]]]]]]]].
+    assert (Hph1 : rpWaitCapRp ph = true)
+      by (rewrite ?EM in Hph0; unfold memPhase in Hph0; cbn [Fst] in Hph0; rewrite Ex in Hph0; exact Hph0).
     destruct (waitCapRp_char config pre post revBase revPfB revPfA _ mr mst mrq mrp mrdy m' _
-                b t c e ist ir sa st ph sc sb sh cp Ex Hm')
+                b t c e ist ir sa st ph sc sb sh cp Ex Hph1 Hm')
       as [-> | [[Hph [Hrdy [Hreq [Hck [st' [ph' [-> [Hidle' Hph']]]]]]]]
               | [Hph [Hrdy [Hreq [Hck [st' [ph' [-> [Hidle' Hph']]]]]]]]]].
     - (* nothing changes *)
@@ -1482,17 +1516,19 @@ Section RevSteps.
   Qed.
 
   Lemma stepOK_waitRevBitRp_body :
-    STEPOK (liftAction NPMI (@implRevokerWaitRevBitRpBody config implRegions type revI)).
+    StepOKPh rpWaitRevBitRp (liftAction NPMI (@implRevokerWaitRevBitRpBody config implRegions type revI)).
   Proof.
-    intros s1 s1' s2 Hsem [g Hg].
+    intros s1 s1' s2 Hph0 Hsem [g Hg].
     apply SemAction_liftAction_iff in Hsem as [m' [Hm' E1]].
     rewrite iMem_read in Hm'.
     remember (iMemA s1) as m eqn:EM; symmetry in EM.
     destruct m as [mr [mst [mrq [mrp [mrdy []]]]]].
     remember (revOfRA mr) as x eqn:Ex; symmetry in Ex.
     destruct x as [b [t [c [e [ist [ir [sa [st [ph [sc [sb [sh [cp []]]]]]]]]]]]]].
+    assert (Hph1 : rpWaitRevBitRp ph = true)
+      by (rewrite ?EM in Hph0; unfold memPhase in Hph0; cbn [Fst] in Hph0; rewrite Ex in Hph0; exact Hph0).
     destruct (waitRevBitRp_char config pre post revBase revPfB revPfA _ mr mst mrq mrp mrdy m' _
-                b t c e ist ir sa st ph sc sb sh cp Ex Hm')
+                b t c e ist ir sa st ph sc sb sh cp Ex Hph1 Hm')
       as [-> | [Hph [Hrdy [Hreq [st' [ph' [Hidle' Hcases]]]]]]].
     - (* nothing changes *)
       exists s2; split; [apply NilAction; reflexivity |].
@@ -1604,7 +1640,7 @@ Section RevSteps.
     STEPOK (@implRevokerWaitRevBitRqStepSys pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions revI type).
   Proof.
-    apply (stepOK_guarded _ (@implRevokerWaitRevBitRqBody config implRegions type revI)); [| exact stepOK_waitRevBitRq_body].
+    apply (stepOK_guarded _ (@implRevokerWaitRevBitRqBody config implRegions type revI) rpWaitRevBitRq); [| exact stepOK_waitRevBitRq_body].
     intros env m m' v H; exact (GCH env _ _ m m' v H).
   Qed.
 
@@ -1612,7 +1648,7 @@ Section RevSteps.
     STEPOK (@implRevokerWriteCapStepSys pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions revI type).
   Proof.
-    apply (stepOK_guarded _ (@implRevokerWriteCapBody implRegions type revI)); [| exact stepOK_writeCap_body].
+    apply (stepOK_guarded _ (@implRevokerWriteCapBody implRegions type revI) rpWriteCap); [| exact stepOK_writeCap_body].
     intros env m m' v H; exact (GCH env _ _ m m' v H).
   Qed.
 
@@ -1620,7 +1656,7 @@ Section RevSteps.
     STEPOK (@implRevokerIdleStepSys pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions revI type).
   Proof.
-    apply (stepOK_guarded _ (@implRevokerIdleBody implRegions type revI)); [| exact stepOK_idle_body].
+    apply (stepOK_guarded _ (@implRevokerIdleBody implRegions type revI) rpIdle); [| exact stepOK_idle_body].
     intros env m m' v H; exact (GCH env _ _ m m' v H).
   Qed.
 
@@ -1628,7 +1664,7 @@ Section RevSteps.
     STEPOK (@implRevokerWaitCapRpStepSys pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions revI type).
   Proof.
-    apply (stepOK_guarded _ (@implRevokerWaitCapRpBody config implRegions type revI)); [| exact stepOK_waitCapRp_body].
+    apply (stepOK_guarded _ (@implRevokerWaitCapRpBody config implRegions type revI) rpWaitCapRp); [| exact stepOK_waitCapRp_body].
     intros env m m' v H; exact (GCH env _ _ m m' v H).
   Qed.
 
@@ -1636,7 +1672,7 @@ Section RevSteps.
     STEPOK (@implRevokerWaitRevBitRpStepSys pcAddrInit fetchCapacity instCapacity decodeCapacity
               dataMemCapacity mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions revI type).
   Proof.
-    apply (stepOK_guarded _ (@implRevokerWaitRevBitRpBody config implRegions type revI)); [| exact stepOK_waitRevBitRp_body].
+    apply (stepOK_guarded _ (@implRevokerWaitRevBitRpBody config implRegions type revI) rpWaitRevBitRp); [| exact stepOK_waitRevBitRp_body].
     intros env m m' v H; exact (GCH env _ _ m m' v H).
   Qed.
 

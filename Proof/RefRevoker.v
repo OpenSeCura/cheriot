@@ -296,6 +296,7 @@ Section RevLens.
   Lemma waitRevBitRq_char :
     forall env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh cp,
       revOfR mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, (cp ,, tt))))))))))))) ->
+      rpWaitRevBitRq ph = true ->
       SemAction env (@implRevokerWaitRevBitRqBody config implRegions type revI)
         (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) m' v ->
       m' = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) \/
@@ -306,13 +307,10 @@ Section RevLens.
          msReadRq st' = true /\ msReadRqV st' = stepOf false (revByteAddrOf config sb) byteSz (getDefault CapPacket) /\
          isReqRevoker rq' = true /\ rpWaitRevBitRp ph' = true).
   Proof.
-    intros env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh cp Ex H.
+    intros env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh cp Ex Eph H.
     rewrite SemAction_iff_evalActionPropGen in H.
     unfold implRevokerWaitRevBitRqBody, implRevokerWaitRevBitRq, ImplDevice.liftRevoker in H.
     cbn [evalActionPropGen] in H.
-    rev_lens H Ex.
-    match type of H with context [if ?c then _ else _] => destruct c eqn:Eph end.
-    2: { left; destruct H as [H _]; symmetry; exact H. }
     rev_lens H Ex.
     unfold implReadRevBitRqFor, implMemReadRq, implMemNoPortWriteRq in H.
     cbn [evalActionPropGen] in H.
@@ -334,6 +332,7 @@ Section RevLens.
   Lemma idle_char :
     forall env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh cp,
       revOfR mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, (cp ,, tt))))))))))))) ->
+      rpIdle ph = true ->
       SemAction env (@implRevokerIdleBody implRegions type revI) (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) m' v ->
       m' = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) \/
       (andb (negb (msWriteRq mst)) (noPortWriteB implRegions mr) = true /\ rpIdle ph = true /\
@@ -356,7 +355,7 @@ Section RevLens.
        m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (false ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, (cp ,, tt))))))))))))) ,,
              (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt)))))).
   Proof.
-    intros env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh cp Ex H.
+    intros env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh cp Ex Eph H.
     rewrite SemAction_iff_evalActionPropGen in H.
     unfold implRevokerIdleBody, implMemNoPendingWrite, implMemNoWriteRq, implMemNoPortWriteRq in H.
     cbn [evalActionPropGen] in H.
@@ -367,9 +366,6 @@ Section RevLens.
     assert (Hnp : andb (negb (msWriteRq mst)) (noPortWriteB implRegions mr) = true) by exact Enpw.
     clear Enpw.
     unfold implRevokerIdle, ImplDevice.liftRevoker in H; cbn [evalActionPropGen] in H.
-    rev_lens H Ex; rewrite ?evalExpr_Var in H.
-    match type of H with context [if ?c then _ else _] => destruct c eqn:Eph end.
-    2: { left; destruct H as [H _]; symmetry; exact H. }
     rev_lens H Ex; rewrite ?evalExpr_Var in H.
     match type of H with context [if ?c then _ else _] => destruct c eqn:Eodd end.
     - rev_lens H Ex; rev_lens H Ex; rewrite ?evalExpr_Var in H.
@@ -422,6 +418,7 @@ Section RevLens.
   Lemma waitCapRp_char :
     forall env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh cp,
       revOfR mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, (cp ,, tt))))))))))))) ->
+      rpWaitCapRp ph = true ->
       SemAction env (@implRevokerWaitCapRpBody config implRegions type revI)
         (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) m' v ->
       m' = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) \/
@@ -437,13 +434,10 @@ Section RevLens.
          m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (scanNext sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, (cp ,, tt))))))))))))) ,, (st' ,, (mrq ,, (mrp ,, (getDefault (Option FullCapWithTag) ,, tt))))) /\
          msIdle st' = true /\ rpIdle ph' = true).
   Proof.
-    intros env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh cp Ex H.
+    intros env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh cp Ex Eph H.
     rewrite SemAction_iff_evalActionPropGen in H.
     unfold implRevokerWaitCapRpBody, implRevokerWaitCapRp, ImplDevice.liftRevoker in H.
     cbn [evalActionPropGen] in H.
-    rev_lens H Ex; rewrite ?evalExpr_Var in H.
-    match type of H with context [if ?c then _ else _] => destruct c eqn:Eph end.
-    2: { left; destruct H as [H _]; symmetry; exact H. }
     rev_lens H Ex; rewrite ?evalExpr_Var in H.
     unfold implMemReadRp in H; cbn [evalActionPropGen] in H; rev_cbn H; rewrite ?evalExpr_Var in H.
     match type of H with context [if ?c then _ else _] => destruct c eqn:Erp end.
@@ -472,6 +466,7 @@ Section RevLens.
   Lemma waitRevBitRp_char :
     forall env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh cp,
       revOfR mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, (cp ,, tt))))))))))))) ->
+      rpWaitRevBitRp ph = true ->
       SemAction env (@implRevokerWaitRevBitRpBody config implRegions type revI)
         (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) m' v ->
       m' = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) \/
@@ -485,13 +480,10 @@ Section RevLens.
           (sh = false /\ revBitOfVal sb (optData mrdy) = false /\ rpIdle ph' = true /\
            m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (scanNext sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, (cp ,, tt))))))))))))) ,, (st' ,, (mrq ,, (mrp ,, (getDefault (Option FullCapWithTag) ,, tt)))))))).
   Proof.
-    intros env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh cp Ex H.
+    intros env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh cp Ex Eph H.
     rewrite SemAction_iff_evalActionPropGen in H.
     unfold implRevokerWaitRevBitRpBody, implRevokerWaitRevBitRp, ImplDevice.liftRevoker in H.
     cbn [evalActionPropGen] in H.
-    rev_lens H Ex; rewrite ?evalExpr_Var in H.
-    match type of H with context [if ?c then _ else _] => destruct c eqn:Eph end.
-    2: { left; destruct H as [H _]; symmetry; exact H. }
     rev_lens H Ex; rev_lens H Ex; rewrite ?evalExpr_Var in H.
     unfold implGetDeqRevBitRpFor, implMemReadRp in H; cbn [evalActionPropGen] in H.
     apply evalActionPropGen_toAction in H; rev_cbn H; rewrite ?evalExpr_Var in H.
@@ -531,6 +523,7 @@ Section RevLens.
   Lemma writeCap_char :
     forall env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh cp,
       revOfR mr = (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,, (sh ,, (cp ,, tt))))))))))))) ->
+      rpWriteCap ph = true ->
       SemAction env (@implRevokerWriteCapBody implRegions type revI)
         (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) m' v ->
       m' = (mr ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) \/
@@ -544,13 +537,10 @@ Section RevLens.
          msWriteRqV st' = stepOf false (scanFull sa) capSz (disassembleW (scanFull sa) (untagCap sc) capSz) /\
          rpIdle ph' = true).
   Proof.
-    intros env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh cp Ex H.
+    intros env mr mst mrq mrp mrdy m' v b t c e ist ir sa st ph sc sb sh cp Ex Eph H.
     rewrite SemAction_iff_evalActionPropGen in H.
     unfold implRevokerWriteCapBody, implRevokerWriteCap, ImplDevice.liftRevoker in H.
     cbn [evalActionPropGen] in H.
-    rev_lens H Ex; rewrite ?evalExpr_Var in H.
-    match type of H with context [if ?c then _ else _] => destruct c eqn:Eph end.
-    2: { left; destruct H as [H _]; symmetry; exact H. }
     rev_lens H Ex; rev_lens H Ex; rewrite ?evalExpr_Var in H.
     match type of H with context [if ?c then _ else _] => destruct c eqn:Esh end.
     - rev_lens H Ex.
@@ -589,13 +579,17 @@ Section RevLens.
   Definition memWithCp (b : bool) (m : TS MT) : TS MT :=
     (setRevR m.(Fst) (revWithCp b (revOfR m.(Fst))) ,, m.(Snd)).
 
-  (* A guarded revoker rule (`implRevokerGuard`): nothing changes, or `canProceed` is cleared and
-   * the rule's body runs *)
+  (* The revoker's phase in memory state `m` *)
+  Definition memPhase (m : TS MT) : type RevPhase :=
+    (revOfR m.(Fst)).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).
+
+  (* A guarded revoker rule (`implRevokerGuard`): nothing changes, or the phase is the rule's,
+   * `canProceed` is cleared and the rule's body runs *)
   Lemma guard_char :
     forall env isPh (body : Action type MT (Bit 0)) (m m' : TS MT) v,
       SemAction env (@implRevokerGuard type MT (@implNthRegionAction type (length pre) implRegions iRevR pfI)
                        isPh body) m m' v ->
-      m' = m \/ SemAction env body (memWithCp false m) m' Zmod.zero.
+      m' = m \/ (evalExpr (isPh (memPhase m)) = true /\ SemAction env body (memWithCp false m) m' Zmod.zero).
   Proof.
     intros env isPh body [mr rest] m' v H.
     rewrite SemAction_iff_evalActionPropGen in H.
@@ -606,7 +600,11 @@ Section RevLens.
     rev_lens H Ex.
     match type of H with context [if ?c then _ else _] => destruct c eqn:Eg end.
     2: { left; destruct H as [H _]; symmetry; exact H. }
-    right.
+    right; split.
+    { assert (Hp : evalExpr (isPh ph) = true).
+      { destruct (evalExpr (isPh ph)) eqn:Ep; [reflexivity |]. exfalso.
+        revert Eg; cbn; rewrite ?Ep; destruct cp; cbn; congruence. }
+      unfold memPhase; cbn [Fst]; rewrite Ex; exact Hp. }
     rev_lens H Ex.
     unfold memWithCp, revWithCp; cbn [Fst Snd]; rewrite Ex; cbn [Fst Snd].
     rewrite SemAction_iff_evalActionPropGen.

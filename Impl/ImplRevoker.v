@@ -128,94 +128,85 @@ Section ImplRevoker.
       Act (revAct (WriteReg pScanAddr #nextScanAddrMsb Retv)) ;
       revAct (WriteReg pRevPhase (mkRevPhase "Idle") Retv).
 
+    (* runs only under `implRevokerGuard`, which checks that `revPhase` is Idle *)
     Definition implRevokerIdle : Action ty memTree (Bit 0) :=
-      LetA revPhase : RevPhase <- revAct (ReadReg "revPhase" pRevPhase (fun v => Return #v)) ;
-      If (##revPhase `? "Idle") Then (
-        LetA epoch : Bit Xlen <- revAct (ReadReg "epoch" pEpoch (fun v => Return #v)) ;
-        Let isOddEpoch : Bool <- FromBit Bool (TruncLsb (Xlen - 1) 1 #epoch) ;
-        If #isOddEpoch Then (
-          LetA scanAddrMsb : Bit TagAddrWidth <- revAct (ReadReg "scanAddr" pScanAddr (fun v => Return #v)) ;
-          LetA topAddrMsb  : Bit TagAddrWidth <- revAct (ReadReg "sweepTop" pSweepTop (fun v => Return #v)) ;
-          Let scanAddr     : Addr             <- {< #scanAddrMsb, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
-          Let isDone       : Bool             <- Uge #scanAddrMsb #topAddrMsb ;
-          If (Not #isDone) Then (
-            Let capSz : Bit LgLgNumBytesFullCapSz <- $LgNumBytesFullCapSz ;
-            LetA rdy  : Bool                      <- readMemRq scanAddr capSz ;
-            If #rdy Then (
-              Act (revAct (WriteReg pRevStoreSnoopHit (ConstBool false) Retv)) ;
-              revAct (WriteReg pRevPhase (mkRevPhase "WaitCapRp") Retv)
-            ) ;
-            Retv
-          ) Else (
-            (* Sweep complete: scanAddrMsb reached the sweep's copy of top *)
-            Let nextEpoch : Bit Xlen <- Add [ #epoch ; $1 ] ;
-            Act (revAct (WriteReg pEpoch #nextEpoch Retv)) ;
-            LetA intReq : Bool <- revAct (ReadReg "interruptRequested" pInterruptRequested (fun v => Return #v)) ;
-            If #intReq Then (
-              Act (revAct (WriteReg pInterruptStatus (ConstBool true) Retv)) ;
-              Retv
-            ) ;
-            Retv
+      LetA epoch : Bit Xlen <- revAct (ReadReg "epoch" pEpoch (fun v => Return #v)) ;
+      Let isOddEpoch : Bool <- FromBit Bool (TruncLsb (Xlen - 1) 1 #epoch) ;
+      If #isOddEpoch Then (
+        LetA scanAddrMsb : Bit TagAddrWidth <- revAct (ReadReg "scanAddr" pScanAddr (fun v => Return #v)) ;
+        LetA topAddrMsb  : Bit TagAddrWidth <- revAct (ReadReg "sweepTop" pSweepTop (fun v => Return #v)) ;
+        Let scanAddr     : Addr             <- {< #scanAddrMsb, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
+        Let isDone       : Bool             <- Uge #scanAddrMsb #topAddrMsb ;
+        If (Not #isDone) Then (
+          Let capSz : Bit LgLgNumBytesFullCapSz <- $LgNumBytesFullCapSz ;
+          LetA rdy  : Bool                      <- readMemRq scanAddr capSz ;
+          If #rdy Then (
+            Act (revAct (WriteReg pRevStoreSnoopHit (ConstBool false) Retv)) ;
+            revAct (WriteReg pRevPhase (mkRevPhase "WaitCapRp") Retv)
           ) ;
           Retv
         ) Else (
-          (* Idle state: epoch is even *)
-          Act (revAct (WriteReg pInterruptStatus (ConstBool false) Retv)) ;
-          LetA isKicked : Bool <- revAct (ReadReg "control" pControl (fun v => Return #v)) ;
-          If #isKicked Then (
-            LetA baseAddrMsb : Bit TagAddrWidth <- revAct (ReadReg "base" pBase (fun v => Return #v)) ;
-            Act (revAct (WriteReg pScanAddr #baseAddrMsb Retv)) ;
-            LetA topAddrMsb : Bit TagAddrWidth <- revAct (ReadReg "top" pTop (fun v => Return #v)) ;
-            Act (revAct (WriteReg pSweepTop #topAddrMsb Retv)) ;
-            Let oddEpoch : Bit Xlen <-
-              {< TruncMsb (Xlen - 1) 1 #epoch, Const ty (Bit 1) (bits.of_Z 1 1) >} ;
-            Act (revAct (WriteReg pEpoch #oddEpoch Retv)) ;
-            Act (revAct (WriteReg pControl (ConstBool false) Retv)) ;
+          (* Sweep complete: scanAddrMsb reached the sweep's copy of top *)
+          Let nextEpoch : Bit Xlen <- Add [ #epoch ; $1 ] ;
+          Act (revAct (WriteReg pEpoch #nextEpoch Retv)) ;
+          LetA intReq : Bool <- revAct (ReadReg "interruptRequested" pInterruptRequested (fun v => Return #v)) ;
+          If #intReq Then (
+            Act (revAct (WriteReg pInterruptStatus (ConstBool true) Retv)) ;
             Retv
           ) ;
           Retv
         ) ;
         Retv
-      ) ;
-      Retv.
-
-    Definition implRevokerWaitCapRp : Action ty memTree (Bit 0) :=
-      LetA revPhase : RevPhase <- revAct (ReadReg "revPhase" pRevPhase (fun v => Return #v)) ;
-      If (##revPhase `? "WaitCapRp") Then (
-        LetA scanAddrMsb    : Bit TagAddrWidth          <- revAct (ReadReg "scanAddr" pScanAddr (fun v => Return #v)) ;
-        Let nextScanAddrMsb : Bit TagAddrWidth          <- Add [ #scanAddrMsb ; $1 ] ;
-        LetA rpOpt          : Option FullCapWithTag     <- getMemRp ;
-        If (##rpOpt`"valid") Then (
-          Act deqMemRp ;
-          Let  ldFullCap   : FullCapWithTag   <- ##rpOpt`"data" ;
-          Let  ldTag       : Bool             <- ##ldFullCap`"tag" ;
-          Let  ldCap       : Cap              <- ##ldFullCap`"cap" ;
-          Let  ldAddr      : Addr             <- ##ldFullCap`"addr" ;
-          LetL ldECap      : ECap             <- DecodeCap ldCap ldAddr ;
-          Let  ldBase      : Bit (AddrSz + 1) <- ##ldECap`"base" ;
-          Let  shouldCheck : Bool             <- needsRevocationCheck revConfig ldECap ldTag ;
-          If #shouldCheck Then (
-            Act (revAct (WriteReg pRevScanCap #ldFullCap Retv)) ;
-            Act (revAct (WriteReg pRevScanBase #ldBase Retv)) ;
-            revAct (WriteReg pRevPhase (mkRevPhase "WaitRevBitRq") Retv)
-          ) Else (
-            advanceScanAndReset nextScanAddrMsb
-          ) ;
+      ) Else (
+        (* Idle state: epoch is even *)
+        Act (revAct (WriteReg pInterruptStatus (ConstBool false) Retv)) ;
+        LetA isKicked : Bool <- revAct (ReadReg "control" pControl (fun v => Return #v)) ;
+        If #isKicked Then (
+          LetA baseAddrMsb : Bit TagAddrWidth <- revAct (ReadReg "base" pBase (fun v => Return #v)) ;
+          Act (revAct (WriteReg pScanAddr #baseAddrMsb Retv)) ;
+          LetA topAddrMsb : Bit TagAddrWidth <- revAct (ReadReg "top" pTop (fun v => Return #v)) ;
+          Act (revAct (WriteReg pSweepTop #topAddrMsb Retv)) ;
+          Let oddEpoch : Bit Xlen <-
+            {< TruncMsb (Xlen - 1) 1 #epoch, Const ty (Bit 1) (bits.of_Z 1 1) >} ;
+          Act (revAct (WriteReg pEpoch #oddEpoch Retv)) ;
+          Act (revAct (WriteReg pControl (ConstBool false) Retv)) ;
           Retv
         ) ;
         Retv
       ) ;
       Retv.
 
-    Definition implRevokerWaitRevBitRq : Action ty memTree (Bit 0) :=
-      LetA revPhase : RevPhase <- revAct (ReadReg "revPhase" pRevPhase (fun v => Return #v)) ;
-      If (##revPhase `? "WaitRevBitRq") Then (
-        LetA ldBase : Bit (AddrSz + 1) <- revAct (ReadReg "scanBase" pRevScanBase (fun v => Return #v)) ;
-        LetA rdy    : Bool             <- readRevBitRq ldBase ;
-        If #rdy Then (
-          revAct (WriteReg pRevPhase (mkRevPhase "WaitRevBitRp") Retv)
+    (* runs only under `implRevokerGuard`, which checks that `revPhase` is WaitCapRp *)
+    Definition implRevokerWaitCapRp : Action ty memTree (Bit 0) :=
+      LetA scanAddrMsb    : Bit TagAddrWidth          <- revAct (ReadReg "scanAddr" pScanAddr (fun v => Return #v)) ;
+      Let nextScanAddrMsb : Bit TagAddrWidth          <- Add [ #scanAddrMsb ; $1 ] ;
+      LetA rpOpt          : Option FullCapWithTag     <- getMemRp ;
+      If (##rpOpt`"valid") Then (
+        Act deqMemRp ;
+        Let  ldFullCap   : FullCapWithTag   <- ##rpOpt`"data" ;
+        Let  ldTag       : Bool             <- ##ldFullCap`"tag" ;
+        Let  ldCap       : Cap              <- ##ldFullCap`"cap" ;
+        Let  ldAddr      : Addr             <- ##ldFullCap`"addr" ;
+        LetL ldECap      : ECap             <- DecodeCap ldCap ldAddr ;
+        Let  ldBase      : Bit (AddrSz + 1) <- ##ldECap`"base" ;
+        Let  shouldCheck : Bool             <- needsRevocationCheck revConfig ldECap ldTag ;
+        If #shouldCheck Then (
+          Act (revAct (WriteReg pRevScanCap #ldFullCap Retv)) ;
+          Act (revAct (WriteReg pRevScanBase #ldBase Retv)) ;
+          revAct (WriteReg pRevPhase (mkRevPhase "WaitRevBitRq") Retv)
+        ) Else (
+          advanceScanAndReset nextScanAddrMsb
         ) ;
         Retv
+      ) ;
+      Retv.
+
+    (* runs only under `implRevokerGuard`, which checks that `revPhase` is WaitRevBitRq *)
+    Definition implRevokerWaitRevBitRq : Action ty memTree (Bit 0) :=
+      LetA ldBase : Bit (AddrSz + 1) <- revAct (ReadReg "scanBase" pRevScanBase (fun v => Return #v)) ;
+      LetA rdy    : Bool             <- readRevBitRq ldBase ;
+      If #rdy Then (
+        revAct (WriteReg pRevPhase (mkRevPhase "WaitRevBitRp") Retv)
       ) ;
       Retv.
 
@@ -226,25 +217,22 @@ Section ImplRevoker.
 
     (* A core store hit `scanAddr` since the cap read (snoop hit): the position is
      * retried, whatever the rev bit was. *)
+    (* runs only under `implRevokerGuard`, which checks that `revPhase` is WaitRevBitRp *)
     Definition implRevokerWaitRevBitRp : Action ty memTree (Bit 0) :=
-      LetA revPhase : RevPhase <- revAct (ReadReg "revPhase" pRevPhase (fun v => Return #v)) ;
-      If (##revPhase `? "WaitRevBitRp") Then (
-        LetA scanAddrMsb    : Bit TagAddrWidth <- revAct (ReadReg "scanAddr" pScanAddr (fun v => Return #v)) ;
-        Let nextScanAddrMsb : Bit TagAddrWidth <- Add [ #scanAddrMsb ; $1 ] ;
-        LetA ldBase         : Bit (AddrSz + 1) <- revAct (ReadReg "scanBase" pRevScanBase (fun v => Return #v)) ;
-        LetA revOpt         : Option Bool      <- getDeqRevBitRp ldBase ;
-        If (##revOpt`"valid") Then (
-          LetA snoopHit : Bool <- revAct (ReadReg "snoopHit" pRevStoreSnoopHit (fun v => Return #v)) ;
-          Let revBit : Bool <- ##revOpt`"data" ;
-          If #snoopHit Then (
-            retryPosition
+      LetA scanAddrMsb    : Bit TagAddrWidth <- revAct (ReadReg "scanAddr" pScanAddr (fun v => Return #v)) ;
+      Let nextScanAddrMsb : Bit TagAddrWidth <- Add [ #scanAddrMsb ; $1 ] ;
+      LetA ldBase         : Bit (AddrSz + 1) <- revAct (ReadReg "scanBase" pRevScanBase (fun v => Return #v)) ;
+      LetA revOpt         : Option Bool      <- getDeqRevBitRp ldBase ;
+      If (##revOpt`"valid") Then (
+        LetA snoopHit : Bool <- revAct (ReadReg "snoopHit" pRevStoreSnoopHit (fun v => Return #v)) ;
+        Let revBit : Bool <- ##revOpt`"data" ;
+        If #snoopHit Then (
+          retryPosition
+        ) Else (
+          If #revBit Then (
+            revAct (WriteReg pRevPhase (mkRevPhase "WriteCap") Retv)
           ) Else (
-            If #revBit Then (
-              revAct (WriteReg pRevPhase (mkRevPhase "WriteCap") Retv)
-            ) Else (
-              advanceScanAndReset nextScanAddrMsb
-            ) ;
-            Retv
+            advanceScanAndReset nextScanAddrMsb
           ) ;
           Retv
         ) ;
@@ -252,28 +240,25 @@ Section ImplRevoker.
       ) ;
       Retv.
 
+    (* runs only under `implRevokerGuard`, which checks that `revPhase` is WriteCap *)
     Definition implRevokerWriteCap : Action ty memTree (Bit 0) :=
-      LetA revPhase : RevPhase <- revAct (ReadReg "revPhase" pRevPhase (fun v => Return #v)) ;
-      If (##revPhase `? "WriteCap") Then (
-        LetA scanAddrMsb    : Bit TagAddrWidth          <- revAct (ReadReg "scanAddr" pScanAddr (fun v => Return #v)) ;
-        Let scanAddr        : Addr                      <- {< #scanAddrMsb, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
-        Let nextScanAddrMsb : Bit TagAddrWidth          <- Add [ #scanAddrMsb ; $1 ] ;
-        Let capSz           : Bit LgLgNumBytesFullCapSz <- $LgNumBytesFullCapSz ;
-        LetA snoopHit       : Bool                      <- revAct (ReadReg "snoopHit" pRevStoreSnoopHit (fun v => Return #v)) ;
-        If #snoopHit Then (
-          retryPosition
-        ) Else (
-          LetA savedCap   : FullCapWithTag <- revAct (ReadReg "savedCap" pRevScanCap (fun v => Return #v)) ;
-          Let untaggedCap : FullCapWithTag <- STRUCT {
-            "tag"  ::= Const ty Bool false ;
-            "cap"  ::= ##savedCap`"cap" ;
-            "addr" ::= ##savedCap`"addr"
-          } ;
-          LetA rdy : Bool <- writeMem scanAddr untaggedCap capSz ;
-          If #rdy Then (
-            advanceScanAndReset nextScanAddrMsb
-          ) ;
-          Retv
+      LetA scanAddrMsb    : Bit TagAddrWidth          <- revAct (ReadReg "scanAddr" pScanAddr (fun v => Return #v)) ;
+      Let scanAddr        : Addr                      <- {< #scanAddrMsb, Const ty (Bit LgNumBytesFullCapSz) Zmod.zero >} ;
+      Let nextScanAddrMsb : Bit TagAddrWidth          <- Add [ #scanAddrMsb ; $1 ] ;
+      Let capSz           : Bit LgLgNumBytesFullCapSz <- $LgNumBytesFullCapSz ;
+      LetA snoopHit       : Bool                      <- revAct (ReadReg "snoopHit" pRevStoreSnoopHit (fun v => Return #v)) ;
+      If #snoopHit Then (
+        retryPosition
+      ) Else (
+        LetA savedCap   : FullCapWithTag <- revAct (ReadReg "savedCap" pRevScanCap (fun v => Return #v)) ;
+        Let untaggedCap : FullCapWithTag <- STRUCT {
+          "tag"  ::= Const ty Bool false ;
+          "cap"  ::= ##savedCap`"cap" ;
+          "addr" ::= ##savedCap`"addr"
+        } ;
+        LetA rdy : Bool <- writeMem scanAddr untaggedCap capSz ;
+        If #rdy Then (
+          advanceScanAndReset nextScanAddrMsb
         ) ;
         Retv
       ) ;

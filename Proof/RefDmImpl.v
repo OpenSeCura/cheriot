@@ -402,7 +402,7 @@ Section DmImpl.
   Lemma dmRevRpOf_facts : forall rc, dmRevRp (dmRevRpOf rc) = true /\ dmRevRpV (dmRevRpOf rc) = rc.
   Proof.
     intros rc; split; [reflexivity |].
-    exact (evalExpr_ReadUnionData_BuildUnion DataMemStateList (@Build_FinType (length DataMemStateList) 3 I)
+    exact (evalExpr_ReadUnionData_BuildUnion DataMemStateList (@Build_FinType (length DataMemStateList) 4 I)
              (Var type RevCmd rc) eq_refl).
   Qed.
 
@@ -464,7 +464,7 @@ Section DmImpl.
   Lemma dmRevRqOf_facts : forall rc, dmRevRq (dmRevRqOf rc) = true /\ dmRevRqV (dmRevRqOf rc) = rc.
   Proof.
     intros rc; split; [reflexivity |].
-    exact (evalExpr_ReadUnionData_BuildUnion DataMemStateList (@Build_FinType (length DataMemStateList) 2 I)
+    exact (evalExpr_ReadUnionData_BuildUnion DataMemStateList (@Build_FinType (length DataMemStateList) 3 I)
              (Var type RevCmd rc) eq_refl).
   Qed.
 
@@ -480,7 +480,7 @@ Section DmImpl.
   Lemma dmCheckOf_facts : forall rc, dmCheck (dmCheckOf rc) = true /\ dmCheckV (dmCheckOf rc) = rc.
   Proof.
     intros rc; split; [reflexivity |].
-    exact (evalExpr_ReadUnionData_BuildUnion DataMemStateList (@Build_FinType (length DataMemStateList) 4 I)
+    exact (evalExpr_ReadUnionData_BuildUnion DataMemStateList (@Build_FinType (length DataMemStateList) 2 I)
              (Var type RevCmd rc) eq_refl).
   Qed.
 
@@ -634,7 +634,6 @@ Section DmImpl.
       change (Fst (iMemA s1)) with (iRegionsA s1) in Hm.
       destruct Hm as [[Hnr [-> ->]] | [Hi [Hnp [-> [st' [rq' [-> [Hst1 [Hst2 Hrq']]]]]]]]].
       + right; left; split; [exact Hn' |].
-        apply fw_ifFalse in H; [| reflexivity].
         apply fw_letExp in H.
         rewrite evalActionPropGen_liftAction in H; unfold writeState in H; cbn [evalActionPropGen] in H.
         cbn [evalActionPropGen] in H.
@@ -642,7 +641,6 @@ Section DmImpl.
         destruct (dmRevRqOf_facts (dmCheckV (iDmStA s1))) as [F1 F2].
         split; [constructor; reflexivity |]; split; [reflexivity |]; split; [exact F1 | exact F2].
       + left; split; [exact Hn' | split; [exact Hi | split; [exact Hnp |]]].
-        apply fw_ifTrue in H; [| reflexivity].
         apply fw_letExp in H.
         rewrite evalActionPropGen_liftAction in H; unfold writeState in H; cbn [evalActionPropGen] in H.
         cbn [evalActionPropGen] in H.

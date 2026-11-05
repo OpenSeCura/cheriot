@@ -35,10 +35,10 @@ Definition MemFenceReq : Kind := STRUCT_TYPE {
 Definition DataMemStateList : list (string * Kind) :=
   [ ("LoadRq", Bit 0) ;
     ("LoadRp", LoadCmd) ;
-    ("RevRq",  RevCmd) ;
-    ("RevRp",  RevCmd) ;
     (* a tagged capability load response, before its revocation check (`checkRevocation`) *)
-    ("Check",  RevCmd) ].
+    ("Check",  RevCmd) ;
+    ("RevRq",  RevCmd) ;
+    ("RevRp",  RevCmd) ].
 
 Definition DataMemState : Kind := TaggedUnion DataMemStateList.
 
@@ -288,15 +288,10 @@ Section DataMemStages.
       Let capECap : ECap             <- ##capVal`"ecap" ;
       Let capTag  : Bool             <- ##capVal`"tag" ;
       If (needsRevocationCheck config capECap capTag) Then (
-        LetA accepted : Bool <- liftAction np_mem ((memIfc ty).(mem_readRevBitRq) revBase) ;
-        If #accepted Then (
-          Let nextState : DataMemState <- UNION (DataMemStateList, "RevRp" ::= #revInfo) ;
-          liftAction np_dataMem (@writeState ty nextState)
-        ) Else (
-          Let nextState : DataMemState <- UNION (DataMemStateList, "RevRq" ::= #revInfo) ;
-          liftAction np_dataMem (@writeState ty nextState)
-        ) ;
-        Retv
+        LetA accepted  : Bool         <- liftAction np_mem ((memIfc ty).(mem_readRevBitRq) revBase) ;
+        Let  nextState : DataMemState <- ITE #accepted (UNION (DataMemStateList, "RevRp" ::= #revInfo))
+                                                       (UNION (DataMemStateList, "RevRq" ::= #revInfo)) ;
+        liftAction np_dataMem (@writeState ty nextState)
       ) Else (
         Let dstIdxV   : Bit RegIdxSzReal <- ##pr`"dstIdx" ;
         Let nextState : DataMemState     <- UNION (DataMemStateList, "LoadRq" ::= ($0 : Expr ty (Bit 0))) ;
