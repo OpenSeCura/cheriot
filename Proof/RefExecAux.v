@@ -290,6 +290,7 @@ Fixpoint allReturns {t : Tree Elem} {k : Kind}
                     else allReturns fb (fun v => allReturns (c v) Q)
   | System _ cont         => fun Q => allReturns cont Q
   | Return e              => fun Q => Q (evalExpr e)
+  | CallGallina _ _ _ _ _ cont => fun Q => forall v, allReturns (cont v) Q
   end.
 
 Lemma allReturns_evalActionPropGen :
@@ -320,6 +321,7 @@ Proof.
       exact (H v mid Q P HQv Hcont).
   - eapply IHa; [exact Har | exact Hev].
   - exists s0, (evalExpr e); split; [exact Hev | exact Har].
+  - destruct Hev as [o Hev]; eapply H; [apply Har | exact Hev].
 Qed.
 
 Lemma allReturns_SemAction :

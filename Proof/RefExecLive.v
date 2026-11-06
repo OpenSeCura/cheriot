@@ -140,6 +140,7 @@ Fixpoint evalActionFun {t : Tree Elem} {k : Kind} (a : @Action type t k) (s : TS
       end
   | System _ cont => evalActionFun cont s
   | Return e => Some (s, evalExpr e)
+  | CallGallina _ _ _ _ _ _ => None
   end.
 
 Lemma evalActionFun_complete :
@@ -173,6 +174,7 @@ Proof.
       injection E1 as -> ->; exact (IHSemAction Hne).
   - exact (IHSemAction Hne).
   - subst; reflexivity.
+  - exfalso; apply Hne; reflexivity.
 Qed.
 
 Lemma SemAction_det_of_some :
@@ -203,6 +205,7 @@ Fixpoint pureAction {t : Tree Elem} {k : Kind} (a : @Action type t k) : Prop :=
   | IfElse _ _ tb fb cont => pureAction tb /\ pureAction fb /\ forall v, pureAction (cont v)
   | System _ cont => pureAction cont
   | Return _ => True
+  | CallGallina _ _ _ _ _ _ => False
   end.
 
 Lemma evalActionFun_some_of_pure :
@@ -231,6 +234,7 @@ Proof.
       destruct (evalActionFun a2 s0) as [[sm rm] |]; [exact (H rm (Hp3 rm) sm) | exfalso; exact (IHa2 eq_refl)].
   - exact (IHa Hp s0).
   - discriminate.
+  - contradiction.
 Qed.
 
 Lemma pureAction_readRegsListHelper :
