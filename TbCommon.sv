@@ -177,6 +177,7 @@
             tohostVal[b*8 +: 8] = ramData[wrIdx][(int'(tohostByteOff) + b)*8 +: 8];
           end
           if (tohostVal != 32'h0) begin
+            $display("[Cycle %0d] Final cycle count", cycleCount);
             if (tohostVal == 32'h1) begin
               $display("TEST PASSED!");
               $finish;
