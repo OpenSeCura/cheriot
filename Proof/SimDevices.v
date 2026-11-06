@@ -1103,15 +1103,15 @@ Section SysEnvs.
               envCtxTrue))))
       envCtxTrue.
 
-  Lemma specEnv_inhabited : EnvInhabited specEnv.
+  Lemma specEnv_inhabited : EnvCtxInhabited specEnv.
   Proof.
-    change (EnvCtxInhabited specEnv); unfold specEnv.
+    unfold specEnv.
     repeat first [ apply envNodeCons_inhabited | apply envCtxTrue_inhabited | apply specRegionsEnv_inhabited ].
   Qed.
 
-  Lemma implEnv_inhabited : EnvInhabited implEnv.
+  Lemma implEnv_inhabited : EnvCtxInhabited implEnv.
   Proof.
-    change (EnvCtxInhabited implEnv); unfold implEnv.
+    unfold implEnv.
     repeat first [ apply implRegionsEnv_inhabited | apply envNodeCons_inhabited | apply envCtxTrue_inhabited ].
   Qed.
 End SysEnvs.
