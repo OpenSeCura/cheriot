@@ -18,6 +18,8 @@
 
 CURR_DIR = $(shell pwd)
 
+include ../Guru/Gallina.mk
+
 Makefile.coq.all: force
 	$(COQBIN)rocq makefile --no-rocq-package-warning -docroot Cheriot -f _CoqProject -o Makefile.coq.all
 
@@ -41,8 +43,10 @@ simrtl: rtl_bin
 	$(MAKE) -C ../Guru TARGETS="$(CURR_DIR)/ $(CURR_DIR)/Impl/Fwd/" simrtl
 
 simrtlexe: simrtl
-	verilator -Wno-CMPCONST --top Tb --binary -I../Guru/Verilog -I. --Mdir sim_obj_dir SimTb.sv
-	verilator -Wno-CMPCONST --top Tb --binary -I../Guru/Verilog -I./Impl/Fwd -I. --Mdir Impl/Fwd/sim_obj_dir SimTb.sv
+	$(call gallina_lib,$(CURR_DIR)/,SimRtl.sv)
+	verilator -Wno-CMPCONST --top Tb --binary -I../Guru/Verilog -I. --Mdir sim_obj_dir SimTb.sv $(call gallina_args,$(CURR_DIR)/,SimRtl.sv)
+	$(call gallina_lib,$(CURR_DIR)/Impl/Fwd/,Impl/Fwd/SimRtl.sv)
+	verilator -Wno-CMPCONST --top Tb --binary -I../Guru/Verilog -I./Impl/Fwd -I. --Mdir Impl/Fwd/sim_obj_dir SimTb.sv $(call gallina_args,$(CURR_DIR)/Impl/Fwd/,Impl/Fwd/SimRtl.sv)
 
 force:
 
@@ -63,6 +67,7 @@ clean:: Makefile.coq.all
 	find . -type f -name 'Rtl' -exec rm {} \;
 	find . -type f -name 'Rtl.sv' -exec rm {} \;
 	find . -type f -name 'SimRtl.sv' -exec rm {} \;
+	find . -type f -name 'libgallina.a' -exec rm {} \;
 	find . -type d -depth -name 'obj_dir' -exec rm -rf {} \;
 	find . -type d -depth -name 'sim_obj_dir' -exec rm -rf {} \;
 	rm -f Makefile.coq.all Makefile.coq.all.conf .Makefile.coq.all.d

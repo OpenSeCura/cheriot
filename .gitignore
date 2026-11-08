@@ -31,6 +31,7 @@ Binary.v
 # Haskell build artifacts
 *.hi
 *.o
+*.a
 
 # Editor backup files
 *~
