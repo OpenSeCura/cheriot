@@ -358,6 +358,7 @@ Section LsfStep.
     - unfold AccessRel, WrStageRel; cbn [gStore g_acc g_revOff g_chain].
       split; [split; [rewrite Erp; exact Hrp0 | split; [rewrite Erdy; exact Hrdy0 | split; [exact Hms | split; [exact Hmsv |
                unfold PortsQuiet in *; rewrite HP; exact HPQ]]]] |].
+      split; [rewrite Erq; exact isReqDataMem_dm |].
       split; [rewrite Edmst; exact Hlrq |].
       split; [unfold revNotReading, iRevPhase in *; rewrite Erev; rewrite Erev0 in Hrnr; exact Hrnr |].
       split; [exact Hoff |].

@@ -244,7 +244,7 @@ Section WriteMem.
       (msIdle mst = true /\ noPortWriteB implRegions mr = true /\ r = true /\
        exists st',
          m' = (setRevRA mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph ,, (sc ,, (sb ,,
-                 (orb (snoopHitsB addr sz sa) sh ,, (cp ,, tt))))))))))))) ,, (st' ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) /\
+                 (orb (snoopHitsB addr sz sa) sh ,, (cp ,, tt))))))))))))) ,, (st' ,, (reqDataMemV ,, (mrp ,, (mrdy ,, tt))))) /\
          msWriteRq st' = true /\ msWriteRqV st' = stepOf false addr sz (disassembleW addr v sz)).
   Proof.
     intros env addr v sz mr mst mrq mrp mrdy m' r b t c e ist ir sa st ph sc sb sh cp Ex H.
@@ -272,7 +272,7 @@ Section WriteMem.
       SemAction env (@implWriteMem implRegions type revI addr v sz) m m' r ->
       (andb (msIdle m.(Snd).(Fst)) (noPortWriteB implRegions m.(Fst)) = false /\ m' = m /\ r = false) \/
       (msIdle m.(Snd).(Fst) = true /\ noPortWriteB implRegions m.(Fst) = true /\ r = true /\
-       exists st', m' = (setRevRA m.(Fst) (snoopRev addr sz (revOfRA m.(Fst))) ,, (st' ,, m.(Snd).(Snd))) /\
+       exists st', m' = (setRevRA m.(Fst) (snoopRev addr sz (revOfRA m.(Fst))) ,, (st' ,, (reqDataMemV ,, m.(Snd).(Snd).(Snd)))) /\
          msWriteRq st' = true /\ msWriteRqV st' = stepOf false addr sz (disassembleW addr v sz)).
   Proof.
     intros env addr v sz [mr [mst [mrq [mrp [mrdy []]]]]] m' r H.
@@ -396,7 +396,7 @@ Section LsfImpl.
     sa_msv  : msWriteRqV (iMemStA s1') =
                 stepOf false (stAddrOf (storeCmdOf q)) (stSizeOf (storeCmdOf q))
                   (disassembleW (stAddrOf (storeCmdOf q)) (stValOf (storeCmdOf q)) (stSizeOf (storeCmdOf q))) ;
-    sa_rq   : iRequesterA s1' = iRequesterA s1 ;
+    sa_rq   : iRequesterA s1' = reqDataMemV ;
     sa_rp   : iReadRpA s1' = iReadRpA s1 ;
     sa_rdy  : iRpReadyA s1' = iRpReadyA s1
   }.
@@ -448,7 +448,10 @@ Section LsfImpl.
                 iMemA s1' = (mr' ,, (iMemA s1).(Snd)) ;
     fa_fip  : iFenceIPendingA s1' = false ;
     fa_ep   : iExecEpochA s1' = iExecEpochA s1 ;
-    fa_redir : ex_redirect (iExecA s1') = ex_redirect (iExecA s1)
+    fa_redir : ex_redirect (iExecA s1') = ex_redirect (iExecA s1) ;
+    fa_cp   : ex_canProceed (iExecA s1') = ex_canProceed (iExecA s1) ;
+    fa_fs   : ex_firstSlot (iExecA s1') = ex_firstSlot (iExecA s1) ;
+    fa_ho   : ex_handoff (iExecA s1') = ex_handoff (iExecA s1)
   }.
 
   Lemma lsf_char :
@@ -550,7 +553,8 @@ Section LsfImpl.
           cbn [evalActionPropGen] in H; destruct H as [H _]; subst s1'.
           right; exists q, rest; split; [exact El | split; [exact Hlrq |]].
           right; right; right; split; [exact Em | split; [exact Ef |]].
-          split; [split; reflexivity | reflexivity | exact Hnw | | reflexivity | reflexivity | reflexivity].
+          split; [split; reflexivity | reflexivity | exact Hnw | | reflexivity | reflexivity | reflexivity
+                  | reflexivity | reflexivity | reflexivity].
           exists env', mr', v'; split; [exact Hs | reflexivity].
       + pose proof (fvFenceI_impl q false Hf) as Ef.
         rewrite evalActionPropGen_liftAction in H; cbn [mem_fence_req implMemIfc] in H.

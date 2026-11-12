@@ -440,6 +440,8 @@ Section StoreCommit.
                                   clintS clint plicS plic initLine fwcs Hdisj).
 
 
+  Local Abbreviation IREQ := (iRequester pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iMemStA := (iMemSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                   mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iReadRpA := (iReadRp pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -468,6 +470,7 @@ Section StoreCommit.
   Lemma acc_storeFirst :
     forall g1 (s1 s1' : IState) (s2m : SState) addr size pkt (cr : bool) sl0,
       iMemStA s1' = iMemStA s1 -> iReadRpA s1' = iReadRpA s1 -> iRpReadyA s1' = iRpReadyA s1 -> iDmStA s1' = iDmStA s1 -> iRevA s1' = iRevA s1 ->
+      IREQ s1' = IREQ s1 -> isReqDataMem (IREQ s1) = true ->
       g_acc pcAddrInit g1 = (if cr then AccStore addr size pkt (WrPend true) else AccNone) ->
       g_revOff pcAddrInit g1 = RevEq ->
       PQ s1' -> optValid (iReadRpA s1) = false -> optValid (iRpReadyA s1) = false ->
@@ -479,7 +482,7 @@ Section StoreCommit.
       sSecondA s2m = (if cr then secondStoreOf addr pkt size else sl0) -> optValid sl0 = false ->
       ACC g1 s1' s2m.
   Proof.
-    intros g1 s1 s1' s2m addr size pkt cr sl0 Emst Erp Erdy Edm HR Eacc Eoff HPQ Hrp0 Hrdy0 Hst0 Hdlq Hrnr Hsnoop Ecr Ess Hsl.
+    intros g1 s1 s1' s2m addr size pkt cr sl0 Emst Erp Erdy Edm HR Erq Hrq Eacc Eoff HPQ Hrp0 Hrdy0 Hst0 Hdlq Hrnr Hsnoop Ecr Ess Hsl.
     unfold AccessRel; rewrite Eacc, Eoff.
     unfold revNotReading, iRevPhase, iScanMsb, iRevSnoopHit in Hrnr, Hsnoop |- *.
     destruct (dmLoadRq_excl _ Hdlq) as [Hx1 [_ Hx3]].
@@ -487,8 +490,9 @@ Section StoreCommit.
     - unfold WrStageRel; cbv beta iota zeta.
       rewrite ?HR, ?Emst, ?Erp, ?Erdy, ?Edm.
       destruct Hst0 as [Hwq Hwv].
-      exact (conj (conj Hrp0 (conj Hrdy0 (conj Hwq (conj Hwv HPQ))))
-               (conj Hdlq (conj Hrnr (conj eq_refl (conj Hsnoop (conj (eq_sym Ecr) Ess)))))).
+      assert (Hrq' : isReqDataMem (IREQ s1') = true) by (rewrite Erq; exact Hrq).
+      exact (conj (conj Hrp0 (conj Hrdy0 (conj Hwq (conj Hwv HPQ)))) (conj Hrq'
+               (conj Hdlq (conj Hrnr (conj eq_refl (conj Hsnoop (conj (eq_sym Ecr) Ess))))))).
     - cbv beta iota zeta; unfold dmNotAccessing.
       rewrite ?HR, ?Emst, ?Erp, ?Erdy, ?Edm, Ess.
       exact (conj Hst0 (conj Hrp0 (conj Hrdy0 (conj HPQ (conj eq_refl (conj (conj Hx1 Hx3) (conj Hrnr Hsl))))))).
@@ -505,7 +509,7 @@ Section StoreCommit.
     intros g s1 s1' s2 mi' addr size pkt E1 Hwr Eacc Hrule Hg.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha; unfold WrStageRel in Ha; cbv beta iota zeta in Ha.
-    destruct Ha as [[Hrp0 [Hrdy0 [Hst0 [Hlk Hws]]]] [Hdlq [Hrnr [Hoff [Hsnoop [Hsec Hhq]]]]]].
+    destruct Ha as [[Hrp0 [Hrdy0 [Hst0 [Hlk Hws]]]] [Hreq [Hdlq [Hrnr [Hoff [Hsnoop [Hsec Hhq]]]]]]].
     destruct Hhq as [q [[e [G' [Hch Hq]]] [Hsto [Ea [Esz Epkt]]]]].
     remember (crossesB addr size) as cr eqn:Ecr.
     pose proof (proj1 Hc Hdlq) as Hcn.
@@ -570,6 +574,7 @@ Section StoreCommit.
       - rewrite Eg1; intros d v Hcn'; discriminate Hcn'.
       - apply (acc_storeFirst g1 s1 s1' s2m addr size pkt cr (sSecondA s2));
           [rewrite E1; reflexivity | rewrite E1; reflexivity | rewrite E1; reflexivity | rewrite E1; reflexivity | exact HR
+          | rewrite E1; reflexivity | exact Hreq
           | rewrite Eg1, Eacc'; reflexivity | rewrite Eg1; exact Hoff | exact HPQ | exact Hrp0 | exact Hrdy0
           | exact Hst0 | exact Hdlq | exact Hrnr | exact Hsnoop
           | exact Ecr | exact Ess | exact Hsec].
@@ -632,7 +637,7 @@ Section StoreCommit.
     intros g s1 s1' s2 mi' addr size pkt E1 Hwr Eacc Hrule Hg.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha; unfold WrStageRel in Ha; cbv beta iota zeta in Ha.
-    destruct Ha as [[Hrp0 [Hrdy0 [Hst0 [Hlk Hws]]]] [Hdlq [Hrnr [Hoff [Hsnoop [Hcr Hsec]]]]]].
+    destruct Ha as [[Hrp0 [Hrdy0 [Hst0 [Hlk Hws]]]] [_ [Hdlq [Hrnr [Hoff [Hsnoop [Hcr Hsec]]]]]]].
     cbn [andb negb] in Hst0.
     pose proof (proj1 Hc Hdlq) as Hcn.
     destruct Hrf as [R1 [R2 [R3 R4]]].

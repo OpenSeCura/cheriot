@@ -580,8 +580,8 @@ Section ExecAppend.
     destruct (g_acc pcAddrInit g) as [| addr size pkt [[|]|[|]] | ld pkt0 [[|]|[|]|[|]|[|] rp|res]
                                       | rc st | st | st | addr pkt st];
       try (cbn [accTakesHead] in Etake; discriminate Etake).
-    - destruct Hacc as [_ [_ [_ [_ [_ [_ [q_h [Hh [Hst _]]]]]]]]]; left; exists q_h; exact (conj Hh Hst).
-    - destruct Hacc as [_ [_ [_ [_ [_ [_ [q_h [Hh [Hst _]]]]]]]]]; left; exists q_h; exact (conj Hh Hst).
+    - destruct Hacc as [_ [_ [_ [_ [_ [_ [_ [q_h [Hh [Hst _]]]]]]]]]]; left; exists q_h; exact (conj Hh Hst).
+    - destruct Hacc as [_ [_ [_ [_ [_ [_ [_ [q_h [Hh [Hst _]]]]]]]]]]; left; exists q_h; exact (conj Hh Hst).
     - destruct Hacc as [_ [_ [Elrp [Eld [_ [_ [_ [_ [_ [q_h [Hh [Hld Elc]]]]]]]]]]]];
         right; split; [exact Elrp | exists q_h; subst ld; exact (conj Hh (conj Hld Elc))].
     - destruct Hacc as [_ [_ [Elrp [Eld [_ [_ [_ [_ [_ [q_h [Hh [Hld Elc]]]]]]]]]]]];
@@ -668,8 +668,7 @@ Section ExecAppend.
       daLiveA s1 j = true ->
       iDmBufA s1 = [] ->
       dmLoadRq (iDmStA s1) = true ->
-      msWriteRq (iMemStA s1) = false ->
-      noPortWriteB implRegions (iRegionsA s1) = true ->
+      noCoreWrM implRegions (iMemA s1) = true ->
       aluOut = evalAluOut (readPcc pcAddrInit (iRfA s1)) (daAluIn j) ->
       SemAction defaultEnv
         (@executeNonDeferred pcAddrInit type (readPcc pcAddrInit (iRfA s1))
@@ -692,11 +691,11 @@ Section ExecAppend.
         SemActions envS specActs s2 s2' /\ RELG g' s1' s2'.
   Proof.
     intros g s1 s1' s2 j d2a_tail aluOut rfMid execOut
-           Hg Ed2a Hlive Hbuf Hlrq Hms Hnp Halu Hsem Hdm Hmd
+           Hg Ed2a Hlive Hbuf Hlrq Hnw Halu Hsem Hdm Hmd
            Efl' Emem Edm Emd Efip' Hrest.
     destruct (empty_dm_quiescent pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
-                clintS clint plicS plic initLine fwcs g s1 s2 Hg Hbuf Hlrq Hms Hnp)
+                clintS clint plicS plic initLine fwcs g s1 s2 Hg Hbuf Hlrq Hnw)
       as [Hch [Hcnwb _]].
     destruct (catchup_latches pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
@@ -704,7 +703,7 @@ Section ExecAppend.
       as [s2m [Hdev [Hgm [Emeip Emtip]]]].
     destruct (empty_dm_quiescent pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA
-                clintS clint plicS plic initLine fwcs g s1 s2m Hgm Hbuf Hlrq Hms Hnp)
+                clintS clint plicS plic initLine fwcs g s1 s2m Hgm Hbuf Hlrq Hnw)
       as [_ [_ [Hsl [Erf0 Esrf]]]].
     pose proof Hgm as Hgm0; destruct Hgm0 as [Hrfm Hmm Hlm Hrpm Hem Ham Hcm Hdmqm Hfm Hsm Hfrm Hwm Hrkm].
     destruct (live_head_fence_facts g s1 s2m j d2a_tail Hfm Hmm Ed2a Hlive)

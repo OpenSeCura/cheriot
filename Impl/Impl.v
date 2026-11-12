@@ -231,7 +231,7 @@ Section ImplDom.
                                      (implClintAction (readClintMtip ty))).
 
       Definition setExecuteCanProceedStage : Action ty sysTree (Bit 0) :=
-        liftAction np_execute (@setExecuteCanProceed ty).
+        liftAction np_execute (@resetExecuteCanProceed ty).
 
       Definition setRevokerCanProceedStage : Action ty sysTree (Bit 0) :=
         liftAction np_mem (@implRevokerSetCanProceedStep regions ty rev).

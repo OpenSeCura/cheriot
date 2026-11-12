@@ -371,22 +371,76 @@ Section RedirDec.
       rewrite app_nil_r; unfold iD2a; rewrite ED; reflexivity.
   Qed.
 
+  (* An enqueue keeps the head of a non-empty FIFO *)
+  Lemma firstVal_enq :
+    forall (f : TS (ShiftFifo.fifoTree decodeCapacity DecodeToAluEntry)) v,
+      fifo_wf f -> (Datatypes.length (fifo_to_list f) < decodeCapacity)%nat ->
+      (fifoFirstVal f).(Snd).(Fst) = true -> fifoFirstVal (fifoEnqState f v) = fifoFirstVal f.
+  Proof.
+    intros f v Hw Hlt Hv.
+    pose proof (fifo_wf_enq _ _ f v Hw) as Hw'.
+    pose proof (fifo_to_list_enq _ _ f v Hw Hlt) as Henq.
+    rewrite (fifoFirstVal_valid _ _ f Hw) in Hv.
+    destruct (fifo_to_list f) as [| x l] eqn:El; [discriminate Hv |].
+    assert (El' : fifo_to_list (fifoEnqState f v) = x :: (l ++ [v])%list)
+      by (rewrite Henq; reflexivity).
+    assert (D1 : (fifoFirstVal (fifoEnqState f v)).(Fst) = (fifoFirstVal f).(Fst))
+      by (rewrite (fifoFirstVal_data _ _ _ x _ El'), (fifoFirstVal_data _ _ _ x _ El); reflexivity).
+    assert (D2 : (fifoFirstVal (fifoEnqState f v)).(Snd).(Fst) = (fifoFirstVal f).(Snd).(Fst))
+      by (rewrite (fifoFirstVal_valid _ _ _ Hw'), (fifoFirstVal_valid _ _ _ Hw), El', El; reflexivity).
+    revert D1 D2; destruct (fifoFirstVal (fifoEnqState f v)) as [a [b []]]; destruct (fifoFirstVal f) as [a' [b' []]].
+    cbn [Fst Snd]; intros -> ->; reflexivity.
+  Qed.
+
+  (* The hand-off: decode keeps the head of the hand-off FIFO when it has one *)
+  Lemma decode_hand :
+    forall (s1 s1' : IState), SemAction envI STAGE s1 s1' Zmod.zero -> fifo_wf (D2AF s1) ->
+      ACC HandInv s1 -> ACC HandInv s1'.
+  Proof.
+    intros s1 s1' Hsem W3 Hh.
+    assert (Hfr : forall f, iRfA s1' = iRfA s1 -> iMemA s1' = iMemA s1 -> iExecA s1' = iExecA s1 -> iDmA s1' = iDmA s1 ->
+                  D2AF s1' = f -> ((fifoFirstVal (D2AF s1)).(Snd).(Fst) = true -> fifoFirstVal f = fifoFirstVal (D2AF s1)) ->
+                  ACC HandInv s1').
+    { intros f Erf Emem Eex Edm ED Ehd; revert Hh; apply (ACC HandInv_frame);
+        unfold hdHead, hdDmFull, iRedirValid, iPcc;
+        rewrite ?Eex, ?Erf, ?Edm, ?Emem; first [reflexivity | intros h; exact h | idtac].
+      rewrite ED; exact Ehd. }
+    assert (Hst : DECSTUTTER s1 s1' -> ACC HandInv s1')
+      by (intros [Erf [_ [Emem [_ [ED [Eex [Edm _]]]]]]]; exact (Hfr _ Erf Emem Eex Edm ED (fun _ => eq_refl))).
+    destruct (decode_canProceed decodeCapacity (iDecodeA s1)) eqn:Hcp.
+    2: { rewrite (ACC dec_noCanProceed _ s1 s1' Hsem Hcp); exact Hh. }
+    destruct ((dHeadA s1).(Snd).(Fst)) eqn:Hhv; [| exact (Hst (ACC dec_noHead _ s1 s1' Hsem Hcp Hhv))].
+    destruct (aiLiveA s1 (dAA s1)) eqn:Hl.
+    - destruct (ACC dCanIssue s1) eqn:Hci; [| exact (Hst (ACC dec_stall _ s1 s1' Hsem Hcp Hhv Hl Hci))].
+      destruct (ACC dec_issue _ s1 s1' Hsem Hcp Hhv Hl Hci) as [Erf [_ [Emem [_ [ED [Eex [Edm _]]]]]]].
+      refine (Hfr _ Erf Emem Eex Edm ED _).
+      unfold dCanIssue in Hci; destruct (canIssueV_true _ _ _ _ _ _ _ Hci) as [Hfull _].
+      apply firstVal_enq; [exact W3 |].
+      pose proof (length_fifo_to_list _ _ _ W3) as Hlen.
+      assert (Hf' : Nat.eqb (Z.to_nat (Zmod.unsigned (fifo_size (D2AF s1)))) decodeCapacity = false)
+        by (rewrite <- fifo_size_eqb_cap; exact Hfull).
+      apply Nat.eqb_neq in Hf'; unfold fifo_wf in W3; lia.
+    - destruct (ACC dec_stale _ s1 s1' Hsem Hcp Hhv Hl) as [Erf [_ [Emem [_ [ED [Eex [Edm _]]]]]]].
+      exact (Hfr _ Erf Emem Eex Edm ED (fun _ => eq_refl)).
+  Qed.
+
   Theorem stepOK_decode : STEPOKRR STAGE.
   Proof.
-    intros s1 s1' s2 Hsem _ [Hi [g Hg]].
+    intros s1 s1' s2 Hsem _ [Hi [Hh [g Hg]]].
     assert (Hw : fifo_wf (IBF s1) /\ fifo_wf (D2AF s1)).
     { pose proof Hg as [_ _ _ _ _ _ _ _ _ _ _ Hw _]; unfold effS in Hw.
       destruct (validA s1); exact (conj (proj1 (proj2 Hw)) (proj1 (proj2 (proj2 Hw)))). }
     destruct (decode_inv s1 s1' Hsem (proj1 Hw) (proj2 Hw) Hi) as [Hi' Ev].
+    pose proof (decode_hand s1 s1' Hsem (proj2 Hw) Hh) as Hh'.
     destruct (validA s1) eqn:Hv.
     - erewrite effS_true in Hg by exact Hv.
       destruct (decode_pending g s1 s1' s2 Hsem Hv Hi Hg) as [g' Hg'].
-      exists s2; split; [apply NilAction; reflexivity |]; split; [exact Hi' | exists g'].
+      exists s2; split; [apply NilAction; reflexivity |]; split; [exact Hi' | split; [exact Hh' | exists g']].
       erewrite effS_true by exact Ev; exact Hg'.
     - erewrite effS_false in Hg by exact Hv.
       destruct (ACC stepOK_decodeAndRegReadStage clintS clint plicS plic initLine fwcs s1 s1' s2 Hsem (ex_intro _ g Hg))
         as [s2' [Hss [g' Hg']]].
-      exists s2'; split; [exact Hss |]; split; [exact Hi' | exists g'].
+      exists s2'; split; [exact Hss |]; split; [exact Hi' | split; [exact Hh' | exists g']].
       erewrite effS_false by exact Ev; exact Hg'.
   Qed.
 

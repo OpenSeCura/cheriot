@@ -459,15 +459,36 @@ Section RedirFront.
       rewrite app_nil_r; unfold iFetchBuf; rewrite (proj1 (proj2 (proj2 (proj2 Hst)))); reflexivity.
   Qed.
 
+  (* The hand-off: a fetch request touches only fetch and the fetch side of the regions *)
+  Lemma fetchRq_hand :
+    forall (s1 s1' : IState), SemAction envI STAGE s1 s1' Zmod.zero -> ACC HandInv s1 -> ACC HandInv s1'.
+  Proof.
+    intros s1 s1' Hsem Hh.
+    pose proof (fun A => lineUnique_implRegions pre post revBase revPfB revPfA A (Is_true_eq_true _ Hdisj)) as Hu.
+    destruct (andb (negb (ACC frFull s1)) (andb (negb (ACC frFip s1)) (negb (anyWait implRegions (iRegionsA s1)))))
+      eqn:Hgo.
+    2: { rewrite (ACC fetchRq_idle _ s1 s1' Hsem Hgo); exact Hh. }
+    apply andb_prop in Hgo as [Hf Hgo]; apply andb_prop in Hgo as [Hfc Hw].
+    apply negb_true_iff in Hf, Hfc, Hw.
+    destruct (excAny (ACC frExc s1)) eqn:Hpre.
+    - destruct (ACC fetchRq_pre _ s1 s1' Hsem Hf Hfc Hw Hpre) as [Erf [_ [Emem [_ [ED [Eex [Edm _]]]]]]].
+      exact (ACC HandInv_eq s1 s1' Eex ED Erf Edm Emem Hh).
+    - destruct (ACC fetchRq_noPre _ s1 s1' Hu Hsem Hf Hfc Hw Hpre) as [mr' [rdy [Hat [_ Hst]]]].
+      assert (Hfr : forall f, ACC FrqStep s1 s1' (mr' ,, (iMemA s1).(Snd)) f -> ACC HandInv s1').
+      { intros f [Erf [_ [Emem [_ [ED [Eex [Edm _]]]]]]].
+        exact (ACC HandInv_regions s1 s1' mr' Eex ED Erf Edm Emem Hh). }
+      destruct rdy; [destruct Hst as [nio Hst] |]; exact (Hfr _ Hst).
+  Qed.
+
   Theorem stepOK_fetchRq : STEPOKRR STAGE.
   Proof.
-    intros s1 s1' s2 Hsem _ [Hi [g Hg]].
+    intros s1 s1' s2 Hsem _ [Hi [Hh [g Hg]]].
     exists s2; split; [apply NilAction; reflexivity |].
     assert (Wfb : fifo_wf (FBF s1)).
     { pose proof Hg as [_ _ _ _ _ _ _ _ _ _ _ Hw _]; unfold effS in Hw.
       destruct (validA s1); exact (proj1 (proj1 Hw)). }
     destruct (fetchRq_inv s1 s1' Hsem Wfb Hi) as [Hi' Ev].
-    split; [exact Hi' | exists g].
+    split; [exact Hi' | split; [exact (fetchRq_hand s1 s1' Hsem Hh) | exists g]].
     destruct (validA s1) eqn:Hv.
     - erewrite effS_true in Hg by exact Hv; erewrite effS_true by exact Ev.
       exact (fetchRq_pending g s1 s1' s2 Hsem Hv Hi Hg).

@@ -543,7 +543,7 @@ Section ExecLive.
       + destruct Hacc as [_ [_ [_ [_ [_ [[Elrp Errp] _]]]]]].
         destruct (dmLoadRq (iDmStA s1)) eqn:Elrq; [rewrite (Hcn1 eq_refl) in Hcn; discriminate |].
         pose proof (dmState_tags_exhaust _ Hval Elrq Elrp Errq Eck) as E; rewrite E in Errp; discriminate.
-      + destruct Hacc as [_ [Elrq _]]; rewrite (Hcn1 Elrq) in Hcn; discriminate.
+      + destruct Hacc as [_ [_ [Elrq _]]]; rewrite (Hcn1 Elrq) in Hcn; discriminate.
       + destruct Hacc as [_ [_ [Elrp [-> [_ [_ Hst]]]]]]; rewrite Elrp; cbv zeta in Hst.
         destruct st as [[|] | [|] | [|] | [|] rp | res].
         * destruct Hst as [_ [E _]]; rewrite E in Hcn; discriminate.

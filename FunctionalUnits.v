@@ -349,6 +349,7 @@ ECall
     Note: Will cause exception
     Functional Units:
       a) Exception (outputs exception with cause EXC_ECallM)
+      b) NonMemException (outputs isNonMemException)
 
 EBreak
 * EBREAK
@@ -357,6 +358,7 @@ EBreak
     Note: Will cause exception
     Functional Units:
       a) Exception (outputs exception with cause EXC_Breakpoint)
+      b) NonMemException (outputs isNonMemException)
 
 Mret
 * MRET
@@ -549,6 +551,13 @@ Exception (Mux):
   inBounds: AddrBoundsCheck (Load, Store)
   addr: AdderBeforeBoundsCheck (Load, Store)
 
+NonMemException:
+  Outputs: isNonMemException
+  - ECall  : ECall
+  - EBreak : EBreak
+  fetchExc: fetchExc (all)
+  decodeExc: decodeExc (all)
+
 DataMem (Mux):
   Outputs: isDataMem, (Mem {memSize, LoadOp {isUnsigned, isLM, isLG} OR Store {tag, cap, addr}} OR
                        Fence {RR, RW, WR, WW, FenceI})
@@ -602,6 +611,7 @@ DataMem
 MulDiv
 ControlFlow
 ScrCsr
+NonMemException
 
 Reg.tag: pcc.tag (Cjal),
          cs1.tag (Cjalr, CMove),
@@ -748,10 +758,13 @@ Section DecodeInstGroup.
 
       (* "EncodeCap_ecap_isCs2EcapNotCs1Ecap" ::= ##group`"Store" ; *)
 
-      "Exception_isECall" ::= ##group`"ECall" ;
-      "Exception_isEBreak" ::= ##group`"EBreak" ;
+      (* "Exception_isECall" ::= ##group`"ECall" ; *)
+      (* "Exception_isEBreak" ::= ##group`"EBreak" ; *)
       (* "Exception_isLoad" ::= ##group`"Load" ; *)
       (* "Exception_isStore" ::= ##group`"Store" ; *)
+
+      (* "NonMemException_isECall" ::= ##group`"ECall" ; *)
+      (* "NonMemException_isEBreak" ::= ##group`"EBreak" ; *)
 
       (* "DataMem_isLoad" ::= ##group`"Load" ; *)
       (* "DataMem_isStore" ::= ##group`"Store" ; *)
@@ -825,6 +838,8 @@ Section DecodeInstGroup.
       "Cjal" ::= ##group`"Cjal" ;
       "Load" ::= ##group`"Load" ;
       "Store" ::= ##group`"Store" ;
+      "ECall" ::= ##group`"ECall" ;
+      "EBreak" ::= ##group`"EBreak" ;
       "Unseal" ::= ##group`"Unseal" ;
       "CSetBounds" ::= ##group`"CSetBounds" ;
       "CGetLen" ::= ##group`"CGetLen" ;
@@ -903,6 +918,7 @@ Section GetFunctionalUnits.
       "EncodeCap" ::= Or [ ##group`"CGetHigh"; ##group`"Store" ] ;
       "DecodeCap" ::= ##group`"CSetHigh" ;
       "Exception" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"ECall"; ##group`"EBreak" ] ;
+      "NonMemException" ::= Or [ ##group`"ECall"; ##group`"EBreak" ] ;
       "DataMem" ::= Or [ ##group`"Load"; ##group`"Store"; ##group`"Fence" ] ;
       "MulDiv" ::= ##group`"MulDiv" ;
       "ControlFlow" ::= Or [ ##group`"Mret"; ##group`"Cjal"; ##group`"Cjalr"; ##group`"Branch" ] ;
@@ -1554,6 +1570,18 @@ Section FunctionalUnits.
                   (mkSome (mkExceptionInfo $EXC_CHERI #mtvalAsr))
                   #otherExc)))))
     ).
+
+  (* An exception that needs no datapath result: a fetch or decode exception, ECALL or EBREAK.
+   * This is the valid bit of ExceptionUnit without its Load/Store exceptions, which wait for
+   * AdderBeforeBoundsCheck and AddrBoundsCheck. *)
+  Definition NonMemException (isECall isEBreak : ty Bool)
+                             (fetchExc : ty FetchException)
+                             (decodeExc : ty DecodeException)
+  : LetExpr ty Bool :=
+    @RetE _ Bool
+      (Or [ ##fetchExc`"tag" ; ##fetchExc`"seal" ; ##fetchExc`"perm" ; ##fetchExc`"bounds" ;
+            ##decodeExc`"illegal" ; ##decodeExc`"asr" ;
+            #isECall ; #isEBreak ]).
 
   Definition ControlFlow (isMret isCjal isCjalr isBranch : ty Bool)
                     (isCond : ty Bool)

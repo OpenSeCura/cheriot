@@ -99,9 +99,9 @@ Lemma df_Alu_cf : forall ro : type AluOut,
   evalExpr ((Var type AluOpUnion ((evalLetExpr (@Alu type ro)).(Snd).(Snd).(Snd).(Fst))) `? "NonSequential") = true.
 Proof.
   intros ro Hcf.
-  destruct ro as [isComp [dstIdx [dstValue [[excD [excV []]] [[dmD [dmV []]] [md [[cfD [cfV []]] [[scD [scV []]] []]]]]]]]].
+  destruct ro as [isComp [dstIdx [dstValue [[excD [excV []]] [[dmD [dmV []]] [md [[cfD [cfV []]] [[scD [scV []]] [nme []]]]]]]]]].
   cbn [Fst Snd] in Hcf. subst cfV.
-  destruct excV, dmV, scV; split; reflexivity.
+  destruct nme, excV, dmV, scV; split; reflexivity.
 Qed.
 
 (* Routing stage: a fetch fault makes the Exception payload valid *)
@@ -109,6 +109,22 @@ Lemma df_routing_excValid : forall (pcc : type FullECapWithTag) (pkg : type AluI
   let fexc : type FetchException := evalExpr (##pkg`"fetchExc") in
   evalExpr (Or [##fexc`"tag"; ##fexc`"seal"; ##fexc`"perm"; ##fexc`"bounds"]) = true ->
   (evalLetExpr (@AluRouting type pcc (evalLetExpr (@constructAluIn type pkg)))).(Snd).(Snd).(Snd).(Fst).(Snd).(Fst) = true.
+Proof.
+  intros pcc pkg.
+  destruct pkg as [wcd [scr [csr [inst [dexc [[ft [fs [fp [fb []]]]] [cs1 [cs2 [grp []]]]]]]]]].
+  cbv zeta. intros Hf.
+  destruct ft; [reflexivity |].
+  destruct fs; [reflexivity |].
+  destruct fp; [reflexivity |].
+  destruct fb; [reflexivity |].
+  exfalso. first [discriminate Hf | (vm_compute in Hf; discriminate Hf)].
+Qed.
+
+(* Routing stage: a fetch fault makes the NonMemException output true *)
+Lemma df_routing_nmeValid : forall (pcc : type FullECapWithTag) (pkg : type AluInInstGroup),
+  let fexc : type FetchException := evalExpr (##pkg`"fetchExc") in
+  evalExpr (Or [##fexc`"tag"; ##fexc`"seal"; ##fexc`"perm"; ##fexc`"bounds"]) = true ->
+  (evalLetExpr (@AluRouting type pcc (evalLetExpr (@constructAluIn type pkg)))).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) = true.
 Proof.
   intros pcc pkg.
   destruct pkg as [wcd [scr [csr [inst [dexc [[ft [fs [fp [fb []]]]] [cs1 [cs2 [grp []]]]]]]]]].
@@ -257,15 +273,16 @@ Proof. intros [] [] [] []; cbn; intros H; first [reflexivity | discriminate H]. 
 
 Lemma df_Alu_exc : forall ro : type AluOut,
   ro.(Snd).(Snd).(Snd).(Fst).(Snd).(Fst) = true ->
+  ro.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Snd).(Fst) = true ->
   let aluOp : type AluOpUnion := (evalLetExpr (@Alu type ro)).(Snd).(Snd).(Snd).(Fst) in
   let nonSeqOp : type NonSequentialUnion := evalExpr ((Var type AluOpUnion aluOp) `! "NonSequential") in
   evalExpr ((Var type AluOpUnion aluOp) `? "Sequential") = false /\
   evalExpr ((Var type AluOpUnion aluOp) `? "NonSequential") = true /\
   evalExpr ((Var type NonSequentialUnion nonSeqOp) `? "Exception") = true.
 Proof.
-  intros ro Hexc.
-  destruct ro as [isComp [dstIdx [dstValue [[excD [excV []]] [dm [md [cf [sc []]]]]]]]].
-  cbn [Fst Snd] in Hexc. subst excV.
+  intros ro Hexc Hnme.
+  destruct ro as [isComp [dstIdx [dstValue [[excD [excV []]] [dm [md [cf [sc [nme []]]]]]]]]].
+  cbn [Fst Snd] in Hexc, Hnme. subst excV nme.
   cbv zeta.
   split; [reflexivity | split; [reflexivity |]].
   unfold Alu.
@@ -609,7 +626,8 @@ Theorem wrappedAlu_fetchExc_nonSeq : forall (pcc : type FullECapWithTag) (pkg : 
 Proof.
   intros pcc pkg fexc Hf.
   pose proof (df_routing_excValid pcc pkg Hf) as Hr.
-  pose proof (df_Alu_exc (evalLetExpr (@AluRouting type pcc (evalLetExpr (@constructAluIn type pkg)))) Hr) as Ha.
+  pose proof (df_routing_nmeValid pcc pkg Hf) as Hn.
+  pose proof (df_Alu_exc (evalLetExpr (@AluRouting type pcc (evalLetExpr (@constructAluIn type pkg)))) Hr Hn) as Ha.
   cbv zeta in Ha |- *.
   rewrite df_wrappedAlu_unfold. exact Ha.
 Qed.

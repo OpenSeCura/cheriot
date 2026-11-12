@@ -331,7 +331,7 @@ Section Top.
 
   Lemma ObsRegs_of : forall initLine fwc s1 s2, RelL initLine fwc s1 s2 -> ObsRegs initLine fwc s1 s2.
   Proof.
-    intros initLine fwc s1 s2 [_ [g Hg]].
+    intros initLine fwc s1 s2 [_ [_ [g Hg]]].
     unfold effS in Hg; destruct (iRedirValid _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ s1);
     destruct Hg as [Hrf _ _ Hrp _ _ _ _ _ _ _ _ _];
     destruct Hrf as [Hs [Hch _]];
@@ -341,7 +341,7 @@ Section Top.
 
   Lemma ObsExt_of : forall initLine fwc s1 s2, RelL initLine fwc s1 s2 -> ObsExt s1 s2.
   Proof.
-    intros initLine fwc s1 s2 [_ [g Hg]].
+    intros initLine fwc s1 s2 [_ [_ [g Hg]]].
     unfold effS in Hg; destruct (iRedirValid _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ s1);
     destruct Hg as [_ Hm _ _ _ _ _ _ _ _ _ _ _];
     destruct Hm as [[Hpre [_ [Hpl _]]] _];

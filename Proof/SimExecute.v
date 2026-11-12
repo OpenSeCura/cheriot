@@ -114,16 +114,72 @@ Section ExecuteTreeHelpers.
     intros env ex P; reflexivity.
   Qed.
 
+  (* The hand-off between execute slots of one cycle (`firstSlot`, `handoff`) *)
+  Definition ex_firstSlot (ex : TreeState ElemState eTree) : bool :=
+    ex.(Snd).(Snd).(Snd).(Fst).
+
+  Definition ex_handoff (ex : TreeState ElemState eTree) : type ExecHandoff :=
+    ex.(Snd).(Snd).(Snd).(Snd).(Fst).
+
+  (* ExecHandoff = { head; pcc; redirPending; dataMemIn_isFull; dataMem_isEmpty; mem_noWriteRq } *)
+  Definition hoHead (h : type ExecHandoff) : type (Option DecodeToAluEntry) := h.(Fst).
+  Definition hoPcc (h : type ExecHandoff) : type FullECapWithTag := h.(Snd).(Fst).
+  Definition hoRedir (h : type ExecHandoff) : bool := h.(Snd).(Snd).(Fst).
+  Definition hoDmFull (h : type ExecHandoff) : bool := h.(Snd).(Snd).(Snd).(Fst).
+
+  Definition ex_withFirstSlot (ex : TreeState ElemState eTree) (v : bool)
+    : TreeState ElemState eTree :=
+    (ex.(Fst) ,, (ex.(Snd).(Fst) ,, (ex.(Snd).(Snd).(Fst) ,, (v ,, ex.(Snd).(Snd).(Snd).(Snd))))).
+
+  Definition ex_withHandoff (ex : TreeState ElemState eTree) (v : type ExecHandoff)
+    : TreeState ElemState eTree :=
+    (ex.(Fst) ,, (ex.(Snd).(Fst) ,, (ex.(Snd).(Snd).(Fst) ,, (ex.(Snd).(Snd).(Snd).(Fst) ,,
+      (v ,, ex.(Snd).(Snd).(Snd).(Snd).(Snd)))))).
+
+  Lemma evalActionPropGen_readFirstSlot :
+    forall {env : Env eTree} (ex : TreeState ElemState eTree) P,
+      evalActionPropGen env (@readFirstSlot type) ex P <-> P ex (ex_firstSlot ex).
+  Proof. intros env ex P; reflexivity. Qed.
+
+  Lemma evalActionPropGen_clearFirstSlot :
+    forall {env : Env eTree} (ex : TreeState ElemState eTree) P,
+      evalActionPropGen env (@clearFirstSlot type) ex P <-> P (ex_withFirstSlot ex false) Zmod.zero.
+  Proof. intros env ex P; reflexivity. Qed.
+
+  Lemma evalActionPropGen_readHandoff :
+    forall {env : Env eTree} (ex : TreeState ElemState eTree) P,
+      evalActionPropGen env (@readHandoff type) ex P <-> P ex (ex_handoff ex).
+  Proof. intros env ex P; reflexivity. Qed.
+
+  Lemma evalActionPropGen_writeHandoff :
+    forall {env : Env eTree} (v : type ExecHandoff) (ex : TreeState ElemState eTree) P,
+      evalActionPropGen env (@writeHandoff type v) ex P <-> P (ex_withHandoff ex v) Zmod.zero.
+  Proof. intros env v ex P; reflexivity. Qed.
+
+  Lemma evalActionPropGen_clearHandoff :
+    forall {env : Env eTree} (ex : TreeState ElemState eTree) P,
+      evalActionPropGen env (@clearHandoff type) ex P <->
+      P (ex_withHandoff ex (getDefault ExecHandoff)) Zmod.zero.
+  Proof. intros env ex P; reflexivity. Qed.
+
+  Lemma evalActionPropGen_resetExecuteCanProceed :
+    forall {env : Env eTree} (ex : TreeState ElemState eTree) P,
+      evalActionPropGen env (@resetExecuteCanProceed type) ex P <->
+      P (ex_withHandoff (ex_withFirstSlot (ex_withCanProceed ex true) true) (getDefault ExecHandoff))
+        Zmod.zero.
+  Proof. intros env ex P; reflexivity. Qed.
+
   (* Execute's redirect register (applied by `applyRedirect`) *)
   Definition ex_redirect (ex : TreeState ElemState eTree) : type (Option FullECapWithTag) :=
-    ex.(Snd).(Snd).(Snd).(Fst).
+    ex.(Snd).(Snd).(Snd).(Snd).(Snd).(Fst).
 
   Definition ex_redirValid (ex : TreeState ElemState eTree) : bool :=
     (ex_redirect ex).(Snd).(Fst).
 
   Definition ex_withRedirect (ex : TreeState ElemState eTree) (v : type (Option FullECapWithTag))
     : TreeState ElemState eTree :=
-    (ex.(Fst) ,, (ex.(Snd).(Fst) ,, (ex.(Snd).(Snd).(Fst) ,, (v ,, ex.(Snd).(Snd).(Snd).(Snd))))).
+    (ex.(Fst) ,, (ex.(Snd).(Fst) ,, (ex.(Snd).(Snd).(Fst) ,, (ex.(Snd).(Snd).(Snd).(Fst) ,,
+      (ex.(Snd).(Snd).(Snd).(Snd).(Fst) ,, (v ,, ex.(Snd).(Snd).(Snd).(Snd).(Snd).(Snd))))))).
 
   (* The redirect Execute sets: new PCC `p` (the target is `p`'s address) *)
   Definition redirOf (p : type FullECapWithTag) : type (Option FullECapWithTag) :=

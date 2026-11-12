@@ -548,15 +548,41 @@ Section RedirAsm.
       + constructor; [reflexivity | constructor].
   Qed.
 
+  (* The hand-off: fetch assembly touches only fetch and the fetch side of the regions *)
+  Lemma fetchAsm_hand :
+    forall (s1 s1' : IState), SemAction envI STAGE s1 s1' Zmod.zero -> ACC HandInv s1 -> ACC HandInv s1'.
+  Proof.
+    intros s1 s1' Hsem Hh.
+    pose proof (fun A => lineUnique_implRegions pre post revBase revPfB revPfA A (Is_true_eq_true _ Hdisj)) as Hu.
+    assert (Hsame : forall f, FASM s1 s1' (iMemA s1) f -> ACC HandInv s1')
+      by (intros f [Erf [_ [Emem [_ [ED [Eex [Edm _]]]]]]]; exact (ACC HandInv_eq s1 s1' Eex ED Erf Edm Emem Hh)).
+    assert (Hdq : forall mr' f, (ACC aPre s1 = true -> mr' = iRegionsA s1) ->
+                  (ACC aPre s1 = false -> FetchDeqAtL (ACC aAligned s1) implRegions (iRegionsA s1) mr') ->
+                  FASM s1 s1' (mr' ,, (iMemA s1).(Snd)) f -> ACC HandInv s1').
+    { intros mr' f _ _ [Erf [_ [Emem [_ [ED [Eex [Edm _]]]]]]].
+      exact (ACC HandInv_regions s1 s1' mr' Eex ED Erf Edm Emem Hh). }
+    destruct (ACC aCp s1) eqn:Hcp.
+    2: { rewrite (ACC asm_idle _ s1 s1' Hsem Hcp); exact Hh. }
+    destruct ((ACC aHead s1).(Snd).(Fst)) eqn:Hhv; [| exact (Hsame _ (ACC asm_noHead _ Hu s1 s1' Hsem Hcp Hhv))].
+    destruct ((ACC aPkt s1).(Snd).(Fst)) eqn:Hpv; [| exact (Hsame _ (ACC asm_noPkt _ Hu s1 s1' Hsem Hcp Hhv Hpv))].
+    destruct (ACC aMatch s1) eqn:Hm.
+    2: { destruct (ACC asm_stale _ Hu s1 s1' Hsem Hcp Hhv Hpv Hm) as [mr' [H1 [H2 Hst]]]; exact (Hdq mr' _ H1 H2 Hst). }
+    destruct (ACC aIbFull s1) eqn:Hf; [exact (Hsame _ (ACC asm_ibFullStall _ Hu s1 s1' Hsem Hcp Hhv Hpv Hm Hf)) |].
+    destruct (ACC aIsSeq s1) eqn:Hseq; [exact (Hsame _ (ACC asm_seq _ Hu s1 s1' Hsem Hcp Hhv Hpv Hm Hf Hseq)) |].
+    destruct (ACC asm_eol _ Hu s1 s1' Hsem Hcp Hhv Hpv Hm Hf Hseq) as [l2 [mr' [_ [_ [H1 [H2 [Heol Hst2]]]]]]].
+    destruct (ACC aEol s1 l2) eqn:He; [| exact (Hsame _ (Hst2 eq_refl))].
+    refine (Hdq mr' _ H1 _ (Heol eq_refl)); intros Hp; exact (H2 Hp eq_refl).
+  Qed.
+
   Theorem stepOK_fetchAsm : STEPOKRR STAGE.
   Proof.
-    intros s1 s1' s2 Hsem _ [Hi [g Hg]].
+    intros s1 s1' s2 Hsem _ [Hi [Hh [g Hg]]].
     exists s2; split; [apply NilAction; reflexivity |].
     assert (Hw : fifo_wf (FBF s1) /\ fifo_wf (IBF s1)).
     { pose proof Hg as [_ _ _ _ _ _ _ _ _ _ _ Hw _]; unfold effS in Hw.
       destruct (validA s1); exact (conj (proj1 (proj1 Hw)) (proj1 (proj2 Hw))). }
     destruct (fetchAsm_inv s1 s1' Hsem (proj1 Hw) (proj2 Hw) Hi) as [Hi' Ev].
-    split; [exact Hi' | exists g].
+    split; [exact Hi' | split; [exact (fetchAsm_hand s1 s1' Hsem Hh) | exists g]].
     destruct (validA s1) eqn:Hv.
     - erewrite effS_true in Hg by exact Hv; erewrite effS_true by exact Ev.
       exact (fetchAsm_pending g s1 s1' s2 Hsem Hv Hi Hg).

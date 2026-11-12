@@ -19,7 +19,7 @@ From Guru Require Import Primitives Library Syntax Combinators Notations Semanti
 From Cheriot Require Import SpecDefines Spec SpecDevice Clint Plic SpecRevoker.
 From Cheriot Require Import Impl ImplCommon ImplDevice ImplRevoker ImplMulDiv.
 From Cheriot.Proof Require Import ImplSpec SimDevices SimExecute SimFetchDecode.
-From Cheriot.Proof Require Import RefRel RefCoreRel RefPeriph RefRevBitRule RefRedirect RefExecImpl RefExecFrame.
+From Cheriot.Proof Require Import RefRel RefCoreRel RefRevoker RefPeriph RefRevBitRule RefRedirect RefExecImpl RefExecFrame.
 
 Import ListNotations.
 Local Open Scope Z_scope.
@@ -108,11 +108,16 @@ Section RedirStep.
   Proof. intros s x v; reflexivity. Qed.
 
   Lemma lift_np_mem :
-    forall (a : Action type (getNode NPMEM) (Bit 0)), STEPOKR (liftAction NPMEM a) -> StepOKRR (liftAction NPMEM a).
+    forall (a : Action type (getNode NPMEM) (Bit 0)), STEPOKR (liftAction NPMEM a) ->
+      StepOKRR (liftAction NPMEM a).
   Proof.
-    intros a H s1 s1' s2 Hs Hr [Hinv [g Hg]].
+    intros a H s1 s1' s2 Hs Hr [Hinv [Hh [g Hg]]].
     pose proof Hs as Hs0; apply SemAction_liftAction_iff in Hs0 as [m' [Hm Es]].
     assert (Hinv' : InvA s1') by (subst s1'; exact Hinv).
+    assert (Hh' : ACC HandInv s1').
+    { revert Hh; subst s1'; apply (ACC HandInv_frame);
+        [reflexivity | reflexivity | reflexivity | intros _; reflexivity | reflexivity | intros h; exact h
+        | intros h; exact h]. }
     assert (Ev : validA s1' = validA s1) by (subst s1'; reflexivity).
     destruct (validA s1) eqn:Hv.
     - erewrite effS_true in Hg by exact Hv.
@@ -123,11 +128,11 @@ Section RedirStep.
           intros sub x v; unfold subEnv; split; intros Hx; exact Hx.
         - subst s1'; symmetry; apply np_mem_applyP_write. }
       destruct (H _ _ _ Hs' Hr (ex_intro _ g Hg)) as [s2' [Hss [g' Hg']]].
-      exists s2'; split; [exact Hss |]; split; [exact Hinv' |]; exists g'.
+      exists s2'; split; [exact Hss |]; split; [exact Hinv' |]; split; [exact Hh' |]; exists g'.
       erewrite effS_true by exact Ev; exact Hg'.
     - erewrite effS_false in Hg by exact Hv.
       destruct (H _ _ _ Hs Hr (ex_intro _ g Hg)) as [s2' [Hss [g' Hg']]].
-      exists s2'; split; [exact Hss |]; split; [exact Hinv' |]; exists g'.
+      exists s2'; split; [exact Hss |]; split; [exact Hinv' |]; split; [exact Hh' |]; exists g'.
       erewrite effS_false by exact Ev; exact Hg'.
   Qed.
 
@@ -140,20 +145,21 @@ Section RedirStep.
       (forall s, F (applyPA s) = applyPA (F s)) ->
       (forall s, validA (F s) = validA s) ->
       (forall s, InvA s -> InvA (F s)) ->
+      (forall s, ACC HandInv s -> ACC HandInv (F s)) ->
       STEPOKR act -> StepOKRR act.
   Proof.
-    intros act F Hsem Hsem' Hcomm Hval Hinv H s1 s1' s2 Hs Hr [Hi [g Hg]].
+    intros act F Hsem Hsem' Hcomm Hval Hinv Hhand H s1 s1' s2 Hs Hr [Hi [Hh [g Hg]]].
     rewrite (Hsem _ _ Hs) in Hs |- *.
     pose proof (Hval s1) as Ev.
     destruct (validA s1) eqn:Hv.
     - erewrite effS_true in Hg by exact Hv.
       pose proof (Hsem' (applyPA s1)) as Hs'; rewrite Hcomm in Hs'.
       destruct (H _ _ _ Hs' Hr (ex_intro _ g Hg)) as [s2' [Hss [g' Hg']]].
-      exists s2'; split; [exact Hss |]; split; [exact (Hinv _ Hi) |]; exists g'.
+      exists s2'; split; [exact Hss |]; split; [exact (Hinv _ Hi) |]; split; [exact (Hhand _ Hh) |]; exists g'.
       erewrite effS_true by exact Ev; exact Hg'.
     - erewrite effS_false in Hg by exact Hv.
       destruct (H _ _ _ Hs Hr (ex_intro _ g Hg)) as [s2' [Hss [g' Hg']]].
-      exists s2'; split; [exact Hss |]; split; [exact (Hinv _ Hi) |]; exists g'.
+      exists s2'; split; [exact Hss |]; split; [exact (Hinv _ Hi) |]; split; [exact (Hhand _ Hh) |]; exists g'.
       erewrite effS_false by exact Ev; exact Hg'.
   Qed.
 
@@ -188,6 +194,9 @@ Section RedirStep.
       refine (RedirInv_frame _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ s _ eq_refl eq_refl eq_refl eq_refl eq_refl _
                 eq_refl eq_refl eq_refl eq_refl H).
       exact (f_equal tagEcap (readPcc_incr pcAddrInit (ACC iRf s))).
+    - intros s; apply (ACC HandInv_frame);
+        [reflexivity | reflexivity | reflexivity | intros _; reflexivity | exact (readPcc_incr pcAddrInit (ACC iRf s))
+        | intros h; exact h | intros h; exact h].
   Qed.
 
   Ltac det_sem lem :=
@@ -207,7 +216,8 @@ Section RedirStep.
     intros Hok; apply (lift_det _ (fun s => writeSubTreeState NPFETCH s
                                   (fetch_withCanProceed pcAddrInit fetchCapacity instCapacity
                                      (readSubTreeState NPFETCH s) true)));
-      [det_sem (@evalActionPropGen_setFetchCanProceed pcAddrInit fetchCapacity instCapacity) | det_sem' (@evalActionPropGen_setFetchCanProceed pcAddrInit fetchCapacity instCapacity) | reflexivity | reflexivity | intros s H; exact H | exact Hok].
+      [det_sem (@evalActionPropGen_setFetchCanProceed pcAddrInit fetchCapacity instCapacity) | det_sem' (@evalActionPropGen_setFetchCanProceed pcAddrInit fetchCapacity instCapacity) | reflexivity | reflexivity | intros s H; exact H
+       | intros s; apply (ACC HandInv_eq); reflexivity | exact Hok].
   Qed.
 
   Lemma lift_setDecodeCp :
@@ -218,7 +228,10 @@ Section RedirStep.
   Proof.
     intros Hok; apply (lift_det _ (fun s => writeSubTreeState NPDEC s
                                   (decode_withCanProceed decodeCapacity (readSubTreeState NPDEC s) true)));
-      [det_sem (@evalActionPropGen_setDecodeCanProceed decodeCapacity) | det_sem' (@evalActionPropGen_setDecodeCanProceed decodeCapacity) | reflexivity | reflexivity | intros s H; exact H | exact Hok].
+      [det_sem (@evalActionPropGen_setDecodeCanProceed decodeCapacity) | det_sem' (@evalActionPropGen_setDecodeCanProceed decodeCapacity) | reflexivity | reflexivity | intros s H; exact H
+       | intros s; apply (ACC HandInv_frame);
+         [reflexivity | reflexivity | reflexivity | intros _; reflexivity | reflexivity
+         | intros h; exact h | intros h; exact h] | exact Hok].
   Qed.
 
   Lemma lift_setExecCp :
@@ -227,8 +240,12 @@ Section RedirStep.
     StepOKRR (@setExecuteCanProceedStage pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions type).
   Proof.
-    intros Hok; apply (lift_det _ (fun s => writeSubTreeState NPEXEC s (ex_withCanProceed (readSubTreeState NPEXEC s) true)));
-      [det_sem (@evalActionPropGen_setExecuteCanProceed) | det_sem' (@evalActionPropGen_setExecuteCanProceed) | reflexivity | reflexivity | intros s H; exact H | exact Hok].
+    intros Hok; apply (lift_det _ (fun s => writeSubTreeState NPEXEC s
+                                  (ex_withHandoff (ex_withFirstSlot (ex_withCanProceed (readSubTreeState NPEXEC s) true) true)
+                                     (getDefault ExecHandoff))));
+      [det_sem (@evalActionPropGen_resetExecuteCanProceed) | det_sem' (@evalActionPropGen_resetExecuteCanProceed)
+       | reflexivity | reflexivity | intros s H; exact H
+       | intros s _; apply (ACC HandInv_first); reflexivity | exact Hok].
   Qed.
 
   (* --- 3. `applyRedirect` --- *)
@@ -312,15 +329,20 @@ Section RedirStep.
 
   Theorem stepOK_applyRedirect : StepOKRR ARSTAGE.
   Proof.
-    intros s1 s1' s2 Hs _ [Hinv [g Hg]].
+    intros s1 s1' s2 Hs _ [Hinv [Hh [g Hg]]].
     exists s2; split; [apply NilAction; reflexivity |].
     destruct (applyRedirect_char s1 s1' Hs) as [Erf [Ewb [Emem [Ede [Edm [Emd Hif]]]]]].
     destruct (validA s1) eqn:Hv; destruct Hif as [Efe Eex].
     - erewrite effS_true in Hg by exact Hv.
       assert (Hv' : validA s1' = false)
         by (unfold iRedirValid, ex_redirValid, ex_redirect; rewrite Eex; reflexivity).
+      (* a later slot never waits with a redirect pending: the hand-off is not in use *)
+      assert (Hh' : ACC HandInv s1').
+      { intros Hcp Hfs.
+        rewrite Eex in Hcp, Hfs; cbn [ex_canProceed ex_firstSlot ex_withRedirect ex_withExecEpoch Fst Snd] in Hcp, Hfs.
+        destruct (Hh Hcp Hfs) as [_ [_ [_ [C _]]]]; rewrite Hv in C; discriminate C. }
       destruct Hinv as [_ [_ I3]]; destruct (I3 Hv) as [Ip _].
-      split.
+      split; [| split; [exact Hh' |]].
       + split; [intros _ | split; [intros _ Hfip | intros C; rewrite Hv' in C; discriminate C]].
         * unfold iFetchPcc, iPcc; rewrite Efe, Erf; exact Ip.
         * unfold iFetchFip; rewrite Efe.
@@ -332,8 +354,9 @@ Section RedirStep.
         * unfold iFenceIPending; rewrite Eex; reflexivity.
     - erewrite effS_false in Hg by exact Hv.
       assert (Hv' : validA s1' = false) by (unfold iRedirValid; rewrite Eex; exact Hv).
+      assert (Hh' : ACC HandInv s1') by exact (ACC HandInv_eq s1 s1' Eex Ede Erf Edm Emem Hh).
       destruct Hinv as [I1 [I2 _]].
-      split.
+      split; [| split; [exact Hh' |]].
       + split; [intros _ | split; [intros _ Hfip | intros C; rewrite Hv' in C; discriminate C]].
         * unfold iFetchPcc, iPcc; rewrite Efe, Erf; exact (I1 Hv).
         * unfold iFetchFip; rewrite Efe.

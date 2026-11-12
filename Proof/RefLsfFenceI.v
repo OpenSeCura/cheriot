@@ -429,7 +429,7 @@ Section LsfFenceI.
       opIsMem (mrOp q) = false -> opIsFenceI (mrOp q) = true ->
       exists s2', SemActions envS specActs s2 s2' /\ REL s1' s2'.
   Proof.
-    intros g s1 s1' s2 q rest Hg [Hfr Edmst Hnpw [env' [mr' [v' [Hsend Emem]]]] Efip Eep _] Eb Hlrq Hm Hfi.
+    intros g s1 s1' s2 q rest Hg [Hfr Edmst Hnpw [env' [mr' [v' [Hsend Emem]]]] Efip Eep _ _ _ _] Eb Hlrq Hm Hfi.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm0 Hl Hrp He Ha Hc Hd Hf Hs Hfr0 Hw Hrk].
     apply andb_prop in Hnpw as [Hwr Hnpw]; apply negb_true_iff in Hwr.
     destruct (AccessRel_fenceI g s1 s2 Ha Hlrq Hwr Hnpw) as [Hsec Hacc3].

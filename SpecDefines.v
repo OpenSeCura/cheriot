@@ -209,6 +209,7 @@ Definition FunctionalUnits := STRUCT_TYPE {
   "EncodeCap" :: Bool ;
   "DecodeCap" :: Bool ;
   "Exception" :: Bool ;
+  "NonMemException" :: Bool ;
   "DataMem" :: Bool ;
   "MulDiv" :: Bool ;
   "ControlFlow" :: Bool ;
@@ -1021,10 +1022,14 @@ Definition AluControl := STRUCT_TYPE {
   (* EncodeCap_ecap_isCs2EcapNotCs1Ecap = Store *)
 
   (* Exception *)
-  "Exception_isECall" :: Bool ;
-  "Exception_isEBreak" :: Bool ;
+  (* Exception_isECall = ECall *)
+  (* Exception_isEBreak = EBreak *)
   (* Exception_isLoad = Load *)
   (* Exception_isStore = Store *)
+
+  (* NonMemException *)
+  (* NonMemException_isECall = ECall *)
+  (* NonMemException_isEBreak = EBreak *)
 
   (* DataMem *)
   (* DataMem_isLoad = Load *)
@@ -1087,6 +1092,8 @@ Definition AluControl := STRUCT_TYPE {
   "Cjal" :: Bool ;
   "Load" :: Bool ;
   "Store" :: Bool ;
+  "ECall" :: Bool ;
+  "EBreak" :: Bool ;
   "Unseal" :: Bool ;
   "CSetBounds" :: Bool ;
   "CGetLen" :: Bool ;
@@ -1165,14 +1172,15 @@ Definition ScrCsrPayload := STRUCT_TYPE {
 }.
 
 Definition AluOut := STRUCT_TYPE {
-  "isComp"      :: Bool ;
-  "dstIdx"      :: Bit RegIdxSzReal ;
-  "dstValue"    :: FullECapWithTag ;
-  "Exception"   :: Option ExceptionInfo ;
-  "DataMem"     :: Option MemFenceUnion ;
-  "MulDiv"      :: Option MulDivUnion ;
-  "ControlFlow" :: Option CfPayload ;
-  "ScrCsr"      :: Option ScrCsrPayload
+  "isComp"          :: Bool ;
+  "dstIdx"          :: Bit RegIdxSzReal ;
+  "dstValue"        :: FullECapWithTag ;
+  "Exception"       :: Option ExceptionInfo ;
+  "DataMem"         :: Option MemFenceUnion ;
+  "MulDiv"          :: Option MulDivUnion ;
+  "ControlFlow"     :: Option CfPayload ;
+  "ScrCsr"          :: Option ScrCsrPayload ;
+  "NonMemException" :: Bool
 }.
 
 Definition SequentialUnionType := [

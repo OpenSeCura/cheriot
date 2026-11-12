@@ -827,7 +827,7 @@ Section RevSteps.
         exact (RevAccRel_coreAcc g s1' s2 Hcore).
     - (* the write is handed to the memory: the impl moves one position ahead *)
       assert (EM' : iMemA s1' = (setRevRA mr (mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh cp) ,,
-                                 (st' ,, (mrq ,, (mrp ,, (mrdy ,, tt)))))) by (rewrite E1; apply iMem_write).
+                                 (st' ,, (reqRevokerV ,, (mrp ,, (mrdy ,, tt)))))) by (rewrite E1; apply iMem_write).
       assert (ER' : iRevA s1' = mkRev12 b t c e ist ir (scanNext sa) st ph' sc sb sh cp).
       { rewrite iRev_eq, iRegions_eq, EM'; cbn [Fst]; apply revOfR_setRevR. }
       assert (HP : forall P, AllPorts P implRegions (iRegionsA s1') = AllPorts P implRegions (iRegionsA s1)).

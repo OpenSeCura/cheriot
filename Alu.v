@@ -284,8 +284,8 @@ Section Alu.
           (##aluControl`"Reg_addr_CapEq", ZeroExtendTo Xlen (ToBit #CapEqOut)) ]
         #uimm20 ;
 
-    LetE ecall : Bool <- ##aluControl`"Exception_isECall" ;
-    LetE ebreak : Bool <- ##aluControl`"Exception_isEBreak" ;
+    LetE ecall : Bool <- ##aluControl`"ECall" ;
+    LetE ebreak : Bool <- ##aluControl`"EBreak" ;
     LetE isLoad : Bool <- ##aluControl`"Load" ;
     LetE isStore : Bool <- ##aluControl`"Store" ;
 
@@ -293,6 +293,8 @@ Section Alu.
       ExceptionUnit ecall ebreak isLoad isStore
                     fetchExc decodeExc inst
                     cs1Tag cs1ECap AddrBoundsCheckOut AdderBeforeBoundsCheckOut ;
+    LETE NonMemExceptionRes : Bool <-
+      NonMemException ecall ebreak fetchExc decodeExc ;
 
     LetE isFence : Bool <- ##aluControl`"DataMem_isFence" ;
     LetE isMulDiv : Bool <- ##aluControl`"MulDiv_isMulDiv" ;
@@ -317,14 +319,15 @@ Section Alu.
              readWriteScrIdx readWriteCsrIdx ScrSanitizerOut cs1ECap ScrCsr_operand inst ;
 
     @RetE _ AluOut (STRUCT {
-      "isComp"      ::= #isComp ;
-      "dstIdx"      ::= ITE0 ##aluIn`"writesCd" #dstIdx ;
-      "dstValue"    ::= #RegVal ;
-      "Exception"   ::= #ExceptionRes ;
-      "DataMem"     ::= #DataMemRes ;
-      "MulDiv"      ::= #MulDivRes ;
-      "ControlFlow" ::= #cfPayload ;
-      "ScrCsr"      ::= #ScrCsrOut
+      "isComp"          ::= #isComp ;
+      "dstIdx"          ::= ITE0 ##aluIn`"writesCd" #dstIdx ;
+      "dstValue"        ::= #RegVal ;
+      "Exception"       ::= #ExceptionRes ;
+      "DataMem"         ::= #DataMemRes ;
+      "MulDiv"          ::= #MulDivRes ;
+      "ControlFlow"     ::= #cfPayload ;
+      "ScrCsr"          ::= #ScrCsrOut ;
+      "NonMemException" ::= #NonMemExceptionRes
     }).
 
 (* ===========================================================================
@@ -340,6 +343,7 @@ Section Alu.
 
     LetE isExc : Bool <- #excOpt`"valid" ;
     LetE excVal : ExceptionInfo <- #excOpt`"data" ;
+    LetE isNonMemExc : Bool <- ##routingOut`"NonMemException" ;
 
     LetE isDataMem : Bool <- #dataMemOpt`"valid" ;
     LetE dataMemVal : MemFenceUnion <- #dataMemOpt`"data" ;
@@ -373,7 +377,10 @@ Section Alu.
           (UNION (NonSequentialUnionType, "Exception" ::= #excVal))
           (UNION (NonSequentialUnionType, "NoException" ::= #noExcUnion)) ;
 
-    LetE isNonSeq : Bool <- Or [ #isExc ; #isDataMem ; #isCf ; #isScrCsr ] ;
+    (* The Load/Store exception needs no term of its own here: a Load or Store is already
+     * isDataMem. So only NonMemException is used, and isNonSeq does not wait for the address
+     * adder and the bounds check. *)
+    LetE isNonSeq : Bool <- Or [ #isNonMemExc ; #isDataMem ; #isCf ; #isScrCsr ] ;
 
     LetE opUnion : AluOpUnion <-
       ITE #isNonSeq

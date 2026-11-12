@@ -17,8 +17,8 @@
 From Stdlib Require Import String List ZArith Zmod Lia Bool.
 From Guru Require Import Primitives Library Syntax Combinators Notations Semantics Composition Theorems HelperLemmas.
 From Cheriot Require Import SpecDefines SpecDevice SpecFetchDeferred Impl.ImplDevice.
-From Cheriot.Proof Require Import TreeLemmas StateRel SimDevices SimExecute SimFetchDecode RefRel RefRegion RefGhost RefFetch
-  RefMemRel RefCoreRel.
+From Cheriot.Proof Require Import TreeLemmas StateRel SimDevices SimExecute SimFetchDecode SimDataMem RefRel RefRegion RefGhost
+  RefFetch FifoGen RefMemRel RefCoreRel RefRevoker.
 
 Import ListNotations.
 Local Open Scope Z_scope.
@@ -218,9 +218,87 @@ Section Redirect.
     exact (conj H1 (conj H2 (conj H3 H4))).
   Qed.
 
-  (* --- 4. The Relation --- *)
+  (* --- 4. The Execute Hand-off --- *)
+
+  (* The parts of the state the hand-off stands for (`aluAndExecuteNonDeferred`) *)
+  Definition hdHead (s1 : IState) : type (Option DecodeToAluEntry) :=
+    fifoFirstVal (decode_toAluFifo decodeCapacity (ACC iDecode s1)).
+  Definition hdDmFull (s1 : IState) : bool :=
+    Zmod.eqb (fifo_size (dm_inputFifo dataMemCapacity (ACC iDm s1))) (Zmod.of_Z _ (Z.of_nat dataMemCapacity)).
+  Definition hdDmEmpty (s1 : IState) : bool :=
+    andb (Zmod.eqb (fifo_size (dm_inputFifo dataMemCapacity (ACC iDm s1))) Zmod.zero)
+         (Zmod.eqb ((dm_state dataMemCapacity (ACC iDm s1)).(Snd)) Zmod.zero).
+
+  (* While a later execute slot of the cycle may still proceed (`canProceed` set, `firstSlot`
+   * clear), the hand-off agrees with the state it stands for: the same head when it has one, the
+   * PCC, no pending redirect, and the dataMem-full check in the safe direction (a later slot may
+   * wait without need, never proceed without cause). *)
+  Definition HandInv (s1 : IState) : Prop :=
+    ex_canProceed (ACC iExec s1) = true -> ex_firstSlot (ACC iExec s1) = false ->
+    let h := ex_handoff (ACC iExec s1) in
+    ((hoHead h).(Snd).(Fst) = true -> hoHead h = hdHead s1) /\
+    hoPcc h = ACC iPcc s1 /\ hoRedir h = false /\ iRedirValid s1 = false /\
+    (hdDmFull s1 = true -> hoDmFull h = true).
+
+  (* A step that keeps the execute registers and changes the rest only in allowed ways *)
+  Lemma HandInv_frame :
+    forall s s',
+      ex_canProceed (ACC iExec s') = ex_canProceed (ACC iExec s) ->
+      ex_firstSlot (ACC iExec s') = ex_firstSlot (ACC iExec s) ->
+      ex_handoff (ACC iExec s') = ex_handoff (ACC iExec s) ->
+      ((hdHead s).(Snd).(Fst) = true -> hdHead s' = hdHead s) ->
+      ACC iPcc s' = ACC iPcc s ->
+      (iRedirValid s = false -> iRedirValid s' = false) ->
+      (hdDmFull s' = true -> hdDmFull s = true) ->
+      HandInv s -> HandInv s'.
+  Proof.
+    intros s s' Ecp Efs Eh Ehd Ep Erv Ef H Hcp Hfs.
+    rewrite Ecp in Hcp; rewrite Efs in Hfs.
+    destruct (H Hcp Hfs) as [I1 [I2 [I3 [I4 I5]]]]; cbv zeta in *; rewrite Eh.
+    split; [| split; [| split; [| split]]].
+    - intros Hv; rewrite (I1 Hv); symmetry; apply Ehd; rewrite <- (I1 Hv); exact Hv.
+    - rewrite Ep; exact I2.
+    - exact I3.
+    - exact (Erv I4).
+    - intros Hf; exact (I5 (Ef Hf)).
+  Qed.
+
+  (* A step that keeps everything the hand-off looks at *)
+  Lemma HandInv_eq :
+    forall s s',
+      ACC iExec s' = ACC iExec s -> ACC iDecode s' = ACC iDecode s -> ACC iRf s' = ACC iRf s ->
+      ACC iDm s' = ACC iDm s -> ACC iMem s' = ACC iMem s ->
+      HandInv s -> HandInv s'.
+  Proof.
+    intros s s' Eex Ede Erf Edm Emem.
+    apply HandInv_frame;
+      unfold hdHead, hdDmFull, iRedirValid, iPcc;
+      rewrite ?Eex, ?Ede, ?Erf, ?Edm; first [reflexivity | intros h; exact h | intros h h'; exact h'].
+  Qed.
+
+  (* A step that changes only the memory regions *)
+  Lemma HandInv_regions :
+    forall s s' (mr' : TS (implRegionsTree implRegions)),
+      ACC iExec s' = ACC iExec s -> ACC iDecode s' = ACC iDecode s -> ACC iRf s' = ACC iRf s ->
+      ACC iDm s' = ACC iDm s -> ACC iMem s' = (mr' ,, (ACC iMem s).(Snd)) ->
+      HandInv s -> HandInv s'.
+  Proof.
+    intros s s' mr' Eex Ede Erf Edm Em.
+    apply HandInv_frame;
+      unfold hdHead, hdDmFull, iRedirValid, iPcc;
+      rewrite ?Eex, ?Ede, ?Erf, ?Edm; first [reflexivity | intros h; exact h].
+  Qed.
+
+  (* `firstSlot` set or `canProceed` clear: no later slot uses the hand-off *)
+  Lemma HandInv_first : forall s, ex_firstSlot (ACC iExec s) = true -> HandInv s.
+  Proof. intros s H _ C; rewrite H in C; discriminate C. Qed.
+
+  Lemma HandInv_noCp : forall s, ex_canProceed (ACC iExec s) = false -> HandInv s.
+  Proof. intros s H C; rewrite H in C; discriminate C. Qed.
+
+  (* --- 5. The Relation --- *)
 
   Definition RefRelR (s1 : IState) (s2 : SState) : Prop :=
-    RedirInv s1 /\ exists g, RELG g (effS s1) s2.
+    RedirInv s1 /\ HandInv s1 /\ exists g, RELG g (effS s1) s2.
 
 End Redirect.

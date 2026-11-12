@@ -672,7 +672,7 @@ Section RefInitMain.
     assert (Hv : iRedirValid pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                    mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA s1 = false).
     { unfold iRedirValid, ex_redirValid, ex_redirect, iExec.
-      rewrite (proj1 (proj2 (proj2 (proj2 He)))); reflexivity. }
+      rewrite (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 He)))))); reflexivity. }
     split.
     - apply RedirInv_np_of; [exact Hv | |].
       + unfold iFetchPcc, fetch_pccCopy, iFetch, iPcc.
@@ -680,8 +680,11 @@ Section RefInitMain.
         exact (f_equal tagEcap (eq_sym (readPcc_init_val pcAddrInit _ init_rf))).
       + unfold iFenceIPending, exec_fenceIPending, iExec.
         rewrite (proj1 (proj2 He)); intros C; discriminate C.
-    - destruct RefRel_init as [g Hg]; exists g.
-      erewrite effS_false by exact Hv; exact Hg.
+    - split.
+      + (* the first slot is set initially: no hand-off yet *)
+        apply HandInv_first; exact (proj1 (proj2 (proj2 (proj2 He)))).
+      + destruct RefRel_init as [g Hg]; exists g.
+        erewrite effS_false by exact Hv; exact Hg.
   Qed.
 
 End RefInitMain.

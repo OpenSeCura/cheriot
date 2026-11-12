@@ -55,6 +55,22 @@ Section NoPortWrite.
     | r :: l' => fun mi => andb (regionNoPortWriteB r mi.(Fst)) (noPortWriteB l' mi.(Snd).(Fst))
     end.
 
+  (* No store of the core is pending (`implMemNoCoreWrite`): no write waits in `state` or in a
+   * region port, or the pending write is not the core's (`requester`) *)
+  Definition noCoreWrM (l : list MemRegion) (m : TS (implMemTree l)) : bool :=
+    orb (andb (negb (msWriteRq m.(Snd).(Fst))) (noPortWriteB l m.(Fst)))
+        (negb (isReqDataMem m.(Snd).(Snd).(Fst))).
+
+  Lemma noCoreWrM_cases :
+    forall l (m : TS (implMemTree l)), noCoreWrM l m = true ->
+      (msWriteRq m.(Snd).(Fst) = false /\ noPortWriteB l m.(Fst) = true) \/
+      isReqDataMem m.(Snd).(Snd).(Fst) = false.
+  Proof.
+    intros l m; unfold noCoreWrM.
+    destruct (msWriteRq m.(Snd).(Fst)), (noPortWriteB l m.(Fst)), (isReqDataMem m.(Snd).(Snd).(Fst));
+      cbn; intros H; first [discriminate H | left; split; reflexivity | right; reflexivity].
+  Qed.
+
   Lemma regionNoPortWrite_wp :
     forall r env (y : TS (implMemRegionTree r)) P,
       evalActionPropGen env (@implMemRegionNoPortWriteRq r type) y P <-> P y (regionNoPortWriteB r y).
@@ -532,7 +548,7 @@ Section RevLens.
          m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, (cp ,, tt))))))))))))) ,, (mst ,, (mrq ,, (mrp ,, (mrdy ,, tt)))))) \/
       (rpWriteCap ph = true /\ sh = false /\ msIdle mst = true /\ noPortWriteB implRegions mr = true /\
        exists st' ph',
-         m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (scanNext sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, (cp ,, tt))))))))))))) ,, (st' ,, (mrq ,, (mrp ,, (mrdy ,, tt))))) /\
+         m' = (setRevR mr (b ,, (t ,, (c ,, (e ,, (ist ,, (ir ,, (scanNext sa ,, (st ,, (ph' ,, (sc ,, (sb ,, (sh ,, (cp ,, tt))))))))))))) ,, (st' ,, (reqRevokerV ,, (mrp ,, (mrdy ,, tt))))) /\
          msWriteRq st' = true /\
          msWriteRqV st' = stepOf false (scanFull sa) capSz (disassembleW (scanFull sa) (untagCap sc) capSz) /\
          rpIdle ph' = true).

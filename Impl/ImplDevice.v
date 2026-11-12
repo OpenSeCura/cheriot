@@ -673,6 +673,15 @@ Section ImplDevice.
         LetA noPortWriteRqs : Bool <- implMemNoPortWriteRq ;
         Return (And [ #noWriteRq ; #noPortWriteRqs ]).
 
+      (* No store of the core is pending. All pending writes belong to one access (a new
+       * access waits until no `portRq` holds a Write), and `requester` names its requester.
+       * A pending revoker write is ignored: it only clears the tag of a tagged cap, and CLINT
+       * and PLIC lines carry no tags, so it never changes meip or mtip. *)
+      Definition implMemNoCoreWrite : Action ty implMemTree Bool :=
+        LetA noPendingWrite : Bool <- implMemNoPendingWrite ;
+        ReadReg "requester" pMemRequester (fun requester =>
+        Return (Or [ #noPendingWrite ; Not (isRequesterMatch requester ReqDataMem) ])).
+
       Definition implMemReadRq
                  (req : MemRequester)
                  (addr : ty Addr)
@@ -789,6 +798,7 @@ Section ImplDevice.
         WriteReg pMemState (UNION (MemStateList, "Idle" ::= ($0 : Expr ty (Bit 0)))) Retv.
 
       Definition implMemWrite
+                 (req : MemRequester)
                  (addr : ty Addr)
                  (stVal : ty FullCapWithTag)
                  (memSize : ty (Bit LgLgNumBytesFullCapSz))
@@ -799,14 +809,15 @@ Section ImplDevice.
         If #rdy Then (
           Let  isSecond : Bool      <- ConstBool false ;
           LetL capPkt   : CapPacket <- memDisassembleCapWrite #addr #stVal #memSize ;
-          WriteReg pMemState (UNION (MemStateList, "WriteRq" ::= STRUCT {
+          Act (WriteReg pMemState (UNION (MemStateList, "WriteRq" ::= STRUCT {
             "isSecond" ::= #isSecond ;
             "op"       ::= STRUCT {
               "addr"    ::= #addr ;
               "memSize" ::= #memSize ;
               "pkt"     ::= #capPkt
             }
-          })) Retv
+          })) Retv) ;
+          WriteReg pMemRequester (mkRequester req) Retv
         ) ;
         Return #rdy).
 
@@ -884,7 +895,7 @@ Section ImplDevice.
       Definition implWriteMem (rev : @RevokerInstance implRevokerExtraChildren regions)
                               (addr : ty Addr) (stVal : ty FullCapWithTag)
                               (memSize : ty (Bit LgLgNumBytesFullCapSz)) : Action ty implMemTree Bool :=
-        LetA rdy : Bool <- implMemWrite addr stVal memSize ;
+        LetA rdy : Bool <- implMemWrite ReqDataMem addr stVal memSize ;
         If #rdy Then (
           liftRevoker rev _ (implRevokerSnoopStore addr memSize)
         ) ;
@@ -942,7 +953,7 @@ Section ImplDevice.
           ty
           implMemTree
           (liftRevoker rev)
-          (fun addr stVal sz => implMemWrite addr stVal sz).
+          (fun addr stVal sz => implMemWrite ReqRevoker addr stVal sz).
 
       (* Each rule runs only in its own phase and only if no revoker rule has run in this cycle
        * (`implRevokerGuard`) *)
@@ -983,7 +994,7 @@ Section ImplDevice.
         mem_readRevBitRq   := implReadRevBitRqFor ReqDataMem ;
         mem_getDeqRevBitRp := implGetDeqRevBitRpFor ReqDataMem ;
         mem_writeMem       := implWriteMem rev ;
-        mem_noWriteRq      := implMemNoPendingWrite ;
+        mem_noWriteRq      := implMemNoCoreWrite ;
         mem_fence_req      := fun _ => Return (ConstBool true) ;
         mem_readFenceIWait := liftAction child0Path (implRegionsReadFenceIWait regions) ;
         mem_fenceI_req     := implFenceIReq

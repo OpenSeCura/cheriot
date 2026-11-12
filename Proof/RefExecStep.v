@@ -116,6 +116,9 @@ Section ExecStep.
   Local Abbreviation iRegionsA :=
     (iRegions pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
               mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+  Local Abbreviation iRequesterA :=
+    (iRequester pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iFetchA :=
     (iFetch pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
             mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
@@ -175,20 +178,20 @@ Section ExecStep.
       specialize (Hf Himp); rewrite Hnp in Hf; discriminate Hf.
   Qed.
 
+
   Lemma empty_dm_quiescent :
     forall g (s1 : IState) (s2 : SState),
       RELG g s1 s2 ->
       iDmBufA s1 = [] ->
       dmLoadRq (iDmStA s1) = true ->
-      msWriteRq (iMemStA s1) = false ->
-      noPortWriteB implRegions (iRegionsA s1) = true ->
+      noCoreWrM implRegions (iMemA s1) = true ->
       g_chain pcAddrInit g = [] /\
       g_cnwb pcAddrInit g = None /\
       optValid (sSecondA s2) = false /\
       g_rf0 pcAddrInit g = iFlushA s1 /\
       sRfA s2 = iFlushA s1.
   Proof.
-    intros g s1 s2 Hg Hbuf Hlrq Hms Hnp.
+    intros g s1 s2 Hg Hbuf Hlrq Hnw.
     destruct (dmLoadRq_excl _ Hlrq) as [Hlrp [_ Hrrp]].
     destruct Hg as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     destruct Hc as [Hc1 _]; specialize (Hc1 Hlrq) as Hcnwb.
@@ -198,12 +201,14 @@ Section ExecStep.
       destruct (g_acc pcAddrInit g) as [| addr size pkt st | ld pkt0 st | rc st | st | st | addr pkt st];
         cbn [accTakesHead] in *.
       - split; [exact (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 Ha))))))) | reflexivity].
-      - exfalso; destruct Ha as [Hwr _]; exact (WrStageRel_false addr size pkt st s1 Hms Hnp Hwr).
+      - exfalso; destruct Ha as [Hwr [Hreq _]].
+        destruct (noCoreWrM_cases implRegions (iMemA s1) Hnw) as [[Hms Hnp] | Hnr];
+          [exact (WrStageRel_false addr size pkt st s1 Hms Hnp Hwr) | change (isReqDataMem (iRequesterA s1) = false) in Hnr; rewrite Hnr in Hreq; discriminate Hreq].
       - exfalso; destruct Ha as [_ [_ [H _]]]; rewrite Hlrp in H; discriminate H.
       - exfalso; destruct Ha as [_ [_ [H _]]]; rewrite Hrrp in H; discriminate H.
       - split; [exact (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 Ha)))))) | reflexivity].
       - split; [exact (proj1 (proj2 (proj2 (proj2 (proj2 (proj2 Ha)))))) | reflexivity].
-      - exfalso; destruct Ha as [Hwr _]; exact (WrStageRel_false addr capSz pkt st s1 Hms Hnp Hwr). }
+      - split; [exact (proj1 (proj2 (proj2 (proj2 (proj2 Ha))))) | reflexivity]. }
     destruct Hacc_facts as [Hsec Hntake].
     assert (Hch : g_chain pcAddrInit g = []).
     { destruct He as [Hch | [e [G' [Hch [Hsec' | Hblk]]]]]; [exact Hch | rewrite Hsec in Hsec'; discriminate Hsec' |].

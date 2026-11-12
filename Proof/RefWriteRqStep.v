@@ -81,6 +81,8 @@ Section WriteRqStep.
                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iRegionsA := (iRegions pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
+  Local Abbreviation IREQ := (iRequester pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
+                                 mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iMemStA := (iMemSt pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                                  mulCapacity divCapacity mulStages divStages mulDivMode bp config pre post revBase revPfB revPfA).
   Local Abbreviation iRpReadyA := (iRpReady pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
@@ -217,17 +219,19 @@ Section WriteRqStep.
       (if andb (negb b) (crossesB addr size) then msWriteRq st' = true /\ msWriteRqV st' = stepOf true addr size pkt
        else msIdle st' = true) ->
       iReadRpA s1' = iReadRpA s1 -> iRpReadyA s1' = iRpReadyA s1 -> iDmStA s1' = iDmStA s1 -> iRevA s1' = iRevA s1 ->
+      IREQ s1' = IREQ s1 ->
       lineKind implRegions (lineOf b addr) = Some true ->
       AllPorts (stagedP (lineOf b addr) (someWrite (buildW b addr pkt size))) implRegions (iRegionsA s1') ->
       ACC g s1 s2 -> ACC g' s1' s2.
   Proof.
-    intros g g' s1 s1' s2 addr size pkt b st' Eacc Eacc' Eo Ech Emst Hif Erp Erdy Edm HR Hk Hp Ha.
+    intros g g' s1 s1' s2 addr size pkt b st' Eacc Eacc' Eo Ech Emst Hif Erp Erdy Edm HR Erq Hk Hp Ha.
     unfold AccessRel in *; rewrite Eacc in Ha; rewrite Eacc', Eo.
     unfold WrStageRel in *; cbv beta iota zeta in Ha |- *.
-    destruct Ha as [[Hrp0 [Hrdy0 _]] [Hdlq [Hrnr [Hoff [Hsnoop Hm]]]]].
+    destruct Ha as [[Hrp0 [Hrdy0 _]] [Hreq [Hdlq [Hrnr [Hoff [Hsnoop Hm]]]]]].
     unfold revNotReading, iRevPhase, iScanMsb, iRevSnoopHit, HeadReq in *.
     rewrite Erp, Erdy, Edm, HR, Ech, Emst.
-    refine (conj (conj Hrp0 (conj Hrdy0 (conj Hif (conj Hk Hp)))) (conj Hdlq (conj Hrnr (conj Hoff (conj Hsnoop _))))).
+    assert (Hrq' : isReqDataMem (IREQ s1') = true) by (rewrite Erq; exact Hreq).
+    refine (conj (conj Hrp0 (conj Hrdy0 (conj Hif (conj Hk Hp)))) (conj Hrq' (conj Hdlq (conj Hrnr (conj Hoff (conj Hsnoop _)))))).
     destruct b; exact Hm.
   Qed.
 
@@ -355,6 +359,7 @@ Section WriteRqStep.
   Lemma acc_devFirst :
     forall g1 (s1 s1' : IState) (s2m : SState) addr size pkt (cr : bool) sl0,
       iReadRpA s1' = iReadRpA s1 -> iRpReadyA s1' = iRpReadyA s1 -> iDmStA s1' = iDmStA s1 -> RevKept s1 s1' ->
+      IREQ s1' = IREQ s1 -> isReqDataMem (IREQ s1) = true ->
       g_acc pcAddrInit g1 = (if cr then AccStore addr size pkt (WrPend true) else AccNone) ->
       g_revOff pcAddrInit g1 = RevEq ->
       PQ s1' -> optValid (iReadRpA s1) = false -> optValid (iRpReadyA s1) = false ->
@@ -366,7 +371,7 @@ Section WriteRqStep.
       sSecondA s2m = (if cr then secondStoreOf addr pkt size else sl0) -> optValid sl0 = false ->
       ACC g1 s1' s2m.
   Proof.
-    intros g1 s1 s1' s2m addr size pkt cr sl0 Erp Erdy Edm HK Eacc Eoff HPQ Hrp0 Hrdy0 Hst0 Hdlq Hrnr Hsnoop Ecr Ess Hsl.
+    intros g1 s1 s1' s2m addr size pkt cr sl0 Erp Erdy Edm HK Erq Hrq Eacc Eoff HPQ Hrp0 Hrdy0 Hst0 Hdlq Hrnr Hsnoop Ecr Ess Hsl.
     destruct (RevKept_obs s1 s1' HK) as [Eph [_ [_ [Esn [Emsb _]]]]].
     unfold AccessRel; rewrite Eacc, Eoff.
     unfold revNotReading in Hrnr |- *.
@@ -375,8 +380,9 @@ Section WriteRqStep.
     - unfold WrStageRel; cbv beta iota zeta.
       rewrite Erp, Erdy, Edm, Eph, Esn, Emsb.
       destruct Hst0 as [Hwq Hwv].
-      exact (conj (conj Hrp0 (conj Hrdy0 (conj Hwq (conj Hwv HPQ))))
-               (conj Hdlq (conj Hrnr (conj eq_refl (conj Hsnoop (conj (eq_sym Ecr) Ess)))))).
+      assert (Hrq' : isReqDataMem (IREQ s1') = true) by (rewrite Erq; exact Hrq).
+      exact (conj (conj Hrp0 (conj Hrdy0 (conj Hwq (conj Hwv HPQ)))) (conj Hrq'
+               (conj Hdlq (conj Hrnr (conj eq_refl (conj Hsnoop (conj (eq_sym Ecr) Ess))))))).
     - cbv beta iota zeta; unfold dmNotAccessing.
       rewrite Erp, Erdy, Edm, Eph, Ess.
       exact (conj Hst0 (conj Hrp0 (conj Hrdy0 (conj HPQ (conj eq_refl (conj (conj Hx1 Hx3) (conj Hrnr Hsl))))))).
@@ -512,7 +518,7 @@ Section WriteRqStep.
     intros g s1 s1' s2 mr mst mrq mrp mrdy mr' st' env addr size pkt rdy EM E1 Eacc Hk Hreg Hrt Hg.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha; unfold WrStageRel in Ha; cbv beta iota zeta in Ha.
-    destruct Ha as [[Hrp0 [Hrdy0 [_ [_ Hq]]]] [Hdlq [Hrnr [Hoff [Hsnoop [Hsec Hhq]]]]]].
+    destruct Ha as [[Hrp0 [Hrdy0 [_ [_ Hq]]]] [Hreq [Hdlq [Hrnr [Hoff [Hsnoop [Hsec Hhq]]]]]]].
     destruct Hhq as [q [[e [G' [Hch Hq']]] [Hsto [Ea [Esz Epkt]]]]].
     pose proof (proj1 Hc Hdlq) as Hcn.
     destruct Hrf as [R1 [R2 [R3 R4]]].
@@ -584,7 +590,8 @@ Section WriteRqStep.
         assert (Eg1a : g_acc pcAddrInit g1 = (if cr then AccStore addr size pkt (WrPend true) else AccNone))
           by (timeout 10 (rewrite Eg1, Eacc'; reflexivity)).
         assert (Eg1o : g_revOff pcAddrInit g1 = RevEq) by (timeout 10 (rewrite Eg1; exact Hoff)).
-        timeout 10 exact (acc_devFirst g1 s1 s1' s2m addr size pkt cr (sSecondA s2) Erp1 Erdy1 Edm1 HK Eg1a Eg1o HPQ Hrp0 Hrdy0 Hst1
+        assert (Erq1 : IREQ s1' = IREQ s1) by (timeout 10 (rewrite E1; unfold iRequester; rewrite EM; reflexivity)).
+        timeout 10 exact (acc_devFirst g1 s1 s1' s2m addr size pkt cr (sSecondA s2) Erp1 Erdy1 Edm1 HK Erq1 Hreq Eg1a Eg1o HPQ Hrp0 Hrdy0 Hst1
                             Hdlq Hrnr Hsnoop Ecr Ess Hsec).
       - rewrite Eg1; unfold CnwbRel; cbn [g_cnwb g_chain g_acc].
         assert (Edm : iDmStA s1' = iDmStA s1) by (rewrite E1; reflexivity).
@@ -624,7 +631,7 @@ Section WriteRqStep.
     intros g s1 s1' s2 mr mst mrq mrp mrdy mr' st' env addr size pkt rdy EM E1 Eacc Hk Hreg Hrt Hg.
     pose proof Hg as Hg0; destruct Hg0 as [Hrf Hm Hl Hrp He Ha Hc Hd Hf Hs Hfr Hw Hrk].
     unfold AccessRel in Ha; rewrite Eacc in Ha; unfold WrStageRel in Ha; cbv beta iota zeta in Ha.
-    destruct Ha as [[Hrp0 [Hrdy0 [_ [_ Hq]]]] [Hdlq [Hrnr [Hoff [Hsnoop [Hcr Hsec]]]]]].
+    destruct Ha as [[Hrp0 [Hrdy0 [_ [_ Hq]]]] [Hreq [Hdlq [Hrnr [Hoff [Hsnoop [Hcr Hsec]]]]]]].
     pose proof (proj1 Hc Hdlq) as Hcn.
     destruct Hrf as [R1 [R2 [R3 R4]]].
     rewrite Hcn in R1; cbn [cnwbApply] in R1.
@@ -753,7 +760,7 @@ Section WriteRqStep.
         * apply (acc_stageStore g g' s1 s1' s2 addr size pkt b st' Eacc eq_refl eq_refl eq_refl);
             [rewrite E1; reflexivity | exact (Hrt eq_refl) | rewrite E1; unfold iReadRp; rewrite EM; reflexivity
             | rewrite E1; unfold iRpReady; rewrite EM; reflexivity
-            | rewrite E1; reflexivity | exact HR | exact Hk | | exact Ha].
+            | rewrite E1; reflexivity | exact HR | rewrite E1; unfold iRequester; rewrite EM; reflexivity | exact Hk | | exact Ha].
           rewrite E1; change (AllPorts (stagedP (lineOf b addr) (someWrite (buildW b addr pkt size))) implRegions mr').
           apply (stagedP_stage _ _ _ (iRegionsA s1)); [apply Hu | rewrite Hmr; exact Hq | exact Hst].
         * unfold RevAccRel; exact I.

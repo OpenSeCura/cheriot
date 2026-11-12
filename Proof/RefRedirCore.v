@@ -43,6 +43,26 @@ Local Open Scope string_scope.
 
 Local Abbreviation TS t := (TreeState ElemState t).
 
+(* dataMem's empty check reads its state as `LoadRq` (tag 0) *)
+Lemma dmEmpty_lrq : forall st : type DataMemState, Zmod.eqb st.(Snd) Zmod.zero = true -> dmLoadRq st = true.
+Proof. intros [d tg]; cbn [Snd]; intros H; apply Zmod.eqb_eq in H; subst tg; reflexivity. Qed.
+
+Lemma dmCheck_lrq : forall st, dmCheck st = true -> dmLoadRq st = false.
+Proof. intros [d tg]; unfold dmCheck, dmLoadRq; cbn; intros H; apply Zmod.eqb_eq in H; subst tg; reflexivity. Qed.
+
+(* a dequeue from a non-empty FIFO leaves it not full *)
+Lemma fifo_deq_notFull :
+  forall (cap : nat) (k : Kind) (f : TS (ShiftFifo.fifoTree cap k)),
+    fifo_wf f -> Zmod.eqb (fifo_size f) Zmod.zero = false ->
+    Zmod.eqb (fifo_size (fifoDeqState f)) (Zmod.of_Z _ (Z.of_nat cap)) = false.
+Proof.
+  intros cap k f Hwf Hemp.
+  pose proof (fifo_size_nonzero cap k f Hemp) as H1.
+  rewrite fifo_size_eqb_cap, (fifoDeqState_nonempty_eq cap k f Hemp), fifo_size_evalShift, fifo_size_setSize,
+    (unsigned_fifoDecSize cap _ H1).
+  unfold fifo_wf in Hwf; apply Nat.eqb_neq; lia.
+Qed.
+
 Section RedirCore.
   Variable pcAddrInit : Z.
   Variable fetchCapacity instCapacity decodeCapacity dataMemCapacity : nat.
@@ -115,6 +135,7 @@ Section RedirCore.
   Local Abbreviation effSA := (ACC effS).
   Local Abbreviation validA := (ACC iRedirValid).
   Local Abbreviation InvA := (ACC RedirInv).
+  Local Abbreviation HandA := (ACC HandInv).
   Local Abbreviation NPCORE :=
     (Impl.np_core pcAddrInit fetchCapacity instCapacity decodeCapacity dataMemCapacity
                   mulCapacity divCapacity mulStages divStages mulDivMode bp config implRegions).
@@ -130,20 +151,23 @@ Section RedirCore.
     forall act : Action type ITree (Bit 0),
       (forall g (s1 s1' : IState) s2, SemAction envI act s1 s1' Zmod.zero -> RELG g (effSA s1) s2 -> InvA s1 ->
          InvA s1' /\ validA s1' = validA s1) ->
+      (forall g (s1 s1' : IState) s2, SemAction envI act s1 s1' Zmod.zero -> RELG g (effSA s1) s2 -> HandA s1 ->
+         HandA s1') ->
       (forall g (s1 s1' : IState) s2, SemAction envI act s1 s1' Zmod.zero -> SRF s2 -> validA s1 = true ->
          RELG g (applyPA s1) s2 -> exists s2' g', SemActions envS specActs s2 s2' /\ RELG g' (applyPA s1') s2') ->
       STEPOKR act -> STEPOKRR act.
   Proof.
-    intros act Hinv Hpend H s1 s1' s2 Hs Hr [Hi [g Hg]].
+    intros act Hinv Hhand Hpend H s1 s1' s2 Hs Hr [Hi [Hh [g Hg]]].
     destruct (Hinv g s1 s1' s2 Hs Hg Hi) as [Hi' Ev].
+    pose proof (Hhand g s1 s1' s2 Hs Hg Hh) as Hh'.
     destruct (validA s1) eqn:Hv.
     - erewrite effS_true in Hg by exact Hv.
       destruct (Hpend g s1 s1' s2 Hs Hr Hv Hg) as [s2' [g' [Hss Hg']]].
-      exists s2'; split; [exact Hss |]; split; [exact Hi' | exists g'].
+      exists s2'; split; [exact Hss |]; split; [exact Hi' | split; [exact Hh' | exists g']].
       erewrite effS_true by exact Ev; exact Hg'.
     - erewrite effS_false in Hg by exact Hv.
       destruct (H _ _ _ Hs Hr (ex_intro _ g Hg)) as [s2' [Hss [g' Hg']]].
-      exists s2'; split; [exact Hss |]; split; [exact Hi' | exists g'].
+      exists s2'; split; [exact Hss |]; split; [exact Hi' | split; [exact Hh' | exists g']].
       erewrite effS_false by exact Ev; exact Hg'.
   Qed.
 
@@ -206,7 +230,7 @@ Section RedirCore.
 
   Lemma fia_frame : forall s1 s1', ACC FenceIAcc s1 s1' -> InvFrame s1 s1'.
   Proof.
-    intros s1 s1' [[Erf _ Efe Ede _ _] _ _ _ Efip Eep Erd].
+    intros s1 s1' [[Erf _ Efe Ede _ _] _ _ _ Efip Eep Erd _ _ _].
     split; [exact Efe |]; split; [exact Erd |]; split; [exact Eep |].
     split; [rewrite (pcc_rf _ _ Erf); reflexivity |]; split; [unfold iD2a; rewrite Ede; reflexivity |].
     intros C; rewrite Efip in C; discriminate C.
@@ -275,8 +299,9 @@ Section RedirCore.
 
   Lemma fia_tr : forall s1 s1', ACC FenceIAcc s1 s1' -> ACC FenceIAcc (applyPA s1) (applyPA s1').
   Proof.
-    intros s1 s1' [Hfr E2 E3 E4 Efip Eep Erd].
-    constructor; [exact (lsfFrame_tr _ _ Hfr Erd) | exact E2 | exact E3 | exact E4 | exact Efip | | exact Erd].
+    intros s1 s1' [Hfr E2 E3 E4 Efip Eep Erd Ecp Efs Eho].
+    constructor; [exact (lsfFrame_tr _ _ Hfr Erd) | exact E2 | exact E3 | exact E4 | exact Efip | | exact Erd
+                  | rewrite !applyP_exec; exact Ecp | rewrite !applyP_exec; exact Efs | rewrite !applyP_exec; exact Eho].
     rewrite !applyP_epoch, Eep; reflexivity.
   Qed.
 
@@ -357,6 +382,136 @@ Section RedirCore.
       exact (pcc_gpr s1 (ACC mdWbSet s1 smd d v) d v eq_refl).
   Qed.
 
+  (* --- 4b. The Hand-off Invariant --- *)
+
+  (* What a dataMem / mulDiv step keeps of what the hand-off stands for *)
+  Definition HandFrame (s1 s1' : IState) : Prop :=
+    ex_canProceed (iExecA s1') = ex_canProceed (iExecA s1) /\ ex_firstSlot (iExecA s1') = ex_firstSlot (iExecA s1) /\
+    ex_handoff (iExecA s1') = ex_handoff (iExecA s1) /\ iDecodeA s1' = iDecodeA s1 /\ iPccA s1' = iPccA s1 /\
+    ex_redirect (iExecA s1') = ex_redirect (iExecA s1) /\
+    (ACC hdDmFull s1' = true -> ACC hdDmFull s1 = true).
+
+  (* No change, or dataMem was busy (so the empty and core-write checks of the hand-off are void) *)
+  Definition HandStep (s1 s1' : IState) : Prop :=
+    s1' = s1 \/ (ACC hdDmEmpty s1 = false /\ HandFrame s1 s1').
+
+  Lemma hand_dm : forall s1 s1', HandStep s1 s1' -> HandA s1 -> HandA s1'.
+  Proof.
+    intros s1 s1' [-> | [He [E1 [E2 [E3 [E4 [E5 [E6 E7]]]]]]]] H; [exact H |].
+    revert H; apply (ACC HandInv_frame);
+      [exact E1 | exact E2 | exact E3 | intros _; unfold hdHead; rewrite E4; reflexivity | exact E5
+      | unfold iRedirValid, ex_redirValid; rewrite E6; intros h; exact h | exact E7].
+  Qed.
+
+  Lemma hdDmFull_eq :
+    forall s, ACC hdDmFull s = Zmod.eqb (fifo_size (dataMem_fifo dataMemCapacity (ACC iDm s)))
+                                        (Zmod.of_Z _ (Z.of_nat dataMemCapacity)).
+  Proof. reflexivity. Qed.
+
+  Lemma hdDmEmpty_false : forall s, dmLoadRq (ACC iDmSt s) = false -> ACC hdDmEmpty s = false.
+  Proof.
+    intros s H; destruct (ACC hdDmEmpty s) eqn:E; [| reflexivity].
+    unfold hdDmEmpty in E; apply andb_prop in E as [_ E].
+    pose proof (dmEmpty_lrq _ E) as E'; change (dmLoadRq (ACC iDmSt s) = true) in E'.
+    rewrite E' in H; discriminate H.
+  Qed.
+
+  Lemma hdDmEmpty_buf :
+    forall s q rest, fifo_wf (dataMem_fifo dataMemCapacity (ACC iDm s)) ->
+      ACC iDmBuf s = q :: rest -> ACC hdDmEmpty s = false.
+  Proof.
+    intros s q rest Hw Eb; unfold hdDmEmpty; unfold iDmBuf in Eb.
+    change (dm_inputFifo dataMemCapacity (ACC iDm s)) with (dataMem_fifo dataMemCapacity (ACC iDm s)).
+    rewrite (fifo_size_eqb_zero _ _ _ Hw), Eb; reflexivity.
+  Qed.
+
+  Lemma handFrame_of :
+    forall s1 s1', iExecA s1' = iExecA s1 -> iDecodeA s1' = iDecodeA s1 -> iPccA s1' = iPccA s1 ->
+      dataMem_fifo dataMemCapacity (ACC iDm s1') = dataMem_fifo dataMemCapacity (ACC iDm s1) -> HandFrame s1 s1'.
+  Proof.
+    intros s1 s1' Eex Ede Ep Ef; unfold HandFrame; rewrite Eex.
+    split; [reflexivity |]; split; [reflexivity |]; split; [reflexivity |].
+    split; [exact Ede |]; split; [exact Ep |]; split; [reflexivity |].
+    rewrite !hdDmFull_eq, Ef; intros h; exact h.
+  Qed.
+
+  Lemma dmFrame_hand : forall s1 s1', ACC DmFrame s1 s1' -> HandFrame s1 s1'.
+  Proof. intros s1 s1' [Erf _ _ _ _ Ede Eex _ Edmf]; exact (handFrame_of s1 s1' Eex Ede (pcc_rf _ _ Erf) Edmf). Qed.
+
+  Lemma dws_hand : forall s1 s1' d v, ACC DmWbStep s1 s1' d v -> HandFrame s1 s1'.
+  Proof.
+    intros s1 s1' d v [Erf _ _ _ _ _ _ _ Ede Eex _ Edmf _]; exact (handFrame_of s1 s1' Eex Ede (pcc_gpr _ _ _ _ Erf) Edmf).
+  Qed.
+
+  Lemma dwk_hand : forall s1 s1' d v, ACC DmWbKStep s1 s1' d v -> HandFrame s1 s1'.
+  Proof.
+    intros s1 s1' d v [Erf _ _ _ Ede Eex _ Edmf _]; exact (handFrame_of s1 s1' Eex Ede (pcc_gpr _ _ _ _ Erf) Edmf).
+  Qed.
+
+  Lemma revRpQ_hand : forall s1 s1', ACC RevRpQ s1 s1' -> HandStep s1 s1'.
+  Proof.
+    intros s1 s1' [-> | [Hrv [_ [_ D]]]]; [left; reflexivity |].
+    right; split; [apply hdDmEmpty_false; exact (proj1 (dmRevRp_excl3 _ Hrv)) | exact (dws_hand _ _ _ _ D)].
+  Qed.
+
+  Lemma loadRpQ_hand : forall s1 s1', ACC LoadRpQ s1 s1' -> HandStep s1 s1'.
+  Proof.
+    intros s1 s1' [-> | [Hlp [_ [_ [[_ [Hf _]] | [_ K]]]]]]; [left; reflexivity | |];
+      (right; split; [apply hdDmEmpty_false; exact (proj1 (dmLoadRp_excl3 _ Hlp)) |]).
+    - exact (dmFrame_hand _ _ Hf).
+    - cbv zeta in K; exact (dws_hand _ _ _ _ K).
+  Qed.
+
+  Lemma checkRevQ_hand : forall s1 s1', ACC CheckRevQ s1 s1' -> HandStep s1 s1'.
+  Proof.
+    intros s1 s1' [-> | [Hck [[_ [_ [_ [Hf _]]]] | [[_ [Hf _]] | [_ W]]]]]; [left; reflexivity | | |];
+      (right; split; [apply hdDmEmpty_false; exact (dmCheck_lrq _ Hck) |]).
+    - exact (dmFrame_hand _ _ Hf).
+    - exact (dmFrame_hand _ _ Hf).
+    - exact (dwk_hand _ _ _ _ W).
+  Qed.
+
+  Lemma issueQ_hand : forall s1 s1', ACC IssueQ s1 s1' -> HandStep s1 s1'.
+  Proof.
+    intros s1 s1' [-> | [Hrq [_ [_ [Hf _]]]]]; [left; reflexivity |].
+    right; split; [apply hdDmEmpty_false; exact (proj1 (dmRevRq_excl3 _ Hrq)) | exact (dmFrame_hand _ _ Hf)].
+  Qed.
+
+  Lemma lsf_handStep :
+    forall s1 s1' q rest,
+      fifo_wf (dataMem_fifo dataMemCapacity (ACC iDm s1)) ->
+      ACC iDmBuf s1 = q :: rest -> ACC LsfFrame s1 s1' ->
+      ex_canProceed (iExecA s1') = ex_canProceed (iExecA s1) -> ex_firstSlot (iExecA s1') = ex_firstSlot (iExecA s1) ->
+      ex_handoff (iExecA s1') = ex_handoff (iExecA s1) -> ex_redirect (iExecA s1') = ex_redirect (iExecA s1) ->
+      HandStep s1 s1'.
+  Proof.
+    intros s1 s1' q rest Hw Eb [Erf _ _ Ede _ Edmf] Ecp Efs Eho Erd.
+    right; split; [exact (hdDmEmpty_buf s1 q rest Hw Eb) |].
+    split; [exact Ecp |]; split; [exact Efs |]; split; [exact Eho |]; split; [exact Ede |].
+    split; [exact (pcc_rf _ _ Erf) |]; split; [exact Erd |].
+    assert (Hne : Zmod.eqb (fifo_size (dataMem_fifo dataMemCapacity (ACC iDm s1))) Zmod.zero = false)
+      by (unfold iDmBuf in Eb; rewrite (fifo_size_eqb_zero _ _ _ Hw), Eb; reflexivity).
+    intros C; rewrite hdDmFull_eq, Edmf, (fifo_deq_notFull _ _ _ Hw Hne) in C; discriminate C.
+  Qed.
+
+  Lemma lsfQ_hand :
+    forall s1 s1', fifo_wf (dataMem_fifo dataMemCapacity (ACC iDm s1)) ->
+      ACC LsfQ s1 s1' -> HandStep s1 s1'.
+  Proof.
+    intros s1 s1' Hw [-> | [q [rest [Eb [_ Hc]]]]]; [left; reflexivity |].
+    destruct Hc as [[_ [_ [Hfr Eex _ _ _ _ _ _ _ _ _]]] | [[_ [_ [Hfr Eex _ _ _ _ _ _ _ _ _ _]]]
+                   | [[_ [_ [Hfr Eex _ _]]] | [_ [_ [Hfr _ _ _ _ _ Erd Ecp Efs Eho]]]]]].
+    1-3: apply (lsf_handStep s1 s1' q rest Hw Eb Hfr); rewrite Eex; reflexivity.
+    exact (lsf_handStep s1 s1' q rest Hw Eb Hfr Ecp Efs Eho Erd).
+  Qed.
+
+  Lemma mdQ_hand : forall s1 s1', ACC MdQ s1 s1' -> HandA s1 -> HandA s1'.
+  Proof.
+    intros s1 s1' [[smd [-> _]] | [smd [l1 [l2 [d [v [-> _]]]]]]]; apply (ACC HandInv_frame);
+      first [reflexivity | intros _; reflexivity | exact (pcc_gpr s1 (ACC mdWbSet s1 smd d v) d v eq_refl)
+            | intros h; exact h].
+  Qed.
+
   (* --- 5. The Stages --- *)
 
   Local Abbreviation REVRP :=
@@ -383,6 +538,8 @@ Section RedirCore.
     apply lift_core.
     - intros g s1 s1' s2 Hs _ Hi.
       exact (inv_frame s1 s1' Hi (revRpQ_frame _ _ (ACC revRpStage_char _ s1 s1' _ Hs))).
+    - intros g s1 s1' s2 Hs _ Hh.
+      exact (hand_dm s1 s1' (revRpQ_hand _ _ (ACC revRpStage_char _ s1 s1' _ Hs)) Hh).
     - intros g s1 s1' s2 Hs _ _ Hg.
       destruct (ACC revRp_of clintS clint plicS plic initLine fwcs g _ _ s2
                   (revRpQ_tr _ _ (ACC revRpStage_char _ s1 s1' _ Hs)) Hg) as [g' Hg'].
@@ -396,6 +553,9 @@ Section RedirCore.
     - intros g s1 s1' s2 Hs _ Hi.
       unfold loadRpAndWritebackStage in Hs; apply SemAction_liftAction_iff in Hs as [c' [Hc ->]].
       exact (inv_frame s1 _ Hi (loadRpQ_frame _ _ (ACC loadRpWb_char _ s1 c' _ Hc))).
+    - intros g s1 s1' s2 Hs _ Hh.
+      unfold loadRpAndWritebackStage in Hs; apply SemAction_liftAction_iff in Hs as [c' [Hc ->]].
+      exact (hand_dm s1 _ (loadRpQ_hand _ _ (ACC loadRpWb_char _ s1 c' _ Hc)) Hh).
     - intros g s1 s1' s2 Hs _ _ Hg.
       unfold loadRpAndWritebackStage in Hs; apply SemAction_liftAction_iff in Hs as [c' [Hc ->]].
       destruct (ACC loadRp_of clintS clint plicS plic initLine fwcs g _ _ s2
@@ -410,6 +570,9 @@ Section RedirCore.
     - intros g s1 s1' s2 Hs _ Hi.
       unfold checkRevocationStage in Hs; apply SemAction_liftAction_iff in Hs as [c' [Hc ->]].
       exact (inv_frame s1 _ Hi (checkRevQ_frame _ _ (ACC checkRev_char _ s1 c' _ Hc))).
+    - intros g s1 s1' s2 Hs _ Hh.
+      unfold checkRevocationStage in Hs; apply SemAction_liftAction_iff in Hs as [c' [Hc ->]].
+      exact (hand_dm s1 _ (checkRevQ_hand _ _ (ACC checkRev_char _ s1 c' _ Hc)) Hh).
     - intros g s1 s1' s2 Hs _ _ Hg.
       unfold checkRevocationStage in Hs; apply SemAction_liftAction_iff in Hs as [c' [Hc ->]].
       destruct (ACC checkRev_of clintS clint plicS plic initLine fwcs g _ _ s2
@@ -424,6 +587,9 @@ Section RedirCore.
     - intros g s1 s1' s2 Hs _ Hi.
       unfold issueRevRqStage in Hs; apply SemAction_liftAction_iff in Hs as [c' [Hc ->]].
       exact (inv_frame s1 _ Hi (issueQ_frame _ _ (ACC issueRevRq_char _ s1 c' _ Hc))).
+    - intros g s1 s1' s2 Hs _ Hh.
+      unfold issueRevRqStage in Hs; apply SemAction_liftAction_iff in Hs as [c' [Hc ->]].
+      exact (hand_dm s1 _ (issueQ_hand _ _ (ACC issueRevRq_char _ s1 c' _ Hc)) Hh).
     - intros g s1 s1' s2 Hs _ _ Hg.
       unfold issueRevRqStage in Hs; apply SemAction_liftAction_iff in Hs as [c' [Hc ->]].
       destruct (ACC issue_of clintS clint plicS plic initLine fwcs g _ _ s2
@@ -439,6 +605,10 @@ Section RedirCore.
       pose proof Hg as [_ _ _ _ _ _ _ _ _ _ _ [_ [_ [_ [Hwd _]]]] _].
       rewrite effS_dm in Hwd.
       exact (inv_frame s1 s1' Hi (lsfQ_frame _ _ (ACC lsf_char _ s1 s1' _ Hwd Hs))).
+    - intros g s1 s1' s2 Hs Hg Hh.
+      pose proof Hg as [_ _ _ _ _ _ _ _ _ _ _ [_ [_ [_ [Hwd _]]]] _].
+      rewrite effS_dm in Hwd.
+      exact (hand_dm s1 s1' (lsfQ_hand _ _ Hwd (ACC lsf_char _ s1 s1' _ Hwd Hs)) Hh).
     - intros g s1 s1' s2 Hs _ _ Hg.
       pose proof Hg as [_ _ _ _ _ _ _ _ _ _ _ [_ [_ [_ [Hwd _]]]] _].
       destruct (ACC lsf_of clintS clint plicS plic initLine fwcs Hdisj g _ _ s2
@@ -454,6 +624,10 @@ Section RedirCore.
       pose proof Hg as [_ _ _ _ _ _ _ _ _ _ _ [_ [_ [_ [_ [Hwf _]]]]] _].
       rewrite effS_md in Hwf.
       exact (inv_frame s1 s1' Hi (mdQ_frame _ _ (ACC md_char Hmd a Hin _ s1 s1' Hs Hwf))).
+    - intros g s1 s1' s2 Hs Hg Hh.
+      pose proof Hg as [_ _ _ _ _ _ _ _ _ _ _ [_ [_ [_ [_ [Hwf _]]]]] _].
+      rewrite effS_md in Hwf.
+      exact (mdQ_hand _ _ (ACC md_char Hmd a Hin _ s1 s1' Hs Hwf) Hh).
     - intros g s1 s1' s2 Hs _ _ Hg.
       pose proof Hg as [_ _ _ _ _ _ _ _ _ _ _ [_ [_ [_ [_ [Hwf _]]]]] _].
       exists s2, g; split; [apply NilAction; reflexivity |].

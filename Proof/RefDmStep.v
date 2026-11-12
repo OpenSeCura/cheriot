@@ -328,7 +328,7 @@ Section DmStep.
     unfold AccessRel in Ha.
     destruct (g_acc pcAddrInit g) as [| addr size pkt st | ld pkt0 st | rc st | st | st | addr pkt st] eqn:Eacc.
     - destruct Ha as [_ [_ [_ [_ [_ [[_ E] _]]]]]]; rewrite Hrv in E; discriminate E.
-    - destruct Ha as [_ [E _]]; rewrite Elrq in E; discriminate E.
+    - destruct Ha as [_ [_ [E _]]]; rewrite Elrq in E; discriminate E.
     - destruct Ha as [_ [_ [E _]]]; rewrite Elrp in E; discriminate E.
     - destruct Ha as [Hst [_ [_ [Erc [HrnR [Hoff [Hsec [Hcn [_ [_ Hval]]]]]]]]]].
       destruct st as [b | b | b | b rp | res]; unfold RdStageRel in Hst; cbv zeta in Hst.
@@ -473,7 +473,7 @@ Section DmStep.
     unfold AccessRel in Ha.
     destruct (g_acc pcAddrInit g) as [| addr size pkt st | ld pkt0 st | rc st | st | st | addr pkt st] eqn:Eacc.
     - destruct Ha as [_ [_ [_ [_ [_ [[E _] _]]]]]]; rewrite Hlrp in E; discriminate E.
-    - destruct Ha as [_ [E _]]; rewrite Elrq in E; discriminate E.
+    - destruct Ha as [_ [_ [E _]]]; rewrite Elrq in E; discriminate E.
     - destruct Ha as [Hst [_ [_ [Eld [HrnR [Hoff Hmt]]]]]].
       destruct st as [b | b | b | b rp | res]; unfold RdStageRel in Hst; cbv zeta in Hst.
       + destruct Hst as [E _]; rewrite Emrq in E; discriminate E.
@@ -557,7 +557,7 @@ Section DmStep.
     unfold AccessRel in Ha.
     destruct (g_acc pcAddrInit g) as [| addr size pkt st | ld pkt0 st | rc st | st | st | addr pkt st] eqn:Eacc;
       [reflexivity | exfalso ..].
-    - destruct Ha as [_ [E _]]; rewrite Elrq in E; discriminate E.
+    - destruct Ha as [_ [_ [E _]]]; rewrite Elrq in E; discriminate E.
     - destruct Ha as [_ [_ [E _]]]; rewrite Elrp in E; discriminate E.
     - destruct Ha as [_ [_ [E _]]]; rewrite Errp in E; discriminate E.
     - destruct Ha as [Hst _]; destruct st as [b | b | b | b rp | res]; unfold RdStageRel in Hst; cbv zeta in Hst.

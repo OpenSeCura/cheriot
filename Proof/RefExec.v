@@ -266,20 +266,6 @@ Section ExecStageStepOK.
     rewrite !writeSubTreeState_readSubTreeState, updRegionStateAt_regionStateAt, writeSubTreeState_readSubTreeState; reflexivity.
   Qed.
 
-  Lemma SemAction_mem_noWriteRq_eq :
-    forall env m m' b,
-      SemAction env ((@implMemIfc config implRegions type revI).(mem_noWriteRq)) m m' b ->
-      m' = m /\ b = andb (negb (msWriteRq m.(Snd).(Fst))) (noPortWriteB implRegions m.(Fst)).
-  Proof.
-    intros env m m' b H.
-    rewrite SemAction_iff_evalActionPropGen in H.
-    cbn [mem_noWriteRq implMemIfc] in H.
-    unfold implMemNoPendingWrite, implMemNoWriteRq, implMemNoPortWriteRq, toAction in H.
-    cbn [evalActionPropGen] in H.
-    apply noPortWrite_wp in H; cbn [evalActionPropGen] in H.
-    destruct H as [<- <-]; split; reflexivity.
-  Qed.
-
   (* --- 3. Post-State Invariant Preservation Helpers --- *)
 
   Lemma WfRel_exec_step :

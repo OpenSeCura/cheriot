@@ -117,6 +117,17 @@ Ltac cnwb_fin :=
 Definition isReqDataMem (r : type Requester) : bool := evalExpr ((Var type Requester r) `? "DataMem").
 Definition isReqRevoker (r : type Requester) : bool := evalExpr ((Var type Requester r) `? "Revoker").
 
+(* The requester values the memory records on an access (`mkRequester`) *)
+Definition reqDataMemV : type Requester := evalExpr (@mkRequester type ReqDataMem).
+Definition reqRevokerV : type Requester := evalExpr (@mkRequester type ReqRevoker).
+
+Lemma isReqDataMem_dm : isReqDataMem reqDataMemV = true.
+Proof. reflexivity. Qed.
+Lemma isReqDataMem_rev : isReqDataMem reqRevokerV = false.
+Proof. reflexivity. Qed.
+Lemma isReqRevoker_rev : isReqRevoker reqRevokerV = true.
+Proof. reflexivity. Qed.
+
 Definition rpIdle (p : type RevPhase) : bool := evalExpr ((Var type RevPhase p) `? "Idle").
 Definition rpWaitCapRp (p : type RevPhase) : bool := evalExpr ((Var type RevPhase p) `? "WaitCapRp").
 Definition rpWaitRevBitRq (p : type RevPhase) : bool := evalExpr ((Var type RevPhase p) `? "WaitRevBitRq").
@@ -292,6 +303,7 @@ Section CoreRel.
   Definition iRpReady (s1 : IState) : type (Option FullCapWithTag) := (iMem s1).(Snd).(Snd).(Snd).(Snd).(Fst).
   (* the two read buffers: `readRp` and `rpReady` *)
   Definition iRdBufs (s1 : IState) := (iMem s1).(Snd).(Snd).(Snd).
+
 
   Definition iFetchPc (s1 : IState) : type Addr :=
     fetch_pc pcAddrInit fetchCapacity instCapacity (iFetch s1).
@@ -712,7 +724,8 @@ Section CoreRel.
         msIdle (iMemSt s1) = true /\ optValid (iReadRp s1) = false /\ optValid (iRpReady s1) = false /\
         PortsQuiet s1 /\ g_revOff g = RevEq /\ dmNotAccessing s1 /\ revNotReading s1 /\ optValid (sSecond s2) = false
     | AccStore addr size pkt st =>
-        WrStageRel addr size pkt st s1 /\ dmLoadRq (iDmSt s1) = true /\ revNotReading s1 /\ g_revOff g = RevEq /\
+        WrStageRel addr size pkt st s1 /\ isReqDataMem (iRequester s1) = true /\
+        dmLoadRq (iDmSt s1) = true /\ revNotReading s1 /\ g_revOff g = RevEq /\
         (snoopHitsB addr size (iScanMsb s1) = true -> iRevSnoopHit s1 = true) /\
         match st with
         | WrPend false | WrStaged false =>
